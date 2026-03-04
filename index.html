@@ -1184,7 +1184,7 @@
 </div>
 
 <!-- ── DEV PANEL ── -->
-<div id="dev-panel" class="collapsed">
+<div id="dev-panel" class="collapsed" style="display:none">
   <div id="dev-panel-header">
     <span id="dev-panel-title">⚙ DEV MODE</span>
     <div id="dev-panel-btns">
@@ -2139,7 +2139,7 @@ let state = {
   hasWaveBeam:false,
   fireMode:'boost',
   collectedItems:[],
-  musicPaused:false, musicMuted:true, sfxMuted:true, volume:0.82,
+  musicPaused:false, musicMuted:false, sfxMuted:false, volume:0.82,
   bubbleDeforms:[],
   honeyHexCount:1,
   honeySplitTimer:0,
@@ -2414,8 +2414,8 @@ const PEN_BARRIER_EXTEND   = 500;
 // Interzone barriers — maze-wall arcs with 2 polar-opposite gaps per ring
 const INTERZONE_RINGS     = Array.from({length: 10}, (_, i) => Math.round(2100 + i * (6600 / 9)));
 const INTERZONE_WALLS     = 2;      // 2 wall segments per ring (2 gaps at 180° apart)
-const INTERZONE_GAP_START = 150;    // gap width at first ring (px)
-const INTERZONE_GAP_END   = 50;     // gap width at last ring (px)
+const INTERZONE_GAP_START = 200;    // gap width at first ring (px)
+const INTERZONE_GAP_END   = 100;    // gap width at last ring (px)
 const INTERZONE_WALL_T    = 18;     // line thickness
 // Gap positions cycle through this degree pattern (repeating every 8 rings)
 const INTERZONE_GAP_DEGS  = [0, 90, 180, 240, 0, 80, 160, 260];
@@ -2443,25 +2443,28 @@ const INTERZONE_ARCS = (function(){
   }
   return result;
 })();
-// Boost pad positions — double chevrons on inner edge of ring walls, facing tangentially
+// Boost pad positions — double chevrons on inner edge of ring walls (visual only)
 const INTERZONE_BOOSTS = (function(){
   const pads = [];
   for(let ir = 0; ir < INTERZONE_RINGS.length; ir++){
     if(ir % 2 === 0) continue; // odd-indexed rings: 1,3,5,7,9
     const ringR = INTERZONE_RINGS[ir];
-    const r = ringR - INTERZONE_WALL_T/2 - 10; // inner edge of wall
+    const r = ringR - INTERZONE_WALL_T/2 - 20; // 10px off inner edge of wall
     const walls = INTERZONE_ARCS[ir];
     for(let w = 0; w < walls.length; w++){
       let arcSpan = walls[w].end - walls[w].start;
       if(arcSpan < 0) arcSpan += Math.PI * 2;
-      const midAng = walls[w].start + arcSpan / 2;
-      const tangentDir = (w % 2 === 0) ? 1 : -1;
-      const tangentAng = midAng + tangentDir * Math.PI / 2;
+      let midAng = walls[w].start + arcSpan / 2;
+      if(ir === 1) midAng -= 25 * Math.PI / 180; // shift first boost pad -25° CCW
+      let tDir = (ir % 4 < 2) ? -1 : 1;
+      if(ir === 3) tDir *= -1; // swap ring 3 direction
+      const tvx = -Math.sin(midAng) * tDir;
+      const tvy =  Math.cos(midAng) * tDir;
+      const visualAng = Math.atan2(tvy, tvx);
       pads.push({
         wx: Math.cos(midAng) * r,
         wy: Math.sin(midAng) * r,
-        posAng: midAng,
-        tangentAng: tangentAng,
+        visualAng: visualAng,
         ring: ir,
         ringR: ringR
       });
@@ -2469,6 +2472,65 @@ const INTERZONE_BOOSTS = (function(){
   }
   return pads;
 })();
+// Gap bends — last 50px of each arc end smoothly curves inward/outward
+const INTERZONE_BEND_LEN = 280;  // arc-length of the bend (px)
+const INTERZONE_BEND_DEPTH_IN  = 30; // inward deflection (curves with arc curvature — needs less)
+const INTERZONE_BEND_DEPTH_OUT = 50; // outward deflection (curves against arc curvature — needs more)
+const INTERZONE_BEND_SEGS = 6; // subdivisions per bend for collision
+const INTERZONE_BENDS = (function(){
+  const bends = [];
+  const CP_DIST = 224;
+  for(let ir = 0; ir < INTERZONE_RINGS.length; ir++){
+    const R = INTERZONE_RINGS[ir];
+    const arcs = INTERZONE_ARCS[ir];
+    const bendSpan = INTERZONE_BEND_LEN / R;
+    for(let w = 0; w < arcs.length; w++){
+      // END bend — curves INWARD (toward center)
+      const eJoinAng = arcs[w].end - bendSpan;
+      const eTipAng  = arcs[w].end;
+      const eTipR = R - INTERZONE_BEND_DEPTH_IN;
+      const eP0x = eTipR * Math.cos(eTipAng), eP0y = eTipR * Math.sin(eTipAng);
+      const eP2x = R * Math.cos(eJoinAng), eP2y = R * Math.sin(eJoinAng);
+      const eCPx = eP2x - Math.sin(eJoinAng) * CP_DIST;
+      const eCPy = eP2y + Math.cos(eJoinAng) * CP_DIST;
+      for(let s = 0; s < INTERZONE_BEND_SEGS; s++){
+        const t0 = s / INTERZONE_BEND_SEGS, t1 = (s+1) / INTERZONE_BEND_SEGS;
+        const a0 = (1-t0)*(1-t0), b0 = 2*(1-t0)*t0, c0 = t0*t0;
+        const a1 = (1-t1)*(1-t1), b1 = 2*(1-t1)*t1, c1 = t1*t1;
+        bends.push({
+          x1: a0*eP0x + b0*eCPx + c0*eP2x, y1: a0*eP0y + b0*eCPy + c0*eP2y,
+          x2: a1*eP0x + b1*eCPx + c1*eP2x, y2: a1*eP0y + b1*eCPy + c1*eP2y,
+          ring: ir
+        });
+      }
+      // START bend — curves OUTWARD (away from center)
+      const sJoinAng = arcs[w].start + bendSpan;
+      const sTipAng  = arcs[w].start;
+      const sTipR = R + INTERZONE_BEND_DEPTH_OUT;
+      const sP0x = sTipR * Math.cos(sTipAng), sP0y = sTipR * Math.sin(sTipAng);
+      const sP2x = R * Math.cos(sJoinAng), sP2y = R * Math.sin(sJoinAng);
+      const sCPx = sP2x + Math.sin(sJoinAng) * CP_DIST;
+      const sCPy = sP2y - Math.cos(sJoinAng) * CP_DIST;
+      for(let s = 0; s < INTERZONE_BEND_SEGS; s++){
+        const t0 = s / INTERZONE_BEND_SEGS, t1 = (s+1) / INTERZONE_BEND_SEGS;
+        const a0 = (1-t0)*(1-t0), b0 = 2*(1-t0)*t0, c0 = t0*t0;
+        const a1 = (1-t1)*(1-t1), b1 = 2*(1-t1)*t1, c1 = t1*t1;
+        bends.push({
+          x1: a0*sP0x + b0*sCPx + c0*sP2x, y1: a0*sP0y + b0*sCPy + c0*sP2y,
+          x2: a1*sP0x + b1*sCPx + c1*sP2x, y2: a1*sP0y + b1*sCPy + c1*sP2y,
+          ring: ir
+        });
+      }
+    }
+  }
+  return bends;
+})();
+// Shortened arcs for collision — stops at bend junctions, not gap edges
+const INTERZONE_ARCS_COLL = INTERZONE_ARCS.map(function(arcs, ir){
+  const R = INTERZONE_RINGS[ir];
+  const bendSpan = INTERZONE_BEND_LEN / R;
+  return arcs.map(function(a){ return { start: a.start + bendSpan, end: a.end - bendSpan }; });
+});
 const ZONE_MID_R = (EDIT_R + ZONE_R) / 2;
 // Launchpad enclosure — 8 wall segments forming an octagon around (0,0)
 // Wall midpoint angles match the octagon side midpoints: 0, π/4, π/2, ... 7π/4
@@ -2818,8 +2880,8 @@ function initObjects() {
   state.objects    = [];
   state.fuelObjects= [];
   state.waveOrbs   = [];
-  state.boostPads  = INTERZONE_BOOSTS.map(p => ({ wx:p.wx, wy:p.wy, posAng:p.posAng, tangentAng:p.tangentAng, ring:p.ring, ringR:p.ringR, _cooldown:0, phase:0 }));
-  state._boostPadEffect = null; // active boost: { timer, dx, dy }
+  state.boostPads  = INTERZONE_BOOSTS.map(p => ({ wx:p.wx, wy:p.wy, visualAng:p.visualAng, ring:p.ring, ringR:p.ringR, _cooldown:0, phase:0 }));
+  state._boostPadEffect = 0;
   state.wormholes  = []; state.wormholeZoneSet = new Set();
   state.spaceRocks = [];
   state.explosions = [];
@@ -4625,18 +4687,7 @@ function update(){
   }
 
   // Boost: strong fixed acceleration while space held, hard speed cap
-  // Boost pad effect: override angle, use 2X multiplier, no fuel cost
-  const _padBoost = state._boostPadEffect && state._boostPadEffect.timer > 0;
-  if(_padBoost){
-    const _padAng = state._boostPadEffect.ang;
-    state.vx += Math.sin(_padAng) * 0.9 * 2.0;
-    state.vy -= Math.cos(_padAng) * 0.9 * 2.0;
-    state._boostPadEffect.timer--;
-    if(state._boostPadEffect.timer <= 0){ state._boostPadEffect = null; state.hyperspace = false; }
-    if(!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){ state.hsTail.push({vx:state.vx,vy:state.vy,age:0}); }
-    state.hsTail.forEach(t=>t.age++);
-    state.hsTail=state.hsTail.filter(t=>t.age<28);
-  } else if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
+  if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
     const _bm=state.fireMode==='boost2x'?2.0:1.0;
     state.vx+=Math.sin(state.angle)*0.9*_bm;
     state.vy-=Math.cos(state.angle)*0.9*_bm;
@@ -4694,7 +4745,7 @@ function update(){
   // Exit spin wobble after black hole
   if(state.exitSpin>0){ state.exitSpin--; state.angle+=0.18*Math.sin(state.exitSpin*0.15); }
 
-  const maxSpd=(state._boostPadEffect&&state._boostPadEffect.timer>0)||state.hyperspace?BOOST_MAX:BASE_MAX;
+  const maxSpd=state._boostPadEffect>0?36:(state.hyperspace?BOOST_MAX:BASE_MAX);
   state.vx*=FRICTION; state.vy*=FRICTION;
   const spd=Math.sqrt(state.vx**2+state.vy**2);
   if(spd>maxSpd){state.vx=(state.vx/spd)*maxSpd;state.vy=(state.vy/spd)*maxSpd;}
@@ -4966,29 +5017,36 @@ function update(){
   // ── Interzone barriers — long maze-wall arcs with gaps ──
   if(!state.inSecretLevel){
     const _izDist = Math.sqrt(state.x * state.x + state.y * state.y);
+    const _izPrevX = state.x - state.vx, _izPrevY = state.y - state.vy;
+    const _izPrevDist = Math.sqrt(_izPrevX * _izPrevX + _izPrevY * _izPrevY);
     const _izHalfW = INTERZONE_WALL_T / 2;
-    const _izMargin = _izHalfW + 14;  // detection zone: wall half-width + generous margin
+    const _izMargin = _izHalfW + 6;   // detection zone matches push-out — no snap
     const _izPush  = _izHalfW + 6;    // push-out distance: safely outside wall
     for(let ir = 0; ir < INTERZONE_RINGS.length; ir++){
       const _izR = INTERZONE_RINGS[ir];
-      if(Math.abs(_izDist - _izR) < _izMargin){
+      // Normal proximity check OR crossed the ring this frame (tunneling prevention)
+      const _izCrossed = (_izPrevDist - _izR) * (_izDist - _izR) < 0;
+      if(Math.abs(_izDist - _izR) < _izMargin || _izCrossed){
         let _izAng = Math.atan2(state.y, state.x);
-        // Check if player angle falls within any wall arc (not in a gap)
-        const _walls = INTERZONE_ARCS[ir];
+        // Check if player angle falls within shortened wall arc (bend zones handled by bezier collision)
+        const _walls = INTERZONE_ARCS_COLL[ir];
         let _hitWall = false;
         for(let w = 0; w < _walls.length; w++){
-          let a = _izAng - _walls[w].start;
+          const _shortStart = _walls[w].start;
+          const _shortEnd   = _walls[w].end;
+          let a = _izAng - _shortStart;
           // Normalize to [0, 2π)
           a = ((a % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
-          const span = ((_walls[w].end - _walls[w].start) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+          const span = ((_shortEnd - _shortStart) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
           if(a < span){
             _hitWall = true;
             break;
           }
         }
         if(_hitWall){
-          // Determine which side is closer and push player fully outside the wall
-          const _penetration = _izDist - _izR;  // positive = outside centre, negative = inside
+          // Determine which side to push to.
+          // If crossed (tunneled), use PREVIOUS position to send player back where they came from.
+          const _penetration = _izCrossed ? (_izPrevDist - _izR) : (_izDist - _izR);
           const _outside = _penetration >= 0;
           const _newR = _outside ? _izR + _izPush : _izR - _izPush;
           state.x = Math.cos(_izAng) * _newR;
@@ -5012,12 +5070,14 @@ function update(){
       const _pen3 = Math.abs(_izDist3 - _r3);
       if(_pen3 < _izHalfW){
         let _a3 = Math.atan2(state.y, state.x);
-        const _w3 = INTERZONE_ARCS[ir3];
+        const _w3 = INTERZONE_ARCS_COLL[ir3];
         let _inWall3 = false;
         for(let w3 = 0; w3 < _w3.length; w3++){
-          let a3 = _a3 - _w3[w3].start;
+          const _ss3 = _w3[w3].start;
+          const _se3 = _w3[w3].end;
+          let a3 = _a3 - _ss3;
           a3 = ((a3 % (Math.PI*2)) + Math.PI*2) % (Math.PI*2);
-          const sp3 = ((_w3[w3].end - _w3[w3].start) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
+          const sp3 = ((_se3 - _ss3) % (Math.PI*2) + Math.PI*2) % (Math.PI*2);
           if(a3 < sp3){ _inWall3 = true; break; }
         }
         if(_inWall3){
@@ -5031,6 +5091,33 @@ function update(){
           state.vx -= _c3 * _vr3;
           state.vy -= _s3 * _vr3;
         }
+      }
+    }
+
+    // Bend collision — line-segment distance check for curved arc ends
+    for(let hi = 0; hi < INTERZONE_BENDS.length; hi++){
+      const _hk = INTERZONE_BENDS[hi];
+      const _hDx = _hk.x2 - _hk.x1, _hDy = _hk.y2 - _hk.y1;
+      const _hLen2 = _hDx * _hDx + _hDy * _hDy;
+      if(_hLen2 < 1) continue;
+      // Project player onto line segment [x1,y1]->[x2,y2]
+      let _ht = ((state.x - _hk.x1) * _hDx + (state.y - _hk.y1) * _hDy) / _hLen2;
+      _ht = Math.max(0, Math.min(1, _ht));
+      const _hPx = _hk.x1 + _ht * _hDx, _hPy = _hk.y1 + _ht * _hDy;
+      const _hpDx = state.x - _hPx, _hpDy = state.y - _hPy;
+      const _hpDist = Math.sqrt(_hpDx * _hpDx + _hpDy * _hpDy);
+      if(_hpDist < _izMargin && _hpDist > 0.1){
+        // Push player away from line segment
+        const _hnx = _hpDx / _hpDist, _hny = _hpDy / _hpDist;
+        state.x = _hPx + _hnx * _izPush;
+        state.y = _hPy + _hny * _izPush;
+        // Kill velocity toward the hook
+        const _hvn = state.vx * _hnx + state.vy * _hny;
+        if(_hvn < 0){
+          state.vx -= _hnx * _hvn * 1.2;
+          state.vy -= _hny * _hvn * 1.2;
+        }
+        break;
       }
     }
 
@@ -5054,33 +5141,46 @@ function update(){
       } else break;
     }
 
-    // Boost pads — permanent fixtures on inner ring walls
-    // Trigger by angular + radial proximity (player can't reach exact pad position due to wall collision)
+    // Boost pads — hit zone matches visual size (~36px radius)
     if(state.boostPads){
-      const _pDist = Math.sqrt(state.x * state.x + state.y * state.y);
-      const _pAng = Math.atan2(state.y, state.x);
       for(let _bpi = 0; _bpi < state.boostPads.length; _bpi++){
         const _bp = state.boostPads[_bpi];
         _bp.phase += 0.05;
         if(_bp._cooldown > 0){ _bp._cooldown--; continue; }
-        // Check radial: player within 60px of this ring
-        if(Math.abs(_pDist - _bp.ringR) > 60) continue;
-        // Check angular: player within ~0.04 rad (~2.3°) of pad angle
-        let _angDiff = _pAng - _bp.posAng;
-        while(_angDiff > Math.PI) _angDiff -= Math.PI * 2;
-        while(_angDiff < -Math.PI) _angDiff += Math.PI * 2;
-        if(Math.abs(_angDiff) < 0.04){
-          _bp._cooldown = 180; // 3s cooldown
-          // Fire 2X boosters for 2 seconds in pad's tangent direction, no fuel cost
-          state._boostPadEffect = { timer: 120, ang: _bp.tangentAng };
-          state.hyperspace = true;
-          addScore(100);
-          if(audioCtx && !state.sfxMuted){
-            const _now = audioCtx.currentTime;
-            playBeep(550, _now, 0.08, 'square', 0.08);
-            playBeep(880, _now+0.06, 0.1, 'square', 0.08);
-          }
+        const _dx = state.x - _bp.wx, _dy = state.y - _bp.wy;
+        if(_dx * _dx + _dy * _dy < 30 * 30){
+          _bp._cooldown = 180;
+          // Hold velocity at 36 for 2 seconds
+          state._boostPadEffect = 120;
         }
+      }
+    }
+
+    // Boost pad effect: hold speed at 36 (Boost X2), cap radial component to 12 so walls still block
+    if(state._boostPadEffect > 0){
+      state._boostPadEffect--;
+      const _bpDist = Math.sqrt(state.x * state.x + state.y * state.y);
+      if(_bpDist > 1){
+        // Decompose velocity into radial and tangential
+        const _rx = state.x / _bpDist, _ry = state.y / _bpDist; // radial unit vector
+        const _vRad = state.vx * _rx + state.vy * _ry; // radial speed
+        let _vTx = state.vx - _rx * _vRad; // tangential velocity
+        let _vTy = state.vy - _ry * _vRad;
+        // Cap radial speed to 12 (within wall detection zone)
+        const _cappedRad = Math.max(-12, Math.min(12, _vRad));
+        // Set tangential speed to fill the rest up to 36
+        const _tSpd = Math.sqrt(_vTx * _vTx + _vTy * _vTy);
+        const _targetT = Math.sqrt(36 * 36 - _cappedRad * _cappedRad);
+        if(_tSpd > 0.1){
+          _vTx = (_vTx / _tSpd) * _targetT;
+          _vTy = (_vTy / _tSpd) * _targetT;
+        } else {
+          // No tangential direction — use perpendicular to radial
+          _vTx = -_ry * _targetT;
+          _vTy = _rx * _targetT;
+        }
+        state.vx = _rx * _cappedRad + _vTx;
+        state.vy = _ry * _cappedRad + _vTy;
       }
     }
   }
@@ -5222,7 +5322,7 @@ function update(){
         if(Math.abs(_rDist - _ringR) < INTERZONE_WALL_T/2 + r.size*0.5){
           // Check if rock is in a wall (not a gap)
           let _rAng = Math.atan2(r.wy, r.wx);
-          const _walls2 = INTERZONE_ARCS[_ri2];
+          const _walls2 = INTERZONE_ARCS_COLL[_ri2];
           let _inWall = false;
           for(let _w2 = 0; _w2 < _walls2.length; _w2++){
             let _a2 = _rAng - _walls2[_w2].start;
@@ -5267,8 +5367,10 @@ function update(){
         const now_frame = state.frameCount||0;
         if(r.hitCooldown && now_frame < r.hitCooldown){ continue; }
         r.hitCooldown = now_frame + 20;
+        // Boost pad effect: smash through rocks instantly
+        if(state._boostPadEffect > 0){ r.hits = (r.hitsNeeded||4); }
         // Peanut mode: instant destruction on first hit
-        if(state.cheat==='peanut'){ r.hits = (r.hitsNeeded||4); }
+        else if(state.cheat==='peanut'){ r.hits = (r.hitsNeeded||4); }
         else { r.hits=(r.hits||0)+1; }
         const hn = r.hitsNeeded || 4;
         if(r.hits < hn){
@@ -5291,7 +5393,9 @@ function update(){
             setTimeout(triggerSecretLevelUnlock, 500);
           }
         }
-        if(state.cheat==='peanut'){
+        if(state._boostPadEffect > 0){
+          // Smash through — no bounce, keep velocity
+        } else if(state.cheat==='peanut'){
           const impactSpd=Math.sqrt(state.vx**2+state.vy**2)+3;
           r.vx=(r.vx||0)+state.vx*1.4 + nx*impactSpd*2.5;
           r.vy=(r.vy||0)+state.vy*1.4 + ny*impactSpd*2.5;
@@ -7478,13 +7582,40 @@ function drawGame(){
     ctx.lineCap = 'butt';
     for(let ir = 0; ir < INTERZONE_RINGS.length; ir++){
       const _izR = INTERZONE_RINGS[ir];
-      if(Math.abs(_izPlayerDist - _izR) > canvas.width) continue;
+      if(Math.abs(_izPlayerDist - _izR) > canvas.width + INTERZONE_BEND_DEPTH_OUT) continue;
       const _walls = INTERZONE_ARCS[ir];
+      ctx.strokeStyle = 'rgb(140,160,170)';
+      ctx.lineWidth = INTERZONE_WALL_T;
+      ctx.lineCap = 'round';
       for(let w = 0; w < _walls.length; w++){
+        const _s = _walls[w].start, _e = _walls[w].end;
+        const _bendSpan = INTERZONE_BEND_LEN / _izR;
+        // Start bend: curves OUTWARD, tip at gap edge
+        const _sJoinAng = _s + _bendSpan;
+        const _sTipR = _izR + INTERZONE_BEND_DEPTH_OUT;
+        const _sTipX = _sTipR * Math.cos(_s) + _izCx;
+        const _sTipY = _sTipR * Math.sin(_s) + _izCy;
+        const _sJoinX = _izR * Math.cos(_sJoinAng) + _izCx;
+        const _sJoinY = _izR * Math.sin(_sJoinAng) + _izCy;
+        // CP along counter-clockwise tangent at junction (back toward tip)
+        const _sCpX = _sJoinX + Math.sin(_sJoinAng) * 224;
+        const _sCpY = _sJoinY - Math.cos(_sJoinAng) * 224;
+        // End bend: curves INWARD, tip at gap edge
+        const _eJoinAng = _e - _bendSpan;
+        const _eTipR = _izR - INTERZONE_BEND_DEPTH_IN;
+        const _eTipX = _eTipR * Math.cos(_e) + _izCx;
+        const _eTipY = _eTipR * Math.sin(_e) + _izCy;
+        const _eJoinX = _izR * Math.cos(_eJoinAng) + _izCx;
+        const _eJoinY = _izR * Math.sin(_eJoinAng) + _izCy;
+        // CP along clockwise tangent at junction (toward tip)
+        const _eCpX = _eJoinX - Math.sin(_eJoinAng) * 224;
+        const _eCpY = _eJoinY + Math.cos(_eJoinAng) * 224;
+        // ONE continuous path: start_tip → bezier → shortened arc → bezier → end_tip
         ctx.beginPath();
-        ctx.arc(_izCx, _izCy, _izR, _walls[w].start, _walls[w].end);
-        ctx.strokeStyle = 'rgb(140,160,170)';
-        ctx.lineWidth = INTERZONE_WALL_T;
+        ctx.moveTo(_sTipX, _sTipY);
+        ctx.quadraticCurveTo(_sCpX, _sCpY, _sJoinX, _sJoinY);
+        ctx.arc(_izCx, _izCy, _izR, _sJoinAng, _eJoinAng);
+        ctx.quadraticCurveTo(_eCpX, _eCpY, _eTipX, _eTipY);
         ctx.stroke();
       }
     }
@@ -7496,29 +7627,28 @@ function drawGame(){
         const bp = state.boostPads[_bpi];
         const sx = bp.wx - state.x + cx;
         const sy = bp.wy - state.y + cy;
-        if(sx < -60 || sx > canvas.width+60 || sy < -60 || sy > canvas.height+60) continue;
+        if(sx < -80 || sx > canvas.width+80 || sy < -80 || sy > canvas.height+80) continue;
         ctx.save();
         ctx.translate(sx, sy);
-        ctx.rotate(bp.tangentAng);
-        const onCooldown = bp._cooldown > 0;
-        const pulse = onCooldown ? 0.2 : (0.6 + 0.4 * Math.sin(bp.phase * 3));
+        ctx.rotate(bp.visualAng);
+        const pulse = 0.6 + 0.4 * Math.sin(bp.phase * 3);
         ctx.globalAlpha = pulse;
-        ctx.strokeStyle = onCooldown ? '#446655' : '#00ff88';
-        ctx.fillStyle = onCooldown ? 'rgba(0,80,50,0.15)' : 'rgba(0,255,136,0.25)';
+        ctx.strokeStyle = '#00ff88';
+        ctx.fillStyle = 'rgba(0,255,136,0.25)';
         ctx.shadowColor = '#00ff88';
-        ctx.shadowBlur = onCooldown ? 0 : 12 * SB;
-        ctx.lineWidth = 2.5;
+        ctx.shadowBlur = 12 * SB;
+        ctx.lineWidth = 3.5;
         ctx.lineJoin = 'round';
         // Double chevron >>
         ctx.beginPath();
-        ctx.moveTo(-10, -8);
+        ctx.moveTo(-20, -16);
         ctx.lineTo(0, 0);
-        ctx.lineTo(-10, 8);
+        ctx.lineTo(-20, 16);
         ctx.stroke(); ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-2, -8);
-        ctx.lineTo(8, 0);
-        ctx.lineTo(-2, 8);
+        ctx.moveTo(-4, -16);
+        ctx.lineTo(16, 0);
+        ctx.lineTo(-4, 16);
         ctx.stroke(); ctx.fill();
         ctx.shadowBlur = 0;
         ctx.restore();
