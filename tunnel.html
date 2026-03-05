@@ -355,22 +355,24 @@
         #tr-carousel-overlay {
             display:none; position:fixed; inset:0; z-index:550;
             background:rgba(0,0,0,0.96); flex-direction:column;
+            align-items:center; justify-content:center;
             touch-action:auto; pointer-events:auto;
         }
         #tr-carousel-header {
             font-family:'Press Start 2P',monospace; font-size:clamp(10px,2.5vw,14px);
             letter-spacing:3px; text-align:center; padding:28px 16px 12px;
-            text-shadow:0 0 10px currentColor;
+            text-shadow:0 0 10px currentColor; flex-shrink:0;
         }
         #tr-carousel-divider {
-            width:90%; max-width:600px; height:1px; margin:0 auto 16px;
+            width:90%; max-width:600px; height:1px; margin:0 auto 16px; flex-shrink:0;
             background:linear-gradient(90deg, transparent, #555, transparent);
         }
         #tr-carousel-strip {
-            flex:1; overflow-x:auto; overflow-y:hidden;
+            overflow-x:auto; overflow-y:hidden;
             -webkit-overflow-scrolling:touch; touch-action:pan-x;
             scroll-snap-type:x mandatory; white-space:nowrap;
-            padding:8px 20px 16px; display:flex; gap:14px; align-items:flex-start;
+            padding:24px 0 24px; display:flex; gap:14px; align-items:center;
+            flex-shrink:0;
         }
         #tr-carousel-strip::-webkit-scrollbar { height:4px; background:#000; }
         #tr-carousel-strip::-webkit-scrollbar-thumb { background:#333; }
@@ -378,6 +380,8 @@
             display:inline-flex; flex-direction:column; align-items:center;
             scroll-snap-align:center; flex:0 0 160px; cursor:pointer;
             -webkit-tap-highlight-color:transparent;
+            transition:transform 0.18s ease-out, opacity 0.18s ease-out;
+            transform-origin:center center; will-change:transform, opacity;
         }
         .tr-carousel-thumb {
             width:160px; aspect-ratio:16/9; object-fit:cover;
@@ -393,7 +397,7 @@
         }
         #tr-carousel-continue {
             flex-shrink:0; display:block; width:calc(100% - 40px); max-width:400px;
-            margin:0 auto 28px; font-family:'Press Start 2P',monospace; font-size:10px;
+            margin:16px auto 28px; font-family:'Press Start 2P',monospace; font-size:10px;
             letter-spacing:2px; padding:14px 20px; cursor:pointer; text-align:center;
             background:rgba(255,224,0,0.06); border:1px solid #ffe000; color:#ffe000;
             -webkit-tap-highlight-color:transparent; touch-action:manipulation;
@@ -421,6 +425,18 @@
             cursor:pointer; padding:8px; -webkit-tap-highlight-color:transparent; opacity:0.7;
         }
         #tr-video-player-close:hover { opacity:1; }
+
+        /* ── Skip Tutorial Button ── */
+        #skip-tutorial-btn {
+            display:none; position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
+            z-index:465; font-family:'Press Start 2P',monospace; font-size:8px;
+            letter-spacing:2px; padding:10px 20px; cursor:pointer; text-align:center;
+            background:rgba(0,0,0,0.7); border:1px solid rgba(255,255,255,0.25); color:rgba(255,255,255,0.4);
+            -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+            pointer-events:all; transition:color 0.2s, border-color 0.2s;
+        }
+        #skip-tutorial-btn:hover { color:#fff; border-color:#fff; }
+        #skip-tutorial-btn:active { color:#ffe000; border-color:#ffe000; }
 
         /* ── Lightbox ── */
         #tr-lightbox {
@@ -585,6 +601,9 @@
         <button class="menu-btn btn-danger" id="sc-cancel" style="width:auto;padding:10px 18px;font-size:8px;">[ CANCEL ]</button>
     </div>
 </div>
+
+<!-- Skip Tutorial Button -->
+<button id="skip-tutorial-btn">[ SKIP TRAINING ]</button>
 
 <!-- Tutorial HUD — no box, just floating text + triangle pointer -->
 <div id="tut-hud" style="display:none;position:fixed;inset:0;z-index:460;pointer-events:none;align-items:center;justify-content:center;">
@@ -991,7 +1010,36 @@ window.onload = function() {
             strip.appendChild(card);
         });
 
-        document.getElementById('tr-carousel-overlay').style.display = 'flex';
+        var overlay = document.getElementById('tr-carousel-overlay');
+        overlay.style.display = 'flex';
+
+        // Set horizontal padding so first/last cards can reach center
+        requestAnimationFrame(function() {
+            var pad = Math.floor(strip.getBoundingClientRect().width / 2 - 80);
+            strip.style.paddingLeft = pad + 'px';
+            strip.style.paddingRight = pad + 'px';
+        });
+
+        // Fish-eye scale effect: center card = full size, sides shrink
+        function updateCarouselScale() {
+            var stripRect = strip.getBoundingClientRect();
+            var centerX = stripRect.left + stripRect.width / 2;
+            var cards = strip.querySelectorAll('.tr-carousel-card');
+            for (var i = 0; i < cards.length; i++) {
+                var cardRect = cards[i].getBoundingClientRect();
+                var cardCenterX = cardRect.left + cardRect.width / 2;
+                var dist = Math.abs(cardCenterX - centerX);
+                var maxDist = stripRect.width / 2;
+                var t = Math.min(dist / maxDist, 1);
+                var scale = 1 - t * 0.4; // center=1.0, edge=0.6
+                var opacity = 1 - t * 0.5; // center=1.0, edge=0.5
+                cards[i].style.transform = 'scale(' + scale.toFixed(3) + ')';
+                cards[i].style.opacity = opacity.toFixed(3);
+            }
+        }
+        strip.addEventListener('scroll', updateCarouselScale);
+        // Initial scale after layout
+        requestAnimationFrame(updateCarouselScale);
     }
 
     function openCarouselVideo(item) {
@@ -1767,6 +1815,7 @@ window.onload = function() {
         TUT.done   = true;
         tutClear();
         tutHide();
+        document.getElementById('skip-tutorial-btn').style.display = 'none';
 
         // Spawn a finish ring for the tutorial too
         if (!finishRing) {
@@ -1787,6 +1836,21 @@ window.onload = function() {
         document.getElementById('mission-banner').style.opacity = '0';
         tutPtrInit();
         tutMsg('TRAINING MODE\nTouch above bottom quarter to boost');
+        document.getElementById('skip-tutorial-btn').style.display = 'block';
+    }
+
+    function skipTutorial() {
+        TUT.active = false; TUT.done = false; TUT.skipNext = true;
+        TUT.goodTimer = 0; TUT._nextAfterGood = null;
+        tutHide();
+        tutClear();
+        document.getElementById('skip-tutorial-btn').style.display = 'none';
+        speed = baseSpeed = 150;
+        startCountdown(function(){
+            gameState = 'playing';
+            spawnIntroWave();
+            showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
+        });
     }
 
     // ── Per-frame tick ─────────────────────────────────────────────────
@@ -1952,6 +2016,7 @@ window.onload = function() {
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-lightbox').style.display = 'none';
         document.getElementById('tut-hud').style.display = 'none';
+        document.getElementById('skip-tutorial-btn').style.display = 'none';
         document.getElementById('hamburger-btn').style.display = 'flex';
 
         gameState = 'playing';
@@ -2153,6 +2218,7 @@ window.onload = function() {
     };
 
     bindTap('play-btn', () => initializeFlight(true));
+    bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('next-level-btn', function() {
         if (trContentPopupsOn && !devOpen && CAROUSEL_SECTOR_MAP[currentSector]) {
             document.getElementById('victory-screen').style.display = 'none';
