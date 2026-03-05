@@ -370,6 +370,16 @@
 <div id="game-over-screen" class="overlay-screen">
     <h1 class="screen-title stagger-in">HULL BREACH</h1>
     <h2 class="screen-sub c-pink stagger-in">SECTOR FAILED</h2>
+    <div id="go-score" class="stagger-in" style="font-family:'Press Start 2P',monospace;font-size:12px;color:#00ffcc;margin-bottom:12px;">SCORE: 000000</div>
+    <div id="initials-entry" class="stagger-in" style="margin-bottom:16px;display:none;">
+      <div style="font-size:7px;color:#ffe000;letter-spacing:2px;margin-bottom:8px;">ENTER INITIALS</div>
+      <div style="display:flex;gap:8px;justify-content:center;">
+        <input id="ini-1" maxlength="1" style="width:32px;height:36px;text-align:center;font-family:'Press Start 2P',monospace;font-size:16px;background:#111;color:#00ffcc;border:1px solid #00ffcc;text-transform:uppercase;">
+        <input id="ini-2" maxlength="1" style="width:32px;height:36px;text-align:center;font-family:'Press Start 2P',monospace;font-size:16px;background:#111;color:#00ffcc;border:1px solid #00ffcc;text-transform:uppercase;">
+        <input id="ini-3" maxlength="1" style="width:32px;height:36px;text-align:center;font-family:'Press Start 2P',monospace;font-size:16px;background:#111;color:#00ffcc;border:1px solid #00ffcc;text-transform:uppercase;">
+      </div>
+      <button class="menu-btn btn-gold" id="submit-score-btn" style="margin-top:10px;padding:8px 20px;font-size:8px;">[ SUBMIT SCORE ]</button>
+    </div>
     <button class="menu-btn stagger-in" id="retry-sector-btn">[ RETRY SECTOR ]</button>
     <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
 </div>
@@ -953,9 +963,12 @@ window.onload = function() {
         AudioEngine.playSFX('hit');
         flash('#ffffff');
         if (score > 0) saveHighScore(score);
-        
+
         shipGroup.visible = false;
-        
+
+        document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
+        document.getElementById('initials-entry').style.display = (score > 0) ? 'block' : 'none';
+        ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
         document.getElementById('game-over-screen').style.display = 'flex';
         document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
     }
@@ -1527,6 +1540,31 @@ window.onload = function() {
         arr.sort((a,b)=>b.score-a.score);
         try { localStorage.setItem('cyberTubeScores', JSON.stringify(arr.slice(0,10))); } catch(e){}
     }
+
+    // ── Global leaderboard via dreamlo.com ──────────────
+    // Get your own free board at dreamlo.com and replace these keys
+    const DREAMLO_PUBLIC  = 'YOUR_PUBLIC_CODE';
+    const DREAMLO_PRIVATE = 'YOUR_PRIVATE_CODE';
+
+    function submitGlobalScore(name, score) {
+        if (DREAMLO_PRIVATE === 'YOUR_PRIVATE_CODE') return;
+        var url = 'https://dreamlo.com/lb/' + DREAMLO_PRIVATE + '/add/' + encodeURIComponent(name) + '/' + score;
+        fetch(url).catch(function(){});
+    }
+
+    function loadGlobalScores(callback) {
+        if (DREAMLO_PUBLIC === 'YOUR_PUBLIC_CODE') { callback([]); return; }
+        fetch('https://dreamlo.com/lb/' + DREAMLO_PUBLIC + '/json')
+            .then(function(r){ return r.json(); })
+            .then(function(data){
+                var entries = (data && data.dreamlo && data.dreamlo.leaderboard && data.dreamlo.leaderboard.entry) || [];
+                var arr = Array.isArray(entries) ? entries : [entries];
+                callback(arr.map(function(e){ return {name:String(e.playerName), score:parseInt(e.score)||0, global:true}; }));
+            })
+            .catch(function(){ callback([]); });
+    }
+
+    var _globalScoresCache = [];
     function renderLeaderboard(newScore) {
         const rows = document.getElementById('lb-rows');
         if (!rows) return;
@@ -1535,7 +1573,7 @@ window.onload = function() {
             {name:'NVG',score:11800},{name:'ZPX',score:9600},{name:'KLW',score:7300}
         ];
         let saved = loadHighScores().map(function(e){ return {name:'YOU',score:e.score,isYou:true}; });
-        let entries = saved.concat(ghosts);
+        let entries = saved.concat(ghosts).concat(_globalScoresCache);
         entries.sort(function(a,b){ return b.score-a.score; });
         if (newScore > 0) {
             var marked = false;
@@ -1544,11 +1582,11 @@ window.onload = function() {
                 return e;
             });
         }
-        entries = entries.slice(0, 6);
+        entries = entries.slice(0, 8);
         rows.innerHTML = entries.map(function(e, i){
             var dots = '.'.repeat(Math.max(2, 10-e.name.length));
             var sc   = ('000000'+e.score).slice(-6);
-            var tag  = e.isNew ? ' \u25C4' : '';
+            var tag  = e.isNew ? ' ◄' : (e.global ? ' ●' : '');
             var cls  = e.isNew ? 'lb-row lb-new' : 'lb-row';
             return '<div class="'+cls+'"><span>'+e.name+dots+sc+tag+'</span></div>';
         }).join('');
@@ -1557,6 +1595,7 @@ window.onload = function() {
     // ── INIT TITLE SCREEN ─────────────────────────────────────────────────────
     function initTitleScreen() {
         renderLeaderboard(0);
+        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(0); });
         initTitleStars();
         initTitleShip();
         function anyKeyStart(e) {
@@ -1588,6 +1627,28 @@ window.onload = function() {
         triggerGameOver();
     });
     bindTap('mute-btn', AudioEngine.toggleMute);
+
+    // Initials auto-advance
+    ['ini-1','ini-2','ini-3'].forEach(function(id, i, ids){
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function(){
+            el.value = el.value.toUpperCase().replace(/[^A-Z]/g,'');
+            if (el.value.length === 1 && i < 2) document.getElementById(ids[i+1]).focus();
+        });
+    });
+
+    bindTap('submit-score-btn', function(){
+        var i1=document.getElementById('ini-1').value;
+        var i2=document.getElementById('ini-2').value;
+        var i3=document.getElementById('ini-3').value;
+        var initials = (i1+i2+i3).toUpperCase();
+        if (initials.length < 3) initials = (initials + 'AAA').slice(0,3);
+        submitGlobalScore(initials, score);
+        document.getElementById('initials-entry').style.display = 'none';
+        renderLeaderboard(score);
+        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score); });
+    });
 
     // --- Main Render Loop ---
     const clock = new THREE.Clock();
