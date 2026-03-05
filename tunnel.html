@@ -947,11 +947,16 @@ window.onload = function() {
     var trLbTouchStartX = 0;
     var trCarouselSector = 0;
 
+    var _carouselScrollCleanup = null;
+
     function showCarousel(sector) {
         var zone = CAROUSEL_SECTOR_MAP[sector];
         if (!zone) return;
         var items = CONTENT_DATA[zone];
         if (!items || items.length === 0) { closeCarousel(); return; }
+
+        // Cleanup previous listeners
+        if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
 
         trCarouselSector = sector;
         var zoneColor = PORTFOLIO_ZONE_COLORS[zone] || '#00ffcc';
@@ -966,31 +971,36 @@ window.onload = function() {
         var contBtn = document.getElementById('tr-carousel-continue');
         contBtn.innerText = currentSector >= 10 ? '[ RETURN TO TITLE ]' : '[ PLAY NEXT SECTOR > ]';
 
-        // Build cards
+        // Build cards — triple the items for infinite loop
         var strip = document.getElementById('tr-carousel-strip');
         strip.innerHTML = '';
-        strip.scrollLeft = 0;
+        strip.style.paddingLeft = '0';
+        strip.style.paddingRight = '0';
 
         var isGalleryZone = (zone === 'PHOTO' || zone === 'DESIGN');
         var carouselScrollStartX = 0;
-        strip.addEventListener('touchstart', function(e) {
-            carouselScrollStartX = e.touches[0].clientX;
-        }, {passive:true});
+        var cardWidth = 180; // 160px card + 20px gap
+        var totalItems = items.length;
+        var setsToShow = 3; // before + original + after
 
-        items.forEach(function(item, idx) {
+        function onStripTouchStart(e) {
+            carouselScrollStartX = e.touches[0].clientX;
+        }
+        strip.addEventListener('touchstart', onStripTouchStart, {passive:true});
+
+        function buildCard(item) {
             var card = document.createElement('div');
             card.className = 'tr-carousel-card';
 
             var thumb = document.createElement('img');
             thumb.className = 'tr-carousel-thumb';
             thumb.alt = item.title || '';
-            thumb.loading = (idx < 6) ? 'eager' : 'lazy';
+            thumb.loading = 'lazy';
 
-            // Determine thumbnail
             if (item.youtubeId) {
                 thumb.src = 'https://img.youtube.com/vi/' + item.youtubeId + '/mqdefault.jpg';
             } else if (item.vimeoId) {
-                thumb.src = ''; // placeholder, fetch async
+                thumb.src = '';
                 (function(img, vid) {
                     fetch('https://vimeo.com/api/v2/video/' + vid + '.json')
                         .then(function(r) { return r.json(); })
@@ -1012,7 +1022,6 @@ window.onload = function() {
             card.appendChild(thumb);
             card.appendChild(name);
 
-            // Tap handler — touchend with scroll guard + click for desktop
             (function(it) {
                 function handleCardTap() {
                     if (it.youtubeId || it.vimeoId) {
@@ -1038,42 +1047,75 @@ window.onload = function() {
                 });
             })(item);
 
-            strip.appendChild(card);
-        });
+            return card;
+        }
+
+        // Build 3 copies: [clone set] [original set] [clone set]
+        for (var s = 0; s < setsToShow; s++) {
+            for (var i = 0; i < totalItems; i++) {
+                strip.appendChild(buildCard(items[i]));
+            }
+        }
 
         var overlay = document.getElementById('tr-carousel-overlay');
         overlay.style.display = 'flex';
         document.body.style.touchAction = 'auto';
 
-        // Set horizontal padding so first/last cards can reach center
+        // Position at the middle set
         requestAnimationFrame(function() {
-            var pad = Math.floor(strip.getBoundingClientRect().width / 2 - 80);
-            strip.style.paddingLeft = pad + 'px';
-            strip.style.paddingRight = pad + 'px';
+            var oneSetWidth = totalItems * cardWidth;
+            strip.scrollLeft = oneSetWidth;
+            updateCarouselScale();
         });
 
-        // Fish-eye scale effect: center card = full size, sides shrink
+        // Infinite loop: when scrolled into clone regions, jump back to middle
+        var jumping = false;
+        function onStripScroll() {
+            if (jumping) return;
+            var oneSetWidth = totalItems * cardWidth;
+            var sl = strip.scrollLeft;
+            if (sl < oneSetWidth * 0.25) {
+                jumping = true;
+                strip.style.scrollSnapType = 'none';
+                strip.scrollLeft = sl + oneSetWidth;
+                strip.style.scrollSnapType = 'x mandatory';
+                jumping = false;
+            } else if (sl > oneSetWidth * 1.75) {
+                jumping = true;
+                strip.style.scrollSnapType = 'none';
+                strip.scrollLeft = sl - oneSetWidth;
+                strip.style.scrollSnapType = 'x mandatory';
+                jumping = false;
+            }
+            updateCarouselScale();
+        }
+
+        // Fish-eye scale effect
         function updateCarouselScale() {
             var stripRect = strip.getBoundingClientRect();
             var centerX = stripRect.left + stripRect.width / 2;
             var cards = strip.querySelectorAll('.tr-carousel-card');
-            for (var i = 0; i < cards.length; i++) {
-                var cardRect = cards[i].getBoundingClientRect();
+            for (var ci = 0; ci < cards.length; ci++) {
+                var cardRect = cards[ci].getBoundingClientRect();
                 var cardCenterX = cardRect.left + cardRect.width / 2;
                 var dist = Math.abs(cardCenterX - centerX);
                 var maxDist = stripRect.width / 2;
                 var t = Math.min(dist / maxDist, 1);
-                var scale = 2.2 - t * 1.4; // center=2.2 (fills screen), edge=0.8
-                var opacity = 1 - t * 0.4; // center=1.0, edge=0.6
-                var zIdx = Math.round((1 - t) * 100); // center=100, edges=0
-                cards[i].style.transform = 'scale(' + scale.toFixed(3) + ')';
-                cards[i].style.opacity = opacity.toFixed(3);
-                cards[i].style.zIndex = zIdx;
+                var scale = 2.2 - t * 1.4;
+                var opacity = 1 - t * 0.4;
+                var zIdx = Math.round((1 - t) * 100);
+                cards[ci].style.transform = 'scale(' + scale.toFixed(3) + ')';
+                cards[ci].style.opacity = opacity.toFixed(3);
+                cards[ci].style.zIndex = zIdx;
             }
         }
-        strip.addEventListener('scroll', updateCarouselScale);
-        // Initial scale after layout
-        requestAnimationFrame(updateCarouselScale);
+
+        strip.addEventListener('scroll', onStripScroll);
+
+        _carouselScrollCleanup = function() {
+            strip.removeEventListener('scroll', onStripScroll);
+            strip.removeEventListener('touchstart', onStripTouchStart);
+        };
     }
 
     function openCarouselVideo(item) {
