@@ -1264,7 +1264,8 @@ window.onload = function() {
         };
     }
     function buildZonesFromConfig(cfgArray) {
-        return cfgArray.map(function(c, i) { return buildZoneEntry(c, i); });
+        var gameplay = cfgArray.filter(function(c) { return !c.isTraining; });
+        return gameplay.map(function(c, i) { return buildZoneEntry(c, i); });
     }
     // Load from localStorage or use defaults
     var ZONES;
@@ -2096,7 +2097,13 @@ window.onload = function() {
     // --- Game Logic ---
     var _spawnCfgCache = null, _spawnCfgLoaded = false;
     function _getSpawnCfg(sector) {
-        if (!_spawnCfgLoaded) { try { _spawnCfgCache = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig')); } catch(e) {} _spawnCfgLoaded = true; }
+        if (!_spawnCfgLoaded) {
+            try {
+                var raw = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig'));
+                if (raw) _spawnCfgCache = raw.filter(function(c) { return !c.isTraining; });
+            } catch(e) {}
+            _spawnCfgLoaded = true;
+        }
         return (_spawnCfgCache && _spawnCfgCache[sector - 1]) || null;
     }
     function spawnItem(zPos) {
@@ -2206,7 +2213,7 @@ window.onload = function() {
         else { bar.style.background = '#ff0055'; bar.style.boxShadow = '0 0 10px #ff0055'; }
     }
 
-    const ZONE_OBJECTIVES = [
+    const ZONE_OBJECTIVES_DEFAULT = [
         'FOLLOW THE SPIRAL\nCOLLECT ALL RINGS',
         'HAZARDS ONLINE\nDODGE AND SURVIVE',
         'RINGS AND MINES\nBUILD YOUR COMBO',
@@ -2216,8 +2223,25 @@ window.onload = function() {
         'BLITZ MODE\nKNOTS AND BLOCKS',
         'MAXIMUM DENSITY\nFULL COMMITMENT',
         'INFERNO\nALMOST NOTHING SURVIVES',
-        'APEX\nFINAL RUN — FULL SEND',
+        'APEX\nFINAL RUN \u2014 FULL SEND',
     ];
+
+    var _objectivesFromConfig = null;
+    function _getObjective(zoneIdx) {
+        if (!_objectivesFromConfig) {
+            _objectivesFromConfig = [];
+            try {
+                var cfgArr = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig'));
+                if (cfgArr) {
+                    cfgArr.filter(function(c) { return !c.isTraining; }).forEach(function(c) {
+                        _objectivesFromConfig.push(c.objective || '');
+                    });
+                }
+            } catch(e) {}
+        }
+        if (_objectivesFromConfig[zoneIdx]) return _objectivesFromConfig[zoneIdx];
+        return ZONE_OBJECTIVES_DEFAULT[zoneIdx] || '';
+    }
 
     function showMissionBanner(zoneIdx) {
         const zone = ZONES[zoneIdx];
@@ -2227,7 +2251,7 @@ window.onload = function() {
         label.innerText = zone.label;
         label.style.color = zone.color;
         label.style.textShadow = '0 0 20px ' + zone.color;
-        obj.innerHTML = ZONE_OBJECTIVES[zoneIdx].replace('\n','<br>');
+        obj.innerHTML = _getObjective(zoneIdx).replace('\n','<br>');
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 3200);
     }
