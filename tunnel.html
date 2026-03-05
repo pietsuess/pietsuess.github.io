@@ -451,6 +451,48 @@
         }
         #tr-video-player-close:hover { opacity:1; }
 
+        /* ── Finale Screen ── */
+        #finale-screen {
+            display:none; position:fixed; inset:0; z-index:570;
+            flex-direction:column; align-items:center; justify-content:center;
+            pointer-events:auto; background:transparent;
+        }
+        #finale-canvas {
+            position:absolute; inset:0; width:100%; height:100%; z-index:0;
+        }
+        #finale-content {
+            position:relative; z-index:1; text-align:center;
+            display:flex; flex-direction:column; align-items:center; gap:10px;
+        }
+        #finale-title {
+            font-family:'Press Start 2P',monospace; font-size:clamp(16px,4vw,28px);
+            color:#ffe000; text-shadow:0 0 20px rgba(255,224,0,0.8), 0 0 60px rgba(255,224,0,0.3);
+            letter-spacing:4px; margin-bottom:6px;
+        }
+        #finale-sub {
+            font-family:'Press Start 2P',monospace; font-size:clamp(9px,2vw,12px);
+            color:#00ffcc; text-shadow:0 0 10px rgba(0,255,204,0.6);
+            letter-spacing:3px; margin-bottom:12px;
+        }
+        #finale-score {
+            font-family:'Press Start 2P',monospace; font-size:clamp(12px,3vw,18px);
+            color:#fff; letter-spacing:2px; margin-bottom:16px;
+        }
+        #finale-initials {
+            margin-bottom:16px;
+        }
+        #finale-initials .fi-label {
+            font-family:'Press Start 2P',monospace; font-size:7px;
+            color:#ffe000; letter-spacing:2px; margin-bottom:8px;
+        }
+        #finale-initials input {
+            width:36px; height:40px; text-align:center;
+            font-family:'Press Start 2P',monospace; font-size:18px;
+            background:rgba(0,0,0,0.7); color:#00ffcc;
+            border:2px solid #00ffcc; text-transform:uppercase;
+            margin:0 4px;
+        }
+
         /* ── Skip Tutorial Button ── */
         #skip-tutorial-btn {
             display:none; position:fixed; bottom:28px; left:50%; transform:translateX(-50%);
@@ -576,6 +618,26 @@
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
     <div id="victory-time" class="stagger-in" style="font-family:'Press Start 2P',monospace;font-size:10px;color:#00ff88;text-shadow:0 0 8px rgba(0,255,136,0.7);margin-bottom:18px;letter-spacing:2px;">TIME: 0:00.0</div>
     <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ NEXT SECTOR &gt; ]</button>
+</div>
+
+<!-- Finale Screen -->
+<div id="finale-screen">
+    <canvas id="finale-canvas"></canvas>
+    <div id="finale-content">
+        <div id="finale-title">MISSION COMPLETE</div>
+        <div id="finale-sub">ALL SECTORS CLEARED</div>
+        <div id="finale-score">FINAL SCORE: 000000</div>
+        <div id="finale-initials">
+            <div class="fi-label">ENTER INITIALS</div>
+            <div style="display:flex;gap:8px;justify-content:center;">
+                <input id="fi-1" maxlength="1">
+                <input id="fi-2" maxlength="1">
+                <input id="fi-3" maxlength="1">
+            </div>
+            <button class="menu-btn btn-gold" id="fi-submit" style="margin-top:12px;padding:10px 20px;font-size:9px;">[ SUBMIT SCORE ]</button>
+        </div>
+        <button class="menu-btn" id="fi-done" style="margin-top:8px;">[ RETURN TO TITLE ]</button>
+    </div>
 </div>
 
 <!-- Carousel Overlay -->
@@ -1683,6 +1745,70 @@ window.onload = function() {
         document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
     }
 
+    // ── FINALE — fireworks + score submission ──────────────────────
+    var _fwAnimId = 0;
+    function startFireworks() {
+        var cv = document.getElementById('finale-canvas');
+        var w = cv.width = window.innerWidth;
+        var h = cv.height = window.innerHeight;
+        var ctx = cv.getContext('2d');
+        var particles = [];
+        var colors = ['#ff69b4','#00ffcc','#ffe000','#ff4444','#00ff88','#aa66ff','#ff8800','#44ccff'];
+
+        function burst(x, y) {
+            var c = colors[Math.floor(Math.random()*colors.length)];
+            var count = 40 + Math.floor(Math.random()*30);
+            for (var i=0; i<count; i++) {
+                var angle = Math.random()*Math.PI*2;
+                var speed = 1.5 + Math.random()*4;
+                particles.push({ x:x, y:y, vx:Math.cos(angle)*speed, vy:Math.sin(angle)*speed, life:1, decay:0.008+Math.random()*0.012, color:c, size:1.5+Math.random()*2 });
+            }
+        }
+
+        function tick() {
+            ctx.fillStyle = 'rgba(0,0,0,0.15)';
+            ctx.fillRect(0,0,w,h);
+            if (Math.random()<0.08) burst(w*0.15+Math.random()*w*0.7, h*0.1+Math.random()*h*0.5);
+            for (var i=particles.length-1; i>=0; i--) {
+                var p = particles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += 0.04; p.life -= p.decay;
+                if (p.life<=0) { particles.splice(i,1); continue; }
+                ctx.globalAlpha = p.life;
+                ctx.fillStyle = p.color;
+                ctx.fillRect(p.x-p.size/2, p.y-p.size/2, p.size, p.size);
+            }
+            ctx.globalAlpha = 1;
+            _fwAnimId = requestAnimationFrame(tick);
+        }
+        // Initial bursts
+        for (var b=0; b<5; b++) setTimeout(function(){ burst(w*0.2+Math.random()*w*0.6, h*0.15+Math.random()*h*0.35); }, b*300);
+        tick();
+    }
+
+    function stopFireworks() {
+        if (_fwAnimId) { cancelAnimationFrame(_fwAnimId); _fwAnimId = 0; }
+        var cv = document.getElementById('finale-canvas');
+        var ctx = cv.getContext('2d');
+        ctx.clearRect(0,0,cv.width,cv.height);
+    }
+
+    function showFinale() {
+        gameState = 'finale';
+        if (score > 0) saveHighScore(score);
+        document.getElementById('finale-score').innerText = 'FINAL SCORE: ' + score.toString().padStart(6,'0');
+        document.getElementById('finale-initials').style.display = (score > 0) ? 'block' : 'none';
+        ['fi-1','fi-2','fi-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+        document.getElementById('fi-submit').style.display = '';
+        document.getElementById('finale-screen').style.display = 'flex';
+        startFireworks();
+    }
+
+    function closeFinale() {
+        stopFireworks();
+        document.getElementById('finale-screen').style.display = 'none';
+        initializeFlight(true);
+    }
+
     function triggerVictory() {
         gameState = 'victory';
         AudioEngine.playSFX('victory');
@@ -1714,15 +1840,14 @@ window.onload = function() {
             return;
         }
 
-        // Sector 10 special handling
+        // Sector 10: show finale with fireworks
         if (currentSector >= 10) {
-            document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'ALL SECTORS CLEARED';
-            document.getElementById('next-level-btn').innerText = '[ RETURN TO TITLE ]';
-        } else {
-            document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
-            document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
+            setTimeout(function() { showFinale(); }, 800);
+            return;
         }
 
+        document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
+        document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
         document.getElementById('victory-screen').style.display = 'flex';
     }
 
@@ -2171,6 +2296,8 @@ window.onload = function() {
         document.getElementById('tr-video-player').style.display = 'none';
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-lightbox').style.display = 'none';
+        document.getElementById('finale-screen').style.display = 'none';
+        stopFireworks();
         document.body.style.touchAction = 'none';
         document.getElementById('tut-hud').style.display = 'none';
         document.getElementById('skip-tutorial-btn').style.display = 'none';
@@ -2452,6 +2579,34 @@ window.onload = function() {
         renderLeaderboard(score);
         loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score); });
     });
+
+    // Finale initials auto-advance
+    ['fi-1','fi-2','fi-3'].forEach(function(id, i, ids){
+        var el = document.getElementById(id);
+        if (!el) return;
+        el.addEventListener('input', function(){
+            el.value = el.value.toUpperCase().replace(/[^A-Z]/g,'');
+            if (el.value.length === 1 && i < 2) document.getElementById(ids[i+1]).focus();
+        });
+    });
+
+    bindTap('fi-submit', function(){
+        var i1=document.getElementById('fi-1').value;
+        var i2=document.getElementById('fi-2').value;
+        var i3=document.getElementById('fi-3').value;
+        var initials = (i1+i2+i3).toUpperCase();
+        if (initials.length < 3) initials = (initials + 'AAA').slice(0,3);
+        submitGlobalScore(initials, score);
+        document.getElementById('fi-submit').style.display = 'none';
+        document.getElementById('finale-initials').querySelector('.fi-label').innerText = 'SCORE SUBMITTED!';
+        renderLeaderboard(score);
+        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score); });
+    });
+    bindTap('fi-done', closeFinale);
+
+    // Prevent finale touches from reaching game
+    document.getElementById('finale-screen').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
+    document.getElementById('finale-screen').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true});
 
     // --- Main Render Loop ---
     const clock = new THREE.Clock();
