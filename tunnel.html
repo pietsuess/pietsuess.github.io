@@ -356,7 +356,8 @@
             display:none; position:fixed; inset:0; z-index:550;
             background:rgba(0,0,0,0.96); flex-direction:column;
             align-items:center; justify-content:center;
-            touch-action:auto; pointer-events:auto;
+            touch-action:auto !important; pointer-events:auto;
+            overflow:hidden;
         }
         #tr-carousel-header {
             font-family:'Press Start 2P',monospace; font-size:clamp(10px,2.5vw,14px);
@@ -368,8 +369,9 @@
             background:linear-gradient(90deg, transparent, #555, transparent);
         }
         #tr-carousel-strip {
-            overflow-x:auto; overflow-y:hidden;
-            -webkit-overflow-scrolling:touch; touch-action:pan-x;
+            width:100%; overflow-x:auto; overflow-y:hidden;
+            -webkit-overflow-scrolling:touch;
+            touch-action:pan-x !important;
             scroll-snap-type:x mandatory; white-space:nowrap;
             padding:24px 0 24px; display:flex; gap:14px; align-items:center;
             flex-shrink:0;
@@ -382,11 +384,12 @@
             -webkit-tap-highlight-color:transparent;
             transition:transform 0.18s ease-out, opacity 0.18s ease-out;
             transform-origin:center center; will-change:transform, opacity;
+            touch-action:pan-x !important;
         }
         .tr-carousel-thumb {
             width:160px; aspect-ratio:16/9; object-fit:cover;
             background:#111; border:1px solid #333; min-height:44px;
-            transition:border-color 0.15s;
+            transition:border-color 0.15s; pointer-events:none;
         }
         .tr-carousel-card:hover .tr-carousel-thumb { border-color:#00ffcc; }
         .tr-carousel-name {
@@ -394,6 +397,7 @@
             letter-spacing:1px; margin-top:8px; text-align:center;
             white-space:normal; width:160px; line-height:1.6;
             overflow:hidden; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+            pointer-events:none;
         }
         #tr-carousel-continue {
             flex-shrink:0; display:block; width:calc(100% - 40px); max-width:400px;
@@ -987,8 +991,8 @@ window.onload = function() {
             card.appendChild(thumb);
             card.appendChild(name);
 
-            // Tap handler
-            (function(it, i) {
+            // Tap handler — use click (doesn't fire on scroll drags)
+            (function(it) {
                 card.addEventListener('click', function(e) {
                     e.stopPropagation();
                     if (it.youtubeId || it.vimeoId) {
@@ -1004,14 +1008,14 @@ window.onload = function() {
                         }
                     }
                 });
-                card.addEventListener('touchend', function(e) { e.stopPropagation(); });
-            })(item, idx);
+            })(item);
 
             strip.appendChild(card);
         });
 
         var overlay = document.getElementById('tr-carousel-overlay');
         overlay.style.display = 'flex';
+        document.body.style.touchAction = 'auto';
 
         // Set horizontal padding so first/last cards can reach center
         requestAnimationFrame(function() {
@@ -1067,6 +1071,7 @@ window.onload = function() {
         document.getElementById('tr-carousel-overlay').style.display = 'none';
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-video-player').style.display = 'none';
+        document.body.style.touchAction = 'none';
         if (trCarouselSector >= 10) {
             initializeFlight(true);
         } else {
@@ -2015,6 +2020,7 @@ window.onload = function() {
         document.getElementById('tr-video-player').style.display = 'none';
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-lightbox').style.display = 'none';
+        document.body.style.touchAction = 'none';
         document.getElementById('tut-hud').style.display = 'none';
         document.getElementById('skip-tutorial-btn').style.display = 'none';
         document.getElementById('hamburger-btn').style.display = 'flex';
@@ -2259,10 +2265,11 @@ window.onload = function() {
     })();
 
     // Prevent carousel/video player touches from reaching game
-    document.getElementById('tr-carousel-overlay').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
-    document.getElementById('tr-carousel-overlay').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true});
-    document.getElementById('tr-video-player').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
-    document.getElementById('tr-video-player').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true});
+    // Use capturing to intercept before game handlers
+    document.getElementById('tr-carousel-overlay').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true, capture:true});
+    document.getElementById('tr-carousel-overlay').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true, capture:true});
+    document.getElementById('tr-video-player').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true, capture:true});
+    document.getElementById('tr-video-player').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true, capture:true});
     document.getElementById('tr-lightbox').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
 
     // Init portfolio toggle button text
