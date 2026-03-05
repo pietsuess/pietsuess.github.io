@@ -790,9 +790,9 @@
   color:#ffe000;text-shadow:0 0 20px rgba(255,224,0,0.8),0 0 60px rgba(255,224,0,0.3),0 2px 8px rgba(0,0,0,0.9);
   letter-spacing:5px;opacity:0.85;">TRAINING RUN</div>
 <div id="tut-hud" style="display:none;position:fixed;inset:0;z-index:460;pointer-events:none;align-items:center;justify-content:center;">
-  <div id="tut-text-wrap" style="background:rgba(0,0,0,0.65);padding:18px 30px;border:1px solid rgba(0,255,204,0.2);max-width:90%;text-align:center;">
+  <div id="tut-text-wrap" style="padding:18px 30px;max-width:90%;text-align:center;">
     <div id="tut-msg"  style="font-family:'Press Start 2P',monospace;font-size:clamp(9px,2.2vw,13px);
-      color:#00ffcc;text-shadow:0 0 16px rgba(0,255,204,0.8);letter-spacing:2px;line-height:2.2;
+      color:#00ffcc;text-shadow:0 0 16px rgba(0,255,204,0.8),0 0 40px rgba(0,255,204,0.4),0 2px 8px rgba(0,0,0,0.9);letter-spacing:2px;line-height:2.2;
       animation:tutFade 0.5s ease-out both;"></div>
   </div>
   <!-- triangle pointer rendered on a canvas so we can point at a 3-D projected position -->
@@ -883,89 +883,207 @@ function makeRng(seed) { var s = seed; return function(a, b) { s = (s * 1664525 
 function fr(semi) { return Math.pow(2, semi / 12); }
 
 var SCALES = {
-  dmin: [0,2,3,5,7,8,10], cmaj: [0,2,4,5,7,9,11], emaj: [0,2,4,5,7,9,11], gmaj: [0,2,4,5,7,9,11]
+  amin: [0,2,3,5,7,8,10], fmin: [0,2,3,5,7,8,10], bmin: [0,2,3,5,7,8,10],
+  cmaj: [0,2,4,5,7,9,11], bphryg: [0,1,3,5,7,8,10]
 };
 
-// 3 moods for TunnelRunner
+// 3 original tracks for TunnelRunner
 var MOODS = [
-// 0: VORTEX — Driving, urgent, D minor
+
+// 0: NEON DESCENT — Dark, hypnotic, relentless. A minor. Pulsing arpeggios + deep bass.
+// Starts minimal, builds to a wall of layered synths. The default tunnel track.
 {
-  name:'VORTEX', bpm:112, scale:'dmin', root:146.83,
+  name:'NEON DESCENT', bpm:128, scale:'amin', root:110.0,
   gen:function(t0,bar,bl,sc,root,rng){
     var B=bar, barLen=8*bl;
-    var phase= B<=4?'pulse': B<=14?'drive': B<=28?'surge': B<=36?'peak':'pulse';
-    var vol= phase==='pulse'?0.5: phase==='drive'?0.75: phase==='surge'?0.95: 1.1;
-    if(phase!=='peak'){ [0,2,4,6].forEach(function(i){ _bass(55,t0+i*bl,bl*0.14,0.1*vol); }); }
-    else { for(var i=0;i<8;i++) _bass(55,t0+i*bl,bl*0.12,0.1*vol); }
-    var bassNotes=[sc[0],sc[0],sc[2],sc[0],sc[3],sc[0],sc[2],sc[3]];
-    bassNotes.forEach(function(s,i){ _bass(root*fr(s),t0+i*bl,bl*0.82,0.07*vol); });
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      var progV=[[0,3,7],[8,0,5],[5,8,0],[3,7,10]], cV=progV[Math.floor(B/2)%4];
-      var nV=phase==='drive'?2:3;
-      cV.slice(0,nV).forEach(function(s,i){ _str(root*fr(s),t0+i*0.12,barLen*0.8,0.038*vol*(1-i*0.15)); if(phase==='surge'||phase==='peak') _pad(root*fr(s),t0+i*0.2,barLen+1.0,0.028*vol,B+i*5); });
+    var phase= B<=6?'drop': B<=18?'tunnel': B<=32?'deep': B<=42?'abyss':'drop';
+    var vol= phase==='drop'?0.45: phase==='tunnel'?0.7: phase==='deep'?0.95: 1.1;
+
+    // Kick pulse — relentless 4-on-floor
+    for(var k=0;k<8;k++) _bass(44,t0+k*bl,bl*0.1,0.08*vol);
+
+    // Sub bass — Am root pedal with octave bounce
+    var bassPat=[0,0,0,7,0,0,7,0];
+    bassPat.forEach(function(s,i){ _bass(root/2*fr(sc[s%sc.length]),t0+i*bl,bl*0.7,0.09*vol); });
+
+    // Hypnotic arpeggio — 16th notes cycling through chord tones
+    var arpNotes=[0,3,7,12,7,3,0,7,3,12,7,0,3,7,12,3];
+    if(phase!=='drop'){
+      arpNotes.forEach(function(s,i){
+        var octShift=i>8?2:1;
+        _plk(root*octShift*fr(s),t0+i*bl*0.5,0.04*vol*(phase==='drop'?0.5:1));
+      });
+    } else {
+      // Drop: sparse — only every other note
+      arpNotes.forEach(function(s,i){
+        if(i%2===0) _plk(root*fr(s),t0+i*bl*0.5,0.03*vol);
+      });
     }
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      var chopPat=phase==='drive'?[0,4]:phase==='surge'?[0,2,4,6]:[0,1,2,3,4,5,6,7];
-      chopPat.forEach(function(i){ if(rng(0,2)>0){ var s=sc[rng(0,3)]; _v(root*fr(s),t0+i*bl,0.04,bl*0.28,0.18,0.042*vol,'sawtooth',0.3); } });
+
+    // Pad chords — Am F C G progression
+    if(phase==='tunnel'||phase==='deep'||phase==='abyss'){
+      var prog=[[0,3,7],[5,8,0],[0,4,7],[7,11,2]];
+      var cIdx=Math.floor(B/2)%4, chord=prog[cIdx];
+      var nV=phase==='tunnel'?2:3;
+      chord.slice(0,nV).forEach(function(s,i){
+        _pad(root*fr(s),t0+i*0.18,barLen+1.5,0.035*vol*(1-i*0.12),B*i+3);
+      });
+      if(phase==='deep'||phase==='abyss'){
+        chord.forEach(function(s,i){ _str(root*fr(s),t0+i*0.1,barLen*0.75,0.03*vol); });
+      }
     }
-    if(phase==='surge'||phase==='peak'){
-      var urgMel=[0,3,2,0,3,5,3,2,0,3,5,7,5,3,2,0], ui=B%urgMel.length;
-      [0,3,5].forEach(function(beat,i){ _mel(root*2*fr(sc[urgMel[(ui+i*2)%urgMel.length]%sc.length]),t0+beat*bl,bl*1.4,0.038*vol); });
+
+    // Sawtooth stabs — rhythmic tension
+    if(phase==='deep'||phase==='abyss'){
+      var stabPat=phase==='deep'?[0,3,4,7]:[0,1,2,3,4,5,6,7];
+      stabPat.forEach(function(i){
+        if(rng(0,2)>0){ var s=sc[rng(0,4)]; _v(root*fr(s),t0+i*bl,0.03,bl*0.2,0.15,0.038*vol,'sawtooth',0.25); }
+      });
+    }
+
+    // Melody — dark, minor, anxious phrases
+    if(phase==='deep'||phase==='abyss'){
+      var mel=[0,3,5,7,5,3,0,8,7,5,3,5,7,8,5,3];
+      var mi=B%mel.length;
+      [0,2,5,7].forEach(function(beat,i){
+        if(rng(0,3)>0) _mel(root*2*fr(sc[mel[(mi+i)%mel.length]%sc.length]),t0+beat*bl,bl*1.6,0.04*vol);
+      });
+    }
+
+    // Abyss: high shimmer layer
+    if(phase==='abyss'&&B%3===0){
+      [0,3,7,10].forEach(function(s,i){ _atm(root*4*fr(sc[s%sc.length]),t0+i*bl*0.7,barLen,0.012*vol); });
     }
   }
 },
-// 1: CASCADE — Bright, flowing, G major
+
+// 1: CHROME RUSH — Fast, aggressive, Phrygian. Metallic arpeggios + heavy bass.
+// Spanish/Arabic flavor from Phrygian flat-2. Intense and forward-driving.
 {
-  name:'CASCADE', bpm:76, scale:'gmaj', root:196.0,
+  name:'CHROME RUSH', bpm:140, scale:'bphryg', root:123.47,
   gen:function(t0,bar,bl,sc,root,rng){
     var B=bar, barLen=8*bl;
-    var phase= B<=4?'drip': B<=16?'flow': B<=32?'flood': B<=40?'glow':'drip';
-    var vol= phase==='drip'?0.48: phase==='flow'?0.72: phase==='flood'?1.0: 0.58;
-    var prog=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]], cIdx=Math.floor(B/2)%4;
-    var cNotes=prog[cIdx].map(function(s){return root*fr(s);}), cRoot=cNotes[0];
-    _bass(cRoot/2,t0,barLen*0.88,0.075*vol);
-    if(phase!=='drip') _bass(cRoot/2*fr(sc[4]),t0+4*bl,bl*2.8,0.05*vol);
-    var cascPat=[0,2,4,7,4,2,0,4,2,0,7,4,2,4,0,2], cpBase=B%cascPat.length;
-    cascPat.forEach(function(si,i){
-      if(phase==='drip'&&i>7) return;
-      var octUp=i>8?2:1, freq=cRoot*octUp*fr(sc[si%sc.length]);
-      _plk(freq,t0+i*bl*0.5,0.048*vol*(phase==='drip'?0.7:1));
-    });
-    if(phase!=='drip'){ cNotes.forEach(function(f,i){ _pad(f,t0+i*0.2,barLen+2.0,0.042*vol*(1-i*0.1),B*i+5); if(phase==='flood'||phase==='glow') _pad(f*2,t0+i*0.3,barLen+1.5,0.02*vol,B*i+55); }); }
-    if(phase==='flow'||phase==='flood'||phase==='glow'){
-      var mel=[0,2,4,5,4,2,4,5,7,5,4,5,4,2,0,4], mi=B%mel.length;
-      [0,2,4,6].forEach(function(beat,i){ if(rng(0,3)>0){ var freq=root*2*fr(sc[mel[(mi+i)%mel.length]%sc.length]); _str(freq,t0+beat*bl+rng(0,2)*bl*0.1,bl*2.2,0.038*vol); } });
+    var phase= B<=4?'ignite': B<=16?'chase': B<=30?'fury': B<=38?'blaze':'ignite';
+    var vol= phase==='ignite'?0.5: phase==='chase'?0.78: phase==='fury'?1.0: 1.1;
+
+    // Heavy kick — double-time feel
+    for(var k=0;k<8;k++) _bass(49,t0+k*bl,bl*0.08,0.1*vol);
+    // Off-beat snare-like hit
+    if(phase!=='ignite') [1,3,5,7].forEach(function(i){ _v(root*8,t0+i*bl,0.005,0.02,0.08,0.04*vol,'square',0.15); });
+
+    // Phrygian bass riff — uses the characteristic b2 interval
+    var bassRiff=[0,0,1,0,5,0,1,5]; // 0=B, 1=C(b2), 5=F
+    bassRiff.forEach(function(s,i){ _bass(root*fr(sc[s%sc.length]),t0+i*bl,bl*0.65,0.085*vol); });
+
+    // Rapid arpeggio — 16ths, metallic
+    if(phase==='chase'||phase==='fury'||phase==='blaze'){
+      var arp=[0,1,3,5,7,5,3,1,0,3,5,8,5,3,1,0];
+      arp.forEach(function(s,i){
+        var oct=i>10?2:1;
+        _plk(root*oct*fr(sc[s%sc.length]),t0+i*bl*0.5,0.042*vol*(phase==='ignite'?0.6:1));
+      });
     }
-    if(phase==='flood'&&B%4===0) [0,4,7,11].forEach(function(s,i){_atm(root*4*fr(sc[s%sc.length]),t0+i*bl*0.6,barLen,0.014*vol);});
+
+    // Chord stabs — power chord feel
+    if(phase==='chase'||phase==='fury'||phase==='blaze'){
+      var prog=[[0,3,7],[1,5,8],[5,8,0],[3,7,10]];
+      var cIdx=Math.floor(B/2)%4, chord=prog[cIdx];
+      chord.forEach(function(s,i){
+        _str(root*fr(s),t0+i*0.08,barLen*0.6,0.032*vol*(1-i*0.1));
+      });
+      if(phase==='fury'||phase==='blaze'){
+        chord.forEach(function(s,i){ _pad(root*fr(s),t0+i*0.15,barLen+0.8,0.022*vol,B+i*7); });
+      }
+    }
+
+    // Aggressive lead — angular, wide leaps
+    if(phase==='fury'||phase==='blaze'){
+      var mel=[0,5,3,7,1,5,8,5,3,1,0,3,7,5,3,0];
+      var mi=B%mel.length;
+      [0,2,4,6].forEach(function(beat,i){
+        _mel(root*2*fr(sc[mel[(mi+i*2)%mel.length]%sc.length]),t0+beat*bl,bl*1.3,0.044*vol);
+      });
+    }
+
+    // Blaze: screaming high notes
+    if(phase==='blaze'){
+      [0,2,5].forEach(function(beat,i){
+        if(rng(0,2)>0) _mel(root*4*fr(sc[rng(0,sc.length)]),t0+beat*bl+bl*0.25,bl*0.8,0.025*vol);
+      });
+    }
   }
 },
-// 2: NOVA — Triumphant, soaring, E major
+
+// 2: GHOST SIGNAL — Eerie, atmospheric, F minor. Slow, cinematic, haunting.
+// Sparse pads, echoing plucks, ghostly melodies. Contrast to the speed.
 {
-  name:'NOVA', bpm:96, scale:'emaj', root:164.81,
+  name:'GHOST SIGNAL', bpm:88, scale:'fmin', root:174.61,
   gen:function(t0,bar,bl,sc,root,rng){
     var B=bar, barLen=8*bl;
-    var phase= B<=6?'seed': B<=18?'ascend': B<=34?'glory': B<=42?'summit':'seed';
-    var vol= phase==='seed'?0.38: phase==='ascend'?0.65: phase==='glory'?0.95: 1.1;
-    var progN=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]], cN=progN[Math.floor(B/2)%4], cNroot=root*fr(cN[0]);
-    _bass(cNroot/2,t0,barLen*0.9,0.09*vol);
-    if(B%2===0) _bass(cNroot/2*fr(sc[4]),t0+4*bl,bl*3.8,0.065*vol);
-    var nVoices=phase==='seed'?1:phase==='ascend'?2:3;
-    cN.slice(0,nVoices).forEach(function(s,i){ _pad(root*fr(s),t0+i*0.25,barLen+2.5,0.05*vol*(1-i*0.1),B*i+7); if(phase==='glory'||phase==='summit') _pad(root*fr(s)*2,t0+i*0.35,barLen+2.0,0.024*vol,B*i+13); });
-    if(phase==='ascend'||phase==='glory'||phase==='summit') cN.forEach(function(s,i){ _str(root*fr(s),t0+i*0.15,barLen*0.85,0.032*vol*(1-i*0.08)); });
-    var melN=[0,4,7,12,11,7,4,7,9,7,4,2,0,4,5,4], mn=B%melN.length;
-    if(phase!=='seed'){
-      [0,2,4,6].forEach(function(beat,i){ var step=melN[(mn+i)%melN.length]; var noteHz=root*2*fr(step<=12?step:step-12)*(step>12?2:1); _mel(noteHz,t0+beat*bl,bl*2.5,0.048*vol); });
-    } else { _mel(root*2*fr(melN[mn]),t0,barLen*0.6,0.032*vol); }
-    if(phase==='glory'||phase==='summit'){
-      var ctN=[7,5,4,2,0,2,4,5,7,9,11,9,7,5,4,2], ci=B%ctN.length;
-      [1,3,5].forEach(function(beat,i){ _str(root*4*fr(sc[ctN[(ci+i)%ctN.length]%sc.length]),t0+beat*bl,bl*2.0,0.028*vol); });
+    var phase= B<=6?'static': B<=20?'signal': B<=34?'haunt': B<=42?'echo':'static';
+    var vol= phase==='static'?0.4: phase==='signal'?0.65: phase==='haunt'?0.9: 0.55;
+
+    // Sparse bass — half-time, deep
+    _bass(root/2,t0,barLen*0.9,0.08*vol);
+    if(B%2===1) _bass(root/2*fr(sc[3]),t0+4*bl,bl*3.5,0.055*vol);
+
+    // Ghostly plucks — sparse, echoing, wide intervals
+    var ghostPat=[0,7,3,0,5,0,7,3,5,7,0,3,7,5,3,0];
+    var gpIdx=B%ghostPat.length;
+    if(phase==='static'){
+      // Only a few notes
+      [0,4].forEach(function(beat){
+        _plk(root*fr(sc[ghostPat[(gpIdx+beat)%ghostPat.length]%sc.length]),t0+beat*bl,0.04*vol);
+      });
+    } else {
+      var beats=phase==='signal'?[0,2,4,6]:[0,1,2,3,4,5,6,7];
+      beats.forEach(function(beat,i){
+        if(rng(0,3)>0){
+          var oct=rng(0,2)>0?2:1;
+          _plk(root*oct*fr(sc[ghostPat[(gpIdx+i)%ghostPat.length]%sc.length]),t0+beat*bl,0.038*vol);
+        }
+      });
     }
-    if(phase==='summit'&&B%4===0){ [0,4,7,12,7,4].forEach(function(s,i){_plk(root*4*fr(s),t0+i*bl*0.55,0.05);}); }
+
+    // Ethereal pads — Fm Db Ab Eb progression
+    if(phase!=='static'){
+      var prog=[[0,3,7],[8,0,3],[5,8,0],[3,7,10]];
+      var cIdx=Math.floor(B/2)%4, chord=prog[cIdx];
+      chord.forEach(function(s,i){
+        _pad(root*fr(s),t0+i*0.25,barLen+2.5,0.045*vol*(1-i*0.1),B*i+11);
+      });
+      if(phase==='haunt'||phase==='echo'){
+        chord.forEach(function(s,i){ _pad(root*2*fr(s),t0+i*0.35,barLen+1.8,0.02*vol,B*i+33); });
+      }
+    }
+
+    // Haunting melody — slow, yearning, minor
+    if(phase==='haunt'||phase==='echo'){
+      var mel=[0,3,5,7,8,7,5,3,0,5,7,8,7,5,3,0];
+      var mi=B%mel.length;
+      [0,3,5].forEach(function(beat,i){
+        _str(root*2*fr(sc[mel[(mi+i)%mel.length]%sc.length]),t0+beat*bl,bl*2.8,0.035*vol);
+      });
+    }
+
+    // Atmospheric swells
+    if(phase==='haunt'&&B%4===0){
+      [0,3,7].forEach(function(s,i){ _atm(root*4*fr(sc[s%sc.length]),t0+i*bl,barLen*1.2,0.018*vol); });
+    }
+
+    // Echo phase: fading repeats of melody
+    if(phase==='echo'){
+      var echoMel=[7,5,3,0,3,5];
+      echoMel.forEach(function(s,i){
+        _mel(root*2*fr(sc[s%sc.length]),t0+i*bl*1.2,bl*2.0,0.02*vol*(1-i*0.12));
+      });
+    }
   }
 }
+
 ];
 
-var MOOD_DESCS = ['Urgent \u00b7 Driving \u00b7 Pulse','Bright \u00b7 Flowing \u00b7 Melodic','Triumphant \u00b7 Soaring \u00b7 Epic'];
+var MOOD_DESCS = ['Dark \u00b7 Hypnotic \u00b7 Relentless','Fast \u00b7 Aggressive \u00b7 Phrygian','Eerie \u00b7 Atmospheric \u00b7 Haunting'];
 
 // Music scheduler
 function stopMusic() {
