@@ -1042,8 +1042,12 @@ window.onload = function() {
             btn.className = 'menu-btn';
             btn.style.cssText = 'width:auto;padding:8px 14px;font-size:8px;color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';border-color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';';
             btn.innerText = '[ ' + zone + ' ]';
-            btn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); openZoneFromPause(zone); }, {passive:false});
-            btn.addEventListener('click', function(e) { e.stopPropagation(); openZoneFromPause(zone); });
+            (function(z) {
+                var lastTap = 0;
+                var handler = function(e) { e.preventDefault(); e.stopPropagation(); var now = Date.now(); if (now - lastTap < 300) return; lastTap = now; openZoneFromPause(z); };
+                btn.addEventListener('touchend', handler, {passive:false});
+                btn.addEventListener('mouseup', handler, {passive:false});
+            })(zone);
             container.appendChild(btn);
         });
         wrapper.style.display = hasAny ? 'block' : 'none';
@@ -2505,9 +2509,16 @@ window.onload = function() {
     const bindTap = (id, fn) => {
         const el = document.getElementById(id);
         if (!el) return;
-        ['touchend','mouseup'].forEach(ev =>
-            el.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); fn(); }, {passive:false})
-        );
+        let lastTap = 0;
+        const handler = e => {
+            e.preventDefault(); e.stopPropagation();
+            const now = Date.now();
+            if (now - lastTap < 300) return;   // debounce touch+mouse double-fire
+            lastTap = now;
+            fn();
+        };
+        el.addEventListener('touchend', handler, {passive:false});
+        el.addEventListener('mouseup', handler, {passive:false});
     };
 
     bindTap('play-btn', () => initializeFlight(true));
