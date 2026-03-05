@@ -962,6 +962,10 @@ window.onload = function() {
         strip.scrollLeft = 0;
 
         var isGalleryZone = (zone === 'PHOTO' || zone === 'DESIGN');
+        var carouselScrollStartX = 0;
+        strip.addEventListener('touchstart', function(e) {
+            carouselScrollStartX = e.touches[0].clientX;
+        }, {passive:true});
 
         items.forEach(function(item, idx) {
             var card = document.createElement('div');
@@ -998,10 +1002,9 @@ window.onload = function() {
             card.appendChild(thumb);
             card.appendChild(name);
 
-            // Tap handler — use click (doesn't fire on scroll drags)
+            // Tap handler — touchend with scroll guard + click for desktop
             (function(it) {
-                card.addEventListener('click', function(e) {
-                    e.stopPropagation();
+                function handleCardTap() {
                     if (it.youtubeId || it.vimeoId) {
                         openCarouselVideo(it);
                     } else if (isGalleryZone) {
@@ -1014,6 +1017,14 @@ window.onload = function() {
                             trOpenLightbox(0);
                         }
                     }
+                }
+                card.addEventListener('touchend', function(e) {
+                    var dx = Math.abs(e.changedTouches[0].clientX - carouselScrollStartX);
+                    if (dx < 15) { e.preventDefault(); handleCardTap(); }
+                }, {passive:false});
+                card.addEventListener('click', function(e) {
+                    e.stopPropagation();
+                    handleCardTap();
                 });
             })(item);
 
@@ -1042,7 +1053,7 @@ window.onload = function() {
                 var dist = Math.abs(cardCenterX - centerX);
                 var maxDist = stripRect.width / 2;
                 var t = Math.min(dist / maxDist, 1);
-                var scale = 1.5 - t * 0.8; // center=1.5, edge=0.7
+                var scale = 1.2 - t * 0.5; // center=1.2, edge=0.7
                 var opacity = 1 - t * 0.5; // center=1.0, edge=0.5
                 cards[i].style.transform = 'scale(' + scale.toFixed(3) + ')';
                 cards[i].style.opacity = opacity.toFixed(3);
