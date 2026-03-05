@@ -601,6 +601,10 @@
     <button class="menu-btn" id="resume-btn">[ RESUME ]</button>
     <button class="menu-btn" id="mute-btn">[ MUTE AUDIO ]</button>
     <button class="menu-btn" id="portfolio-toggle-btn">[ PORTFOLIO: ON ]</button>
+    <div id="unlocked-zones" style="margin-top:14px;display:none;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">UNLOCKED CONTENT</div>
+      <div id="unlocked-zones-btns" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
+    </div>
     <div id="dev-level-jump" style="margin-top:16px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">JUMP TO SECTOR</div>
       <div id="jump-btn-container" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
@@ -940,6 +944,49 @@ window.onload = function() {
 
     var CAROUSEL_SECTOR_MAP = { 1:'EDIT', 3:'DIRECT', 5:'PHOTO', 7:'ANIMATE', 9:'DESIGN' };
     var PORTFOLIO_ZONE_COLORS = { DIRECT:'#ff69b4', EDIT:'#00ffcc', ANIMATE:'#00ff88', PHOTO:'#ffe000', DESIGN:'#FAFFA5' };
+    var CAROUSEL_ZONE_ORDER = ['EDIT','DIRECT','PHOTO','ANIMATE','DESIGN'];
+
+    // Track unlocked zones — persisted in localStorage
+    var unlockedZones = {};
+    try { var _uz = localStorage.getItem('trUnlockedZones'); if (_uz) unlockedZones = JSON.parse(_uz); } catch(e) {}
+
+    // Whether carousel was opened from pause menu (returns to pause, not next sector)
+    var carouselFromPause = false;
+
+    function unlockZone(zone) {
+        if (unlockedZones[zone]) return;
+        unlockedZones[zone] = true;
+        try { localStorage.setItem('trUnlockedZones', JSON.stringify(unlockedZones)); } catch(e) {}
+        rebuildUnlockedMenu();
+    }
+
+    function rebuildUnlockedMenu() {
+        var container = document.getElementById('unlocked-zones-btns');
+        var wrapper = document.getElementById('unlocked-zones');
+        container.innerHTML = '';
+        var hasAny = false;
+        CAROUSEL_ZONE_ORDER.forEach(function(zone) {
+            if (!unlockedZones[zone]) return;
+            hasAny = true;
+            var btn = document.createElement('button');
+            btn.className = 'menu-btn';
+            btn.style.cssText = 'width:auto;padding:8px 14px;font-size:8px;color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';border-color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';';
+            btn.innerText = '[ ' + zone + ' ]';
+            btn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); openZoneFromPause(zone); }, {passive:false});
+            btn.addEventListener('click', function(e) { e.stopPropagation(); openZoneFromPause(zone); });
+            container.appendChild(btn);
+        });
+        wrapper.style.display = hasAny ? 'block' : 'none';
+    }
+
+    function openZoneFromPause(zone) {
+        carouselFromPause = true;
+        document.getElementById('pause-screen').style.display = 'none';
+        // Find the sector for this zone (for showCarousel)
+        var fakeSector = 0;
+        for (var k in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[k] === zone) { fakeSector = parseInt(k); break; } }
+        showCarousel(fakeSector);
+    }
 
     // Lightbox state (reused for PHOTO/DESIGN gallery viewing)
     var trLbImages = [];
@@ -961,15 +1008,22 @@ window.onload = function() {
         trCarouselSector = sector;
         var zoneColor = PORTFOLIO_ZONE_COLORS[zone] || '#00ffcc';
 
+        // Track unlock
+        unlockZone(zone);
+
         // Unlocked + Header
-        document.getElementById('tr-carousel-unlocked').innerText = '★ CONTENT UNLOCKED ★';
+        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : '★ CONTENT UNLOCKED ★';
         var header = document.getElementById('tr-carousel-header');
         header.innerText = zone + ' PROJECTS';
         header.style.color = zoneColor;
 
         // Continue button text
         var contBtn = document.getElementById('tr-carousel-continue');
-        contBtn.innerText = currentSector >= 10 ? '[ RETURN TO TITLE ]' : '[ PLAY NEXT SECTOR > ]';
+        if (carouselFromPause) {
+            contBtn.innerText = '[ BACK TO MENU ]';
+        } else {
+            contBtn.innerText = currentSector >= 10 ? '[ RETURN TO TITLE ]' : '[ PLAY NEXT SECTOR > ]';
+        }
 
         // Build cards — triple the items for infinite loop
         var strip = document.getElementById('tr-carousel-strip');
@@ -1144,7 +1198,11 @@ window.onload = function() {
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-video-player').style.display = 'none';
         document.body.style.touchAction = 'none';
-        if (trCarouselSector >= 10) {
+        if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+        if (carouselFromPause) {
+            carouselFromPause = false;
+            document.getElementById('pause-screen').style.display = 'flex';
+        } else if (trCarouselSector >= 10) {
             initializeFlight(true);
         } else {
             startNextSector();
@@ -2125,6 +2183,7 @@ window.onload = function() {
         if (gameState === 'playing') {
             gameState = 'paused';
             AudioEngine.suspend();
+            rebuildUnlockedMenu();
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (gameState === 'paused') {
             gameState = 'playing';
