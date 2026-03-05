@@ -705,9 +705,9 @@
 
 <!-- Inventory Picker -->
 <div id="inventory-picker" style="display:none;position:fixed;inset:0;z-index:580;background:rgba(0,0,0,0.95);flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
-    <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.6);letter-spacing:3px;margin-bottom:8px;">INVENTORY</div>
-    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">SELECT A ZONE TO VIEW</div>
-    <div id="inventory-zone-btns" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:360px;padding:0 20px;"></div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.6);letter-spacing:3px;margin-bottom:4px;">INVENTORY</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:12px;">TAP A ZONE TO BROWSE</div>
+    <div id="inventory-zone-btns" style="display:flex;flex-wrap:wrap;gap:12px;justify-content:center;width:90%;max-width:360px;padding:0 10px;"></div>
     <button class="menu-btn" id="inventory-back" style="margin-top:20px;width:auto;padding:10px 24px;">[ BACK ]</button>
 </div>
 
@@ -2833,6 +2833,8 @@ window.onload = function() {
     bindTap('fi-done', closeFinale);
 
     // Inventory: opens zone picker overlay from post-submit
+    var ZONE_ICONS = { EDIT:'✂', DIRECT:'🎬', PHOTO:'📷', ANIMATE:'✦', DESIGN:'◆' };
+    var ZONE_ITEM_COUNTS = {};
     function openInventory(returnTo) {
         _inventoryReturnTo = returnTo;
         var el = document.getElementById('inventory-picker');
@@ -2840,35 +2842,57 @@ window.onload = function() {
         btns.innerHTML = '';
         var hasAny = false;
         CAROUSEL_ZONE_ORDER.forEach(function(zone) {
-            if (!unlockedZones[zone]) return;
-            hasAny = true;
-            var btn = document.createElement('button');
-            btn.className = 'menu-btn';
-            btn.style.cssText = 'width:auto;padding:10px 18px;font-size:9px;color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';border-color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';';
-            btn.innerText = '[ ' + zone + ' ]';
-            (function(z) {
-                var lastTap = 0;
-                var handler = function(e) {
-                    e.preventDefault(); e.stopPropagation();
-                    var now = Date.now();
-                    if (now - lastTap < 300) return;
-                    lastTap = now;
-                    el.style.display = 'none';
-                    carouselFromPause = false;
-                    var fakeSector = 0;
-                    for (var k in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[k] === z) { fakeSector = parseInt(k); break; } }
-                    // Override closeCarousel to return to inventory instead of next sector
-                    _inventoryCarouselActive = true;
-                    showCarousel(fakeSector);
-                };
-                btn.addEventListener('touchend', handler, {passive:false});
-                btn.addEventListener('mouseup', handler, {passive:false});
-            })(zone);
-            btns.appendChild(btn);
+            var unlocked = !!unlockedZones[zone];
+            var color = PORTFOLIO_ZONE_COLORS[zone] || '#fff';
+            var count = (CONTENT_DATA[zone] || []).length;
+
+            var card = document.createElement('div');
+            card.style.cssText = 'width:100px;height:100px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;' +
+                'border:2px solid ' + (unlocked ? color : '#333') + ';' +
+                'background:' + (unlocked ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.5)') + ';' +
+                'cursor:' + (unlocked ? 'pointer' : 'default') + ';' +
+                'transition:all 0.15s;-webkit-tap-highlight-color:transparent;position:relative;overflow:hidden;';
+
+            var icon = document.createElement('div');
+            icon.style.cssText = 'font-size:24px;line-height:1;' + (unlocked ? '' : 'opacity:0.25;filter:grayscale(1);');
+            icon.innerText = ZONE_ICONS[zone] || '?';
+
+            var label = document.createElement('div');
+            label.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;letter-spacing:1px;' +
+                'color:' + (unlocked ? color : '#444') + ';';
+            label.innerText = zone;
+
+            var sub = document.createElement('div');
+            sub.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:6px;color:' + (unlocked ? '#666' : '#333') + ';letter-spacing:1px;';
+            sub.innerText = unlocked ? count + ' ITEMS' : 'LOCKED';
+
+            card.appendChild(icon);
+            card.appendChild(label);
+            card.appendChild(sub);
+
+            if (unlocked) {
+                hasAny = true;
+                (function(z) {
+                    var lastTap = 0;
+                    var handler = function(e) {
+                        e.preventDefault(); e.stopPropagation();
+                        var now = Date.now();
+                        if (now - lastTap < 300) return;
+                        lastTap = now;
+                        el.style.display = 'none';
+                        carouselFromPause = false;
+                        var fakeSector = 0;
+                        for (var k in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[k] === z) { fakeSector = parseInt(k); break; } }
+                        _inventoryCarouselActive = true;
+                        showCarousel(fakeSector);
+                    };
+                    card.addEventListener('touchend', handler, {passive:false});
+                    card.addEventListener('mouseup', handler, {passive:false});
+                })(zone);
+            }
+
+            btns.appendChild(card);
         });
-        if (!hasAny) {
-            btns.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:8px;color:#555;letter-spacing:1px;">NO CONTENT UNLOCKED YET</div>';
-        }
         el.style.display = 'flex';
     }
 
