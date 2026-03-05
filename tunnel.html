@@ -1130,7 +1130,7 @@ window.onload = function() {
                     mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
                     mesh.rotation.z = angle;
                 }
-                mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3) };
+                mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3), arcLength: (obj.type === 'barrier' ? (obj.arcLength || Math.PI * 2) : undefined) };
                 scene.add(mesh); items.push(mesh);
                 // Always register as editable placement for dev mode
                 devPlacements.push({ type: obj.type, z: z, angle: angle, arcLength: obj.arcLength, mesh: mesh });
@@ -1904,8 +1904,10 @@ window.onload = function() {
                 if (item.position.z > shipGroup.position.z - 5 && item.position.z < shipGroup.position.z + 5) {
                     
                     if (item.userData.type === 'laser_wall') {
-                        // FORGIVING HITBOX: Hole is radius 22. Wall starts at currentHover > 22.
-                        if (currentHover > 22) {
+                        // Check if ship angle falls within the barrier arc
+                        var arcLen = item.userData.arcLength || Math.PI * 2;
+                        var relAngle = ((shipAngle - item.rotation.z) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+                        if (relAngle < arcLen && currentHover > 22) {
                             takeDamage();
                             scene.remove(item);
                             items.splice(i, 1);
@@ -2177,7 +2179,7 @@ window.onload = function() {
         if (type === 'barrier') {
             mesh.position.set(0, 0, z);
             mesh.rotation.z = angle;
-            mesh.userData = { type: 'laser_wall', hitRadius, rotSpeedZ: 0.0, devPlaced: true };
+            mesh.userData = { type: 'laser_wall', hitRadius, rotSpeedZ: 0.0, devPlaced: true, arcLength: barrierArcDeg * Math.PI / 180 };
         } else {
             mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
             mesh.rotation.z = angle;
@@ -2341,6 +2343,7 @@ window.onload = function() {
             if (selectedPlacement && selectedPlacement.type === 'barrier') {
                 var newArc = barrierArcDeg * Math.PI / 180;
                 selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
                 var old = selectedPlacement.mesh.geometry;
                 selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
                 old.dispose();
@@ -2615,6 +2618,7 @@ window.onload = function() {
                 const dx = t.clientX - sculptStartX;
                 const newArc = Math.max(0.1, Math.min(Math.PI * 2, sculptStartArc + dx * (Math.PI / window.innerWidth) * 3));
                 selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
                 const oldGeo = selectedPlacement.mesh.geometry;
                 selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
                 oldGeo.dispose();
@@ -2667,6 +2671,7 @@ window.onload = function() {
                 const dx = e.clientX - sculptStartX;
                 const newArc = Math.max(0.1, Math.min(Math.PI * 2, sculptStartArc + dx * (Math.PI / window.innerWidth) * 3));
                 selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
                 const oldGeo = selectedPlacement.mesh.geometry;
                 selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
                 oldGeo.dispose();
