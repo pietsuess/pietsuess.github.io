@@ -689,6 +689,14 @@ window.onload = function() {
     scene.add(tube1);
     scene.add(tube2);
 
+    // --- Zero-degree reference line (thin dotted line at angle 0) ---
+    const zeroLineMat = new THREE.LineDashedMaterial({ color: 0xffff00, dashSize: 3, gapSize: 6, linewidth: 1, transparent: true, opacity: 0.5 });
+    const zeroLinePts = [new THREE.Vector3(tubeRadius - 0.5, 0, 5000), new THREE.Vector3(tubeRadius - 0.5, 0, -50000)];
+    const zeroLineGeo = new THREE.BufferGeometry().setFromPoints(zeroLinePts);
+    const zeroLine = new THREE.Line(zeroLineGeo, zeroLineMat);
+    zeroLine.computeLineDistances();
+    scene.add(zeroLine);
+
     // --- The Ship ---
     const shipGroup = new THREE.Group();  // handles orbit position
     const bankGroup = new THREE.Group();  // handles visual lean — child of shipGroup
@@ -2245,14 +2253,43 @@ window.onload = function() {
     window._nudgeStop = function() {
         if (_nudgeIv) { clearInterval(_nudgeIv); _nudgeIv = null; }
     };
+
+    // ── Rotate ship in pause mode ────────────────────────────────────
+    var _rotateIv = null;
+    window._rotateStart = function(dir) {
+        window._rotateStop();
+        function step() {
+            shipAngle += dir * 0.04;
+            targetAngle = shipAngle;
+            var orbitRadius = tubeRadius - 6;
+            shipGroup.position.x = Math.cos(shipAngle) * orbitRadius;
+            shipGroup.position.y = Math.sin(shipAngle) * orbitRadius;
+            shipGroup.rotation.set(0, 0, 0);
+            bankGroup.rotation.order = 'ZXY';
+            bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2);
+            camera.position.x = Math.cos(shipAngle) * (tubeRadius - 16);
+            camera.position.y = Math.sin(shipAngle) * (tubeRadius - 16);
+            camera.rotation.z = shipAngle + Math.PI/2;
+            renderer.render(scene, camera);
+        }
+        step();
+        _rotateIv = setInterval(step, 16);
+    };
+    window._rotateStop = function() {
+        if (_rotateIv) { clearInterval(_rotateIv); _rotateIv = null; }
+    };
+
     // Keyboard: arrow keys while dev-paused
     document.addEventListener('keydown', function(e) {
         if (!devPaused) return;
-        if (e.key === 'ArrowDown')  { e.preventDefault(); window._nudgeStart(-1); }
-        if (e.key === 'ArrowUp')    { e.preventDefault(); window._nudgeStart(1); }
+        if (e.key === 'ArrowDown')  { e.preventDefault(); window._nudgeStart(1); }
+        if (e.key === 'ArrowUp')    { e.preventDefault(); window._nudgeStart(-1); }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); window._rotateStart(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); window._rotateStart(1); }
     });
     document.addEventListener('keyup', function(e) {
         if (e.key === 'ArrowDown' || e.key === 'ArrowUp') window._nudgeStop();
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') window._rotateStop();
     });
 
     // Show nudge bar only when dev-paused (so tunnel is visible, no opaque overlay)
@@ -3040,13 +3077,23 @@ window.onload = function() {
 <!-- ═══════════ NUDGE BUTTONS (bottom-left, always on top) ═══════════ -->
 <div id="dev-nudge-bar" style="position:fixed;bottom:16px;left:8px;z-index:960;display:none;flex-direction:column;gap:4px;align-items:center;">
   <button id="dev-nudge-fwd"
-    onmousedown="window._nudgeStart(1)" onmouseup="window._nudgeStop()" onmouseleave="window._nudgeStop()"
-    ontouchstart="window._nudgeStart(1);event.stopPropagation();" ontouchend="window._nudgeStop();event.stopPropagation();"
-    style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:14px 20px;cursor:pointer;border-radius:3px;">▲</button>
-  <span id="dev-nudge-z" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#44f;min-width:40px;text-align:center;">Z:0</span>
-  <button id="dev-nudge-back"
     onmousedown="window._nudgeStart(-1)" onmouseup="window._nudgeStop()" onmouseleave="window._nudgeStop()"
     ontouchstart="window._nudgeStart(-1);event.stopPropagation();" ontouchend="window._nudgeStop();event.stopPropagation();"
+    style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:14px 20px;cursor:pointer;border-radius:3px;">▲</button>
+  <div style="display:flex;gap:4px;align-items:center;">
+    <button id="dev-nudge-ccw"
+      onmousedown="window._rotateStart(-1)" onmouseup="window._rotateStop()" onmouseleave="window._rotateStop()"
+      ontouchstart="window._rotateStart(-1);event.stopPropagation();" ontouchend="window._rotateStop();event.stopPropagation();"
+      style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:10px 14px;cursor:pointer;border-radius:3px;">◀</button>
+    <span id="dev-nudge-z" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#44f;min-width:40px;text-align:center;">Z:0</span>
+    <button id="dev-nudge-cw"
+      onmousedown="window._rotateStart(1)" onmouseup="window._rotateStop()" onmouseleave="window._rotateStop()"
+      ontouchstart="window._rotateStart(1);event.stopPropagation();" ontouchend="window._rotateStop();event.stopPropagation();"
+      style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:10px 14px;cursor:pointer;border-radius:3px;">▶</button>
+  </div>
+  <button id="dev-nudge-back"
+    onmousedown="window._nudgeStart(1)" onmouseup="window._nudgeStop()" onmouseleave="window._nudgeStop()"
+    ontouchstart="window._nudgeStart(1);event.stopPropagation();" ontouchend="window._nudgeStop();event.stopPropagation();"
     style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:14px 20px;cursor:pointer;border-radius:3px;">▼</button>
 </div>
 
