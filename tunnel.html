@@ -997,6 +997,7 @@ window.onload = function() {
     // Baked level layouts — populated by dev mode export
     // Format: { sectorNum: [ {type, dz, angle}, ... ] }
     var bakedLevels = {};
+    try { var _saved = localStorage.getItem('tunnelRunner_bakedLevels'); if (_saved) bakedLevels = JSON.parse(_saved); } catch(e) {}
     function spawnIntroWave() {
         introSpawned = true;
         var r = tubeRadius - 6;
@@ -1937,6 +1938,14 @@ window.onload = function() {
         previewMeshes = [];
     }
 
+    var _lastBuildT = 0;
+    function buildPreviewThrottled() {
+        var now = performance.now();
+        if (now - _lastBuildT < 50) return;
+        _lastBuildT = now;
+        buildPreview();
+    }
+
     function buildPreview() {
         clearPreview();
         if (!ghostActive) return;
@@ -2066,8 +2075,6 @@ window.onload = function() {
             shipGroup.position.z += d;
             tube1.position.z     += d;
             tube2.position.z     += d;
-            for (var ni = 0; ni < items.length; ni++) items[ni].position.z += d;
-            for (var ni = 0; ni < previewMeshes.length; ni++) previewMeshes[ni].position.z += d;
             if (zEl) zEl.innerText = 'Z:' + Math.round(camera.position.z);
             renderer.render(scene, camera);
         }
@@ -2207,9 +2214,11 @@ window.onload = function() {
         });
         // Bake directly into the game's level data
         bakedLevels[sector] = objects;
+        // Persist to localStorage
+        try { localStorage.setItem('tunnelRunner_bakedLevels', JSON.stringify(bakedLevels)); } catch(e) {}
         // Show confirmation toast
         const toast = document.getElementById('dev-bake-toast');
-        toast.innerText = '✓ SECTOR ' + sector + ' BAKED! (' + objects.length + ' objects)';
+        toast.innerText = '✓ SECTOR ' + sector + ' BAKED & SAVED (' + objects.length + ' objects)';
         toast.style.display = 'block';
         setTimeout(() => toast.style.display = 'none', 2500);
     });
@@ -2267,17 +2276,32 @@ window.onload = function() {
         if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle')) return;
         const t = e.touches[0];
         moveGhost(t.clientX, t.clientY);
-        buildPreview();
+        buildPreviewThrottled();
     }, {passive:true});
 
     document.addEventListener('mousemove', e => {
         if (!ghostActive || dragState) return;
         if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle')) return;
         moveGhost(e.clientX, e.clientY);
-        buildPreview();
+        buildPreviewThrottled();
     });
 
     document.addEventListener('touchend',   () => { if (dragState) endDrag(); });
+
+    // ── Tap-to-place — commit ghost preview on tap/click ──────────────
+    document.addEventListener('click', e => {
+        if (!ghostActive) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle') || e.target.closest('#dev-nudge-bar') || e.target.closest('#dev-ctx-menu')) return;
+        placeTap(e.clientX, e.clientY);
+    });
+    document.addEventListener('touchend', e => {
+        if (!ghostActive) return;
+        if (dragState) return;
+        const t = e.changedTouches[0];
+        if (!t) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle') || e.target.closest('#dev-nudge-bar') || e.target.closest('#dev-ctx-menu')) return;
+        placeTap(t.clientX, t.clientY);
+    }, {passive: true});
 
     // ── Long-press editor — dedicated overlay intercepts touches ─────
 
@@ -2286,7 +2310,7 @@ window.onload = function() {
 
     function updateEditOverlay() {
         if (!editOverlayEl) return;
-        const active = (devOpen || gameState === 'paused') && !ghostActive;
+        const active = devOpen && devPaused && !ghostActive && devPlacements.length > 0;
         editOverlayEl.style.display = active ? 'block' : 'none';
     }
 
