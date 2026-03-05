@@ -628,7 +628,6 @@
     <div id="shield-label">SHIELD</div>
 </div>
 <div id="hamburger-btn" style="display:none;"><span></span><span></span><span></span></div>
-<div id="version-dot" style="position:fixed;top:10px;right:10px;width:12px;height:12px;border-radius:50%;background:#ff69b4;z-index:9999;"></div>
 <div id="start-screen" class="overlay-screen">
   <canvas id="title-stars-canvas"></canvas>
   <div id="start-inner">
@@ -838,6 +837,8 @@
 var audioCtx = null, musicNodes = [], songTimeout = null, musicBarCount = 0;
 var masterGain = null, musicGainNode = null, sfxGainNode = null, reverbIn = null;
 var _musicMuted = false, _sfxMuted = false, _musicPaused = false, _songIndex = 0;
+try { if (localStorage.getItem('trMusicMuted') === '1') _musicMuted = true; } catch(e) {}
+try { if (localStorage.getItem('trSfxMuted') === '1') _sfxMuted = true; } catch(e) {}
 
 function initAudioGraph() {
   masterGain = audioCtx.createGain(); masterGain.gain.value = 0.82; masterGain.connect(audioCtx.destination);
@@ -1143,11 +1144,13 @@ function toggleMusicMute() {
   _musicMuted = !_musicMuted;
   if (musicGainNode) musicGainNode.gain.value = _musicMuted ? 0 : 1;
   _musicMuted ? stopMusic() : playSong(_songIndex);
+  try { localStorage.setItem('trMusicMuted', _musicMuted ? '1' : '0'); } catch(e) {}
   _updateMuteUI();
 }
 function toggleSfxMute() {
   _sfxMuted = !_sfxMuted;
   if (sfxGainNode) sfxGainNode.gain.value = _sfxMuted ? 0 : 1;
+  try { localStorage.setItem('trSfxMuted', _sfxMuted ? '1' : '0'); } catch(e) {}
   _updateMuteUI();
 }
 function _updateMuteUI() {
@@ -1162,7 +1165,9 @@ var AudioEngine = {
     if (audioCtx) return;
     audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     initAudioGraph();
-    playSong(_songIndex);
+    if (_musicMuted) musicGainNode.gain.value = 0;
+    if (_sfxMuted) sfxGainNode.gain.value = 0;
+    if (!_musicMuted) playSong(_songIndex);
     if (audioCtx.state === 'suspended') audioCtx.resume().then(function() { if (!songTimeout && !_musicMuted) playSong(_songIndex); });
   },
   playSFX: function(type) {
@@ -1242,11 +1247,19 @@ window.onload = function() {
         { name:'INFERNO', speed:570,  length: Math.round(baseSectorDistance * Math.pow(1.08, 8)) },
         { name:'APEX',    speed:640,  length: Math.round(baseSectorDistance * Math.pow(1.08, 9)) },
     ];
+    function cssHexToInt(str) {
+        if (typeof str === 'number') return str;
+        if (typeof str === 'string' && str.charAt(0) === '#') return parseInt(str.slice(1), 16);
+        return 0;
+    }
     function buildZoneEntry(cfg, index) {
         var cp = ZONE_COLOR_PALETTE[Math.floor(index / 2) % ZONE_COLOR_PALETTE.length];
+        var wc = cfg.wireColor ? cssHexToInt(cfg.wireColor) : 0x00ff88;
+        var fc = cfg.fogColor ? cssHexToInt(cfg.fogColor) : cp.fogColor;
+        var cc = cfg.wireColor || cp.color;
         return {
-            name: cfg.name, color: cp.color, fogColor: cp.fogColor,
-            wireColor: 0x00ff88, speed: cfg.speed, length: cfg.length,
+            name: cfg.name, color: cc, fogColor: fc,
+            wireColor: wc, speed: cfg.speed, length: cfg.length,
             label: 'SECTOR ' + (index + 1) + ' // ' + cfg.name
         };
     }
@@ -2081,12 +2094,18 @@ window.onload = function() {
     });
 
     // --- Game Logic ---
+    var _spawnCfgCache = null, _spawnCfgLoaded = false;
+    function _getSpawnCfg(sector) {
+        if (!_spawnCfgLoaded) { try { _spawnCfgCache = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig')); } catch(e) {} _spawnCfgLoaded = true; }
+        return (_spawnCfgCache && _spawnCfgCache[sector - 1]) || null;
+    }
     function spawnItem(zPos) {
         let rand = Math.random();
         const s = currentSector;
+        var _sCfg = _getSpawnCfg(s);
 
         // --- Ramp + Laser Wall sequences — frequency scales with sector ---
-        const rampThreshold = s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26;
+        const rampThreshold = (_sCfg && typeof _sCfg.ramp === 'number') ? _sCfg.ramp : (s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26);
         if (s >= 2 && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
@@ -2107,9 +2126,11 @@ window.onload = function() {
         // Re-roll rand past the ramp threshold so item chances are correctly distributed
         rand = (rand - rampThreshold) / (1 - rampThreshold);
 
-        // --- Per-sector spawn profile ---
+        // --- Per-sector spawn profile (from config if available, else hardcoded defaults) ---
         let hazardChance, ringChance, coreChance;
-        if (s === 1) {
+        if (_sCfg && typeof _sCfg.hazard === 'number') {
+            hazardChance = _sCfg.hazard; ringChance = _sCfg.ring || 0; coreChance = _sCfg.core || 0;
+        } else if (s === 1) {
             hazardChance = 0;    ringChance = 0.92; coreChance = 0.08;
         } else if (s === 2) {
             hazardChance = 0.70; ringChance = 0;    coreChance = 0.30;
@@ -3089,6 +3110,7 @@ window.onload = function() {
     });
     bindTap('music-mute-btn', toggleMusicMute);
     bindTap('sfx-mute-btn', toggleSfxMute);
+    _updateMuteUI();
 
     // Initials auto-advance + tap-to-focus
     ['ini-1','ini-2','ini-3'].forEach(function(id, i, ids){
