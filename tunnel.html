@@ -658,6 +658,14 @@
       </div>
       <button class="menu-btn btn-gold" id="submit-score-btn" style="margin-top:10px;padding:8px 20px;font-size:8px;">[ SUBMIT SCORE ]</button>
     </div>
+    <div id="go-post-submit" style="display:none;width:90%;max-width:360px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffe000;text-shadow:0 0 8px #ffe000;letter-spacing:2px;margin-bottom:12px;text-align:center;">--  HIGH SCORES  --</div>
+      <div id="go-lb-rows"></div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;">
+        <button class="menu-btn" id="go-title-btn" style="width:auto;padding:10px 24px;">[ RETURN TO TITLE ]</button>
+        <button class="menu-btn" id="go-inventory" style="width:auto;padding:10px 24px;color:#ffe000;border-color:#ffe000;">[ VIEW INVENTORY ]</button>
+      </div>
+    </div>
     <button class="menu-btn stagger-in" id="retry-sector-btn">[ RETRY SECTOR ]</button>
     <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
 </div>
@@ -684,8 +692,23 @@
             </div>
             <button class="menu-btn btn-gold" id="fi-submit" style="margin-top:12px;padding:10px 20px;font-size:9px;">[ SUBMIT SCORE ]</button>
         </div>
-        <button class="menu-btn" id="fi-done" style="margin-top:8px;">[ RETURN TO TITLE ]</button>
+        <div id="finale-post-submit" style="display:none;width:90%;max-width:360px;">
+            <div style="font-family:'Press Start 2P',monospace;font-size:8px;color:#ffe000;text-shadow:0 0 8px #ffe000;letter-spacing:2px;margin-bottom:12px;text-align:center;">--  HIGH SCORES  --</div>
+            <div id="finale-lb-rows"></div>
+            <div style="display:flex;flex-direction:column;align-items:center;gap:10px;margin-top:20px;">
+                <button class="menu-btn" id="fi-done" style="width:auto;padding:10px 24px;">[ RETURN TO TITLE ]</button>
+                <button class="menu-btn" id="fi-inventory" style="width:auto;padding:10px 24px;color:#ffe000;border-color:#ffe000;">[ VIEW INVENTORY ]</button>
+            </div>
+        </div>
     </div>
+</div>
+
+<!-- Inventory Picker -->
+<div id="inventory-picker" style="display:none;position:fixed;inset:0;z-index:580;background:rgba(0,0,0,0.95);flex-direction:column;align-items:center;justify-content:center;gap:16px;pointer-events:auto;">
+    <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.6);letter-spacing:3px;margin-bottom:8px;">INVENTORY</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">SELECT A ZONE TO VIEW</div>
+    <div id="inventory-zone-btns" style="display:flex;flex-wrap:wrap;gap:10px;justify-content:center;max-width:360px;padding:0 20px;"></div>
+    <button class="menu-btn" id="inventory-back" style="margin-top:20px;width:auto;padding:10px 24px;">[ BACK ]</button>
 </div>
 
 <!-- Carousel Overlay -->
@@ -1076,6 +1099,8 @@ window.onload = function() {
     var CAROUSEL_SECTOR_MAP = { 1:'EDIT', 3:'DIRECT', 5:'PHOTO', 7:'ANIMATE', 9:'DESIGN' };
     var PORTFOLIO_ZONE_COLORS = { DIRECT:'#ff69b4', EDIT:'#00ffcc', ANIMATE:'#00ff88', PHOTO:'#ffe000', DESIGN:'#FAFFA5' };
     var CAROUSEL_ZONE_ORDER = ['EDIT','DIRECT','PHOTO','ANIMATE','DESIGN'];
+    var _inventoryCarouselActive = false;
+    var _inventoryReturnTo = null;
 
     // Track unlocked zones — persisted in localStorage
     var unlockedZones = {};
@@ -1155,7 +1180,9 @@ window.onload = function() {
 
         // Continue button text
         var contBtn = document.getElementById('tr-carousel-continue');
-        if (carouselFromPause) {
+        if (_inventoryCarouselActive) {
+            contBtn.innerText = '[ BACK TO INVENTORY ]';
+        } else if (carouselFromPause) {
             contBtn.innerText = '[ BACK TO MENU ]';
         } else {
             contBtn.innerText = currentSector >= 10 ? '[ RETURN TO TITLE ]' : '[ PLAY NEXT SECTOR > ]';
@@ -1348,7 +1375,10 @@ window.onload = function() {
         document.getElementById('tr-video-player').style.display = 'none';
         document.body.style.touchAction = 'none';
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
-        if (carouselFromPause) {
+        if (_inventoryCarouselActive) {
+            _inventoryCarouselActive = false;
+            openInventory(_inventoryReturnTo);
+        } else if (carouselFromPause) {
             carouselFromPause = false;
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (trCarouselSector >= 10) {
@@ -1912,6 +1942,9 @@ window.onload = function() {
 
         document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
         document.getElementById('initials-entry').style.display = 'block';
+        document.getElementById('go-post-submit').style.display = 'none';
+        document.getElementById('retry-sector-btn').style.display = '';
+        document.getElementById('abort-run-btn').style.display = '';
         ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
         document.getElementById('game-over-screen').style.display = 'flex';
         document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
@@ -1970,6 +2003,7 @@ window.onload = function() {
         if (score > 0) saveHighScore(score);
         document.getElementById('finale-score').innerText = 'FINAL SCORE: ' + score.toString().padStart(6,'0');
         document.getElementById('finale-initials').style.display = 'block';
+        document.getElementById('finale-post-submit').style.display = 'none';
         ['fi-1','fi-2','fi-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
         document.getElementById('fi-submit').style.display = '';
         document.getElementById('finale-screen').style.display = 'flex';
@@ -2625,15 +2659,14 @@ window.onload = function() {
     }
 
     var _globalScoresCache = [];
-    function renderLeaderboard(newScore) {
-        const rows = document.getElementById('lb-rows');
-        if (!rows) return;
-        const ghosts = [
+    function renderLeaderboard(newScore, targetId) {
+        var targetIds = targetId ? [targetId] : ['lb-rows'];
+        var ghosts = [
             {name:'ACE',score:18400},{name:'VXR',score:14200},
             {name:'NVG',score:11800},{name:'ZPX',score:9600},{name:'KLW',score:7300}
         ];
-        let saved = loadHighScores().map(function(e){ return {name:'YOU',score:e.score,isYou:true}; });
-        let entries = saved.concat(ghosts).concat(_globalScoresCache);
+        var saved = loadHighScores().map(function(e){ return {name:'YOU',score:e.score,isYou:true}; });
+        var entries = saved.concat(ghosts).concat(_globalScoresCache);
         entries.sort(function(a,b){ return b.score-a.score; });
         if (newScore > 0) {
             var marked = false;
@@ -2643,13 +2676,17 @@ window.onload = function() {
             });
         }
         entries = entries.slice(0, 8);
-        rows.innerHTML = entries.map(function(e, i){
+        var html = entries.map(function(e, i){
             var dots = '.'.repeat(Math.max(2, 10-e.name.length));
             var sc   = ('000000'+e.score).slice(-6);
             var tag  = e.isNew ? ' ◄' : (e.global ? ' ●' : '');
             var cls  = e.isNew ? 'lb-row lb-new' : 'lb-row';
             return '<div class="'+cls+'"><span>'+e.name+dots+sc+tag+'</span></div>';
         }).join('');
+        targetIds.forEach(function(id) {
+            var el = document.getElementById(id);
+            if (el) el.innerHTML = html;
+        });
     }
 
     // ── INIT TITLE SCREEN ─────────────────────────────────────────────────────
@@ -2763,8 +2800,11 @@ window.onload = function() {
         if (initials.length < 3) initials = (initials + 'AAA').slice(0,3);
         submitGlobalScore(initials, score);
         document.getElementById('initials-entry').style.display = 'none';
-        renderLeaderboard(score);
-        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score); });
+        document.getElementById('retry-sector-btn').style.display = 'none';
+        document.getElementById('abort-run-btn').style.display = 'none';
+        document.getElementById('go-post-submit').style.display = 'block';
+        renderLeaderboard(score, 'go-lb-rows');
+        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score, 'go-lb-rows'); renderLeaderboard(score); });
     });
 
     // Finale initials auto-advance + tap-to-focus
@@ -2785,15 +2825,67 @@ window.onload = function() {
         var initials = (i1+i2+i3).toUpperCase();
         if (initials.length < 3) initials = (initials + 'AAA').slice(0,3);
         submitGlobalScore(initials, score);
-        document.getElementById('fi-submit').style.display = 'none';
-        document.getElementById('finale-initials').querySelector('.fi-label').innerText = 'SCORE SUBMITTED!';
-        renderLeaderboard(score);
-        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score); });
+        document.getElementById('finale-initials').style.display = 'none';
+        document.getElementById('finale-post-submit').style.display = 'block';
+        renderLeaderboard(score, 'finale-lb-rows');
+        loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score, 'finale-lb-rows'); renderLeaderboard(score); });
     });
     bindTap('fi-done', closeFinale);
 
+    // Inventory: opens zone picker overlay from post-submit
+    function openInventory(returnTo) {
+        _inventoryReturnTo = returnTo;
+        var el = document.getElementById('inventory-picker');
+        var btns = document.getElementById('inventory-zone-btns');
+        btns.innerHTML = '';
+        var hasAny = false;
+        CAROUSEL_ZONE_ORDER.forEach(function(zone) {
+            if (!unlockedZones[zone]) return;
+            hasAny = true;
+            var btn = document.createElement('button');
+            btn.className = 'menu-btn';
+            btn.style.cssText = 'width:auto;padding:10px 18px;font-size:9px;color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';border-color:' + (PORTFOLIO_ZONE_COLORS[zone]||'#fff') + ';';
+            btn.innerText = '[ ' + zone + ' ]';
+            (function(z) {
+                var lastTap = 0;
+                var handler = function(e) {
+                    e.preventDefault(); e.stopPropagation();
+                    var now = Date.now();
+                    if (now - lastTap < 300) return;
+                    lastTap = now;
+                    el.style.display = 'none';
+                    carouselFromPause = false;
+                    var fakeSector = 0;
+                    for (var k in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[k] === z) { fakeSector = parseInt(k); break; } }
+                    // Override closeCarousel to return to inventory instead of next sector
+                    _inventoryCarouselActive = true;
+                    showCarousel(fakeSector);
+                };
+                btn.addEventListener('touchend', handler, {passive:false});
+                btn.addEventListener('mouseup', handler, {passive:false});
+            })(zone);
+            btns.appendChild(btn);
+        });
+        if (!hasAny) {
+            btns.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:8px;color:#555;letter-spacing:1px;">NO CONTENT UNLOCKED YET</div>';
+        }
+        el.style.display = 'flex';
+    }
+
+    function closeInventory() {
+        document.getElementById('inventory-picker').style.display = 'none';
+    }
+
+    bindTap('fi-inventory', function() { openInventory('finale'); });
+    bindTap('go-inventory', function() { openInventory('gameover'); });
+    bindTap('go-title-btn', function() {
+        document.getElementById('game-over-screen').style.display = 'none';
+        initializeFlight(true);
+    });
+    bindTap('inventory-back', function() { closeInventory(); });
+
     // Prevent overlay touches from reaching game
-    ['finale-screen','game-over-screen','victory-screen'].forEach(function(id) {
+    ['finale-screen','game-over-screen','victory-screen','inventory-picker'].forEach(function(id) {
         var el = document.getElementById(id);
         if (!el) return;
         el.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
