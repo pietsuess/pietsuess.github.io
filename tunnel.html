@@ -1414,12 +1414,15 @@ window.onload = function() {
         if (gameState === 'playing') {
             gameState = 'paused';
             AudioEngine.suspend();
+            // Sync level jump visibility before showing pause screen
+            var lj = document.getElementById('dev-level-jump');
+            if (lj) lj.style.display = devOpen ? 'block' : 'none';
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (gameState === 'paused') {
             gameState = 'playing';
             document.getElementById('pause-screen').style.display = 'none';
             AudioEngine.resume();
-            clock.getDelta(); 
+            clock.getDelta();
         }
     }
 
@@ -2175,7 +2178,7 @@ window.onload = function() {
         var sl = document.getElementById('dev-arc-slider');
         var lb = document.getElementById('dev-arc-val');
         if (!sl) return;
-        sl.addEventListener('input', function() {
+        function onArcChange() {
             barrierArcDeg = parseInt(sl.value);
             lb.innerText = barrierArcDeg + '°';
             // Update preview live if active and barrier selected
@@ -2188,6 +2191,29 @@ window.onload = function() {
                 selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
                 old.dispose();
             }
+        }
+        sl.addEventListener('input', onArcChange);
+        // Manual touch handler — body touch-action:none kills native slider drag
+        var dragging = false;
+        function sliderFromTouch(clientX) {
+            var rect = sl.getBoundingClientRect();
+            var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            var min = parseInt(sl.min), max = parseInt(sl.max);
+            sl.value = Math.round(min + pct * (max - min));
+            onArcChange();
+        }
+        sl.addEventListener('touchstart', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            dragging = true;
+            sliderFromTouch(e.touches[0].clientX);
+        }, {passive: false});
+        document.addEventListener('touchmove', function(e) {
+            if (!dragging) return;
+            e.preventDefault();
+            sliderFromTouch(e.touches[0].clientX);
+        }, {passive: false});
+        document.addEventListener('touchend', function() {
+            dragging = false;
         });
     })();
 
