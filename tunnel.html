@@ -1123,8 +1123,13 @@ window.onload = function() {
                     mesh.rotation.z = obj.angle || 0;
                 }
                 else return;
-                mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
-                mesh.rotation.z = angle;
+                if (obj.type === 'barrier') {
+                    mesh.position.set(0, 0, z);
+                    mesh.rotation.z = angle;
+                } else {
+                    mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
+                    mesh.rotation.z = angle;
+                }
                 mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3) };
                 scene.add(mesh); items.push(mesh);
                 // In dev mode, also register as editable placement
@@ -2557,14 +2562,17 @@ window.onload = function() {
         }
         // Label the action button based on type
         const moveBtn = document.getElementById('dev-ctx-move');
+        const rotBtn = document.getElementById('dev-ctx-rotate');
         if (placement.type === 'barrier') {
             moveBtn.innerText = '⟺ SCULPT ARC';
             moveBtn.style.background = '#ff8800';
             moveBtn.style.color = '#000';
+            rotBtn.style.display = 'block';
         } else {
             moveBtn.innerText = '✥ MOVE';
             moveBtn.style.background = '#00ffcc';
             moveBtn.style.color = '#000';
+            rotBtn.style.display = 'none';
         }
         const menu = document.getElementById('dev-ctx-menu');
         menu.style.display = 'flex';
@@ -2574,6 +2582,7 @@ window.onload = function() {
 
     function hideContextMenu() {
         document.getElementById('dev-ctx-menu').style.display = 'none';
+        document.getElementById('dev-ctx-rotate').style.display = 'none';
         if (selectedPlacement && selectedPlacement.mesh.material && selectedPlacement.mesh.material.emissive) {
             selectedPlacement.mesh.material.emissive.setHex(0x000000);
         }
@@ -2629,9 +2638,14 @@ window.onload = function() {
                 toast.style.display = 'block';
             } else {
                 const angle = screenToTunnelAngle(t.clientX);
-                const r = tubeRadius - 6;
-                selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
-                selectedPlacement.mesh.rotation.z = angle;
+                if (selectedPlacement.type === 'barrier') {
+                    // Barriers stay centered, only rotate
+                    selectedPlacement.mesh.rotation.z = angle;
+                } else {
+                    const r = tubeRadius - 6;
+                    selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
+                    selectedPlacement.mesh.rotation.z = angle;
+                }
                 selectedPlacement.angle = angle;
             }
         }
@@ -2672,9 +2686,13 @@ window.onload = function() {
                 oldGeo.dispose();
             } else {
                 const angle = screenToTunnelAngle(e.clientX);
-                const r = tubeRadius - 6;
-                selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
-                selectedPlacement.mesh.rotation.z = angle;
+                if (selectedPlacement.type === 'barrier') {
+                    selectedPlacement.mesh.rotation.z = angle;
+                } else {
+                    const r = tubeRadius - 6;
+                    selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
+                    selectedPlacement.mesh.rotation.z = angle;
+                }
                 selectedPlacement.angle = angle;
             }
         }
@@ -2721,6 +2739,24 @@ window.onload = function() {
         hideContextMenu();
         const toast = document.getElementById('dev-bake-toast');
         toast.innerText = isBarrier ? 'DRAG ← → TO SCULPT ARC' : 'DRAG TO REPOSITION · TAP TO DROP';
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2000);
+    });
+
+    tap('dev-ctx-rotate', () => {
+        if (!selectedPlacement) return;
+        const m = selectedPlacement.mesh;
+        if (m.material) {
+            m.material = m.material.clone();
+            m.material.transparent = true;
+            m.material.opacity = 0.5;
+            m.material.depthWrite = false;
+        }
+        movingPlacement = true;
+        sculpting = false; // rotate mode, not sculpt
+        hideContextMenu();
+        const toast = document.getElementById('dev-bake-toast');
+        toast.innerText = 'DRAG TO ROTATE · TAP TO DROP';
         toast.style.display = 'block';
         setTimeout(() => toast.style.display = 'none', 2000);
     });
@@ -3099,6 +3135,7 @@ window.onload = function() {
   font-family:'Press Start 2P',monospace;">
   <div style="font-size:6px;color:#555;letter-spacing:2px;margin-bottom:4px;">OBJECT</div>
   <button class="dbtn" id="dev-ctx-move"   style="background:#00ffcc;color:#000;width:140px;">✥ MOVE</button>
+  <button class="dbtn" id="dev-ctx-rotate" style="display:none;background:#aa44ff;color:#fff;width:140px;">↻ ROTATE</button>
   <button class="dbtn" id="dev-ctx-delete" style="background:#ff2244;color:#fff;width:140px;">✕ DELETE</button>
   <button class="dbtn" id="dev-ctx-cancel" style="background:#222;color:#888;width:140px;">CANCEL</button>
 </div>
