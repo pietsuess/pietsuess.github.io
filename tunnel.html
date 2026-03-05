@@ -2616,17 +2616,47 @@ window.onload = function() {
     // ── Dev level jump ────────────────────────────────────────────────
     window.devJumpSector = function(n) {
         currentSector = n;
-        introSpawned  = false;
+        var zone = getZone(n);
+
+        // Update zone visuals
+        baseSpeed = zone.speed;
+        sectorDistance = baseSectorDistance * Math.pow(1.08, n - 1);
+        document.getElementById('sector-text').innerText = n.toString().padStart(2,'0');
+        document.getElementById('zone-name').innerText = zone.name;
+        document.getElementById('zone-name').style.color = zone.color;
+        wireMat.color.setHex(zone.wireColor);
+        scene.fog.color.setHex(zone.fogColor);
+        scene.background.setHex(zone.fogColor);
+
+        // Reset flight state
+        health = 100;
+        score = 0;
+        speed = baseSpeed;
         distanceTraveled = 0;
-        sectorTime    = 0;
-        score         = 0;
-        speed         = 160 + (n - 1) * 53;  // match sector speed ramp
+        sectorTime = 0;
+        finishRingSpawned = false;
+        introSpawned = false;
+        isJumping = false;
+        lastRampZ = 0;
+        spiralAngle = -Math.PI / 2;
+        combo = 0;
+        sectorStartScore = 0;
+        throttle = 0; throttleSmooth = 0; shipZOffset = -18;
+        if (finishRing) { scene.remove(finishRing); finishRing = null; }
+
         // Clear all items
         items.forEach(m => scene.remove(m));
         items.length = 0;
         devPlacements.forEach(p => scene.remove(p.mesh));
+
+        // Update HUD
+        document.getElementById('progress-bar').style.width = '0%';
+        document.getElementById('score').innerText = '000000';
+        updateShieldBar();
+
         // Re-seed
         spawnIntroWave();
+
         // Close pause screen and resume
         document.getElementById('pause-screen').style.display = 'none';
         gameState = 'playing';
@@ -2634,10 +2664,10 @@ window.onload = function() {
         clock.getDelta();
         document.getElementById('dev-pause').innerText = '⏸ PAUSE';
         document.getElementById('dev-pause').style.background = '#ffe000';
-        const toast = document.getElementById('dev-bake-toast');
+        var toast = document.getElementById('dev-bake-toast');
         toast.innerText = '▶ SECTOR ' + n;
         toast.style.display = 'block';
-        setTimeout(() => toast.style.display = 'none', 1500);
+        setTimeout(function() { toast.style.display = 'none'; }, 1500);
     };
 
 };
