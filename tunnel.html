@@ -1063,7 +1063,7 @@ window.onload = function() {
     scene.fog = new THREE.FogExp2(0x000810, 0.0008);
     scene.background = new THREE.Color(0x000810);
 
-    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 8000);
+    const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
@@ -1082,7 +1082,8 @@ window.onload = function() {
     // --- The Tube ---
     const tubeRadius = 35;
     const tubeSegments = 32; 
-    const tubeGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, 1000, tubeSegments, 20, true);
+    const tubeLen = 5000;
+    const tubeGeo = new THREE.CylinderGeometry(tubeRadius, tubeRadius, tubeLen, tubeSegments, 20, true);
     tubeGeo.rotateX(Math.PI / 2);
     
     const solidMat = new THREE.MeshLambertMaterial({ color: 0x000008, side: THREE.BackSide });
@@ -1090,11 +1091,11 @@ window.onload = function() {
     
     const tube1 = new THREE.Group();
     tube1.add(new THREE.Mesh(tubeGeo, solidMat)); tube1.add(new THREE.Mesh(tubeGeo, wireMat));
-    tube1.position.z = -500;
-    
+    tube1.position.z = -tubeLen / 2;
+
     const tube2 = new THREE.Group();
     tube2.add(new THREE.Mesh(tubeGeo, solidMat)); tube2.add(new THREE.Mesh(tubeGeo, wireMat));
-    tube2.position.z = -1500;
+    tube2.position.z = -tubeLen * 1.5;
 
     scene.add(tube1);
     scene.add(tube2);
@@ -2363,8 +2364,8 @@ window.onload = function() {
 
             tube1.position.z += moveDist;
             tube2.position.z += moveDist;
-            if (tube1.position.z > 500) tube1.position.z = tube2.position.z - 1000;
-            if (tube2.position.z > 500) tube2.position.z = tube1.position.z - 1000;
+            if (tube1.position.z > tubeLen / 2) tube1.position.z = tube2.position.z - tubeLen;
+            if (tube2.position.z > tubeLen / 2) tube2.position.z = tube1.position.z - tubeLen;
 
             for(let i = items.length - 1; i >= 0; i--) {
                 let item = items[i];
@@ -2687,10 +2688,12 @@ window.onload = function() {
     });
 
     // ── Panel toggle ─────────────────────────────────────────────────
+    var _normalFogDensity = 0.0008;
     tap('dev-toggle', () => {
         devOpen = !devOpen;
         document.getElementById('dev-panel').style.display = devOpen ? 'flex' : 'none';
         document.getElementById('dev-toggle').innerText = devOpen ? '⚙▲' : '⚙ DEV';
+        scene.fog.density = devOpen ? 0.00015 : _normalFogDensity;
         updateEditOverlay();
     });
 
@@ -2703,6 +2706,19 @@ window.onload = function() {
 
     // ── Nudge — global functions called by inline HTML handlers ──────
     var _nudgeIv = null;
+    function tileTubesAroundCamera() {
+        var cz = camera.position.z;
+        var half = tubeLen / 2;
+        // Position both tubes so they bracket the camera
+        tube1.position.z = cz - (((cz - tube1.position.z) % tubeLen) + tubeLen) % tubeLen;
+        tube2.position.z = tube1.position.z - tubeLen;
+        // Ensure one is ahead and one behind
+        if (tube1.position.z > cz + half) tube1.position.z -= tubeLen * 2;
+        if (tube2.position.z > cz + half) tube2.position.z -= tubeLen * 2;
+        if (tube1.position.z < cz - tubeLen * 1.5) tube1.position.z += tubeLen * 2;
+        if (tube2.position.z < cz - tubeLen * 1.5) tube2.position.z += tubeLen * 2;
+    }
+
     window._nudgeStart = function(dir) {
         window._nudgeStop();
         var zEl = document.getElementById('dev-nudge-z');
@@ -2710,6 +2726,7 @@ window.onload = function() {
             var d = dir * 3;
             camera.position.z    += d;
             shipGroup.position.z += d;
+            tileTubesAroundCamera();
             if (zEl) zEl.innerText = 'Z:' + Math.round(camera.position.z);
             renderer.render(scene, camera);
         }
