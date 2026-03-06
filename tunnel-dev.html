@@ -2190,6 +2190,7 @@ window.onload = function() {
     let isTouching = false;
     let shipZOffset = -18;
     const BOOST_SPEED = 550;
+    const HYPER_SPEED = 800;
     let throttle = 0, throttleSmooth = 0;
 
     // Cumulative angle — zones set the rate, physics accumulate it
@@ -2227,7 +2228,7 @@ window.onload = function() {
             const curved = Math.pow(outer, 1.8);
             turnRate = -Math.sign(xn) * curved * 5.5;
         }
-        throttle = (y < H * 0.75) ? 1.0 : 0;
+        throttle = (y < H * 0.25) ? 1.5 : (y < H * 0.75) ? 1.0 : 0;
     }
 
     window.addEventListener('mousedown', e => { var t=e.target.tagName; if(t !== 'BUTTON' && t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) handleInputStart(e.clientX, e.clientY); });
@@ -3698,9 +3699,11 @@ window.onload = function() {
             let progressPct = Math.min(100, (distanceTraveled / sectorDistance) * 100);
             document.getElementById('progress-bar').style.width = progressPct + '%';
             const _bb = document.getElementById('boost-bar');
-            const _bp = Math.round(throttleSmooth * 100);
+            const _bp = Math.round(Math.min(throttleSmooth, 1.0) * 100);
             _bb.style.height = _bp + '%';
-            if (throttleSmooth > 0.7) {
+            if (throttleSmooth > 1.0) {
+                _bb.style.background='#ff8800'; _bb.style.boxShadow='0 0 24px #ff8800, 0 0 48px #ff4400';
+            } else if (throttleSmooth > 0.7) {
                 _bb.style.background='#ff4444'; _bb.style.boxShadow='0 0 16px #ff4444';
             } else if (throttleSmooth > 0.3) {
                 _bb.style.background='#cc3333'; _bb.style.boxShadow='0 0 10px #cc3333';
@@ -3767,12 +3770,17 @@ window.onload = function() {
             }
 
 
-            // Analog throttle -> speed
+            // Analog throttle -> speed (hyper boost above 1.0)
             throttleSmooth += (throttle - throttleSmooth) * 0.08;
-            speed = baseSpeed + (BOOST_SPEED - baseSpeed) * throttleSmooth;
+            if (throttleSmooth <= 1.0) {
+                speed = baseSpeed + (BOOST_SPEED - baseSpeed) * throttleSmooth;
+            } else {
+                const hyperT = (throttleSmooth - 1.0) / 0.5; // 0→1 over the extra 0.5
+                speed = BOOST_SPEED + (HYPER_SPEED - BOOST_SPEED) * hyperT;
+            }
 
-            engineLight.intensity = 4 + throttleSmooth * 8;
-            gEngLight.intensity = 4 + throttleSmooth * 8;
+            engineLight.intensity = 4 + Math.min(throttleSmooth, 1.5) * 10;
+            gEngLight.intensity = 4 + Math.min(throttleSmooth, 1.5) * 10;
 
             // Wing half-span = 5.5 units. At 90° bank the wing points radially outward.
             // Max safe orbit = tubeRadius - wingSpan - safety margin
