@@ -2226,15 +2226,11 @@ window.onload = function() {
     let currentFov = BASE_FOV;
     let throttle = 0, throttleSmooth = 0;
 
-    // Drag-based controls
     let turnRate = 0;
-    let touchStartY = 0;
-    const HYPER_DRAG_DIST = 150; // pixels of upward drag for full hyper
 
     function handleInputStart(x, y) {
         if (gameState !== 'playing') return;
         isTouching = true;
-        touchStartY = y;
         updateZones(x, y);
     }
 
@@ -2259,12 +2255,17 @@ window.onload = function() {
             const curved = Math.pow(outer, 1.8);
             turnRate = -Math.sign(xn) * curved * 5.5;
         }
-        // Touch = normal boost. Drag up from start = hyper ramp.
-        throttle = 1.0;
-        const dragUp = touchStartY - y; // positive = dragged upward
-        if (dragUp > 0) {
-            const hyperT = Math.min(1, dragUp / HYPER_DRAG_DIST);
-            throttle = 1.0 + 0.5 * hyperT;
+        // Bottom 25%: no boost. Drag up through middle 45%: normal boost ramps 0→1.
+        // Top 30%: hyper ramp 1.0→1.5.
+        const yn = 1.0 - (y / H); // 0 at bottom, 1 at top
+        if (yn <= 0.25) {
+            throttle = 0;
+        } else if (yn <= 0.70) {
+            // Ramp from 0→1 as finger goes from 25% to 70% up the screen
+            throttle = (yn - 0.25) / 0.45;
+        } else {
+            // Hyper ramp from 1.0→1.5 in top 30%
+            throttle = 1.0 + 0.5 * ((yn - 0.70) / 0.30);
         }
     }
 
