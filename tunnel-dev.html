@@ -2190,22 +2190,24 @@ window.onload = function() {
     let explosionTimer = 0;
     let explosionOrigin = new THREE.Vector3();
 
-    function triggerExplosion(pos, intensity) {
+    function triggerExplosion(pos, intensity, shipSpeed) {
         explosionGroup.visible = true;
         explosionGroup.position.set(0, 0, 0);
         explosionOrigin.copy(pos);
         explosionTimer = 3.0;
-        const spd = 50 + intensity * 120;
+        // Radial burst is always present, forward momentum comes from ship speed
+        const radSpd = 20 + intensity * 40;
+        const fwdSpd = shipSpeed * 0.6;
         for (let i = 0; i < EXPLOSION_COUNT; i++) {
             const p = explosionParts[i];
             p.mesh.position.copy(pos);
             p.mesh.material.opacity = 1;
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
-            const s = spd * (0.3 + Math.random() * 0.7);
-            const radVx = Math.sin(phi) * Math.cos(theta) * s;
-            const radVy = Math.sin(phi) * Math.sin(theta) * s;
-            const fwdVz = -(Math.abs(Math.cos(phi)) * s + spd * 0.3);
+            const rs = radSpd * (0.3 + Math.random() * 0.7);
+            const radVx = Math.sin(phi) * Math.cos(theta) * rs;
+            const radVy = Math.sin(phi) * Math.sin(theta) * rs;
+            const fwdVz = -(fwdSpd * (0.5 + Math.random()) + rs * 0.2);
             if (p.isSpark) {
                 const size = 0.3 + Math.random() * 0.5;
                 p.spinX = (Math.random() - 0.5) * 15;
@@ -2759,6 +2761,7 @@ window.onload = function() {
     function triggerGameOver() {
         gameState = 'dead';
         // Capture speed-based intensity before resetting
+        const deathSpeed = speed;
         const speedFrac = Math.min(1, speed / HYPER_SPEED);
         const explIntensity = 0.4 + speedFrac * 0.6;
         throttle = 0;
@@ -2772,7 +2775,7 @@ window.onload = function() {
 
         // Explosion — always fires, scales with speed
         const explPos = new THREE.Vector3(0, 0, camera.position.z - 30);
-        triggerExplosion(explPos, explIntensity);
+        triggerExplosion(explPos, explIntensity, deathSpeed);
         shipContainer.visible = false;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
