@@ -750,12 +750,26 @@
       </div>
     </div>
 
+    <div id="ship-selector" style="margin-top:16px;display:none;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">SHIP</div>
+      <div id="ship-selector-btns" style="display:flex;gap:8px;justify-content:center;"></div>
+    </div>
+
     <div id="unlocked-zones" style="margin-top:18px;display:none;">
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">UNLOCKED CONTENT</div>
       <div id="unlocked-zones-btns" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
     </div>
 </div>
 
+
+<!-- Fire Button (gunship only) -->
+<button id="fire-btn" style="display:none;position:fixed;bottom:20px;right:20px;
+  z-index:460;width:64px;height:64px;border-radius:50%;
+  background:rgba(255,136,0,0.25);border:2px solid #ff8800;
+  font-family:'Press Start 2P',monospace;font-size:9px;color:#ff8800;
+  cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  text-shadow:0 0 8px rgba(255,136,0,0.6);box-shadow:0 0 12px rgba(255,136,0,0.2);
+  pointer-events:all;">FIRE</button>
 
 <!-- Skip Tutorial Button -->
 <button id="skip-tutorial-btn">[ SKIP TRAINING ]</button>
@@ -1171,6 +1185,18 @@ var AudioEngine = {
       o.type='square'; g.gain.setValueAtTime(0.2,t);
       var freqs=[440,554.37,659.25,880,1108.73]; for(var i=0;i<5;i++) o.frequency.setValueAtTime(freqs[i],t+i*0.1);
       g.gain.linearRampToValueAtTime(0,t+0.8); o.start(); o.stop(t+0.8);
+    } else if (type === 'fire') {
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+      o.type='square'; o.frequency.setValueAtTime(1200,t); o.frequency.exponentialRampToValueAtTime(600,t+0.08);
+      g.gain.setValueAtTime(0.15,t); g.gain.linearRampToValueAtTime(0,t+0.1); o.start(); o.stop(t+0.1);
+    } else if (type === 'destroy') {
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+      o.type='sawtooth'; o.frequency.setValueAtTime(400,t); o.frequency.exponentialRampToValueAtTime(50,t+0.25);
+      g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.25); o.start(); o.stop(t+0.25);
+      var n=audioCtx.createBufferSource(),nb=audioCtx.createBuffer(1,audioCtx.sampleRate*0.15,audioCtx.sampleRate),nd=nb.getChannelData(0);
+      for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*0.15*(1-i/nd.length);
+      n.buffer=nb; var ng=audioCtx.createGain(); n.connect(ng); ng.connect(sfxGainNode);
+      ng.gain.setValueAtTime(0.2,t); ng.gain.linearRampToValueAtTime(0,t+0.15); n.start(t); n.stop(t+0.15);
     }
   },
   suspend: function() { stopMusic(); pauseMusic(); },
@@ -1203,7 +1229,19 @@ window.onload = function() {
     try { var _bt = localStorage.getItem('trBestTimes'); if (_bt) bestTimes = JSON.parse(_bt); } catch(e) {}
     let sectorCollectiblesSpawned = 0;
     let sectorCollectiblesCollected = 0;
-    
+
+    // Ship system
+    let activeShip = 'default';
+    let unlockedShips = { default: true };
+    try { var _us = localStorage.getItem('trUnlockedShips'); if (_us) unlockedShips = JSON.parse(_us); } catch(e) {}
+    try { var _as = localStorage.getItem('trActiveShip'); if (_as) activeShip = _as; } catch(e) {}
+    if (!unlockedShips[activeShip]) activeShip = 'default';
+
+    // Projectile system
+    let projectiles = [];
+    const FIRE_COOLDOWN = 0.25;
+    let fireCooldownTimer = 0;
+
     // Jump Variables
     let isJumping = false;
     let jumpTimer = 0;
@@ -1959,7 +1997,112 @@ window.onload = function() {
     shipGroup.add(new THREE.PointLight(0xff69b4, 2.0, 24));
 
     shipGroup.scale.set(0.55, 0.55, 0.55);
-    scene.add(shipGroup);
+
+    // --- Gunship (alt ship) ---
+    const gunshipGroup = new THREE.Group();
+    const gunBankGroup = new THREE.Group();
+    gunshipGroup.add(gunBankGroup);
+
+    const matGunBody = new THREE.MeshStandardMaterial({
+        color: 0x006699, emissive: 0x00ccff, emissiveIntensity: 0.4,
+        metalness: 0.0, roughness: 1.0, flatShading: true
+    });
+    const matGunUnder = new THREE.MeshStandardMaterial({
+        color: 0x003355, emissive: 0x0088cc, emissiveIntensity: 0.2,
+        metalness: 0.0, roughness: 1.0, flatShading: true
+    });
+    const matGunCockpit = new THREE.MeshStandardMaterial({
+        color: 0xff8800, emissive: 0xff8800, emissiveIntensity: 1.0,
+        transparent: true, opacity: 0.75, roughness: 1.0, metalness: 0.0
+    });
+    const matGunEngine = new THREE.MeshBasicMaterial({ color: 0x00ccff });
+    const matGunBarrel = new THREE.MeshStandardMaterial({
+        color: 0xcccccc, emissive: 0xff8800, emissiveIntensity: 0.3,
+        metalness: 0.3, roughness: 0.7, flatShading: true
+    });
+
+    // Blocky angular hull — wider, flatter than delta wing
+    const gv = new Float32Array([
+        // TOP — flat angular panel
+        0, 0.3, -4.5,  -6.0, 0.4, 3.0,   6.0, 0.4, 3.0,
+        // BOTTOM
+        0, -0.2, -4.5,  6.0, -0.3, 3.0,  -6.0, -0.3, 3.0,
+        // LEFT EDGE
+        0, 0.3, -4.5,   0, -0.2, -4.5,  -6.0, 0.4, 3.0,
+        0, -0.2, -4.5, -6.0, -0.3, 3.0,  -6.0, 0.4, 3.0,
+        // RIGHT EDGE
+        0, 0.3, -4.5,   6.0, 0.4, 3.0,   0, -0.2, -4.5,
+        0, -0.2, -4.5,  6.0, 0.4, 3.0,   6.0, -0.3, 3.0,
+        // BACK
+        -6.0, 0.4, 3.0, -6.0, -0.3, 3.0,  6.0, -0.3, 3.0,
+        -6.0, 0.4, 3.0,  6.0, -0.3, 3.0,  6.0, 0.4, 3.0,
+    ]);
+    const gGeo = new THREE.BufferGeometry();
+    gGeo.setAttribute('position', new THREE.BufferAttribute(gv, 3));
+    gGeo.computeVertexNormals();
+    gunBankGroup.add(new THREE.Mesh(gGeo, matGunBody));
+
+    // Center ridge
+    const gSpine = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 6.0), matGunUnder);
+    gSpine.position.set(0, 0.45, -0.5);
+    gunBankGroup.add(gSpine);
+
+    // Cockpit — angular (box, not sphere)
+    const gCockpit = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 1.8), matGunCockpit);
+    gCockpit.position.set(0, 0.55, -1.5);
+    gunBankGroup.add(gCockpit);
+
+    // Engine nozzle
+    const gEngGeo = new THREE.CylinderGeometry(0.5, 0.6, 1.0, 6);
+    gEngGeo.rotateX(Math.PI / 2);
+    const gEngine = new THREE.Mesh(gEngGeo, matGunEngine);
+    gEngine.position.set(0, 0.1, 3.5);
+    gunBankGroup.add(gEngine);
+
+    // Gun barrels — two cylinders at wing tips
+    const barrelGeo = new THREE.CylinderGeometry(0.2, 0.2, 3.5, 6);
+    barrelGeo.rotateX(Math.PI / 2);
+    const lBarrel = new THREE.Mesh(barrelGeo, matGunBarrel);
+    lBarrel.position.set(-5.2, 0.1, -1.5);
+    gunBankGroup.add(lBarrel);
+    const rBarrel = new THREE.Mesh(barrelGeo, matGunBarrel);
+    rBarrel.position.set(5.2, 0.1, -1.5);
+    gunBankGroup.add(rBarrel);
+
+    // Barrel tip glow
+    const tipGeo = new THREE.SphereGeometry(0.3, 6, 4);
+    const matTip = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+    const lTip = new THREE.Mesh(tipGeo, matTip);
+    lTip.position.set(-5.2, 0.1, -3.2);
+    gunBankGroup.add(lTip);
+    const rTip = new THREE.Mesh(tipGeo, matTip);
+    rTip.position.set(5.2, 0.1, -3.2);
+    gunBankGroup.add(rTip);
+
+    const gEngLight = new THREE.PointLight(0x00ccff, 4.0, 18);
+    gEngLight.position.set(0, 0, 4.2);
+    gunshipGroup.add(gEngLight);
+    gunshipGroup.add(new THREE.PointLight(0x00ccff, 2.0, 24));
+
+    gunshipGroup.scale.set(0.55, 0.55, 0.55);
+    gunshipGroup.visible = false;
+
+    // --- Ship Container (shared parent for positioning) ---
+    const shipContainer = new THREE.Group();
+    shipContainer.add(shipGroup);
+    shipContainer.add(gunshipGroup);
+    scene.add(shipContainer);
+
+    function setActiveShip(type) {
+        activeShip = type;
+        shipGroup.visible = (type === 'default');
+        gunshipGroup.visible = (type === 'gunship');
+        var fireBtn = document.getElementById('fire-btn');
+        if (fireBtn) fireBtn.style.display = (type === 'gunship' && gameState === 'playing') ? 'block' : 'none';
+        try { localStorage.setItem('trActiveShip', JSON.stringify(type)); } catch(e) {}
+    }
+    setActiveShip(activeShip);
+
     const shipHitRadius = 3.5;
 
 
@@ -2259,6 +2402,117 @@ window.onload = function() {
         setTimeout(() => { burst.remove(); }, 1200);
     }
 
+    // --- Projectile System ---
+    const projectileMat = new THREE.MeshBasicMaterial({ color: 0xff8800 });
+    const projectileGeo = new THREE.SphereGeometry(0.4, 6, 4);
+    projectileGeo.scale(1, 1, 2.5);
+    const PROJECTILE_SPEED = 800;
+
+    function fireProjectile() {
+        if (activeShip !== 'gunship' || gameState !== 'playing') return;
+        if (fireCooldownTimer > 0) return;
+        fireCooldownTimer = FIRE_COOLDOWN;
+        AudioEngine.playSFX('fire');
+
+        var p = new THREE.Mesh(projectileGeo, projectileMat.clone());
+        p.position.copy(shipContainer.position);
+        // Add a glow light (limited — reuse across projectiles by capping)
+        if (projectiles.length < 4) {
+            var pl = new THREE.PointLight(0xff8800, 2, 15);
+            p.add(pl);
+        }
+        scene.add(p);
+        // Store spawn Z so we know how far it's traveled
+        p.userData.spawnZ = p.position.z;
+        p.userData.angle = shipAngle;
+        projectiles.push(p);
+    }
+
+    function updateProjectiles(delta, moveDist) {
+        fireCooldownTimer = Math.max(0, fireCooldownTimer - delta);
+        for (var pi = projectiles.length - 1; pi >= 0; pi--) {
+            var p = projectiles[pi];
+            // Projectiles travel forward (negative Z in world, same as camera direction)
+            p.position.z -= PROJECTILE_SPEED * delta;
+            // Also move with tunnel like items do
+            p.position.z += moveDist;
+
+            // Remove if too far
+            if (Math.abs(p.position.z - shipContainer.position.z) > 1000) {
+                scene.remove(p);
+                projectiles.splice(pi, 1);
+                continue;
+            }
+
+            // Check collision with items
+            for (var ii = items.length - 1; ii >= 0; ii--) {
+                var item = items[ii];
+                var itype = item.userData.type;
+                // Only destroy hazards and laser walls
+                if (itype !== 'hazard' && itype !== 'laser_wall') continue;
+
+                if (itype === 'laser_wall') {
+                    // Check Z proximity and angle match
+                    if (Math.abs(p.position.z - item.position.z) < 8) {
+                        AudioEngine.playSFX('destroy');
+                        flash('#ff8800');
+                        spawnPointBurst('DESTROYED', 'c-gold');
+                        score += 100;
+                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                        scene.remove(item);
+                        items.splice(ii, 1);
+                        scene.remove(p);
+                        projectiles.splice(pi, 1);
+                        break;
+                    }
+                } else {
+                    var dist = p.position.distanceTo(item.position);
+                    if (dist < (item.userData.hitRadius || 4) + 1.5) {
+                        AudioEngine.playSFX('destroy');
+                        flash('#ff8800');
+                        spawnPointBurst('DESTROYED', 'c-gold');
+                        score += 100;
+                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                        scene.remove(item);
+                        items.splice(ii, 1);
+                        scene.remove(p);
+                        projectiles.splice(pi, 1);
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    // --- Ship Selector ---
+    function rebuildShipSelector() {
+        var container = document.getElementById('ship-selector');
+        var btns = document.getElementById('ship-selector-btns');
+        if (!container || !btns) return;
+        var shipCount = Object.keys(unlockedShips).length;
+        if (shipCount <= 1) { container.style.display = 'none'; return; }
+        container.style.display = 'block';
+        btns.innerHTML = '';
+        var ships = [
+            { id: 'default', label: 'DEFAULT', color: '#ff69b4' },
+            { id: 'gunship', label: 'GUNSHIP', color: '#00ccff' }
+        ];
+        ships.forEach(function(s) {
+            if (!unlockedShips[s.id]) return;
+            var btn = document.createElement('button');
+            btn.innerText = s.label;
+            var isActive = (activeShip === s.id);
+            btn.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;padding:8px 14px;'
+                + 'background:' + (isActive ? 'rgba(255,255,255,0.1)' : 'transparent') + ';'
+                + 'border:2px solid ' + (isActive ? s.color : '#444') + ';'
+                + 'color:' + (isActive ? s.color : '#666') + ';'
+                + 'cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;'
+                + 'text-shadow:' + (isActive ? '0 0 8px ' + s.color : 'none') + ';';
+            btn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); setActiveShip(s.id); rebuildShipSelector(); }, {passive: false});
+            btn.addEventListener('mouseup', function(e) { e.stopPropagation(); setActiveShip(s.id); rebuildShipSelector(); });
+            btns.appendChild(btn);
+        });
+    }
 
     function takeDamage() {
         health -= 30;
@@ -2277,7 +2531,9 @@ window.onload = function() {
         flash('#ffffff');
         if (score > 0) saveHighScore(score);
 
-        shipGroup.visible = false;
+        shipContainer.visible = false;
+        var fireBtn = document.getElementById('fire-btn');
+        if (fireBtn) fireBtn.style.display = 'none';
 
         document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
         document.getElementById('initials-entry').style.display = 'block';
@@ -2360,6 +2616,8 @@ window.onload = function() {
         gameState = 'victory';
         AudioEngine.playSFX('victory');
         flash('#00ffaa');
+        var fireBtn = document.getElementById('fire-btn');
+        if (fireBtn) fireBtn.style.display = 'none';
 
         const isPerfect = sectorCollectiblesSpawned > 0 && sectorCollectiblesCollected >= sectorCollectiblesSpawned;
 
@@ -2385,6 +2643,19 @@ window.onload = function() {
         if (isBest) {
             bestTimes[currentSector] = sectorTime;
             try { localStorage.setItem('trBestTimes', JSON.stringify(bestTimes)); } catch(e) {}
+        }
+
+        // Unlock gunship on even sectors
+        if (currentSector % 2 === 0 && !unlockedShips.gunship) {
+            unlockedShips.gunship = true;
+            try { localStorage.setItem('trUnlockedShips', JSON.stringify(unlockedShips)); } catch(e) {}
+            var unlockEl = document.createElement('div');
+            unlockEl.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
+            unlockEl.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:#00ccff;text-shadow:0 0 30px rgba(0,204,255,0.9),0 0 60px rgba(0,204,255,0.4);letter-spacing:5px;animation:fadeSlideUp 0.6s ease-out both;">GUNSHIP UNLOCKED</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(7px,1.8vw,11px);color:#ff8800;letter-spacing:3px;margin-top:14px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">SWITCH IN PAUSE MENU</div>';
+            document.body.appendChild(unlockEl);
+            setTimeout(function() { unlockEl.style.transition = 'opacity 1s'; unlockEl.style.opacity = '0'; }, 2500);
+            setTimeout(function() { unlockEl.remove(); }, 3500);
         }
 
         // Build run times table
@@ -2864,14 +3135,18 @@ window.onload = function() {
         isJumping = false;
         lastRampZ = 0;
         spiralAngle = -Math.PI / 2;
-        
+        projectiles.forEach(p => scene.remove(p));
+        projectiles.length = 0;
+        fireCooldownTimer = 0;
+
         document.getElementById('progress-bar').style.width = '0%';
         document.getElementById('score').innerText = score.toString().padStart(6, '0');
         updateShieldBar();
 
         shipAngle = 0;
         targetAngle = shipAngle;
-        shipGroup.visible = true;
+        shipContainer.visible = true;
+        setActiveShip(activeShip);
 
         // No pre-population — items appear after countdown
 
@@ -2908,10 +3183,17 @@ window.onload = function() {
             gameState = 'paused';
             AudioEngine.suspend();
             rebuildUnlockedMenu();
+            rebuildShipSelector();
             document.getElementById('pause-screen').style.display = 'flex';
+            var fireBtn = document.getElementById('fire-btn');
+            if (fireBtn) fireBtn.style.display = 'none';
         } else if (gameState === 'paused') {
             gameState = 'playing';
             document.getElementById('pause-screen').style.display = 'none';
+            if (activeShip === 'gunship') {
+                var fireBtn = document.getElementById('fire-btn');
+                if (fireBtn) fireBtn.style.display = 'block';
+            }
             AudioEngine.resume();
             clock.getDelta();
         }
@@ -3158,6 +3440,11 @@ window.onload = function() {
     bindTap('sfx-toggle-row', toggleSfxMute);
     _updateMuteUI();
 
+    // Fire button
+    var _fireBtn = document.getElementById('fire-btn');
+    _fireBtn.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); fireProjectile(); }, {passive: false});
+    _fireBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); fireProjectile(); });
+
     // Initials auto-advance + tap-to-focus
     ['ini-1','ini-2','ini-3'].forEach(function(id, i, ids){
         var el = document.getElementById(id);
@@ -3392,6 +3679,7 @@ window.onload = function() {
             speed = baseSpeed + (BOOST_SPEED - baseSpeed) * throttleSmooth;
 
             engineLight.intensity = 4 + throttleSmooth * 8;
+            gEngLight.intensity = 4 + throttleSmooth * 8;
 
             // Wing half-span = 5.5 units. At 90° bank the wing points radially outward.
             // Max safe orbit = tubeRadius - wingSpan - safety margin
@@ -3409,9 +3697,9 @@ window.onload = function() {
             const tx = -Math.sin(shipAngle);  // tangent direction X
             const ty =  Math.cos(shipAngle);  // tangent direction Y
 
-            shipGroup.position.x = Math.cos(shipAngle) * orbitRadius + tx * driftAmount;
-            shipGroup.position.y = Math.sin(shipAngle) * orbitRadius + ty * driftAmount;
-            shipGroup.position.z = camera.position.z + shipZOffset;
+            shipContainer.position.x = Math.cos(shipAngle) * orbitRadius + tx * driftAmount;
+            shipContainer.position.y = Math.sin(shipAngle) * orbitRadius + ty * driftAmount;
+            shipContainer.position.z = camera.position.z + shipZOffset;
 
             // Bank value — smoothly lerped
             if (!bankGroup._bank) bankGroup._bank = 0;
@@ -3420,15 +3708,18 @@ window.onload = function() {
 
             // Camera tracks shipAngle so ship is always centred — mesh needs NO shipAngle rotation
             // Just fixed forward-facing pitch + bank tilt
-            shipGroup.rotation.set(0, 0, 0);
+            shipContainer.rotation.set(0, 0, 0);
             bankGroup.rotation.order = 'ZXY';
             bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
+            gunBankGroup.rotation.order = 'ZXY';
+            gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
 
             camera.position.x = Math.cos(shipAngle) * (tubeRadius - 16);
             camera.position.y = Math.sin(shipAngle) * (tubeRadius - 16);
             camera.rotation.z = shipAngle + Math.PI/2;
 
             engine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
+            gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
             wireMat.opacity = 0.55;
 
             if (cameraShake > 0) cameraShake *= 0.85;
@@ -3448,7 +3739,7 @@ window.onload = function() {
                 if (item.userData.rotSpeedY) item.rotation.y += item.userData.rotSpeedY;
 
                 // --- Collision Logic ---
-                if (item.position.z > shipGroup.position.z - 5 && item.position.z < shipGroup.position.z + 5) {
+                if (item.position.z > shipContainer.position.z - 5 && item.position.z < shipContainer.position.z + 5) {
                     
                     if (item.userData.type === 'laser_wall') {
                         // Check if ship angle falls within the barrier arc
@@ -3462,7 +3753,7 @@ window.onload = function() {
                         }
                     } 
                     else {
-                        let dist = shipGroup.position.distanceTo(item.position);
+                        let dist = shipContainer.position.distanceTo(item.position);
                         
                         if (dist < shipHitRadius + item.userData.hitRadius) {
                             if (item.userData.type === 'ramp' && !isJumping) {
@@ -3522,6 +3813,11 @@ window.onload = function() {
 
                 }
             }
+        }
+
+        // --- Projectile update ---
+        if (activeShip === 'gunship') {
+            updateProjectiles(delta, moveDist);
         }
 
         if (cameraShake > 0) {
