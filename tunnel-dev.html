@@ -3811,35 +3811,31 @@ window.onload = function() {
             }
 
 
-            // Analog throttle -> speed (top 25% = hyper boost to 2x)
-            throttleSmooth += (throttle - throttleSmooth) * 0.08;
+            // Analog throttle -> speed
+            throttleSmooth += (throttle - throttleSmooth) * 0.15;
+            // hyperFrac: 0 at normal boost, 1 at full hyper — used by ALL effects
+            const hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
             if (throttleSmooth <= 1.0) {
                 speed = baseSpeed + (BOOST_SPEED - baseSpeed) * throttleSmooth;
             } else {
-                const hyperT = (throttleSmooth - 1.0) / 0.5;
-                speed = BOOST_SPEED + (HYPER_SPEED - BOOST_SPEED) * hyperT;
+                speed = BOOST_SPEED + (HYPER_SPEED - BOOST_SPEED) * hyperFrac;
             }
 
-            engineLight.intensity = 4 + throttleSmooth * 8;
-            gEngLight.intensity = 4 + throttleSmooth * 8;
+            engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+            gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
 
-            // FOV widens during hyper for speed sensation
-            const targetFov = throttleSmooth > 1.0
-                ? BASE_FOV + (HYPER_FOV - BASE_FOV) * Math.min(1, (throttleSmooth - 1.0) / 0.5)
-                : BASE_FOV;
-            currentFov += (targetFov - currentFov) * 0.06;
+            // FOV widens proportionally with hyperFrac
+            const targetFov = BASE_FOV + (HYPER_FOV - BASE_FOV) * hyperFrac;
+            currentFov += (targetFov - currentFov) * 0.12;
             camera.fov = currentFov;
             camera.updateProjectionMatrix();
 
-            // Tunnel wireframe brightens during hyper
-            if (throttleSmooth > 1.0) {
-                const hf = Math.min(1, (throttleSmooth - 1.0) / 0.5);
-                wireMat.opacity = 0.55 + hf * 0.35;
-                wireMat.color.setHex(hf > 0.5 ? 0xff8844 : 0x44ffaa);
-            } else {
-                wireMat.opacity = 0.55;
-                wireMat.color.setHex(0x00ff88);
-            }
+            // Tunnel wireframe brightens proportionally
+            wireMat.opacity = 0.55 + hyperFrac * 0.35;
+            const wr = Math.round(hyperFrac * 255);
+            const wg = Math.round(255 - hyperFrac * 117);
+            const wb = Math.round(136 - hyperFrac * 68);
+            wireMat.color.setRGB(wr/255, wg/255, wb/255);
 
             // Wing half-span = 5.5 units. At 90° bank the wing points radially outward.
             // Max safe orbit = tubeRadius - wingSpan - safety margin
@@ -3883,23 +3879,19 @@ window.onload = function() {
 
             if (cameraShake > 0) cameraShake *= 0.85;
             if (cameraShake < 0.1) cameraShake = 0;
-            // Hyper boost screen shake — persistent rumble at hyper speed
-            if (throttleSmooth > 1.0) {
-                const hyperShake = (throttleSmooth - 1.0) / 0.5 * 3.0;
-                cameraShake = Math.max(cameraShake, hyperShake);
+            // Hyper boost screen shake — ramps with hyperFrac
+            if (hyperFrac > 0) {
+                cameraShake = Math.max(cameraShake, hyperFrac * 3.0);
             }
 
-            // Hyper tracers
-            const isHyper = throttleSmooth > 1.02;
-            ghostingActive = isHyper;
-            tracerGroup.visible = isHyper;
-            if (isHyper) {
-                const hyperT = Math.min(1, (throttleSmooth - 1.0) / 0.5);
-                tracerMat.opacity = 0.3 + hyperT * 0.5;
+            // Hyper tracers + ghosting — all proportional to hyperFrac
+            ghostingActive = hyperFrac > 0.01;
+            tracerGroup.visible = hyperFrac > 0.01;
+            if (hyperFrac > 0.01) {
                 for (let t = 0; t < tracers.length; t++) {
                     const tr = tracers[t];
-                    tr.position.z += moveDist * (1.2 + Math.random() * 0.3);
-                    tr.material.opacity = 0.3 + hyperT * 0.5 + Math.random() * 0.15;
+                    tr.position.z += moveDist * (1.0 + hyperFrac * 0.5);
+                    tr.material.opacity = hyperFrac * 0.7 + Math.random() * 0.1;
                     if (tr.position.z > camera.position.z + 30) {
                         tr.position.z = camera.position.z - 200 - Math.random() * 300;
                     }
@@ -4015,10 +4007,9 @@ window.onload = function() {
             tube2.position.x = 0; tube2.position.y = 0;
         }
 
-        if (ghostingActive) {
-            // Ghosting: don't fully clear — fade previous frame, then render on top
-            const hyperT = Math.min(1, (throttleSmooth - 1.0) / 0.5);
-            fadeMat.opacity = 0.08 + (1 - hyperT) * 0.35; // more ghosting at higher speed
+        if (ghostingActive && hyperFrac > 0.01) {
+            // Ghosting ramps with hyperFrac: low hyper = subtle trails, full hyper = heavy ghost
+            fadeMat.opacity = 0.5 - hyperFrac * 0.42; // 0.5 (barely visible) → 0.08 (heavy trails)
             renderer.autoClear = false;
             renderer.render(fadeScene, fadeCam);
             renderer.render(scene, camera);
