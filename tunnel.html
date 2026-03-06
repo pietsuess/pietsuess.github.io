@@ -2072,6 +2072,9 @@ window.onload = function() {
         }
         return (_spawnCfgCache && _spawnCfgCache[sector - 1]) || null;
     }
+    var _rampCountThisSector = 0;
+    var _rampMaxThisSector = 999;
+
     function spawnItem(zPos) {
         let rand = Math.random();
         const s = currentSector;
@@ -2079,7 +2082,7 @@ window.onload = function() {
 
         // --- Ramp + Laser Wall sequences — frequency scales with sector ---
         const rampThreshold = (_sCfg && typeof _sCfg.ramp === 'number') ? _sCfg.ramp : (s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26);
-        if (s >= 2 && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
+        if (s >= 2 && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
             let rampMesh = new THREE.Mesh(rampGeo, rampMat);
@@ -2093,6 +2096,7 @@ window.onload = function() {
             wallMesh.position.set(0, 0, zPos - peakDist);
             wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 };
             scene.add(wallMesh); items.push(wallMesh);
+            _rampCountThisSector++;
             return;
         }
 
@@ -2428,27 +2432,19 @@ window.onload = function() {
             return; // baked layout replaces procedural spawn
         }
 
-        if (currentSector === 1) {
-            // Sector 1: pure rings
-            var a = -Math.PI / 2;
-            for (var n = 0; n < 6; n++) {
-                var m = new THREE.Mesh(ringGeo, ringMat);
-                m.position.set(Math.cos(a)*r, Math.sin(a)*r, baseZ - n*130);
-                m.userData = { type:'score', hitRadius:6.5, rotSpeedZ:0.3 };
-                scene.add(m); items.push(m);
-            }
-        }
+        // Set ramp limit per sector: S1=0, S2=1, S3+=uncapped
+        _rampCountThisSector = 0;
+        _rampMaxThisSector = currentSector <= 1 ? 0 : currentSector <= 2 ? 1 : 999;
 
-        // Seed tunnel ahead procedurally
-        // Finish ring spawns at camera.z - 800 when distanceTraveled hits 80%.
-        // Items placed at seedZ - n*150 reach the camera after (5000 + n*150) distance.
-        // Stop items so the last one passes 800 units before the finish ring arrives.
+        // Seed tunnel ahead procedurally with increasing density per sector
+        // Spacing tightens from 180 (S1) down to 70 (S10) = more objects in later sectors
+        var spacing = Math.max(70, 180 - (currentSector - 1) * 12);
         var seedZ = camera.position.z - 4000;
         var lastItemDist = sectorDistance * 0.80 - 400;
-        for (var n = 0; n < 200; n++) {
-            var itemDist = 4000 + n * 150;
+        for (var n = 0; n < 400; n++) {
+            var itemDist = 4000 + n * spacing;
             if (itemDist > lastItemDist) break;
-            spawnItem(seedZ - n * 150);
+            spawnItem(seedZ - n * spacing);
         }
     }
 
