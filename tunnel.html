@@ -261,6 +261,51 @@
         .btn-gold:active { background: rgba(255,224,0,0.22); }
 
         /* Sector Config Overlay */
+        #sector-config-screen {
+            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.97);
+            z-index: 520; flex-direction: column; align-items: center;
+            pointer-events: auto; padding: 20px; overflow-y: auto;
+            touch-action: auto; -webkit-user-select: text; user-select: text;
+        }
+        #sector-config-screen h1 {
+            font-family: 'Press Start 2P', monospace; font-size: 14px;
+            color: #ffe000; text-shadow: 0 0 12px rgba(255,224,0,0.6);
+            letter-spacing: 3px; margin: 16px 0 20px;
+        }
+        .sc-list { width: 100%; max-width: 520px; margin: 0 auto; }
+        .sc-row {
+            display: flex; align-items: center; gap: 6px; margin-bottom: 8px;
+            padding: 8px 10px; border: 1px solid rgba(0,255,204,0.15);
+            background: rgba(0,255,204,0.03);
+        }
+        .sc-num {
+            font-family: 'Press Start 2P', monospace; font-size: 8px;
+            color: #555; min-width: 26px; text-align: right;
+        }
+        .sc-row input {
+            font-family: 'Press Start 2P', monospace; font-size: 9px;
+            background: rgba(0,0,0,0.6); border: 1px solid rgba(0,255,204,0.3);
+            color: #00ffcc; padding: 6px 8px; outline: none;
+        }
+        .sc-row input:focus { border-color: #ffe000; box-shadow: 0 0 6px rgba(255,224,0,0.3); }
+        .sc-row input, .sc-del { touch-action: auto; -webkit-user-select: text; user-select: text; }
+        .sc-name { width: 90px; text-transform: uppercase; }
+        .sc-speed, .sc-length { width: 72px; text-align: right; }
+        .sc-label {
+            font-family: 'Press Start 2P', monospace; font-size: 5px;
+            color: #555; letter-spacing: 1px;
+        }
+        .sc-del {
+            font-family: 'Press Start 2P', monospace; font-size: 9px;
+            background: none; border: 1px solid rgba(255,68,68,0.3); color: #ff4444;
+            padding: 5px 8px; cursor: pointer; margin-left: auto;
+        }
+        .sc-del:hover { background: rgba(255,68,68,0.15); }
+        .sc-footer {
+            display: flex; flex-wrap: wrap; gap: 8px; justify-content: center;
+            margin: 20px 0 30px; max-width: 520px;
+        }
+        .sc-footer .menu-btn { width: auto; padding: 10px 18px; font-size: 8px; }
 
         /* Corner-bracket + inner-inset content box */
         .content-box {
@@ -734,9 +779,26 @@
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">UNLOCKED CONTENT</div>
       <div id="unlocked-zones-btns" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
     </div>
+    <div id="dev-level-jump" style="margin-top:16px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">JUMP TO SECTOR</div>
+      <div id="jump-btn-container" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
+    </div>
+    <button class="menu-btn btn-gold" id="sector-config-btn" style="margin-top:12px;font-size:8px;padding:10px 20px;">[ ⚙ SECTOR CONFIG ]</button>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
+    <button class="menu-btn" id="dev-restart-pause" style="margin-top:12px;color:#ffe000;border-color:#ffe000;">[ ↻ RESTART SECTOR ]</button>
 </div>
 
+<!-- Sector Config Overlay -->
+<div id="sector-config-screen">
+    <h1>SECTOR CONFIG</h1>
+    <div class="sc-list" id="sc-list"></div>
+    <div class="sc-footer">
+        <button class="menu-btn" id="sc-add" style="width:auto;padding:10px 18px;font-size:8px;">[ + ADD SECTOR ]</button>
+        <button class="menu-btn btn-gold" id="sc-save" style="width:auto;padding:10px 18px;font-size:8px;">[ SAVE &amp; CLOSE ]</button>
+        <button class="menu-btn" id="sc-reset" style="width:auto;padding:10px 18px;font-size:8px;">[ RESET DEFAULTS ]</button>
+        <button class="menu-btn btn-danger" id="sc-cancel" style="width:auto;padding:10px 18px;font-size:8px;">[ CANCEL ]</button>
+    </div>
+</div>
 
 <!-- Skip Tutorial Button -->
 <button id="skip-tutorial-btn">[ SKIP TRAINING ]</button>
@@ -1174,7 +1236,9 @@ window.onload = function() {
     let sectorDistance = baseSectorDistance; // updated after ZONES init below
     let sectorStartScore = 0;
     let sectorTime = 0;       // seconds elapsed this sector
-    let bestTimes = {};       // best time per sector number 
+    let bestTimes = {};       // best time per sector number
+    let sectorCollectiblesSpawned = 0;
+    let sectorCollectiblesCollected = 0;
     
     // Jump Variables
     let isJumping = false;
@@ -2032,6 +2096,8 @@ window.onload = function() {
     
     window.addEventListener('touchstart', e => {
         if (gameState === 'title') return;
+        if (e.target.closest('#sector-config-screen')) return;
+        if (e.target.closest('#dev-edit-overlay')) return;
         var tag = e.target.tagName;
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
             e.preventDefault();
@@ -2039,6 +2105,8 @@ window.onload = function() {
         }
     }, {passive: false});
     window.addEventListener('touchmove', e => {
+        if (e.target.closest('#sector-config-screen')) return;
+        if (e.target.closest('#dev-edit-overlay')) return;
         var tag = e.target.tagName;
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
             e.preventDefault();
@@ -2047,6 +2115,8 @@ window.onload = function() {
     }, {passive: false});
 
     window.addEventListener('touchend', e => {
+        if (e.target.closest('#sector-config-screen')) return;
+        if (e.target.closest('#dev-edit-overlay')) return;
         if (e.target.tagName !== 'BUTTON' && !e.target.closest('#hamburger-btn')) {
             e.preventDefault();
             handleInputEnd();
@@ -2165,6 +2235,7 @@ window.onload = function() {
             rotSpeedX: 0,
             rotSpeedY: 0,
             rotSpeedZ: 0.3 * rotMult };  // gentle unified spin on Z only
+        if (type === 'score' || type === 'health') sectorCollectiblesSpawned++;
         scene.add(mesh); items.push(mesh);
     }
 
@@ -2240,6 +2311,7 @@ window.onload = function() {
 
 
     function takeDamage() {
+        if (devGodMode) { flash('#ffe000'); return; }
         health -= 30;
         combo = 0; comboTimer = 0;
         AudioEngine.playSFX('hit');
@@ -2339,11 +2411,23 @@ window.onload = function() {
         gameState = 'victory';
         AudioEngine.playSFX('victory');
         flash('#00ffaa');
-        
+
+        const isPerfect = sectorCollectiblesSpawned > 0 && sectorCollectiblesCollected >= sectorCollectiblesSpawned;
+
         for(let i=0; i<5; i++) {
-            setTimeout(() => { spawnPointBurst('CLEAR', 'c-gold'); }, i * 150);
+            setTimeout(() => { spawnPointBurst(isPerfect ? 'PERFECT' : 'CLEAR', 'c-gold'); }, i * 150);
         }
-        
+
+        if (isPerfect) {
+            const pf = document.createElement('div');
+            pf.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
+            pf.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(18px,5vw,36px);color:#ffee00;text-shadow:0 0 30px rgba(255,238,0,0.9),0 0 60px rgba(255,170,0,0.6);letter-spacing:6px;animation:fadeSlideUp 0.6s ease-out both;">PERFECT SCORE</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#ffcc00;letter-spacing:3px;margin-top:14px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">ALL COLLECTIBLES</div>';
+            document.body.appendChild(pf);
+            setTimeout(() => { pf.style.transition = 'opacity 0.8s'; pf.style.opacity = '0'; }, 2000);
+            setTimeout(() => pf.remove(), 3000);
+        }
+
         document.getElementById('victory-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
 
         // Format and show sector time
@@ -2358,7 +2442,7 @@ window.onload = function() {
         timeEl.style.textShadow = isBest ? '0 0 10px rgba(255,238,0,0.8)' : '0 0 8px rgba(0,255,136,0.7)';
 
         // Odd sectors with portfolio on: skip victory screen, go straight to carousel
-        if (trContentPopupsOn && CAROUSEL_SECTOR_MAP[currentSector]) {
+        if (trContentPopupsOn && !devOpen && CAROUSEL_SECTOR_MAP[currentSector]) {
             // Brief pause for victory SFX/flash, then show carousel
             setTimeout(function() {
                 showCarousel(currentSector);
@@ -2428,7 +2512,9 @@ window.onload = function() {
                 mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3), arcLength: (obj.type === 'barrier' ? (obj.arcLength || Math.PI * 2) : undefined) };
                 scene.add(mesh); items.push(mesh);
                 // Always register as editable placement for dev mode
+                devPlacements.push({ type: obj.type, z: z, angle: angle, arcLength: obj.arcLength, mesh: mesh });
             });
+            document.getElementById('dev-count').innerText = 'PLACED: ' + devPlacements.length;
             return; // baked layout replaces procedural spawn
         }
 
@@ -2798,10 +2884,12 @@ window.onload = function() {
         }
         
         health = 100;
-        score = sectorStartScore; 
+        score = sectorStartScore;
         speed = baseSpeed;
         distanceTraveled = 0;
         sectorTime = 0;
+        sectorCollectiblesSpawned = 0;
+        sectorCollectiblesCollected = 0;
         finishRingSpawned = false;
         introSpawned = false;
         if (finishRing) { scene.remove(finishRing); finishRing = null; }
@@ -2834,7 +2922,7 @@ window.onload = function() {
 
         gameState = 'playing';
         clock.getDelta();
-        if (isFullReset && !TUT.skipNext && !_tutorialCompleted) {
+        if (isFullReset && !TUT.skipNext && !_tutorialCompleted && !devOpen) {
             tutStart();
         } else {
             TUT.skipNext = false;
@@ -3044,7 +3132,7 @@ window.onload = function() {
     bindTap('play-btn', () => initializeFlight(true));
     bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('next-level-btn', function() {
-        if (trContentPopupsOn && CAROUSEL_SECTOR_MAP[currentSector]) {
+        if (trContentPopupsOn && !devOpen && CAROUSEL_SECTOR_MAP[currentSector]) {
             document.getElementById('victory-screen').style.display = 'none';
             showCarousel(currentSector);
         } else if (currentSector >= 10) {
@@ -3100,6 +3188,7 @@ window.onload = function() {
         document.getElementById('pause-screen').style.display = 'none';
         triggerGameOver();
     });
+    bindTap('dev-restart-pause', () => window.devJumpSector(currentSector));
     bindTap('music-mute-btn', toggleMusicMute);
     bindTap('sfx-mute-btn', toggleSfxMute);
     _updateMuteUI();
@@ -3424,6 +3513,7 @@ window.onload = function() {
                                 if (TUT.active) tutHit('hazard');
                             }
                             else if (item.userData.type === 'health') {
+                                sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 15);
                                 score += 1000;
                                 AudioEngine.playSFX('pickup');
@@ -3432,6 +3522,7 @@ window.onload = function() {
                                 if (TUT.active) tutHit('health');
                             }
                             else if (item.userData.type === 'score') {
+                                sectorCollectiblesCollected++;
                                 combo++;
                                 comboTimer = COMBO_WINDOW;
                                 const mult = Math.min(combo, 4);
@@ -3457,7 +3548,7 @@ window.onload = function() {
                     }
                 }
 
-                if (item.position.z > camera.position.z + 50) {
+                if (!devOpen && item.position.z > camera.position.z + 50) {
                     if (item.userData.isTut && TUT.active) {
                         tutPassed(item.userData.type === 'score' ? 'score' : item.userData.type === 'health' ? 'health' : 'hazard');
                     }
@@ -3473,12 +3564,1165 @@ window.onload = function() {
             camera.position.y += (Math.random() - 0.5) * cameraShake;
         }
 
+        if (typeof tickGhost === 'function') tickGhost();
+        if (typeof updateEditOverlay === 'function') updateEditOverlay();
+        if (typeof updateNudgeBar === 'function') updateNudgeBar();
         renderer.render(scene, camera);
     }
 
+    // Ghost vars declared here so tickGhost (called in animate) can reference them safely
+    var ghost = null;
+    var ghostActive = false;
+    var ghostAngle  = 0;
+    var ghostZ      = 0;
+    var editOverlayEl = null;
+    var devNudgeDir = 0;
+    var _nudgeBar = null;
+
+    // Dev mode state — declared here so animate() loop can reference them safely
+    var devOpen        = false;
+    var barrierArcDeg  = 360;
+    var devPaused      = false;
+    var devGodMode     = false;
+    var devSelectedType = 'ring';
+    var devPlacements  = [];
+    var patternMode    = false;
+    var patternType    = 'line';
+    var patternCount   = 8;
+    var patternStep    = 150;
+    var patternSpin    = 0.55;
+    var previewMeshes  = [];
+    var lastPointer    = {x:0, y:0};
+    var dragState      = null;
+    var longPressTimer = null;
+    var selectedPlacement = null;
+    var movingPlacement   = false;
+    var sculpting         = false;
+    var sculptStartX      = 0;
+    var sculptStartArc    = 0;
+    var lpStartX = 0, lpStartY = 0;
+
+    // Assign DOM refs now — window.onload guarantees DOM is ready
+    editOverlayEl = document.getElementById('dev-edit-overlay');
+    _nudgeBar     = document.getElementById('dev-nudge-bar');
 
     animate();
 
+    // ═══════════════════════════════════════════════════════════════════
+
+
+    // ═══════════════════════════════════════════════════════════════════
+    // DEV MODE — ghost preview, confirm placement, pattern stamp
+    // ═══════════════════════════════════════════════════════════════════
+
+    // Pattern state
+
+    // ── helpers ──────────────────────────────────────────────────────
+    function tap(id, fn) {
+        const el = document.getElementById(id);
+        if (!el) return;
+        ['touchend','mouseup'].forEach(ev =>
+            el.addEventListener(ev, e => { e.preventDefault(); e.stopPropagation(); fn(); }, {passive:false})
+        );
+    }
+
+    function devSetType(t) {
+        devSelectedType = t;
+        ['ring','hazard','core','ramp','mine','knot','barrier'].forEach(id => {
+            const b = document.getElementById('dev-' + id);
+            if (b) b.style.outline = (id === t) ? '2px solid #fff' : 'none';
+        });
+        if (ghost) updateGhostMesh();
+    }
+
+    function makeMesh(type) {
+        let mesh, hitRadius;
+        if      (type === 'ring')    { mesh = new THREE.Mesh(ringGeo,      ringMat.clone());      hitRadius = 6.5;  }
+        else if (type === 'hazard')  { mesh = new THREE.Mesh(blockGeo,     hazardMat.clone());    hitRadius = 6.0;  }
+        else if (type === 'core')    { mesh = new THREE.Mesh(coreGeo,      coreMat.clone());      hitRadius = 5.5;  }
+        else if (type === 'ramp')    { mesh = new THREE.Mesh(rampGeo,      rampMat.clone());      hitRadius = 16.0; }
+        else if (type === 'mine')    { mesh = new THREE.Mesh(mineGeo,      hazardMat.clone());    hitRadius = 5.5;  }
+        else if (type === 'barrier') {
+            var arcRad = barrierArcDeg * Math.PI / 180;
+            mesh = new THREE.Mesh(buildBarrierGeo(arcRad), barrierMat.clone());
+            hitRadius = tubeRadius;
+        }
+        else                         { mesh = new THREE.Mesh(knotGeo,      hazardMat.clone());    hitRadius = 5.0;  }
+        return { mesh, hitRadius };
+    }
+
+    // ── Ghost object ─────────────────────────────────────────────────
+    function spawnGhost() {
+        if (ghost) { scene.remove(ghost); ghost = null; }
+        const { mesh } = makeMesh(devSelectedType);
+        mesh.material = mesh.material.clone();
+        mesh.material.transparent = true;
+        mesh.material.opacity = 0.5;
+        mesh.material.depthWrite = false;
+        ghost = mesh;
+        // Position it straight ahead to start
+        ghostAngle = shipAngle;
+        const r = tubeRadius - 6;
+        ghost.position.set(Math.cos(ghostAngle)*r, Math.sin(ghostAngle)*r, camera.position.z - 80);
+        ghost.rotation.z = ghostAngle;
+        scene.add(ghost);
+    }
+
+    function updateGhostMesh() {
+        const angle = ghostAngle;
+        if (ghost) { scene.remove(ghost); ghost = null; }
+        const { mesh } = makeMesh(devSelectedType);
+        mesh.material = mesh.material.clone();
+        mesh.material.transparent = true;
+        mesh.material.opacity = 0.5;
+        mesh.material.depthWrite = false;
+        ghost = mesh;
+        const r = tubeRadius - 6;
+        ghost.position.set(Math.cos(angle)*r, Math.sin(angle)*r, camera.position.z - 80);
+        ghost.rotation.z = angle;
+        scene.add(ghost);
+    }
+
+    // Called every frame from animate loop to keep ghost locked ahead of camera
+    // ── Live preview meshes ───────────────────────────────────────────
+
+    function clearPreview() {
+        previewMeshes.forEach(m => scene.remove(m));
+        previewMeshes = [];
+    }
+
+    var _lastBuildT = 0;
+    function buildPreviewThrottled() {
+        var now = performance.now();
+        if (now - _lastBuildT < 50) return;
+        _lastBuildT = now;
+        buildPreview();
+    }
+
+    function buildPreview() {
+        clearPreview();
+        if (!ghostActive) return;
+        const r = tubeRadius - 6;
+        const count = patternMode ? patternCount : 1;
+        for (let n = 0; n < count; n++) {
+            const z = ghostZ - n * patternStep;
+            const angle = (patternMode && patternType === 'spiral')
+                ? ghostAngle + n * patternSpin
+                : ghostAngle;
+            const { mesh } = makeMesh(devSelectedType);
+            mesh.material = mesh.material.clone();
+            mesh.material.transparent = true;
+            mesh.material.opacity = 0.5;
+            mesh.material.depthWrite = false;
+            if (devSelectedType === 'barrier') {
+                mesh.position.set(0, 0, z);
+                mesh.rotation.z = angle;
+            } else {
+                mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
+                mesh.rotation.z = angle;
+            }
+            scene.add(mesh);
+            previewMeshes.push(mesh);
+        }
+    }
+
+    function tickGhost() {
+        if (!ghostActive) return;
+        ghostZ = camera.position.z - 80;
+        const r = tubeRadius - 6;
+        previewMeshes.forEach((m, n) => {
+            const z = ghostZ - n * patternStep;
+            const angle = (patternMode && patternType === 'spiral')
+                ? ghostAngle + n * patternSpin
+                : ghostAngle;
+            if (devSelectedType === 'barrier') {
+                m.position.set(0, 0, z);
+                m.rotation.z = angle;
+            } else {
+                m.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
+                m.rotation.z = angle;
+            }
+        });
+    }
+
+    function moveGhost(clientX, clientY) {
+        if (!ghostActive) return;
+        const xn = (clientX / window.innerWidth - 0.5) * 2;
+        ghostAngle = shipAngle + xn * Math.PI * 0.9;
+    }
+
+    // Tap tunnel — just reposition the ghost (commit only via COMMIT button)
+    function placeTap(clientX, clientY) {
+        if (!ghostActive) return;
+        moveGhost(clientX, clientY);
+    }
+
+    function commitSingle(type, angle, z) {
+        const r = tubeRadius - 6;
+        const { mesh, hitRadius } = makeMesh(type);
+        if (type === 'barrier') {
+            mesh.position.set(0, 0, z);
+            mesh.rotation.z = angle;
+            mesh.userData = { type: 'laser_wall', hitRadius, rotSpeedZ: 0.0, devPlaced: true, arcLength: barrierArcDeg * Math.PI / 180 };
+        } else {
+            mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, z);
+            mesh.rotation.z = angle;
+            const utype = type === 'ring' ? 'score' : type === 'core' ? 'health' : 'hazard';
+            mesh.userData = { type: utype, hitRadius, rotSpeedZ: 0.3, devPlaced: true };
+        }
+        scene.add(mesh); items.push(mesh);
+        devPlacements.push({ type, z, angle, arcLength: (type === 'barrier' ? barrierArcDeg * Math.PI / 180 : undefined), mesh });
+        document.getElementById('dev-count').innerText = 'PLACED: ' + devPlacements.length;
+    }
+
+    // ── Shared pause/play sync ────────────────────────────────────────
+    function syncDevPauseUI() {
+        var qb = document.getElementById('dev-quick-toggle');
+        var pb = document.getElementById('dev-pause');
+        if (devPaused) {
+            if (qb) { qb.innerText = '▶'; qb.style.color = '#00ff88'; qb.style.borderColor = '#00ff88'; }
+            if (pb) { pb.innerText = '▶ PLAY'; pb.style.background = '#00ff88'; }
+            // Clear HUD for clean editing
+            document.getElementById('hud').style.display = 'none';
+            document.getElementById('hamburger-btn').style.display = 'none';
+            document.getElementById('mission-banner').style.opacity = '0';
+            var pw = document.getElementById('progress-wrapper'); if (pw) pw.style.display = 'none';
+            var sw = document.getElementById('shield-wrapper'); if (sw) sw.style.display = 'none';
+        } else {
+            if (qb) { qb.innerText = '⏸'; qb.style.color = '#ffe000'; qb.style.borderColor = '#ffe000'; }
+            if (pb) { pb.innerText = '⏸ PAUSE'; pb.style.background = '#ffe000'; }
+            // Restore HUD
+            document.getElementById('hud').style.display = '';
+            document.getElementById('hamburger-btn').style.display = 'flex';
+            var pw = document.getElementById('progress-wrapper'); if (pw) pw.style.display = '';
+            var sw = document.getElementById('shield-wrapper'); if (sw) sw.style.display = '';
+        }
+    }
+
+    // ── Quick pause/play toggle on closed panel ───────────────────────
+    tap('dev-quick-toggle', () => {
+        devPaused = !devPaused;
+        gameState = devPaused ? 'paused' : 'playing';
+        if (!devPaused) clock.getDelta();
+        syncDevPauseUI();
+        updateEditOverlay();
+    });
+
+    // ── Panel toggle ─────────────────────────────────────────────────
+    var _normalFogDensity = 0.0008;
+    tap('dev-toggle', () => {
+        devOpen = !devOpen;
+        document.getElementById('dev-panel').style.display = devOpen ? 'flex' : 'none';
+        document.getElementById('dev-toggle').innerText = devOpen ? '⚙▲' : '⚙ DEV';
+        scene.fog.density = devOpen ? 0.00015 : _normalFogDensity;
+        updateEditOverlay();
+    });
+
+    // ── Type buttons — rebuild preview when type changes ──────────────
+    ['ring','hazard','core','ramp','mine','knot','barrier'].forEach(t => {
+        const b = document.getElementById('dev-' + t);
+        if (b) tap('dev-' + t, () => { devSetType(t); if (ghostActive) buildPreview(); });
+    });
+    devSetType('ring');
+
+    // ── Nudge — global functions called by inline HTML handlers ──────
+    var _nudgeIv = null;
+    function tileTubesAroundCamera() {
+        var cz = camera.position.z;
+        // Keep tube1 as the one nearest the camera, tube2 one length ahead
+        tube1.position.z = cz - ((cz % tubeLen) + tubeLen) % tubeLen + tubeLen / 2;
+        tube2.position.z = tube1.position.z - tubeLen;
+    }
+
+    window._nudgeStart = function(dir) {
+        window._nudgeStop();
+        var zEl = document.getElementById('dev-nudge-z');
+        function step() {
+            var d = dir * 3;
+            camera.position.z    += d;
+            shipGroup.position.z += d;
+            tileTubesAroundCamera();
+            if (zEl) zEl.innerText = 'Z:' + Math.round(camera.position.z);
+            renderer.render(scene, camera);
+        }
+        step();
+        _nudgeIv = setInterval(step, 16);
+    };
+    window._nudgeStop = function() {
+        if (_nudgeIv) { clearInterval(_nudgeIv); _nudgeIv = null; }
+    };
+
+    // ── Rotate ship in pause mode ────────────────────────────────────
+    var _rotateIv = null;
+    window._rotateStart = function(dir) {
+        window._rotateStop();
+        function step() {
+            shipAngle += dir * 0.04;
+            targetAngle = shipAngle;
+            var orbitRadius = tubeRadius - 6;
+            shipGroup.position.x = Math.cos(shipAngle) * orbitRadius;
+            shipGroup.position.y = Math.sin(shipAngle) * orbitRadius;
+            shipGroup.rotation.set(0, 0, 0);
+            bankGroup.rotation.order = 'ZXY';
+            bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2);
+            camera.position.x = Math.cos(shipAngle) * (tubeRadius - 16);
+            camera.position.y = Math.sin(shipAngle) * (tubeRadius - 16);
+            camera.rotation.z = shipAngle + Math.PI/2;
+            renderer.render(scene, camera);
+        }
+        step();
+        _rotateIv = setInterval(step, 16);
+    };
+    window._rotateStop = function() {
+        if (_rotateIv) { clearInterval(_rotateIv); _rotateIv = null; }
+    };
+
+    // Keyboard: arrow keys while dev-paused
+    document.addEventListener('keydown', function(e) {
+        if (!devPaused) return;
+        if (e.key === 'ArrowDown')  { e.preventDefault(); window._nudgeStart(1); }
+        if (e.key === 'ArrowUp')    { e.preventDefault(); window._nudgeStart(-1); }
+        if (e.key === 'ArrowLeft')  { e.preventDefault(); window._rotateStart(-1); }
+        if (e.key === 'ArrowRight') { e.preventDefault(); window._rotateStart(1); }
+    });
+    document.addEventListener('keyup', function(e) {
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') window._nudgeStop();
+        if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') window._rotateStop();
+    });
+
+    // Show nudge bar only when dev-paused (so tunnel is visible, no opaque overlay)
+    function updateNudgeBar() {
+        if (_nudgeBar) _nudgeBar.style.display = devPaused ? 'flex' : 'none';
+    }
+    tap('dev-pause', () => {
+        devPaused = !devPaused;
+        gameState = devPaused ? 'paused' : 'playing';
+        if (!devPaused) clock.getDelta();
+        syncDevPauseUI();
+        updateEditOverlay();
+    });
+
+    // ── Place mode toggle ─────────────────────────────────────────────
+    tap('dev-place-btn', () => {
+        ghostActive = !ghostActive;
+        const btn = document.getElementById('dev-place-btn');
+        const commitBtn = document.getElementById('dev-commit');
+        if (ghostActive) {
+            buildPreview();
+            btn.innerText = '■ STOP';
+            btn.style.background = '#ff4444';
+            commitBtn.style.display = 'block';
+            document.getElementById('dev-place-hint').style.display = 'block';
+        } else {
+            clearPreview();
+            btn.innerText = '+ PLACE';
+            btn.style.background = '#00ffcc';
+            commitBtn.style.display = 'none';
+            document.getElementById('dev-place-hint').style.display = 'none';
+        }
+        updateEditOverlay();
+    });
+
+    tap('dev-commit', () => {
+        if (!ghostActive) return;
+        // Commit current preview as real objects
+        const r = tubeRadius - 6;
+        const count = patternMode ? patternCount : 1;
+        for (let n = 0; n < count; n++) {
+            const z = ghostZ - n * patternStep;
+            const angle = (patternMode && patternType === 'spiral')
+                ? ghostAngle + n * patternSpin
+                : ghostAngle;
+            commitSingle(devSelectedType, angle, z);
+        }
+        // Keep preview alive for next placement — just rebuild
+        buildPreview();
+    });
+
+    // ── Pattern controls — live rebuild preview on every change ───────
+    tap('dev-pattern-line',   () => { patternMode = true;  patternType = 'line';   updatePatternUI(); if (ghostActive) buildPreview(); });
+    tap('dev-pattern-spiral', () => { patternMode = true;  patternType = 'spiral'; updatePatternUI(); if (ghostActive) buildPreview(); });
+    tap('dev-pattern-off',    () => { patternMode = false; updatePatternUI();       if (ghostActive) buildPreview(); });
+
+    function updatePatternUI() {
+        document.getElementById('dev-pattern-line').style.outline   = (patternMode && patternType==='line')   ? '2px solid #fff' : 'none';
+        document.getElementById('dev-pattern-spiral').style.outline = (patternMode && patternType==='spiral') ? '2px solid #fff' : 'none';
+        document.getElementById('dev-pattern-off').style.outline    = !patternMode ? '2px solid #fff' : 'none';
+        document.getElementById('dev-pattern-opts').style.display   = patternMode ? 'flex' : 'none';
+    }
+    updatePatternUI();
+
+    // Pattern sliders
+    (function() {
+        var cs = document.getElementById('dev-count-slider');
+        var ss = document.getElementById('dev-step-slider');
+        var sp = document.getElementById('dev-spin-slider');
+        function wireSlider(sl, fn) {
+            if (!sl) return;
+            ['input','change'].forEach(function(ev) { sl.addEventListener(ev, fn); });
+            sl.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:false});
+            sl.addEventListener('touchmove',  function(e) { e.stopPropagation(); }, {passive:false});
+        }
+        wireSlider(cs, function() {
+            patternCount = parseInt(cs.value);
+            document.getElementById('dev-pcount').innerText = patternCount;
+            if (ghostActive) buildPreview();
+        });
+        wireSlider(ss, function() {
+            patternStep = parseInt(ss.value);
+            document.getElementById('dev-pstep').innerText = patternStep;
+            if (ghostActive) buildPreview();
+        });
+        wireSlider(sp, function() {
+            patternSpin = parseInt(sp.value) / 100;
+            document.getElementById('dev-pspin').innerText = patternSpin.toFixed(2);
+            if (ghostActive) buildPreview();
+        });
+    })();
+
+    // Arc degree slider
+    (function() {
+        var sl = document.getElementById('dev-arc-slider');
+        var lb = document.getElementById('dev-arc-val');
+        if (!sl) return;
+        function onArcChange() {
+            barrierArcDeg = parseInt(sl.value);
+            lb.innerText = barrierArcDeg + '°';
+            // Update preview live if active and barrier selected
+            if (ghostActive && devSelectedType === 'barrier') buildPreview();
+            // Update any selected barrier in place
+            if (selectedPlacement && selectedPlacement.type === 'barrier') {
+                var newArc = barrierArcDeg * Math.PI / 180;
+                selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
+                var old = selectedPlacement.mesh.geometry;
+                selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
+                old.dispose();
+            }
+        }
+        sl.addEventListener('input', onArcChange);
+        // Manual touch handler — body touch-action:none kills native slider drag
+        var dragging = false;
+        function sliderFromTouch(clientX) {
+            var rect = sl.getBoundingClientRect();
+            var pct = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            var min = parseInt(sl.min), max = parseInt(sl.max);
+            sl.value = Math.round(min + pct * (max - min));
+            onArcChange();
+        }
+        sl.addEventListener('touchstart', function(e) {
+            e.preventDefault(); e.stopPropagation();
+            dragging = true;
+            sliderFromTouch(e.touches[0].clientX);
+        }, {passive: false});
+        document.addEventListener('touchmove', function(e) {
+            if (!dragging) return;
+            e.preventDefault();
+            sliderFromTouch(e.touches[0].clientX);
+        }, {passive: false});
+        document.addEventListener('touchend', function() {
+            dragging = false;
+        });
+    })();
+
+    // ── Undo / Clear ─────────────────────────────────────────────────
+    tap('dev-undo', () => {
+        if (!devPlacements.length) return;
+        const last = devPlacements.pop();
+        const idx = items.indexOf(last.mesh);
+        if (idx !== -1) { scene.remove(last.mesh); items.splice(idx,1); }
+        document.getElementById('dev-count').innerText = 'PLACED: ' + devPlacements.length;
+    });
+
+    tap('dev-clear', () => {
+        devPlacements.forEach(p => { const i=items.indexOf(p.mesh); if(i!==-1){scene.remove(p.mesh);items.splice(i,1);} });
+        devPlacements = [];
+        document.getElementById('dev-count').innerText = 'PLACED: 0';
+    });
+
+    // ── Export ───────────────────────────────────────────────────────
+    tap('dev-export', () => {
+        const sector = currentSector;
+        const objects = devPlacements.map(p => {
+            const o = { type: p.type, dz: Math.round(p.z - camera.position.z), angle: parseFloat(p.angle.toFixed(3)) };
+            if (p.arcLength !== undefined) o.arcLength = parseFloat(p.arcLength.toFixed(3));
+            return o;
+        });
+        // Bake directly into the game's level data
+        bakedLevels[sector] = objects;
+        // Persist to localStorage
+        try { localStorage.setItem('tunnelRunner_bakedLevels', JSON.stringify(bakedLevels)); } catch(e) {}
+        // Show confirmation toast
+        const toast = document.getElementById('dev-bake-toast');
+        toast.innerText = '✓ SECTOR ' + sector + ' BAKED & SAVED (' + objects.length + ' objects)';
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2500);
+    });
+
+    // ── Auto populate ─────────────────────────────────────────────
+    tap('dev-auto-pop', () => {
+        // Clear existing placements first
+        devPlacements.forEach(p => { const i = items.indexOf(p.mesh); if (i !== -1) { scene.remove(p.mesh); items.splice(i, 1); } });
+        devPlacements.length = 0;
+
+        const s = currentSector;
+        const r = tubeRadius - 6;
+        const runway = sectorDistance * 0.80 - 400;
+        const baseZ = camera.position.z;
+
+        // Spacing between objects — tighter in later sectors
+        const spacing = s <= 2 ? 130 : s <= 5 ? 110 : s <= 8 ? 90 : 75;
+        const count = Math.floor(runway / spacing);
+
+        // Spawn profiles per sector (mirrors spawnItem logic)
+        var hazardChance, ringChance, coreChance;
+        if (s === 1)      { hazardChance = 0;    ringChance = 0.92; coreChance = 0.08; }
+        else if (s === 2) { hazardChance = 0.70; ringChance = 0;    coreChance = 0.30; }
+        else if (s === 3) { hazardChance = 0.35; ringChance = 0.45; coreChance = 0.20; }
+        else if (s === 4) { hazardChance = 0.50; ringChance = 0.30; coreChance = 0.20; }
+        else if (s === 5) { hazardChance = 0.60; ringChance = 0.22; coreChance = 0.18; }
+        else if (s === 6) { hazardChance = 0.68; ringChance = 0.16; coreChance = 0.16; }
+        else if (s === 7) { hazardChance = 0.72; ringChance = 0.14; coreChance = 0.14; }
+        else if (s === 8) { hazardChance = 0.76; ringChance = 0.12; coreChance = 0.12; }
+        else if (s === 9) { hazardChance = 0.80; ringChance = 0.10; coreChance = 0.10; }
+        else              { hazardChance = 0.84; ringChance = 0.08; coreChance = 0.08; }
+
+        // Ramp+barrier frequency
+        const rampChance = s <= 1 ? 0 : s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26;
+        const zone = getZone(s);
+
+        var angle = 0; // start at 0 degrees
+        var lastRampDist = 0;
+
+        for (var n = 0; n < count; n++) {
+            var zPos = baseZ - 100 - n * spacing;
+            var rand = Math.random();
+            var type, mesh, hitRadius, utype, arcLen;
+
+            // Ramp + barrier combo
+            if (s >= 2 && rand < rampChance && (n * spacing - lastRampDist) > 800) {
+                lastRampDist = n * spacing;
+                // Place ramp
+                var rampAngle = angle;
+                var rampMesh = new THREE.Mesh(rampGeo, rampMat);
+                rampMesh.position.set(Math.cos(rampAngle) * (tubeRadius - 2), Math.sin(rampAngle) * (tubeRadius - 2), zPos);
+                rampMesh.rotation.z = rampAngle;
+                rampMesh.rotation.x = 0.2;
+                rampMesh.userData = { type: 'ramp', hitRadius: 16.0, rotSpeedX: 0, rotSpeedY: 0 };
+                scene.add(rampMesh); items.push(rampMesh);
+                devPlacements.push({ type: 'ramp', z: zPos, angle: rampAngle, mesh: rampMesh });
+
+                // Place barrier after ramp (at jump peak distance)
+                var peakDist = zone.speed * (jumpDuration / 2);
+                var bArc = (Math.PI / 2) + Math.random() * Math.PI; // 90-270 degree arc
+                var bAngle = Math.random() * Math.PI * 2;
+                var barrierMesh = new THREE.Mesh(buildBarrierGeo(bArc), barrierMat);
+                barrierMesh.position.set(0, 0, zPos - peakDist);
+                barrierMesh.rotation.z = bAngle;
+                barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0, arcLength: bArc };
+                scene.add(barrierMesh); items.push(barrierMesh);
+                devPlacements.push({ type: 'barrier', z: zPos - peakDist, angle: bAngle, arcLength: bArc, mesh: barrierMesh });
+
+                angle += 1.1;
+                continue;
+            }
+
+            // Re-roll past ramp threshold
+            rand = (rand - rampChance) / (1 - rampChance);
+
+            // Pick object type
+            if (rand < coreChance) {
+                mesh = new THREE.Mesh(coreGeo, coreMat); type = 'core'; utype = 'health'; hitRadius = 5.5;
+            } else if (rand < coreChance + ringChance) {
+                mesh = new THREE.Mesh(ringGeo, ringMat); type = 'ring'; utype = 'score'; hitRadius = 6.5;
+            } else if (rand < coreChance + ringChance + hazardChance) {
+                var hRand = Math.random();
+                if      (s >= 9 && hRand < 0.40) { mesh = new THREE.Mesh(knotGeo, hazardMat); type = 'knot'; }
+                else if (s >= 7 && hRand < 0.45) { mesh = new THREE.Mesh(knotGeo, hazardMat); type = 'knot'; }
+                else if (s >= 5 && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; }
+                else if (s >= 3 && hRand < 0.55) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; }
+                else                              { mesh = new THREE.Mesh(mineGeo, hazardMat); type = 'mine'; }
+                utype = 'hazard'; hitRadius = type === 'knot' ? 5.0 : type === 'hazard' ? 6.0 : 5.5;
+            } else {
+                mesh = new THREE.Mesh(ringGeo, ringMat); type = 'ring'; utype = 'score'; hitRadius = 6.5;
+            }
+
+            // Spiral placement
+            angle += 1.1;
+            mesh.position.set(Math.cos(angle) * r, Math.sin(angle) * r, zPos);
+            mesh.rotation.z = angle;
+            mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
+            scene.add(mesh); items.push(mesh);
+            devPlacements.push({ type: type, z: zPos, angle: angle, mesh: mesh });
+        }
+
+        document.getElementById('dev-count').innerText = 'PLACED: ' + devPlacements.length;
+
+        // Auto-pause so objects don't fly away
+        if (!devPaused) {
+            devPaused = true;
+            gameState = 'paused';
+            syncDevPauseUI();
+        }
+        updateEditOverlay();
+
+        // Hide any zone announcements / mission banner
+        document.getElementById('mission-banner').style.opacity = '0';
+
+        var toast = document.getElementById('dev-bake-toast');
+        toast.innerText = '⚡ AUTO: ' + devPlacements.length + ' OBJECTS (S' + s + ')';
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2500);
+        renderer.render(scene, camera);
+    });
+
+    // ── God mode toggle ─────────────────────────────────────────────
+    tap('dev-godmode', () => {
+        devGodMode = !devGodMode;
+        var btn = document.getElementById('dev-godmode');
+        if (devGodMode) {
+            btn.innerText = 'NEVER DIE: ON';
+            btn.style.background = '#ffe000';
+            btn.style.color = '#000';
+            btn.style.borderColor = '#ffe000';
+        } else {
+            btn.innerText = 'NEVER DIE: OFF';
+            btn.style.background = '#222';
+            btn.style.color = '#666';
+            btn.style.borderColor = '#333';
+        }
+    });
+
+    // ── Pointer tracking — move ghost ────────────────────────────────
+
+    function onPointerMove(clientX, clientY) {
+        lastPointer = {x:clientX, y:clientY};
+        if (ghostActive) moveGhost(clientX, clientY);
+    }
+
+    document.addEventListener('touchmove', e => {
+        if (dragState) return; // don't interfere with panel drag
+        const t = e.touches[0];
+        onPointerMove(t.clientX, t.clientY);
+    }, {passive:true});
+
+    document.addEventListener('mousemove', e => {
+        if (dragState) return;
+        onPointerMove(e.clientX, e.clientY);
+    });
+
+    // Z position display
+    setInterval(() => {
+        if (devOpen) document.getElementById('dev-pos').innerText = 'Z ' + Math.round(camera.position.z);
+    }, 200);
+
+    // ── Draggable panel ──────────────────────────────────────────────
+    const devPanel2 = document.getElementById('dev-panel');
+
+    function startDrag(clientX, clientY) {
+        const rect = devPanel2.getBoundingClientRect();
+        devPanel2.style.width = rect.width+'px';
+        devPanel2.style.right = 'auto'; devPanel2.style.bottom = 'auto';
+        devPanel2.style.left = rect.left+'px'; devPanel2.style.top = rect.top+'px';
+        dragState = { startX:clientX, startY:clientY, origLeft:rect.left, origTop:rect.top };
+    }
+    function doDrag(clientX, clientY) {
+        if (!dragState) return;
+        devPanel2.style.left = Math.max(0, dragState.origLeft + clientX - dragState.startX) + 'px';
+        devPanel2.style.top  = Math.max(0, dragState.origTop  + clientY - dragState.startY) + 'px';
+    }
+    function endDrag() { dragState = null; }
+
+    const devDragHandle = document.getElementById('dev-pos');
+    devDragHandle.style.cssText += ';cursor:grab;padding-bottom:6px;border-bottom:1px solid #222;margin-bottom:8px;user-select:none;';
+    devDragHandle.addEventListener('mousedown',  e => { e.preventDefault(); startDrag(e.clientX, e.clientY); });
+    devDragHandle.addEventListener('touchstart', e => { e.preventDefault(); startDrag(e.touches[0].clientX, e.touches[0].clientY); }, {passive:false});
+    document.addEventListener('mousemove',  e => doDrag(e.clientX, e.clientY));
+    document.addEventListener('mouseup',    endDrag);
+    document.addEventListener('touchmove',  e => { if (dragState) { e.preventDefault(); doDrag(e.touches[0].clientX, e.touches[0].clientY); }}, {passive:false});
+
+    // Tunnel touch/move only updates ghost angle — no accidental placement
+    document.addEventListener('touchmove', e => {
+        if (!ghostActive) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle')) return;
+        const t = e.touches[0];
+        moveGhost(t.clientX, t.clientY);
+        buildPreviewThrottled();
+    }, {passive:true});
+
+    document.addEventListener('mousemove', e => {
+        if (!ghostActive || dragState) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle')) return;
+        moveGhost(e.clientX, e.clientY);
+        buildPreviewThrottled();
+    });
+
+    document.addEventListener('touchend',   () => { if (dragState) endDrag(); });
+
+    // ── Tap-to-place — commit ghost preview on tap/click ──────────────
+    document.addEventListener('click', e => {
+        if (!ghostActive) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle') || e.target.closest('#dev-nudge-bar') || e.target.closest('#dev-ctx-menu')) return;
+        placeTap(e.clientX, e.clientY);
+    });
+    document.addEventListener('touchend', e => {
+        if (!ghostActive) return;
+        if (dragState) return;
+        const t = e.changedTouches[0];
+        if (!t) return;
+        if (e.target.closest('#dev-panel') || e.target.closest('#dev-toggle') || e.target.closest('#dev-nudge-bar') || e.target.closest('#dev-ctx-menu')) return;
+        placeTap(t.clientX, t.clientY);
+    }, {passive: true});
+
+    // ── Long-press editor — dedicated overlay intercepts touches ─────
+
+    // Fetched lazily — div is in DOM by time window.onload fires
+    function getEditOverlay() { return document.getElementById('dev-edit-overlay'); }
+
+    function updateEditOverlay() {
+        if (!editOverlayEl) return;
+        const active = devOpen && devPaused && !ghostActive && devPlacements.length > 0;
+        editOverlayEl.style.display = active ? 'block' : 'none';
+    }
+
+    function screenToTunnelAngle(clientX) {
+        const xn = (clientX / window.innerWidth - 0.5) * 2;
+        return shipAngle + xn * Math.PI * 0.9;
+    }
+
+    function findNearestPlacement(clientX, clientY) {
+        var best = null, bestDist = Infinity;
+        var tapX = (clientX / window.innerWidth) * 2 - 1;
+        var tapY = -(clientY / window.innerHeight) * 2 + 1;
+        var v = new THREE.Vector3();
+        devPlacements.forEach(function(p) {
+            // Project object to screen space
+            v.copy(p.mesh.position);
+            v.project(camera);
+            // Skip objects behind camera
+            if (v.z > 1) return;
+            var dx = v.x - tapX;
+            var dy = v.y - tapY;
+            var dist = dx * dx + dy * dy;
+            if (dist < bestDist) { bestDist = dist; best = p; }
+        });
+        // Threshold in NDC: ~0.15 of screen = 0.3 NDC, squared = 0.09
+        return bestDist < 0.09 ? best : null;
+    }
+
+    function showContextMenu(placement, clientX, clientY) {
+        selectedPlacement = placement;
+        if (placement.mesh.material && placement.mesh.material.emissive) {
+            placement.mesh.material.emissive.setHex(0xffffff);
+        }
+        // Sync arc slider if barrier selected
+        if (placement.type === 'barrier') {
+            var deg = Math.round((placement.arcLength || Math.PI * 2) * 180 / Math.PI);
+            var sl = document.getElementById('dev-arc-slider');
+            var lb = document.getElementById('dev-arc-val');
+            if (sl) { sl.value = deg; barrierArcDeg = deg; }
+            if (lb) lb.innerText = deg + '°';
+        }
+        // Label the action button based on type
+        const moveBtn = document.getElementById('dev-ctx-move');
+        const rotBtn = document.getElementById('dev-ctx-rotate');
+        if (placement.type === 'barrier') {
+            moveBtn.innerText = '⟺ SCULPT ARC';
+            moveBtn.style.background = '#ff8800';
+            moveBtn.style.color = '#000';
+            rotBtn.style.display = 'block';
+        } else {
+            moveBtn.innerText = '✥ MOVE';
+            moveBtn.style.background = '#00ffcc';
+            moveBtn.style.color = '#000';
+            rotBtn.style.display = 'none';
+        }
+        const menu = document.getElementById('dev-ctx-menu');
+        menu.style.display = 'flex';
+        menu.style.left = Math.min(clientX + 10, window.innerWidth  - 175) + 'px';
+        menu.style.top  = Math.min(clientY - 20, window.innerHeight - 145) + 'px';
+    }
+
+    function hideContextMenu() {
+        document.getElementById('dev-ctx-menu').style.display = 'none';
+        document.getElementById('dev-ctx-rotate').style.display = 'none';
+        if (selectedPlacement && selectedPlacement.mesh.material && selectedPlacement.mesh.material.emissive) {
+            selectedPlacement.mesh.material.emissive.setHex(0x000000);
+        }
+        if (!movingPlacement) selectedPlacement = null;
+    }
+
+
+    // Overlay touch handlers
+    editOverlayEl.addEventListener('touchstart', e => {
+        e.preventDefault();
+        const t = e.touches[0];
+        lpStartX = t.clientX; lpStartY = t.clientY;
+
+        // If already in sculpt mode, just record new start position
+        if (movingPlacement && sculpting && selectedPlacement) {
+            sculptStartX   = t.clientX;
+            sculptStartArc = selectedPlacement.arcLength || Math.PI * 2;
+            return;
+        }
+
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            const p = findNearestPlacement(lpStartX, lpStartY);
+            if (p) {
+                showContextMenu(p, lpStartX, lpStartY);
+            } else {
+                const toast = document.getElementById('dev-bake-toast');
+                toast.innerText = 'NO OBJECT FOUND NEARBY';
+                toast.style.display = 'block';
+                setTimeout(() => toast.style.display = 'none', 1200);
+            }
+        }, 600);
+    }, {passive: false});
+
+    editOverlayEl.addEventListener('touchmove', e => {
+        e.preventDefault();
+        const t = e.touches[0];
+        const moved = Math.hypot(t.clientX - lpStartX, t.clientY - lpStartY);
+        if (moved > 15 && longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (movingPlacement && selectedPlacement) {
+            if (sculpting) {
+                // Drag left = smaller arc, drag right = larger arc
+                const dx = t.clientX - sculptStartX;
+                const newArc = Math.max(0.1, Math.min(Math.PI * 2, sculptStartArc + dx * (Math.PI / window.innerWidth) * 3));
+                selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
+                const oldGeo = selectedPlacement.mesh.geometry;
+                selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
+                oldGeo.dispose();
+                // Live readout
+                const toast = document.getElementById('dev-bake-toast');
+                toast.innerText = 'ARC: ' + Math.round(newArc / (Math.PI * 2) * 100) + '%';
+                toast.style.display = 'block';
+            } else {
+                const angle = screenToTunnelAngle(t.clientX);
+                if (selectedPlacement.type === 'barrier') {
+                    // Barriers stay centered, only rotate
+                    selectedPlacement.mesh.rotation.z = angle;
+                } else {
+                    const r = tubeRadius - 6;
+                    selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
+                    selectedPlacement.mesh.rotation.z = angle;
+                }
+                selectedPlacement.angle = angle;
+            }
+        }
+    }, {passive: false});
+
+    editOverlayEl.addEventListener('touchend', e => {
+        e.preventDefault();
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (movingPlacement && selectedPlacement) {
+            const m = selectedPlacement.mesh;
+            if (m.material) { m.material.opacity = 1.0; m.material.transparent = false; m.material.depthWrite = true; }
+            movingPlacement = false;
+            sculpting = false;
+            selectedPlacement = null;
+        }
+    }, {passive: false});
+
+    // Mouse support
+    editOverlayEl.addEventListener('mousedown', e => {
+        lpStartX = e.clientX; lpStartY = e.clientY;
+        if (longPressTimer) clearTimeout(longPressTimer);
+        longPressTimer = setTimeout(() => {
+            longPressTimer = null;
+            const p = findNearestPlacement(lpStartX, lpStartY);
+            if (p) showContextMenu(p, lpStartX, lpStartY);
+        }, 450);
+    });
+    editOverlayEl.addEventListener('mousemove', e => {
+        const moved = Math.hypot(e.clientX - lpStartX, e.clientY - lpStartY);
+        if (moved > 12 && longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (movingPlacement && selectedPlacement) {
+            if (sculpting) {
+                const dx = e.clientX - sculptStartX;
+                const newArc = Math.max(0.1, Math.min(Math.PI * 2, sculptStartArc + dx * (Math.PI / window.innerWidth) * 3));
+                selectedPlacement.arcLength = newArc;
+                selectedPlacement.mesh.userData.arcLength = newArc;
+                const oldGeo = selectedPlacement.mesh.geometry;
+                selectedPlacement.mesh.geometry = buildBarrierGeo(newArc);
+                oldGeo.dispose();
+            } else {
+                const angle = screenToTunnelAngle(e.clientX);
+                if (selectedPlacement.type === 'barrier') {
+                    selectedPlacement.mesh.rotation.z = angle;
+                } else {
+                    const r = tubeRadius - 6;
+                    selectedPlacement.mesh.position.set(Math.cos(angle)*r, Math.sin(angle)*r, selectedPlacement.mesh.position.z);
+                    selectedPlacement.mesh.rotation.z = angle;
+                }
+                selectedPlacement.angle = angle;
+            }
+        }
+    });
+    editOverlayEl.addEventListener('mouseup', () => {
+        if (longPressTimer) { clearTimeout(longPressTimer); longPressTimer = null; }
+        if (movingPlacement && selectedPlacement) {
+            const m = selectedPlacement.mesh;
+            if (m.material) { m.material.opacity = 1.0; m.material.transparent = false; m.material.depthWrite = true; }
+            movingPlacement = false;
+            sculpting = false;
+            selectedPlacement = null;
+        }
+    });
+
+    // Context menu buttons
+    tap('dev-ctx-delete', () => {
+        if (!selectedPlacement) return;
+        const idx = items.indexOf(selectedPlacement.mesh);
+        if (idx !== -1) { scene.remove(selectedPlacement.mesh); items.splice(idx, 1); }
+        const pi = devPlacements.indexOf(selectedPlacement);
+        if (pi !== -1) devPlacements.splice(pi, 1);
+        document.getElementById('dev-count').innerText = 'PLACED: ' + devPlacements.length;
+        selectedPlacement = null;
+        hideContextMenu();
+    });
+
+    tap('dev-ctx-move', () => {
+        if (!selectedPlacement) return;
+        const isBarrier = selectedPlacement.type === 'barrier';
+        const m = selectedPlacement.mesh;
+        if (m.material) {
+            m.material = m.material.clone();
+            m.material.transparent = true;
+            m.material.opacity = 0.5;
+            m.material.depthWrite = false;
+        }
+        movingPlacement = true;
+        sculpting = isBarrier;
+        if (isBarrier) {
+            sculptStartX   = lpStartX;
+            sculptStartArc = selectedPlacement.arcLength || Math.PI * 2;
+        }
+        hideContextMenu();
+        const toast = document.getElementById('dev-bake-toast');
+        toast.innerText = isBarrier ? 'DRAG ← → TO SCULPT ARC' : 'DRAG TO REPOSITION · TAP TO DROP';
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2000);
+    });
+
+    tap('dev-ctx-rotate', () => {
+        if (!selectedPlacement) return;
+        const m = selectedPlacement.mesh;
+        if (m.material) {
+            m.material = m.material.clone();
+            m.material.transparent = true;
+            m.material.opacity = 0.5;
+            m.material.depthWrite = false;
+        }
+        movingPlacement = true;
+        sculpting = false; // rotate mode, not sculpt
+        hideContextMenu();
+        const toast = document.getElementById('dev-bake-toast');
+        toast.innerText = 'DRAG TO ROTATE · TAP TO DROP';
+        toast.style.display = 'block';
+        setTimeout(() => toast.style.display = 'none', 2000);
+    });
+
+    tap('dev-ctx-cancel', () => hideContextMenu());
+
+    // ── Dev level jump ────────────────────────────────────────────────
+    window.devJumpSector = function(n) {
+        currentSector = n;
+        var zone = getZone(n);
+
+        // Update zone visuals
+        baseSpeed = zone.speed;
+        sectorDistance = zone.length;
+        document.getElementById('sector-text').innerText = n.toString().padStart(2,'0');
+        document.getElementById('zone-name').innerText = zone.name;
+        document.getElementById('zone-name').style.color = zone.color;
+        wireMat.color.setHex(zone.wireColor);
+        scene.fog.color.setHex(zone.fogColor);
+        scene.background.setHex(zone.fogColor);
+
+        // Reset flight state
+        health = 100;
+        score = 0;
+        speed = baseSpeed;
+        distanceTraveled = 0;
+        sectorTime = 0;
+        finishRingSpawned = false;
+        introSpawned = false;
+        isJumping = false;
+        lastRampZ = 0;
+        spiralAngle = -Math.PI / 2;
+        combo = 0;
+        sectorStartScore = 0;
+        throttle = 0; throttleSmooth = 0; shipZOffset = -18;
+        shipAngle = 0; targetAngle = 0;
+        if (finishRing) { scene.remove(finishRing); finishRing = null; }
+
+        // Clear all items
+        items.forEach(m => scene.remove(m));
+        items.length = 0;
+        devPlacements.forEach(p => scene.remove(p.mesh));
+        devPlacements.length = 0;
+        TUT.active = false;
+
+        // Update HUD
+        document.getElementById('progress-bar').style.width = '0%';
+        document.getElementById('score').innerText = '000000';
+        updateShieldBar();
+
+        // Re-seed
+        spawnIntroWave();
+
+        // Close pause screen and resume
+        document.getElementById('pause-screen').style.display = 'none';
+        gameState = 'playing';
+        devPaused = false;
+        clock.getDelta();
+        syncDevPauseUI();
+        var toast = document.getElementById('dev-bake-toast');
+        toast.innerText = '▶ SECTOR ' + n;
+        toast.style.display = 'block';
+        setTimeout(function() { toast.style.display = 'none'; }, 1500);
+    };
+
+    // ── Sector Config Screen ────────────────────────────────────────────
+    function rebuildJumpButtons() {
+        var container = document.getElementById('jump-btn-container');
+        container.innerHTML = '';
+        for (var i = 0; i < ZONES.length; i++) {
+            var btn = document.createElement('button');
+            btn.className = 'menu-btn';
+            btn.style.cssText = 'padding:6px 10px;font-size:7px;width:auto;';
+            btn.textContent = 'S' + (i + 1);
+            btn.setAttribute('data-sector', i + 1);
+            btn.addEventListener('click', (function(n) {
+                return function() { devJumpSector(n); };
+            })(i + 1));
+            container.appendChild(btn);
+        }
+    }
+    rebuildJumpButtons();
+
+    function scRenderList(cfgArray) {
+        var list = document.getElementById('sc-list');
+        list.innerHTML = '';
+        for (var i = 0; i < cfgArray.length; i++) {
+            var row = document.createElement('div');
+            row.className = 'sc-row';
+            row.innerHTML =
+                '<span class="sc-num">' + (i + 1) + '</span>' +
+                '<div><span class="sc-label">NAME</span><input class="sc-name" type="text" maxlength="8" value="' + cfgArray[i].name + '"></div>' +
+                '<div><span class="sc-label">SPEED</span><input class="sc-speed" type="number" min="50" max="9999" value="' + cfgArray[i].speed + '"></div>' +
+                '<div><span class="sc-label">LENGTH</span><input class="sc-length" type="number" min="1000" max="99999" value="' + cfgArray[i].length + '"></div>' +
+                '<button class="sc-del" data-idx="' + i + '">x</button>';
+            list.appendChild(row);
+        }
+        // Enforce uppercase on name inputs
+        list.querySelectorAll('.sc-name').forEach(function(inp) {
+            inp.addEventListener('input', function() {
+                inp.value = inp.value.toUpperCase().replace(/[^A-Z0-9 ]/g, '');
+            });
+        });
+        // Wire delete buttons
+        list.querySelectorAll('.sc-del').forEach(function(btn) {
+            btn.addEventListener('click', function() {
+                var idx = parseInt(btn.getAttribute('data-idx'));
+                scEditBuffer.splice(idx, 1);
+                scRenderList(scEditBuffer);
+            });
+        });
+    }
+
+    var scEditBuffer = [];
+
+    function scReadFromRows() {
+        var rows = document.querySelectorAll('#sc-list .sc-row');
+        var result = [];
+        rows.forEach(function(row) {
+            var name = row.querySelector('.sc-name').value.trim() || 'ZONE';
+            var speed = parseInt(row.querySelector('.sc-speed').value) || 160;
+            var length = parseInt(row.querySelector('.sc-length').value) || baseSectorDistance;
+            result.push({ name: name, speed: speed, length: length });
+        });
+        return result;
+    }
+
+    var _scSavedDisplay = {};
+    function scHideDevControls(hide) {
+        var ids = ['dev-toggle','dev-panel','dev-nudge-bar','dev-bake-toast','dev-quick-toggle'];
+        if (hide) {
+            ids.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el) { _scSavedDisplay[id] = el.style.display; el.style.display = 'none'; }
+            });
+        } else {
+            ids.forEach(function(id) {
+                var el = document.getElementById(id);
+                if (el && _scSavedDisplay.hasOwnProperty(id)) el.style.display = _scSavedDisplay[id];
+            });
+        }
+    }
+
+    function scOpen() {
+        // Build edit buffer from current config
+        scEditBuffer = ZONES.map(function(z) {
+            return { name: z.name, speed: z.speed, length: z.length };
+        });
+        scRenderList(scEditBuffer);
+        scHideDevControls(true);
+        document.getElementById('sector-config-screen').style.display = 'flex';
+    }
+
+    function scSave() {
+        scEditBuffer = scReadFromRows();
+        if (scEditBuffer.length === 0) return;
+        // Persist to localStorage
+        localStorage.setItem('tunnelRunner_sectorConfig', JSON.stringify(scEditBuffer));
+        // Rebuild ZONES
+        ZONES = buildZonesFromConfig(scEditBuffer);
+        // Update current sector distance in case it changed
+        var zone = getZone(currentSector);
+        sectorDistance = zone.length;
+        baseSpeed = zone.speed;
+        // Rebuild pause menu jump buttons
+        rebuildJumpButtons();
+        // Close and restore dev controls
+        document.getElementById('sector-config-screen').style.display = 'none';
+        scHideDevControls(false);
+    }
+
+    function scReset() {
+        localStorage.removeItem('tunnelRunner_sectorConfig');
+        scEditBuffer = DEFAULT_ZONES.map(function(z) {
+            return { name: z.name, speed: z.speed, length: z.length };
+        });
+        scRenderList(scEditBuffer);
+    }
+
+    function scCancel() {
+        document.getElementById('sector-config-screen').style.display = 'none';
+        scHideDevControls(false);
+    }
+
+    function scAdd() {
+        scEditBuffer = scReadFromRows();
+        var lastSpeed = scEditBuffer.length > 0 ? scEditBuffer[scEditBuffer.length - 1].speed : 160;
+        var lastLength = scEditBuffer.length > 0 ? scEditBuffer[scEditBuffer.length - 1].length : baseSectorDistance;
+        scEditBuffer.push({
+            name: 'ZONE',
+            speed: Math.round(lastSpeed * 1.15),
+            length: Math.round(lastLength * 1.08)
+        });
+        scRenderList(scEditBuffer);
+    }
+
+    bindTap('sector-config-btn', scOpen);
+    bindTap('sc-save', scSave);
+    bindTap('sc-reset', scReset);
+    bindTap('sc-cancel', scCancel);
+    bindTap('sc-add', scAdd);
 
 };
 
@@ -3552,5 +4796,151 @@ window.onload = function() {
 })();
 </script>
 
+<!-- ═══════════ NUDGE BUTTONS (bottom-left, always on top) ═══════════ -->
+<div id="dev-nudge-bar" style="position:fixed;bottom:16px;left:8px;z-index:960;display:none;flex-direction:column;gap:4px;align-items:center;">
+  <button id="dev-nudge-fwd"
+    onmousedown="window._nudgeStart(-1)" onmouseup="window._nudgeStop()" onmouseleave="window._nudgeStop()"
+    ontouchstart="window._nudgeStart(-1);event.stopPropagation();" ontouchend="window._nudgeStop();event.stopPropagation();"
+    style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:14px 20px;cursor:pointer;border-radius:3px;">▲</button>
+  <div style="display:flex;gap:4px;align-items:center;">
+    <button id="dev-nudge-ccw"
+      onmousedown="window._rotateStart(-1)" onmouseup="window._rotateStop()" onmouseleave="window._rotateStop()"
+      ontouchstart="window._rotateStart(-1);event.stopPropagation();" ontouchend="window._rotateStop();event.stopPropagation();"
+      style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:10px 14px;cursor:pointer;border-radius:3px;">◀</button>
+    <span id="dev-nudge-z" style="font-family:'Press Start 2P',monospace;font-size:7px;color:#44f;min-width:40px;text-align:center;">Z:0</span>
+    <button id="dev-nudge-cw"
+      onmousedown="window._rotateStart(1)" onmouseup="window._rotateStop()" onmouseleave="window._rotateStop()"
+      ontouchstart="window._rotateStart(1);event.stopPropagation();" ontouchend="window._rotateStop();event.stopPropagation();"
+      style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:10px 14px;cursor:pointer;border-radius:3px;">▶</button>
+  </div>
+  <button id="dev-nudge-back"
+    onmousedown="window._nudgeStart(1)" onmouseup="window._nudgeStop()" onmouseleave="window._nudgeStop()"
+    ontouchstart="window._nudgeStart(1);event.stopPropagation();" ontouchend="window._nudgeStop();event.stopPropagation();"
+    style="font-family:'Press Start 2P',monospace;font-size:16px;background:#001133;color:#aaf;border:2px solid #44f;padding:14px 20px;cursor:pointer;border-radius:3px;">▼</button>
+</div>
+
+<!-- ═══════════ DEV TOGGLE ═══════════ -->
+<div style="position:fixed;bottom:16px;right:8px;z-index:950;display:flex;gap:6px;align-items:center;">
+  <button id="dev-quick-toggle" style="font-family:'Press Start 2P',monospace;font-size:10px;
+    background:#000;color:#ffe000;border:1px solid #ffe000;padding:8px 12px;cursor:pointer;
+    border-radius:3px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;">⏸</button>
+  <button id="dev-toggle" style="font-family:'Press Start 2P',monospace;font-size:8px;
+    background:#000;color:#00ff88;border:1px solid #00ff88;padding:8px 12px;cursor:pointer;
+    border-radius:3px;-webkit-tap-highlight-color:transparent;touch-action:manipulation;">⚙ DEV</button>
+</div>
+
+<!-- ═══════════ DEV PANEL ═══════════ -->
+<div id="dev-panel" style="display:none;position:fixed;bottom:54px;left:8px;right:8px;z-index:940;
+  background:rgba(0,0,0,0.96);border:1px solid #00ff88;border-radius:4px;
+  padding:10px 12px;font-family:'Press Start 2P',monospace;color:#00ff88;
+  flex-direction:column;">
+
+  <div id="dev-pos" style="color:#555;font-size:7px;letter-spacing:1px;margin-bottom:2px;cursor:grab;">Z: 0 ··· drag</div>
+
+  <div style="margin:10px 0 5px;color:#555;font-size:6px;letter-spacing:2px;">OBJECT TYPE</div>
+  <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;margin-bottom:10px;">
+    <button class="dbtn" id="dev-ring"    style="background:#00ff88;color:#000;">RING</button>
+    <button class="dbtn" id="dev-hazard"  style="background:#ff4444;color:#fff;">BLOCK</button>
+    <button class="dbtn" id="dev-mine"    style="background:#ff4444;color:#fff;">MINE</button>
+    <button class="dbtn" id="dev-knot"    style="background:#ff8800;color:#000;">KNOT</button>
+    <button class="dbtn" id="dev-core"    style="background:#ffaa00;color:#000;">CORE</button>
+    <button class="dbtn" id="dev-ramp"    style="background:#00ffcc;color:#000;">RAMP</button>
+    <button class="dbtn" id="dev-barrier" style="background:#ff4488;color:#fff;grid-column:span 3;">⬡ BARRIER ARC</button>
+  </div>
+  <div style="display:flex;align-items:center;gap:6px;margin-bottom:10px;">
+    <span style="font-size:6px;color:#ff4488;width:44px;letter-spacing:1px;">ARC°</span>
+    <input type="range" id="dev-arc-slider" min="10" max="360" value="360"
+      style="flex:1;accent-color:#ff4488;height:4px;cursor:pointer;touch-action:pan-x;-webkit-appearance:none;">
+    <span id="dev-arc-val" style="font-size:7px;color:#ff4488;width:32px;text-align:right;">360°</span>
+  </div>
+
+  <div style="display:flex;gap:8px;margin-bottom:6px;align-items:flex-start;">
+    <div style="flex:1;">
+      <div style="margin:0 0 5px;color:#555;font-size:6px;letter-spacing:2px;">PATTERN</div>
+      <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:5px;">
+        <button class="dbtn" id="dev-pattern-off"    style="background:#222;color:#aaa;">SINGLE</button>
+        <button class="dbtn" id="dev-pattern-line"   style="background:#444;color:#fff;">LINE</button>
+        <button class="dbtn" id="dev-pattern-spiral" style="background:#444;color:#fff;">SPIRAL</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="dev-pattern-opts" style="display:none;flex-direction:column;gap:12px;margin-bottom:8px;">
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:6px;color:#888;width:48px;">COUNT</span>
+      <input type="range" id="dev-count-slider" min="2" max="32" value="8"
+        style="flex:1;accent-color:#00ff88;height:4px;cursor:pointer;touch-action:pan-x;-webkit-appearance:none;">
+      <span id="dev-pcount" style="font-size:7px;color:#fff;min-width:24px;text-align:right;">8</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:6px;color:#888;width:48px;">SPACE</span>
+      <input type="range" id="dev-step-slider" min="20" max="500" value="150" step="10"
+        style="flex:1;accent-color:#00ff88;height:4px;cursor:pointer;touch-action:pan-x;-webkit-appearance:none;">
+      <span id="dev-pstep" style="font-size:7px;color:#fff;min-width:30px;text-align:right;">150</span>
+    </div>
+    <div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-size:6px;color:#888;width:48px;">SPIN</span>
+      <input type="range" id="dev-spin-slider" min="-314" max="314" value="55"
+        style="flex:1;accent-color:#aa44ff;height:4px;cursor:pointer;touch-action:pan-x;-webkit-appearance:none;">
+      <span id="dev-pspin" style="font-size:7px;color:#fff;min-width:36px;text-align:right;">0.55</span>
+    </div>
+  </div>
+
+  <div id="dev-place-hint" style="display:none;color:#ffee00;font-size:6px;letter-spacing:1px;
+    margin-bottom:8px;text-align:center;padding:5px;border:1px dashed #ffee00;">
+    DRAG TO AIM · TAP ✓ COMMIT TO PLACE
+  </div>
+
+  <div style="display:grid;grid-template-columns:1fr 1fr;gap:5px;margin-bottom:8px;">
+    <button class="dbtn" id="dev-pause"     style="background:#ffe000;color:#000;">⏸ PAUSE</button>
+    <button class="dbtn" id="dev-place-btn" style="background:#00ffcc;color:#000;">+ PLACE</button>
+    <button class="dbtn" id="dev-commit"    style="background:#00ff88;color:#000;display:none;">✓ COMMIT</button>
+    <button class="dbtn" id="dev-undo"      style="background:#444;color:#fff;">↩ UNDO</button>
+    <button class="dbtn" id="dev-clear"     style="background:#300;color:#f44;">CLEAR ALL</button>
+  </div>
+
+  <button class="dbtn" id="dev-auto-pop" style="background:#44aaff;color:#000;width:100%;margin-bottom:6px;">⚡ AUTO POPULATE</button>
+  <button class="dbtn" id="dev-export" style="background:#ff69b4;color:#000;width:100%;margin-bottom:6px;">⬇ BAKE TO GAME</button>
+  <div id="dev-count" style="color:#444;font-size:6px;letter-spacing:2px;margin-bottom:10px;">PLACED: 0</div>
+
+  <button class="dbtn" id="dev-godmode" style="background:#222;color:#666;width:100%;border:1px solid #333;">NEVER DIE: OFF</button>
+
+</div>
+
+<!-- Edit overlay — intercepts touches for long-press editor when dev panel is open -->
+<div id="dev-edit-overlay" style="display:none;position:fixed;inset:0;z-index:930;cursor:crosshair;">
+  <div style="position:absolute;top:8px;left:50%;transform:translateX(-50%);font-family:'Press Start 2P',monospace;font-size:6px;color:#ff0;letter-spacing:2px;opacity:0.6;pointer-events:none;">LONG-PRESS TO EDIT</div>
+</div>
+
+<!-- Context menu for long-press on placed objects -->
+<div id="dev-ctx-menu" style="display:none;position:fixed;z-index:970;
+  flex-direction:column;gap:6px;
+  background:rgba(0,0,0,0.97);border:1px solid #00ff88;border-radius:4px;padding:10px;
+  font-family:'Press Start 2P',monospace;">
+  <div style="font-size:6px;color:#555;letter-spacing:2px;margin-bottom:4px;">OBJECT</div>
+  <button class="dbtn" id="dev-ctx-move"   style="background:#00ffcc;color:#000;width:140px;">✥ MOVE</button>
+  <button class="dbtn" id="dev-ctx-rotate" style="display:none;background:#aa44ff;color:#fff;width:140px;">↻ ROTATE</button>
+  <button class="dbtn" id="dev-ctx-delete" style="background:#ff2244;color:#fff;width:140px;">✕ DELETE</button>
+  <button class="dbtn" id="dev-ctx-cancel" style="background:#222;color:#888;width:140px;">CANCEL</button>
+</div>
+
+<!-- Bake confirmation toast -->
+<div id="dev-bake-toast" style="display:none;position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+  z-index:970;background:rgba(0,0,0,0.95);border:2px solid #00ff88;border-radius:4px;
+  padding:16px 24px;font-family:'Press Start 2P',monospace;font-size:9px;color:#00ff88;
+  text-align:center;letter-spacing:2px;pointer-events:none;"></div>
+
+<style>
+  .dbtn {
+    font-family:'Press Start 2P',monospace;font-size:8px;padding:10px 8px;
+    border:none;cursor:pointer;letter-spacing:1px;border-radius:2px;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  }
+  .dbtn-sm {
+    font-family:'Press Start 2P',monospace;font-size:9px;padding:8px 14px;
+    border:none;cursor:pointer;background:#333;color:#fff;border-radius:2px;
+    -webkit-tap-highlight-color:transparent;touch-action:manipulation;
+  }
+</style>
 </body>
 </html>
