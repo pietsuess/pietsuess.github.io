@@ -643,6 +643,7 @@
     <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
 </div>
 <div id="victory-screen" class="overlay-screen">
+    <div id="victory-unlocks" style="display:none;text-align:center;margin-bottom:14px;"></div>
     <h1 class="screen-title stagger-in">SECTOR CLEARED</h1>
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
     <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:18px;"></div>
@@ -2274,7 +2275,7 @@ window.onload = function() {
         } else if (s === 2) {
             hazardChance = 0.70; ringChance = 0;    coreChance = 0.30;
         } else if (s === 3) {
-            hazardChance = 0.05; ringChance = 0.90; coreChance = 0.05;
+            hazardChance = 0.02; ringChance = 0.96; coreChance = 0.02;
         } else if (s === 4) {
             hazardChance = 0.50; ringChance = 0.30; coreChance = 0.20;
         } else if (s === 5) {
@@ -2645,17 +2646,12 @@ window.onload = function() {
             try { localStorage.setItem('trBestTimes', JSON.stringify(bestTimes)); } catch(e) {}
         }
 
-        // Unlock gunship on even sectors
-        if (currentSector % 2 === 0 && !unlockedShips.gunship) {
+        // Unlock gunship at 25,000 points
+        var _gunshipJustUnlocked = false;
+        if (score >= 25000 && !unlockedShips.gunship) {
             unlockedShips.gunship = true;
+            _gunshipJustUnlocked = true;
             try { localStorage.setItem('trUnlockedShips', JSON.stringify(unlockedShips)); } catch(e) {}
-            var unlockEl = document.createElement('div');
-            unlockEl.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
-            unlockEl.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:#00ccff;text-shadow:0 0 30px rgba(0,204,255,0.9),0 0 60px rgba(0,204,255,0.4);letter-spacing:5px;animation:fadeSlideUp 0.6s ease-out both;">GUNSHIP UNLOCKED</div>'
-                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(7px,1.8vw,11px);color:#ff8800;letter-spacing:3px;margin-top:14px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">SWITCH IN PAUSE MENU</div>';
-            document.body.appendChild(unlockEl);
-            setTimeout(function() { unlockEl.style.transition = 'opacity 1s'; unlockEl.style.opacity = '0'; }, 2500);
-            setTimeout(function() { unlockEl.remove(); }, 3500);
         }
 
         // Build run times table
@@ -2679,22 +2675,30 @@ window.onload = function() {
             + '<span>SECTOR</span><span>RUN</span><span>BEST</span></div>'
             + timesHtml + '</div>';
 
-        // Sectors with content: show carousel after brief pause
-        if (CAROUSEL_SECTOR_MAP[currentSector]) {
-            setTimeout(function() {
-                showCarousel(currentSector);
-            }, 800);
-            return;
+        // Build unlock messages for the victory screen
+        var unlockHtml = '';
+        if (_gunshipJustUnlocked) {
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#00ccff;text-shadow:0 0 20px rgba(0,204,255,0.8);letter-spacing:4px;margin-bottom:4px;animation:fadeSlideUp 0.5s ease-out both;">GUNSHIP UNLOCKED</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(7px,1.5vw,9px);color:#ff8800;letter-spacing:2px;opacity:0.8;animation:fadeSlideUp 0.5s ease-out 0.15s both;">SWITCH IN PAUSE MENU</div>';
         }
-
-        // Sector 10: show finale with fireworks
-        if (currentSector >= 10) {
-            setTimeout(function() { showFinale(); }, 800);
-            return;
+        var contentZone = CAROUSEL_SECTOR_MAP[currentSector];
+        if (contentZone) {
+            var contentLabel = contentZone.toUpperCase();
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">CONTENT UNLOCKED</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(7px,1.5vw,9px);color:#ffe000;letter-spacing:2px;opacity:0.7;margin-top:4px;animation:fadeSlideUp 0.5s ease-out 0.4s both;">' + contentLabel + ' PORTFOLIO</div>';
         }
+        var unlockEl = document.getElementById('victory-unlocks');
+        unlockEl.innerHTML = unlockHtml;
+        unlockEl.style.display = unlockHtml ? 'block' : 'none';
 
         document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
-        document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
+        if (currentSector >= 10) {
+            document.getElementById('next-level-btn').innerText = '[ VIEW FINALE ]';
+        } else if (contentZone) {
+            document.getElementById('next-level-btn').innerText = '[ VIEW ' + contentZone.toUpperCase() + ' > ]';
+        } else {
+            document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
+        }
         document.getElementById('victory-screen').style.display = 'flex';
     }
 
@@ -2759,8 +2763,9 @@ window.onload = function() {
 
         // Seed tunnel ahead procedurally with increasing density per sector
         // Spacing tightens from 180 (S1) down to 70 (S10) = more objects in later sectors
+        // S3 is a ring bonanza — super tight spacing
         // Start items close to camera (Z-400) so they appear right after countdown
-        var spacing = Math.max(70, 180 - (currentSector - 1) * 12);
+        var spacing = currentSector === 3 ? 50 : Math.max(70, 180 - (currentSector - 1) * 12);
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
         var lastItemDist = sectorDistance * 0.75;
@@ -3382,11 +3387,11 @@ window.onload = function() {
     bindTap('play-btn', () => initializeFlight(true));
     bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('next-level-btn', function() {
+        document.getElementById('victory-screen').style.display = 'none';
         if (CAROUSEL_SECTOR_MAP[currentSector]) {
-            document.getElementById('victory-screen').style.display = 'none';
             showCarousel(currentSector);
         } else if (currentSector >= 10) {
-            initializeFlight(true);
+            showFinale();
         } else {
             startNextSector();
         }
@@ -3641,6 +3646,7 @@ window.onload = function() {
                         vs.querySelector('.screen-title').innerText = 'TRAINING COMPLETE';
                         document.getElementById('victory-score').innerText = 'YOU ARE READY';
                         document.getElementById('victory-time').innerText = '';
+                        document.getElementById('victory-unlocks').style.display = 'none';
                         document.getElementById('next-level-btn').innerText = '[ BEGIN GAME ]';
                         vs.style.display = 'flex';
                     } else {
