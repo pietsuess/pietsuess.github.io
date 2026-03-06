@@ -645,7 +645,7 @@
 <div id="victory-screen" class="overlay-screen">
     <h1 class="screen-title stagger-in">SECTOR CLEARED</h1>
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
-    <div id="victory-time" class="stagger-in" style="font-family:'Press Start 2P',monospace;font-size:10px;color:#00ff88;text-shadow:0 0 8px rgba(0,255,136,0.7);margin-bottom:18px;letter-spacing:2px;">TIME: 0:00.0</div>
+    <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:18px;"></div>
     <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ NEXT SECTOR &gt; ]</button>
 </div>
 
@@ -1198,7 +1198,9 @@ window.onload = function() {
     let sectorDistance = baseSectorDistance; // updated after ZONES init below
     let sectorStartScore = 0;
     let sectorTime = 0;       // seconds elapsed this sector
-    let bestTimes = {};       // best time per sector number
+    let bestTimes = {};       // best time per sector number — persisted
+    let sectorRunTimes = {};  // times for current run
+    try { var _bt = localStorage.getItem('trBestTimes'); if (_bt) bestTimes = JSON.parse(_bt); } catch(e) {}
     let sectorCollectiblesSpawned = 0;
     let sectorCollectiblesCollected = 0;
     
@@ -2129,7 +2131,7 @@ window.onload = function() {
         } else if (s === 2) {
             hazardChance = 0.70; ringChance = 0;    coreChance = 0.30;
         } else if (s === 3) {
-            hazardChance = 0.35; ringChance = 0.45; coreChance = 0.20;
+            hazardChance = 0.05; ringChance = 0.90; coreChance = 0.05;
         } else if (s === 4) {
             hazardChance = 0.50; ringChance = 0.30; coreChance = 0.20;
         } else if (s === 5) {
@@ -2377,16 +2379,34 @@ window.onload = function() {
 
         document.getElementById('victory-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
 
-        // Format and show sector time
-        const tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
-        const tStr = m+':'+(s<10?'0':'')+s+'.'+t;
-        const best = bestTimes[currentSector];
-        const isBest = !best || sectorTime < best;
-        if (isBest) bestTimes[currentSector] = sectorTime;
-        const timeEl = document.getElementById('victory-time');
-        timeEl.innerText = 'TIME: ' + tStr + (isBest ? '  ★ BEST' : '  BEST: ' + (()=>{const b=bestTimes[currentSector],bm=Math.floor(b/60),bs=Math.floor(b%60),bt=Math.floor((b%1)*10);return bm+':'+(bs<10?'0':'')+bs+'.'+bt;})());
-        timeEl.style.color = isBest ? '#ffee00' : '#00ff88';
-        timeEl.style.textShadow = isBest ? '0 0 10px rgba(255,238,0,0.8)' : '0 0 8px rgba(0,255,136,0.7)';
+        // Save sector time
+        sectorRunTimes[currentSector] = sectorTime;
+        const isBest = !bestTimes[currentSector] || sectorTime < bestTimes[currentSector];
+        if (isBest) {
+            bestTimes[currentSector] = sectorTime;
+            try { localStorage.setItem('trBestTimes', JSON.stringify(bestTimes)); } catch(e) {}
+        }
+
+        // Build run times table
+        function fmtTime(t) { var mm=Math.floor(t/60),ss=Math.floor(t%60),tt=Math.floor((t%1)*10); return mm+':'+(ss<10?'0':'')+ss+'.'+tt; }
+        var timesHtml = '';
+        for (var sec = 1; sec <= currentSector; sec++) {
+            var rt = sectorRunTimes[sec];
+            var bt = bestTimes[sec];
+            var isCurrentSector = (sec === currentSector);
+            var isSectorBest = bt && rt && rt <= bt;
+            var runStr = rt ? fmtTime(rt) : '--';
+            var bestStr = bt ? fmtTime(bt) : '--';
+            var color = isCurrentSector ? (isSectorBest ? '#ffee00' : '#00ffcc') : '#888';
+            var star = (isCurrentSector && isSectorBest) ? ' ★' : '';
+            timesHtml += '<div style="display:flex;justify-content:space-between;font-family:\'Press Start 2P\',monospace;font-size:8px;color:'+color+';padding:2px 0;letter-spacing:1px;">'
+                + '<span>S'+sec+'</span><span>'+runStr+'</span><span>'+bestStr+star+'</span></div>';
+        }
+        var timeEl = document.getElementById('victory-time');
+        timeEl.innerHTML = '<div style="width:100%;max-width:260px;margin:0 auto;">'
+            + '<div style="display:flex;justify-content:space-between;font-family:\'Press Start 2P\',monospace;font-size:6px;color:#555;padding:0 0 6px;letter-spacing:2px;border-bottom:1px solid #333;margin-bottom:6px;">'
+            + '<span>SECTOR</span><span>RUN</span><span>BEST</span></div>'
+            + timesHtml + '</div>';
 
         // Sectors with content: show carousel after brief pause
         if (CAROUSEL_SECTOR_MAP[currentSector]) {
@@ -2819,6 +2839,7 @@ window.onload = function() {
             sectorStartScore = 0;
             combo = 0;
             unlockedZones = {};
+            sectorRunTimes = {};
             try { localStorage.removeItem('trUnlockedZones'); } catch(e) {}
             rebuildUnlockedMenu();
             throttle = 0; throttleSmooth = 0; shipZOffset = -18;
