@@ -96,6 +96,27 @@
             background: repeating-linear-gradient(to top, transparent 0px, transparent 28px, rgba(0,0,0,0.6) 28px, rgba(0,0,0,0.6) 30px);
         }
 
+        /* Boost/Thrust Bar (left side, vertical, red) */
+        #boost-wrapper {
+            position: fixed; left: 16px; top: 50%; transform: translateY(-50%);
+            display: flex; flex-direction: column; align-items: center; gap: 6px; z-index: 100; pointer-events: none;
+        }
+        #boost-label { color: rgba(255,68,68,0.45); font-size: 6px; letter-spacing: 2px; writing-mode: vertical-rl; text-orientation: mixed; transform: rotate(180deg); }
+        #boost-container {
+            width: 12px; height: 32vh;
+            border: 1px solid rgba(255,68,68,0.45); background: rgba(0,0,0,0.7); position: relative; overflow: hidden;
+            box-shadow: 0 0 8px rgba(255,68,68,0.1), inset 0 0 4px rgba(0,0,0,0.6);
+        }
+        #boost-bar {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 0%;
+            background: #ff4444; box-shadow: 0 0 10px #ff4444;
+            transition: height 0.1s linear;
+        }
+        #boost-container::after {
+            content: ''; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+            background: repeating-linear-gradient(to top, transparent 0px, transparent 28px, rgba(0,0,0,0.6) 28px, rgba(0,0,0,0.6) 30px);
+        }
+
         /* Flash */
         #flash-overlay { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; z-index: 40; transition: opacity 0.1s; }
 
@@ -239,6 +260,7 @@
         .btn-gold:hover  { background: rgba(255,224,0,0.14); box-shadow: 0 0 14px rgba(255,224,0,0.25); }
         .btn-gold:active { background: rgba(255,224,0,0.22); }
 
+        /* Sector Config Overlay */
 
         /* Corner-bracket + inner-inset content box */
         .content-box {
@@ -563,19 +585,17 @@
         <div id="sector-display">
             <span style="color:#333;font-size:6px;letter-spacing:3px;">SECTOR</span>
             <span id="sector-text">01</span>
-            <span id="zone-name" style="display:block;font-size:6px;color:#ff69b4;letter-spacing:2px;margin-top:2px;">DIRECT</span>
+            <span id="zone-name" style="display:block;font-size:6px;color:#ff69b4;letter-spacing:2px;margin-top:2px;">ENTRY</span>
         </div>
     </div>
 </div>
 <div id="progress-wrapper">
     <div id="progress-label">SECTOR PROGRESS</div>
     <div id="progress-container"><div id="progress-bar"></div></div>
-    <div style="display:flex;align-items:center;gap:6px;margin-top:5px;">
-        <span style="color:rgba(255,105,180,0.5);font-size:6px;letter-spacing:2px;font-family:inherit;white-space:nowrap;">BOOST</span>
-        <div style="flex:1;height:5px;border:1px solid rgba(255,105,180,0.3);background:rgba(0,0,0,0.6);overflow:hidden;">
-            <div id="boost-bar" style="height:100%;width:100%;background:#ff69b4;box-shadow:0 0 8px #ff69b4;"></div>
-        </div>
-    </div>
+</div>
+<div id="boost-wrapper">
+    <div id="boost-container"><div id="boost-bar"></div></div>
+    <div id="boost-label">THRUST</div>
 </div>
 <div id="shield-wrapper">
     <div id="shield-container"><div id="shield-bar"></div></div>
@@ -714,6 +734,7 @@
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">UNLOCKED CONTENT</div>
       <div id="unlocked-zones-btns" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
     </div>
+    <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
 </div>
 
 
@@ -758,7 +779,7 @@
   </div>
 </div>
 <div id="countdown-overlay" style="display:none;position:fixed;inset:0;z-index:480;
-  pointer-events:none;display:flex;align-items:center;justify-content:center;">
+  pointer-events:none;align-items:center;justify-content:center;">
   <div id="countdown-num" style="font-family:'Press Start 2P',monospace;
     font-size:clamp(60px,18vw,120px);color:#00ffcc;
     text-shadow:0 0 40px rgba(0,255,204,0.9),0 0 80px rgba(0,255,204,0.4);
@@ -2040,7 +2061,6 @@ window.onload = function() {
     });
 
     // --- Game Logic ---
-
     var _spawnCfgCache = null, _spawnCfgLoaded = false;
     function _getSpawnCfg(sector) {
         if (!_spawnCfgLoaded) {
@@ -2403,6 +2423,7 @@ window.onload = function() {
                 }
                 mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3), arcLength: (obj.type === 'barrier' ? (obj.arcLength || Math.PI * 2) : undefined) };
                 scene.add(mesh); items.push(mesh);
+                // Always register as editable placement for dev mode
             });
             return; // baked layout replaces procedural spawn
         }
@@ -2768,7 +2789,7 @@ window.onload = function() {
             sectorStartScore = 0;
             combo = 0;
             throttle = 0; throttleSmooth = 0; shipZOffset = -18;
-            document.getElementById('sector-text').innerText = '01';            document.getElementById('zone-name').innerText = 'DIRECT';
+            document.getElementById('sector-text').innerText = '01';            document.getElementById('zone-name').innerText = ZONES[0].name;
             document.getElementById('zone-name').style.color = '#ff69b4';
             // Reset to DIRECT zone colors
             wireMat.color.setHex(ZONES[0].wireColor);
@@ -3234,15 +3255,15 @@ window.onload = function() {
             document.getElementById('progress-bar').style.width = progressPct + '%';
             const _bb = document.getElementById('boost-bar');
             const _bp = Math.round(throttleSmooth * 100);
-            _bb.style.width = _bp + '%';
+            _bb.style.height = _bp + '%';
             if (throttleSmooth > 0.7) {
-                _bb.style.background='#ff69b4'; _bb.style.boxShadow='0 0 16px #ff69b4';
+                _bb.style.background='#ff4444'; _bb.style.boxShadow='0 0 16px #ff4444';
             } else if (throttleSmooth > 0.3) {
-                _bb.style.background='#ff8844'; _bb.style.boxShadow='0 0 10px #ff8844';
+                _bb.style.background='#cc3333'; _bb.style.boxShadow='0 0 10px #cc3333';
             } else if (throttleSmooth > 0) {
-                _bb.style.background='#ffcc00'; _bb.style.boxShadow='0 0 6px #ffcc00';
+                _bb.style.background='#aa2222'; _bb.style.boxShadow='0 0 6px #aa2222';
             } else {
-                _bb.style.background='rgba(255,105,180,0.25)'; _bb.style.boxShadow='none';
+                _bb.style.background='rgba(255,68,68,0.25)'; _bb.style.boxShadow='none';
             }
 
             // Spawn finish ring when 80% through sector — leaves clear gap for speed burst
@@ -3444,7 +3465,9 @@ window.onload = function() {
         renderer.render(scene, camera);
     }
 
+
     animate();
+
 
 };
 
