@@ -1953,6 +1953,28 @@ window.onload = function() {
     scene.add(tube1);
     scene.add(tube2);
 
+    // --- Hyper Boost Tracers ---
+    const TRACER_COUNT = 24;
+    const tracerGroup = new THREE.Group();
+    tracerGroup.visible = false;
+    const tracerMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.6 });
+    const tracerGeo = new THREE.BoxGeometry(0.15, 0.15, 80);
+    const tracers = [];
+    for (let i = 0; i < TRACER_COUNT; i++) {
+        const m = new THREE.Mesh(tracerGeo, tracerMat.clone());
+        const angle = (i / TRACER_COUNT) * Math.PI * 2;
+        const r = tubeRadius - 1.5 - Math.random() * 4;
+        m.position.x = Math.cos(angle) * r;
+        m.position.y = Math.sin(angle) * r;
+        m.position.z = -Math.random() * 400;
+        m.userData._angle = angle;
+        m.userData._r = r;
+        m.userData._baseZ = m.position.z;
+        tracerGroup.add(m);
+        tracers.push(m);
+    }
+    scene.add(tracerGroup);
+
     // --- Zero-degree reference line (thin dotted line at angle 0) ---
     const zeroLineMat = new THREE.LineDashedMaterial({ color: 0xffff00, dashSize: 3, gapSize: 6, linewidth: 1, transparent: true, opacity: 0.5 });
     const zeroLinePts = [new THREE.Vector3(tubeRadius - 0.5, 0, 5000), new THREE.Vector3(tubeRadius - 0.5, 0, -50000)];
@@ -2190,7 +2212,7 @@ window.onload = function() {
     let isTouching = false;
     let shipZOffset = -18;
     const BOOST_SPEED = 550;
-    const HYPER_SPEED = 1100;
+    const HYPER_SPEED = 550 * 3;
     let throttle = 0, throttleSmooth = 0;
 
     // Cumulative angle — zones set the rate, physics accumulate it
@@ -3831,6 +3853,22 @@ window.onload = function() {
                 cameraShake = Math.max(cameraShake, hyperShake);
             }
 
+            // Hyper tracers
+            const isHyper = throttleSmooth > 1.02;
+            tracerGroup.visible = isHyper;
+            if (isHyper) {
+                const hyperT = Math.min(1, (throttleSmooth - 1.0) / 0.5);
+                tracerMat.opacity = 0.3 + hyperT * 0.5;
+                for (let t = 0; t < tracers.length; t++) {
+                    const tr = tracers[t];
+                    tr.position.z += moveDist * (1.2 + Math.random() * 0.3);
+                    tr.material.opacity = 0.3 + hyperT * 0.5 + Math.random() * 0.15;
+                    if (tr.position.z > camera.position.z + 30) {
+                        tr.position.z = camera.position.z - 200 - Math.random() * 300;
+                    }
+                }
+            }
+
             tube1.position.z += moveDist;
             tube2.position.z += moveDist;
             if (tube1.position.z > tubeLen / 2) tube1.position.z = tube2.position.z - tubeLen;
@@ -3927,8 +3965,17 @@ window.onload = function() {
         }
 
         if (cameraShake > 0) {
-            camera.position.x += (Math.random() - 0.5) * cameraShake;
-            camera.position.y += (Math.random() - 0.5) * cameraShake;
+            const sx = (Math.random() - 0.5) * cameraShake;
+            const sy = (Math.random() - 0.5) * cameraShake;
+            camera.position.x += sx;
+            camera.position.y += sy;
+            tube1.position.x = sx * 0.7;
+            tube1.position.y = sy * 0.7;
+            tube2.position.x = sx * 0.7;
+            tube2.position.y = sy * 0.7;
+        } else {
+            tube1.position.x = 0; tube1.position.y = 0;
+            tube2.position.x = 0; tube2.position.y = 0;
         }
 
         renderer.render(scene, camera);
