@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Dot Logo Animation</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #2C76E3; display: flex; justify-content: center; align-items: center; height: 100vh; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const dots = [
+  {x:411.75,y:45.75,w:54.14},{x:381.25,y:15.25,w:53.93},{x:381.25,y:-15.25,w:53.71},
+  {x:381.25,y:-45.75,w:53.48},{x:381.25,y:-76.25,w:53.23},{x:381.25,y:-106.75,w:52.98},
+  {x:320.25,y:-106.75,w:52.72},{x:320.25,y:-45.75,w:52.45},{x:320.25,y:-15.25,w:52.17},
+  {x:320.25,y:15.25,w:51.89},{x:320.25,y:45.75,w:51.60},{x:198.25,y:-15.25,w:51.30},
+  {x:228.75,y:-15.25,w:51.00},{x:259.25,y:-15.25,w:50.70},{x:259.25,y:-45.75,w:50.39},
+  {x:228.75,y:-76.25,w:50.08},{x:198.25,y:-76.25,w:49.76},{x:167.75,y:-45.75,w:49.44},
+  {x:167.75,y:-15.25,w:49.12},{x:167.75,y:15.25,w:48.80},{x:198.25,y:45.75,w:48.47},
+  {x:228.75,y:45.75,w:48.14},{x:106.75,y:-76.25,w:47.81},{x:106.75,y:-45.75,w:47.48},
+  {x:106.75,y:-15.25,w:47.14},{x:91.5,y:15.25,w:46.80},{x:61,y:45.75,w:46.47},
+  {x:30.5,y:15.25,w:46.13},{x:15.25,y:-15.25,w:45.79},{x:15.25,y:-45.75,w:45.45},
+  {x:15.25,y:-76.25,w:45.11},{x:-45.75,y:45.75,w:44.77},{x:-45.75,y:15.25,w:44.43},
+  {x:-45.75,y:-15.25,w:44.09},{x:-45.75,y:-45.75,w:43.75},{x:-76.25,y:-76.25,w:43.41},
+  {x:-106.75,y:-76.25,w:43.07},{x:-137.25,y:-45.75,w:42.73},{x:-137.25,y:-15.25,w:42.39},
+  {x:-137.25,y:15.25,w:42.05},{x:-137.25,y:45.75,w:41.72},{x:-198.25,y:-76.25,w:41.39},
+  {x:-198.25,y:-45.75,w:41.06},{x:-198.25,y:-15.25,w:40.73},{x:-198.25,y:15.25,w:40.40},
+  {x:-228.75,y:45.75,w:40.08},{x:-259.25,y:45.75,w:39.76},{x:-289.75,y:15.25,w:39.44},
+  {x:-289.75,y:-15.25,w:39.13},{x:-289.75,y:-45.75,w:38.83},{x:-289.75,y:-76.25,w:38.53}
+];
+
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+window.addEventListener('resize', resize);
+resize();
+
+// Find bounds to center and scale
+const minX = Math.min(...dots.map(d => d.x));
+const maxX = Math.max(...dots.map(d => d.x));
+const minY = Math.min(...dots.map(d => d.y));
+const maxY = Math.max(...dots.map(d => d.y));
+const logoW = maxX - minX;
+const logoH = maxY - minY;
+const cx = (minX + maxX) / 2;
+const cy = (minY + maxY) / 2;
+
+function animate(time) {
+  requestAnimationFrame(animate);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // Scale logo to fit ~60% of the smaller screen dimension
+  const fitSize = Math.min(canvas.width, canvas.height) * 0.6;
+  const scale = fitSize / Math.max(logoW, logoH);
+
+  const offsetX = canvas.width / 2;
+  const offsetY = canvas.height / 2;
+
+  const growDuration = 3.5;
+  const dotGrowTime = 1.0;
+  const shrinkDelay = 2.2;
+  const shrinkDuration = 3.5;
+  const dotShrinkTime = 1.0;
+  const loopLength = shrinkDelay + shrinkDuration;
+  const t = (time * 0.001) % loopLength;
+
+  ctx.fillStyle = '#ffffff';
+
+  for (let i = 0; i < dots.length; i++) {
+    const d = dots[i];
+
+    const px = (d.x - cx) * scale + offsetX;
+    const py = (d.y - cy) * scale + offsetY;
+    const maxR = (50 / 2) * scale;
+    const minR = (1 / 2) * scale;
+
+    // Grow: stagger left to right
+    const normalizedX = (d.x - minX) / logoW;
+    const growDelay = normalizedX * (growDuration - dotGrowTime);
+    const growProgress = Math.max(0, Math.min(1, (t - growDelay) / dotGrowTime));
+    const growEased = 1 - Math.pow(1 - growProgress, 3);
+
+    // Shrink: stagger left to right, starts after shrinkDelay
+    const shrinkStart = shrinkDelay + normalizedX * (shrinkDuration - dotShrinkTime);
+    const shrinkProgress = Math.max(0, Math.min(1, (t - shrinkStart) / dotShrinkTime));
+    const shrinkEased = Math.pow(shrinkProgress, 3);
+
+    const r = minR + (maxR - minR) * growEased - (maxR - minR) * shrinkEased;
+
+    if (r > 0.5) {
+      ctx.beginPath();
+      ctx.arc(px, py, r, 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
