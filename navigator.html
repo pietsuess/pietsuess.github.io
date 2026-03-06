@@ -330,38 +330,14 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     overflow-y:auto; border:3px solid #ff69b4;
     box-shadow:0 0 30px #ff69b4, 0 0 60px rgba(255,105,180,0.3);
     background:#000;
+    scrollbar-width:thin; scrollbar-color:rgba(255,105,180,0.4) transparent;
   }
-  #content-box::before {
-    content:''; position:absolute; top:6px; left:6px; right:6px; bottom:6px;
-    border:1px solid rgba(255,105,180,0.4); pointer-events:none; z-index:0;
-  }
-  #content-box.design-theme::before {
-    border-color:rgba(200,160,0,0.3);
-  }
-  #content-box::after {
-    content:''; position:absolute; top:0; left:0; right:0; bottom:0;
-    background:
-      linear-gradient(to right,#ff69b4 8px,transparent 8px) top left/20px 3px no-repeat,
-      linear-gradient(to bottom,#ff69b4 8px,transparent 8px) top left/3px 20px no-repeat,
-      linear-gradient(to left,#ff69b4 8px,transparent 8px) top right/20px 3px no-repeat,
-      linear-gradient(to bottom,#ff69b4 8px,transparent 8px) top right/3px 20px no-repeat,
-      linear-gradient(to right,#ff69b4 8px,transparent 8px) bottom left/20px 3px no-repeat,
-      linear-gradient(to top,#ff69b4 8px,transparent 8px) bottom left/3px 20px no-repeat,
-      linear-gradient(to left,#ff69b4 8px,transparent 8px) bottom right/20px 3px no-repeat,
-      linear-gradient(to top,#ff69b4 8px,transparent 8px) bottom right/3px 20px no-repeat;
-    pointer-events:none; z-index:2;
-  }
-  #content-box.design-theme::after {
-    background:
-      linear-gradient(to right,#c8a000 8px,transparent 8px) top left/20px 3px no-repeat,
-      linear-gradient(to bottom,#c8a000 8px,transparent 8px) top left/3px 20px no-repeat,
-      linear-gradient(to left,#c8a000 8px,transparent 8px) top right/20px 3px no-repeat,
-      linear-gradient(to bottom,#c8a000 8px,transparent 8px) top right/3px 20px no-repeat,
-      linear-gradient(to right,#c8a000 8px,transparent 8px) bottom left/20px 3px no-repeat,
-      linear-gradient(to top,#c8a000 8px,transparent 8px) bottom left/3px 20px no-repeat,
-      linear-gradient(to left,#c8a000 8px,transparent 8px) bottom right/20px 3px no-repeat,
-      linear-gradient(to top,#c8a000 8px,transparent 8px) bottom right/3px 20px no-repeat;
-  }
+  #content-box::-webkit-scrollbar { width:6px; }
+  #content-box::-webkit-scrollbar-track { background:transparent; }
+  #content-box::-webkit-scrollbar-thumb { background:rgba(255,105,180,0.4); border-radius:3px; }
+  #content-box.design-theme { scrollbar-color:rgba(200,160,0,0.4) transparent; }
+  #content-box.design-theme::-webkit-scrollbar-thumb { background:rgba(200,160,0,0.4); }
+  /* Inner border + corner brackets removed — caused visual artifacts on scrolling content */
   #content-header {
     background:#ff69b4; padding:10px 16px;
     display:flex; justify-content:space-between; align-items:center;
@@ -2716,7 +2692,7 @@ function initObjects() {
       }
     }
   })();
-  state.wormholes  = []; state.wormholeZoneSet = new Set();
+  state.wormholes  = []; state.wormholeZoneSet = new Set(); state._shortcutWarpsSpawned = false;
   state.spaceRocks = [];
   state.explosions = [];
   state.wormholeZoneSet = new Set(); // tracks 'fromZone-toZone' to limit to 1 per pair
@@ -2805,6 +2781,33 @@ function initObjects() {
   // Wave orb: spawned by trigger, not placed at start
 
   // 2× Boost star: spawned by trigger, not placed at start
+
+  // Shortcut wormholes: spawn if interzone already complete (e.g. after secret level return)
+  if(state._interzoneComplete) spawnShortcutWormholes();
+}
+
+function spawnShortcutWormholes(){
+  if(state._shortcutWarpsSpawned) return;
+  state._shortcutWarpsSpawned = true;
+  var _r1w = INTERZONE_RINGS[0] + 80;
+  var _off = 0.26;
+  var _warpDefs = [
+    { ang: -_off,          destLevel: 3, dx: 0,              dy: -(ZONE_R - 400) },
+    { ang:  _off,          destLevel: 4, dx: 0,              dy:  (ZONE_R - 400) },
+    { ang: Math.PI - _off, destLevel: 0, dx: -(ZONE_R - 400), dy: 0              },
+    { ang: Math.PI + _off, destLevel: 2, dx:  (ZONE_R - 400), dy: 0              }
+  ];
+  for(var _wi = 0; _wi < _warpDefs.length; _wi++){
+    var _wd = _warpDefs[_wi];
+    state.wormholes.push({
+      wx: Math.cos(_wd.ang) * _r1w,
+      wy: Math.sin(_wd.ang) * _r1w,
+      destLevel: _wd.destLevel,
+      _destWx: _wd.dx, _destWy: _wd.dy,
+      phase: _wd.ang, size: 38,
+      _permanent: true, _shortcut: true
+    });
+  }
 }
 
 function triggerHullImplosion(){
@@ -2960,8 +2963,14 @@ function enterWormhole(w){
     destLevel: w.destLevel,
     timer: 0,
     totalDuration: 120,
-    destX: (()=>{const _wc=zoneCentre(w.destLevel); return _wc.x+(Math.random()-0.5)*2000;})(),
-    destY: (()=>{const _wc=zoneCentre(w.destLevel); return _wc.y+(Math.random()-0.5)*2000;})(),
+    destX: (()=>{
+      if(w._shortcut && w._destWx !== undefined) return w._destWx + (Math.random()-0.5)*400;
+      const _wc=zoneCentre(w.destLevel); return _wc.x+(Math.random()-0.5)*2000;
+    })(),
+    destY: (()=>{
+      if(w._shortcut && w._destWy !== undefined) return w._destWy + (Math.random()-0.5)*400;
+      const _wc=zoneCentre(w.destLevel); return _wc.y+(Math.random()-0.5)*2000;
+    })(),
   };
   // Don't set state.paused — update() must keep running to tick the transition
   if(audioCtx&&!state.sfxMuted){
@@ -4231,7 +4240,7 @@ function updateWaveBeams(){
           addScore(200);
           state.rocksDestroyed=(state.rocksDestroyed||0)+1;
           // Track belt-only rock kills for secret level unlock
-          if(zoneAt(state.spaceRocks[ri] ? state.spaceRocks[ri].wx : state.x, state.spaceRocks[ri] ? state.spaceRocks[ri].wy : state.y) === -1){
+          if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
             if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
               state.secretUnlocked = true;
@@ -4721,6 +4730,15 @@ function update(){
             state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
           }, 1400);
         }
+      } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated){
+        // Entering asteroid belt — Mission 4: discover the secret level
+        state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
+        if(!state._beltMissionShown){
+          state._beltMissionShown = true;
+          setTimeout(function(){
+            state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
+          }, 1400);
+        }
       } else {
         state.zoneCrossFlash = { lvl: nowZone, timer: 150 };
       }
@@ -5098,6 +5116,8 @@ function update(){
           state.zoneCrossFlash = { lvl: -3, timer: 300, msg: 'INTERZONE COMPLETE!', _col: '#00ffcc' };
           // Delayed peanut unlock after flash fades (~5s)
           setTimeout(triggerPeanutUnlock, 2000);
+          // Spawn 4 shortcut wormholes near ring 1 gaps → outer zone edges
+          spawnShortcutWormholes();
         }
       } else break;
     }
@@ -5846,7 +5866,7 @@ function hardRestart(){
   Object.assign(state,{gameOver:false,fuel:1.0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
     tracers:[],hyperspace:false,cheat:null,hasWaveBeam:false,fireMode:'boost',
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
-    refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
+    refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_shortcutWarpsSpawned:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
     passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false});
   state.fireMode='boost'; updateFireModeUI();
@@ -8164,6 +8184,47 @@ function drawGame(){
     }
   }
 
+  // "NEXT MISSION" hint after interzone — point toward nearest outer zone
+  if(state._interzoneComplete && !state.inSecretLevel){
+    const _shipR = Math.sqrt(state.x*state.x + state.y*state.y);
+    const _inInterzone = _shipR >= PEN_BARRIER_R && _shipR < EDIT_R;
+    if(_inInterzone){
+      // Delay timer — 10 seconds (~600 frames)
+      if(state._beltHintDelay === undefined) state._beltHintDelay = 600;
+      if(state._beltHintDelay > 0){ state._beltHintDelay--; }
+      else {
+        // Arrow points radially outward from origin through ship position
+        const _nearAng = Math.atan2(state.y, state.x);
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#00ffcc';
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 10;
+        ctx.font = 'bold 18px "Press Start 2P",monospace';
+        ctx.fillText('NEXT MISSION', cx, cy - 200);
+        ctx.restore();
+        // Arrow pointing toward nearest zone
+        const _bounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
+        const _arX = cx + Math.cos(_nearAng) * _bounce;
+        const _arY = (cy - 150) + Math.sin(_nearAng) * _bounce;
+        ctx.save();
+        ctx.translate(_arX, _arY);
+        ctx.rotate(_nearAng);
+        ctx.fillStyle = '#00ffcc';
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 16 * SB;
+        ctx.beginPath();
+        ctx.moveTo(20, 0);
+        ctx.lineTo(-16, -16);
+        ctx.lineTo(-16, 16);
+        ctx.closePath();
+        ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
+    }
+  }
+
   // Late-draw: Wave orb + Boost gem drawn on top of rocks (always visible)
   {
     // Wave orbs (late pass — draws over rocks, also visible in secret level)
@@ -9173,6 +9234,9 @@ function updateMissionBriefing(){
   } else if(!state._interzoneComplete){
     pre = 'MISSION 2:';
     msg = 'NAVIGATE THE INTERZONE RINGS';
+  } else if(zoneAt(state.x, state.y) === -1 && !state.secretUnlocked && !state.secretBossDefeated){
+    pre = 'MISSION 4:';
+    msg = 'DISCOVER THE SECRET LEVEL';
   } else {
     pre = 'MISSION 3:';
     msg = 'COLLECT ALL ZONE OBJECTS';
