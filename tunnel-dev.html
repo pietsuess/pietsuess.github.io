@@ -2169,33 +2169,35 @@ window.onload = function() {
     const explosionGroup = new THREE.Group();
     explosionGroup.visible = false;
     const explColors = [0xff4400, 0xff8800, 0xffcc00, 0xff2200, 0xffffff, 0xff6600];
+    const sphereGeo = new THREE.SphereGeometry(1, 8, 6);
     for (let i = 0; i < EXPLOSION_COUNT; i++) {
-        const size = 0.8 + Math.random() * 1.5;
-        const geo = new THREE.BoxGeometry(size, size, size * 2);
         const mat = new THREE.MeshBasicMaterial({ color: explColors[i % explColors.length], transparent: true, opacity: 1 });
-        const m = new THREE.Mesh(geo, mat);
+        const m = new THREE.Mesh(sphereGeo, mat);
         explosionGroup.add(m);
         explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
     }
     scene.add(explosionGroup);
     let explosionTimer = 0;
+    let explosionOrigin = new THREE.Vector3();
 
     function triggerExplosion(pos, intensity) {
         explosionGroup.visible = true;
-        explosionGroup.position.copy(pos);
-        explosionTimer = 2.5;
-        const spd = 40 + intensity * 100;
+        explosionGroup.position.set(0, 0, 0);
+        explosionOrigin.copy(pos);
+        explosionTimer = 3.0;
+        const spd = 50 + intensity * 120;
         for (let i = 0; i < EXPLOSION_COUNT; i++) {
             const p = explosionParts[i];
-            p.mesh.position.set(0, 0, 0);
+            const size = 0.4 + Math.random() * 0.8 + intensity * 0.5;
+            p.mesh.scale.setScalar(size);
+            p.mesh.position.copy(pos);
             p.mesh.material.opacity = 1;
-            p.mesh.scale.setScalar(1.0 + intensity * 2.0);
             const theta = Math.random() * Math.PI * 2;
-            const radialSpd = spd * (0.2 + Math.random() * 0.5);
-            p.vx = Math.cos(theta) * radialSpd;
-            p.vy = Math.sin(theta) * radialSpd;
-            // Bias heavily down the tunnel (-Z = forward)
-            p.vz = -(spd * (0.5 + Math.random() * 1.5));
+            const phi = Math.acos(2 * Math.random() - 1);
+            const s = spd * (0.3 + Math.random() * 0.7);
+            p.vx = Math.sin(phi) * Math.cos(theta) * s;
+            p.vy = Math.sin(phi) * Math.sin(theta) * s;
+            p.vz = -(Math.abs(Math.cos(phi)) * s + spd * 0.3);
             p.life = 1.0;
         }
     }
@@ -2203,15 +2205,36 @@ window.onload = function() {
     function updateExplosion(delta) {
         if (explosionTimer <= 0) return;
         explosionTimer -= delta;
+        const wallR = tubeRadius - 1.5;
         for (let i = 0; i < EXPLOSION_COUNT; i++) {
             const p = explosionParts[i];
             if (p.life <= 0) continue;
             p.mesh.position.x += p.vx * delta;
             p.mesh.position.y += p.vy * delta;
             p.mesh.position.z += p.vz * delta;
-            p.life -= delta * 0.5;
+
+            // Bounce off tunnel walls
+            const rx = p.mesh.position.x;
+            const ry = p.mesh.position.y;
+            const dist = Math.sqrt(rx * rx + ry * ry);
+            if (dist > wallR) {
+                // Reflect velocity off the circular wall (normal = radial direction)
+                const nx = rx / dist;
+                const ny = ry / dist;
+                const dot = p.vx * nx + p.vy * ny;
+                p.vx -= 2 * dot * nx;
+                p.vy -= 2 * dot * ny;
+                // Push back inside
+                p.mesh.position.x = nx * wallR;
+                p.mesh.position.y = ny * wallR;
+                // Lose a little energy on bounce
+                p.vx *= 0.75;
+                p.vy *= 0.75;
+                p.vz *= 0.9;
+            }
+
+            p.life -= delta * 0.35;
             p.mesh.material.opacity = Math.max(0, p.life);
-            p.mesh.scale.multiplyScalar(0.997);
         }
         if (explosionTimer <= 0) explosionGroup.visible = false;
     }
