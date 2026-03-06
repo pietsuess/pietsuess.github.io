@@ -843,10 +843,10 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 <!-- Mission briefing (shown on game start in EDIT zone) -->
 <div id="mission-briefing" style="
   display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-  background:rgba(0,0,0,0.88); border:1px solid #00ffcc;
+  background:rgba(0,0,0,0.92); border:1px solid #00ffcc;
   box-shadow:0 0 30px rgba(0,255,204,0.25);
-  padding:32px 38px; z-index:700; text-align:center;
-  font-family:'Press Start 2P',monospace; max-width:460px;
+  padding:28px 32px; z-index:700; text-align:center;
+  font-family:'Press Start 2P',monospace; width:max-content; max-width:92vw;
 ">
 </div>
 
@@ -911,7 +911,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 </div>
 
 <!-- ── DEV PANEL ── -->
-<div id="dev-panel" class="collapsed" style="display:none">
+<div id="dev-panel" style="display:none" class="collapsed">
   <div id="dev-panel-header">
     <span id="dev-panel-title">⚙ DEV MODE</span>
     <div id="dev-panel-btns">
@@ -2941,9 +2941,9 @@ function initBarrierObjects(){
   state.fuelObjects=state.fuelObjects.filter(function(f){ return !f._barrierFuel&&!f._outerLaunchpadFuel&&!f._interzoneExitFuel; });
   state.spaceRocks = state.spaceRocks.filter(function(r){ return !r._interzoneCluster; });
   state.objects=state.objects.filter(function(o){ return !o._barrierBoost; });
-  // 2 fuel canisters at top and bottom edges of the gap passage
-  [-(BARRIER_GAP_WIDTH+34), (BARRIER_GAP_WIDTH+34)].forEach(function(yOff){
-    state.fuelObjects.push({wx:BELT_OUTER-40,wy:yOff,size:14,rotation:0,liquidPhase:0,collected:false,_permanent:true,_barrierFuel:true});
+  // 2 fuel canisters just outside the barrier gap — clean vertical line ahead of exit
+  [-30, 30].forEach(function(yOff){
+    state.fuelObjects.push({wx:BELT_OUTER+80,wy:yOff,size:14,rotation:0,liquidPhase:0,collected:false,_permanent:true,_barrierFuel:true});
   });
   // NOTE: 2x boost gem is no longer spawned here — it spawns near player when all inner zone objects are collected
   // Outer target fuel canister — far beyond barrier, east
@@ -5550,16 +5550,50 @@ function update(){
       }
     }
     if(state._mwTentCD>0) state._mwTentCD--;
-    // Slowly face toward player (ambient awareness, no aggression)
-    const _mwToP=Math.atan2(_mwDy,_mwDx);
-    let _mwFD=_mwToP-(mwb.facing||0);
-    while(_mwFD>Math.PI) _mwFD-=Math.PI*2;
-    while(_mwFD<-Math.PI) _mwFD+=Math.PI*2;
-    mwb.facing=(mwb.facing||0)+_mwFD*0.012; // very slow turn
-    // Stay fixed at guard post — gentle drift back if somehow displaced
-    const _gDx=mwb._guardX-mwb.wx, _gDy=mwb._guardY-mwb.wy;
-    const _gD=Math.sqrt(_gDx*_gDx+_gDy*_gDy);
-    if(_gD>5){ mwb.wx+=(_gDx/_gD)*0.3; mwb.wy+=(_gDy/_gD)*0.3; }
+    // ── Flee state: when HP drops below 25%, boss roams the outer ring ──
+    const _mwFleeing = mwb.hits >= mwb.hitsNeeded * 0.75;
+    if(_mwFleeing && !mwb._fleeing){
+      mwb._fleeing = true;
+      // Pick first waypoint — random angle on outer belt ring
+      var _fAng = Math.random() * Math.PI * 2;
+      var _fR = BELT_OUTER - 200 + Math.random() * 300;
+      mwb._fleeWX = Math.cos(_fAng) * _fR;
+      mwb._fleeWY = Math.sin(_fAng) * _fR;
+    }
+    if(_mwFleeing && mwb._fleeing){
+      // Roam toward current waypoint
+      var _fDx = mwb._fleeWX - mwb.wx, _fDy = mwb._fleeWY - mwb.wy;
+      var _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
+      if(_fDist < 300){
+        // Pick new waypoint — random angle, stay in belt ring
+        var _fAng2 = Math.random() * Math.PI * 2;
+        var _fR2 = BELT_OUTER - 400 + Math.random() * 600;
+        mwb._fleeWX = Math.cos(_fAng2) * _fR2;
+        mwb._fleeWY = Math.sin(_fAng2) * _fR2;
+        _fDx = mwb._fleeWX - mwb.wx; _fDy = mwb._fleeWY - mwb.wy;
+        _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
+      }
+      // Move toward waypoint at moderate speed
+      var _fleeSpd = 1.8;
+      if(_fDist > 1){ mwb.wx += (_fDx / _fDist) * _fleeSpd; mwb.wy += (_fDy / _fDist) * _fleeSpd; }
+      // Face movement direction (away from player, toward waypoint)
+      var _fFace = Math.atan2(_fDy, _fDx);
+      var _fFD = _fFace - (mwb.facing || 0);
+      while(_fFD > Math.PI) _fFD -= Math.PI * 2;
+      while(_fFD < -Math.PI) _fFD += Math.PI * 2;
+      mwb.facing = (mwb.facing || 0) + _fFD * 0.03; // turn toward waypoint
+    } else {
+      // Normal: slowly face toward player (ambient awareness, no aggression)
+      const _mwToP=Math.atan2(_mwDy,_mwDx);
+      let _mwFD=_mwToP-(mwb.facing||0);
+      while(_mwFD>Math.PI) _mwFD-=Math.PI*2;
+      while(_mwFD<-Math.PI) _mwFD+=Math.PI*2;
+      mwb.facing=(mwb.facing||0)+_mwFD*0.012; // very slow turn
+      // Stay fixed at guard post — gentle drift back if somehow displaced
+      const _gDx=mwb._guardX-mwb.wx, _gDy=mwb._guardY-mwb.wy;
+      const _gD=Math.sqrt(_gDx*_gDx+_gDy*_gDy);
+      if(_gD>5){ mwb.wx+=(_gDx/_gD)*0.3; mwb.wy+=(_gDy/_gD)*0.3; }
+    }
     // Wave beam damage — only way to hurt it
     if(state.waveBeams){
       state.waveBeams.forEach(function(wb){
@@ -5889,7 +5923,7 @@ function hardRestart(){
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_shortcutWarpsSpawned:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
-    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_zoneCompleteHintDelay:undefined});
+    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_radarCX:undefined,_radarCY:undefined,_zoneCompleteHintDelay:undefined});
   state.fireMode='boost'; updateFireModeUI();
   document.getElementById('refuel-popup').classList.remove('open');
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set();
@@ -6759,7 +6793,7 @@ function drawZoneHUD(){
 }
 
 function drawRadarMap(){
-  if(wormholeTransition || state.inSecretLevel || state._victoryPhase) return;
+  if(wormholeTransition || state._victoryPhase) return;
   if(state.gameOver || !state.started) return;
 
   const PI2 = Math.PI * 2;
@@ -6768,6 +6802,92 @@ function drawRadarMap(){
   const mapX = canvas.width - mapR - 200;  // left of zone title + hamburger
   const mapY = mapR + 8;  // flush to top of screen
 
+  // ── SECRET LEVEL RADAR — player-centred, shows boss + black hole ──
+  if(state.inSecretLevel){
+    // Determine view radius: encompass boss and BH with margin
+    var _slMaxDist = 800;
+    if(state.secretBlackHole){
+      var _bhDx = state.secretBlackHole.wx - state.x, _bhDy = state.secretBlackHole.wy - state.y;
+      _slMaxDist = Math.max(_slMaxDist, Math.sqrt(_bhDx*_bhDx + _bhDy*_bhDy));
+    }
+    if(state.secretBoss && !state.secretBoss.dead){
+      var _boDx = state.secretBoss.wx - state.x, _boDy = state.secretBoss.wy - state.y;
+      _slMaxDist = Math.max(_slMaxDist, Math.sqrt(_boDx*_boDx + _boDy*_boDy));
+    }
+    var _slViewR = _slMaxDist * 1.25;  // 25% margin so objects aren't at edge
+    if(state._radarViewR === undefined) state._radarViewR = _slViewR;
+    state._radarViewR += (_slViewR - state._radarViewR) * 0.03;
+    var _slScale = mapR / state._radarViewR;
+
+    ctx.save();
+    ctx.globalAlpha = 0.85;
+    // Background
+    ctx.beginPath(); ctx.arc(mapX, mapY, mapR + 4, 0, PI2);
+    ctx.fillStyle = 'rgba(0,2,8,0.92)'; ctx.fill();
+    ctx.shadowColor = 'rgba(160,0,255,0.2)'; ctx.shadowBlur = 12 * SB;
+    ctx.strokeStyle = 'rgba(160,0,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.shadowBlur = 0;
+
+    // RADAR label (same curved text)
+    ctx.font = '11px "Press Start 2P",monospace';
+    ctx.fillStyle = 'rgba(160,0,255,0.3)';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    var _rLabel = 'RADAR';
+    var _rLabelR = mapR - 2;
+    var _rCharSpan = 0.09;
+    var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;
+    for(var _ri = 0; _ri < _rLabel.length; _ri++){
+      var _rAng = _rStartAng + _ri * _rCharSpan;
+      ctx.save();
+      ctx.translate(mapX + Math.cos(_rAng) * _rLabelR, mapY + Math.sin(_rAng) * _rLabelR);
+      ctx.rotate(_rAng - Math.PI / 2);
+      ctx.fillText(_rLabel[_ri], 0, 0);
+      ctx.restore();
+    }
+
+    // Boss dot — pulsing purple
+    if(state.secretBoss && !state.secretBoss.dead){
+      var _boRx = (state.secretBoss.wx - state.x) * _slScale;
+      var _boRy = (state.secretBoss.wy - state.y) * _slScale;
+      var _boRd = Math.sqrt(_boRx*_boRx + _boRy*_boRy);
+      if(_boRd < mapR - 2){
+        var _boPulse = 0.6 + Math.sin(state.frameCount * 0.08) * 0.4;
+        ctx.globalAlpha = _boPulse;
+        ctx.beginPath(); ctx.arc(mapX + _boRx, mapY + _boRy, 4, 0, PI2);
+        ctx.fillStyle = '#cc44ff'; ctx.fill();
+        ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 8 * SB;
+        ctx.beginPath(); ctx.arc(mapX + _boRx, mapY + _boRy, 4, 0, PI2); ctx.fill();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 0.85;
+      }
+    }
+
+    // Bubble dots — tiny pink (only unpopped)
+    if(state.bubbles){
+      ctx.globalAlpha = 0.4;
+      for(var _bi2 = 0; _bi2 < state.bubbles.length; _bi2++){
+        var _b = state.bubbles[_bi2];
+        if(_b.popped) continue;
+        var _bRx = (_b.wx - state.x) * _slScale, _bRy = (_b.wy - state.y) * _slScale;
+        if(Math.sqrt(_bRx*_bRx + _bRy*_bRy) > mapR - 2) continue;
+        ctx.beginPath(); ctx.arc(mapX + _bRx, mapY + _bRy, 1.5, 0, PI2);
+        ctx.fillStyle = 'hsl(' + _b.hue + ',80%,65%)'; ctx.fill();
+      }
+      ctx.globalAlpha = 0.85;
+    }
+
+    // Player blip — always at centre
+    var _plPulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
+    ctx.globalAlpha = _plPulse;
+    ctx.beginPath(); ctx.arc(mapX, mapY, 4, 0, PI2);
+    ctx.fillStyle = '#00ffcc'; ctx.fill();
+
+    ctx.restore();
+    return;  // skip normal radar
+  }
+
+  // ── NORMAL RADAR (main world) ──
+
   // ── Dynamic zoom: determine target view radius based on player distance ──
   const shipR = Math.sqrt(state.x * state.x + state.y * state.y);
   var targetViewR;
@@ -6775,8 +6895,10 @@ function drawRadarMap(){
     targetViewR = PEN_BARRIER_R * 1.5;  // 2700 — pen fills radar
   } else if(shipR < EDIT_R){
     targetViewR = EDIT_R * 1.15;  // ~11661 — interzone rings visible
+  } else if(shipR < ZONE_R){
+    targetViewR = BELT_OUTER;  // 21404 — full map in outer zones
   } else {
-    targetViewR = BELT_OUTER;  // 21404 — full map
+    targetViewR = 8000;  // player-centred belt neighbourhood
   }
   // Smooth lerp toward target (0.03/frame ≈ 1.7s to converge)
   if(state._radarViewR === undefined) state._radarViewR = targetViewR;
@@ -6784,6 +6906,21 @@ function drawRadarMap(){
   if(Math.abs(state._radarViewR - targetViewR) < 10) state._radarViewR = targetViewR;
   var viewR = state._radarViewR;
   var scale = mapR / viewR;
+
+  // ── Radar centre: world-origin inside zones, player-centred in belt ──
+  var _rcTX = 0, _rcTY = 0;
+  if(shipR >= ZONE_R){ _rcTX = state.x; _rcTY = state.y; }
+  if(state._radarCX === undefined){ state._radarCX = _rcTX; state._radarCY = _rcTY; }
+  state._radarCX += (_rcTX - state._radarCX) * 0.03;
+  state._radarCY += (_rcTY - state._radarCY) * 0.03;
+  if(Math.abs(state._radarCX - _rcTX) < 5 && Math.abs(state._radarCY - _rcTY) < 5){
+    state._radarCX = _rcTX; state._radarCY = _rcTY;
+  }
+  // World origin position on radar canvas
+  var wox = mapX - state._radarCX * scale;
+  var woy = mapY - state._radarCY * scale;
+  // Distance from radar centre to world origin (in pixels) — for visibility checks
+  var _woDist = Math.sqrt((wox - mapX) * (wox - mapX) + (woy - mapY) * (woy - mapY));
 
   ctx.save();
   ctx.globalAlpha = 0.85;
@@ -6800,29 +6937,34 @@ function drawRadarMap(){
   ctx.stroke();
   ctx.shadowBlur = 0;
 
+  // Clip content to radar circle so offset elements don't bleed outside
+  ctx.beginPath();
+  ctx.arc(mapX, mapY, mapR, 0, PI2);
+  ctx.clip();
+
   // RADAR label curving inside bottom (south) edge
   ctx.font = '11px "Press Start 2P",monospace';
   ctx.fillStyle = 'rgba(0,255,204,0.3)';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   var _rLabel = 'RADAR';
-  var _rLabelR = mapR - 2;  // right on the stroke
-  var _rCharSpan = 0.09;  // tighter spacing
-  var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;  // centred at south (π/2)
+  var _rLabelR = mapR - 2;
+  var _rCharSpan = 0.09;
+  var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;
   for(var _ri = 0; _ri < _rLabel.length; _ri++){
     var _rAng = _rStartAng + _ri * _rCharSpan;
     ctx.save();
     ctx.translate(mapX + Math.cos(_rAng) * _rLabelR, mapY + Math.sin(_rAng) * _rLabelR);
-    ctx.rotate(_rAng - Math.PI / 2);  // tangent to curve, readable from centre
+    ctx.rotate(_rAng - Math.PI / 2);
     ctx.fillText(_rLabel[_ri], 0, 0);
     ctx.restore();
   }
 
-  // Zone sectors — only visited ones, only if both radii fit in view
+  // Zone sectors — offset from world origin, clip handles overflow
   const visited = state.visitedLevels || new Set([1]);
   var innerR = EDIT_R * scale;
   var outerR = ZONE_R * scale;
-  if(innerR <= mapR + 2 && outerR <= mapR + 2){
+  if(_woDist <= mapR + outerR){
     var sectors = [
       { idx: 2, a1: -Q,   a2: Q,   col: LEVEL_COLORS.ANIMATE, lbl: 'ANI' },
       { idx: 4, a1: Q,    a2: 3*Q, col: LEVEL_COLORS.DESIGN,  lbl: 'DES' },
@@ -6833,8 +6975,8 @@ function drawRadarMap(){
       var sec = sectors[s];
       if(!visited.has(sec.idx)) continue;
       ctx.beginPath();
-      ctx.arc(mapX, mapY, innerR, sec.a1, sec.a2);
-      ctx.arc(mapX, mapY, outerR, sec.a2, sec.a1, true);
+      ctx.arc(wox, woy, innerR, sec.a1, sec.a2);
+      ctx.arc(wox, woy, outerR, sec.a2, sec.a1, true);
       ctx.closePath();
       ctx.fillStyle = sec.col;
       ctx.globalAlpha = 0.1;
@@ -6852,82 +6994,85 @@ function drawRadarMap(){
       ctx.globalAlpha = 0.5;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
-      ctx.fillText(sec.lbl, mapX + Math.cos(midA) * midR, mapY + Math.sin(midA) * midR);
+      ctx.fillText(sec.lbl, wox + Math.cos(midA) * midR, woy + Math.sin(midA) * midR);
       ctx.globalAlpha = 0.85;
     }
   }
 
-  // Pen barrier ring — if within view
-  if(PEN_BARRIER_R * scale <= mapR + 2){
+  // Pen barrier ring
+  if(_woDist <= mapR + PEN_BARRIER_R * scale){
     ctx.beginPath();
-    ctx.arc(mapX, mapY, PEN_BARRIER_R * scale, 0, PI2);
+    ctx.arc(wox, woy, PEN_BARRIER_R * scale, 0, PI2);
     ctx.strokeStyle = state.penBarrier && state.penBarrier.closed && !state.penBarrier.opening
       ? 'rgba(0,255,204,0.5)' : 'rgba(0,255,204,0.2)';
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // EDIT_R ring — show after pen opens, if within view
+  // EDIT_R ring
   if((!state.penBarrier || !state.penBarrier.closed || state.penBarrier.opening)
-     && EDIT_R * scale <= mapR + 2){
+     && _woDist <= mapR + EDIT_R * scale){
     ctx.beginPath();
-    ctx.arc(mapX, mapY, EDIT_R * scale, 0, PI2);
+    ctx.arc(wox, woy, EDIT_R * scale, 0, PI2);
     ctx.strokeStyle = 'rgba(0,255,204,0.12)';
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // Interzone rings — faint circles when zoomed in enough to see them
-  if(viewR < BELT_OUTER && (!state.penBarrier || !state.penBarrier.closed)){
+  // Interzone rings
+  if(!state.penBarrier || !state.penBarrier.closed){
     for(var ir = 0; ir < INTERZONE_RINGS.length; ir++){
       var rPx = INTERZONE_RINGS[ir] * scale;
-      if(rPx > mapR + 2) break;
+      if(_woDist > mapR + rPx) continue;  // ring entirely off-radar
       ctx.beginPath();
-      ctx.arc(mapX, mapY, rPx, 0, PI2);
+      ctx.arc(wox, woy, rPx, 0, PI2);
       ctx.strokeStyle = 'rgba(0,255,204,0.08)';
       ctx.lineWidth = 0.5;
       ctx.stroke();
     }
   }
 
-  // ZONE_R ring — only if within view
-  if(ZONE_R * scale <= mapR + 2){
+  // ZONE_R ring
+  if(_woDist <= mapR + ZONE_R * scale){
     ctx.beginPath();
-    ctx.arc(mapX, mapY, ZONE_R * scale, 0, PI2);
+    ctx.arc(wox, woy, ZONE_R * scale, 0, PI2);
     ctx.strokeStyle = 'rgba(0,255,204,0.1)';
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // Belt ring — only if within view
-  if(BELT_OUTER * scale <= mapR + 2){
+  // Belt ring
+  if(_woDist <= mapR + BELT_OUTER * scale){
     ctx.beginPath();
-    ctx.arc(mapX, mapY, BELT_OUTER * scale, 0, PI2);
+    ctx.arc(wox, woy, BELT_OUTER * scale, 0, PI2);
     ctx.strokeStyle = 'rgba(180,80,255,0.3)';
     ctx.lineWidth = 1;
     ctx.stroke();
   }
 
-  // EDIT label at centre — scale font with zoom
+  // EDIT label at world centre
   if(visited.has(1)){
-    var editFs = viewR < 5000 ? 12 : viewR < 15000 ? 10 : 8;
-    ctx.font = editFs + 'px "Press Start 2P",monospace';
-    ctx.fillStyle = 'rgba(0,255,204,0.5)';
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText('EDIT', mapX, mapY);
+    var _eLabelDist = Math.sqrt((wox - mapX) * (wox - mapX) + (woy - mapY) * (woy - mapY));
+    if(_eLabelDist < mapR){
+      var editFs = viewR < 5000 ? 12 : viewR < 15000 ? 10 : 8;
+      ctx.font = editFs + 'px "Press Start 2P",monospace';
+      ctx.fillStyle = 'rgba(0,255,204,0.5)';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText('EDIT', wox, woy);
+    }
   }
 
-  // ── Object dots — uncollected content objects ──
+  // ── Object dots — uncollected content objects, offset by radar centre ──
   ctx.globalAlpha = 0.6;
   for(var oi = 0; oi < state.objects.length; oi++){
     var obj = state.objects[oi];
     if(obj.collected || !obj.content || obj._bio || obj._social || obj._barrierBoost) continue;
-    var ox = mapX + obj.wx * scale;
-    var oy = mapY + obj.wy * scale;
+    var ox = mapX + (obj.wx - state._radarCX) * scale;
+    var oy = mapY + (obj.wy - state._radarCY) * scale;
     var odx = ox - mapX, ody = oy - mapY;
     var odist = Math.sqrt(odx * odx + ody * ody);
-    if(odist > mapR - 2) continue;  // skip objects outside radar view
+    if(odist > mapR + 4) continue;  // skip objects well outside radar
     var oZone = zoneAt(obj.wx, obj.wy);
     var oCol = oZone >= 0 ? LEVEL_COLORS[LEVELS[oZone]] : '#aa55ff';
     ctx.beginPath();
@@ -6937,9 +7082,35 @@ function drawRadarMap(){
   }
   ctx.globalAlpha = 0.85;
 
-  // Player blip — zoom-aware clamping
-  var px = mapX + state.x * scale;
-  var py = mapY + state.y * scale;
+  // ── Main world boss dot — pulsing purple, offset by radar centre ──
+  if(state.mainWorldBoss && !state.mainWorldBoss.dead && !state.inSecretLevel){
+    var _mwbRx = mapX + (state.mainWorldBoss.wx - state._radarCX) * scale;
+    var _mwbRy = mapY + (state.mainWorldBoss.wy - state._radarCY) * scale;
+    var _mwbDx = _mwbRx - mapX, _mwbDy = _mwbRy - mapY;
+    var _mwbDist = Math.sqrt(_mwbDx * _mwbDx + _mwbDy * _mwbDy);
+    if(_mwbDist <= mapR - 2){
+      var _mwbPulse = 0.5 + Math.sin(state.frameCount * 0.08) * 0.4;
+      ctx.globalAlpha = _mwbPulse;
+      ctx.beginPath(); ctx.arc(_mwbRx, _mwbRy, 4, 0, PI2);
+      ctx.fillStyle = '#cc44ff'; ctx.fill();
+      ctx.shadowColor = '#cc44ff'; ctx.shadowBlur = 8 * SB;
+      ctx.beginPath(); ctx.arc(_mwbRx, _mwbRy, 4, 0, PI2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.85;
+    } else {
+      // Boss off-radar: clamp to edge as directional indicator
+      var _mwbClX = mapX + (_mwbDx / _mwbDist) * (mapR - 4);
+      var _mwbClY = mapY + (_mwbDy / _mwbDist) * (mapR - 4);
+      ctx.globalAlpha = 0.4 + Math.sin(state.frameCount * 0.08) * 0.2;
+      ctx.beginPath(); ctx.arc(_mwbClX, _mwbClY, 3, 0, PI2);
+      ctx.fillStyle = '#cc44ff'; ctx.fill();
+      ctx.globalAlpha = 0.85;
+    }
+  }
+
+  // Player blip — offset by radar centre, zoom-aware clamping
+  var px = mapX + (state.x - state._radarCX) * scale;
+  var py = mapY + (state.y - state._radarCY) * scale;
   var blipDx = px - mapX, blipDy = py - mapY;
   var blipDist = Math.sqrt(blipDx * blipDx + blipDy * blipDy);
   var isClipped = blipDist > mapR;
@@ -9393,14 +9564,16 @@ function closeContactSuccess(){
 function updateMissionBriefing(){
   var mb = document.getElementById('mission-briefing');
   if(!mb) return;
-  var html = '<div style="color:#00ffcc;font-size:13px;letter-spacing:3px;margin-bottom:20px;">MISSION LOG</div>';
-  // Helper: mission line
+  var html = '<div style="color:#00ffcc;font-size:12px;letter-spacing:3px;margin-bottom:18px;">MISSION LOG</div>';
+  // Helper: mission line — flexbox so icon + text stay in columns
   function mLine(done, label, indent){
-    var col = done ? '#00ff88' : '#668899';
+    var col = done ? '#00ff88' : '#556677';
     var icon = done ? '&#10003;' : '&#9675;';
-    var pad = indent ? 'padding-left:22px;' : '';
-    return '<div style="text-align:left;font-size:' + (indent ? '8' : '9') + 'px;line-height:2.2;color:' + col + ';letter-spacing:1px;' + pad + '">' +
-      '<span style="display:inline-block;width:18px;text-align:center;">' + icon + '</span> ' + label + '</div>';
+    var ml = indent ? 'margin-left:20px;' : '';
+    var fs = indent ? '7' : '8';
+    return '<div style="display:flex;align-items:baseline;gap:8px;' + ml + 'white-space:nowrap;font-size:' + fs + 'px;line-height:2.4;color:' + col + ';letter-spacing:1px;">' +
+      '<span style="flex-shrink:0;width:12px;text-align:center;font-size:' + (done ? '10' : '8') + 'px;">' + icon + '</span>' +
+      '<span>' + label + '</span></div>';
   }
   // Mission 1: always shown
   html += mLine(state.editMissionComplete, 'MISSION 1: COLLECT ALL EDIT OBJECTS');
@@ -9425,7 +9598,11 @@ function updateMissionBriefing(){
   }
   // Mission 4: shown once player has been to the belt
   if(state._beltMissionShown || state.secretBossDefeated || state.secretVisitCount > 0){
-    html += mLine(state.secretBossDefeated, 'MISSION 4: DEFEAT THE ALIEN BOSS');
+    html += mLine(state.secretVisitCount > 0 || state.secretBossDefeated, 'MISSION 4: DISCOVER THE SECRET LEVEL');
+  }
+  // Mission 5: shown once player has visited the secret level
+  if(state.secretVisitCount > 0 || state.secretBossDefeated){
+    html += mLine(state.secretBossDefeated, 'MISSION 5: DEFEAT THE ALIEN BOSS');
   }
   html += '<div style="margin-top:20px;font-size:7px;color:#aaa;">[ PRESS ANY KEY TO CONTINUE ]</div>';
   mb.innerHTML = html;
@@ -11745,6 +11922,7 @@ function enterSecretLevel(){
 }
 
 function initSecretLevel(){
+  state._radarViewR = undefined; state._radarCX = undefined; state._radarCY = undefined;  // reset radar for secret level
   // Wipe all normal game objects so nothing is hidden-but-present
   state.objects      = [];
   state.wormholes    = []; state.wormholeZoneSet=new Set();
@@ -12350,6 +12528,7 @@ function exitSecretLevel(){
     };
   }
   state.inSecretLevel=false;
+  state._radarViewR = undefined; state._radarCX = undefined; state._radarCY = undefined;  // reset radar for main world
   // wave hint shown immediately on unlock
   state.bubbles=[];
   state.secretBlackHole=null;
