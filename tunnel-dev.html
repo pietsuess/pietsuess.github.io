@@ -2171,19 +2171,13 @@ window.onload = function() {
     const explosionGroup = new THREE.Group();
     explosionGroup.visible = false;
     const explColors = [0xff0000, 0xff4400, 0xffdd00, 0xffaa00, 0xff8800];
-    const circleGeo = new THREE.CircleGeometry(1, 12);
-    const squareGeo = new THREE.PlaneGeometry(1, 1);
+    const chunkOrbGeo = new THREE.SphereGeometry(1, 8, 6);
     const sparkCircleGeo = new THREE.CircleGeometry(1, 8);
     for (let i = 0; i < EXPLOSION_COUNT; i++) {
         const isSpark = i >= CHUNK_COUNT;
         const col = isSpark ? 0xffffff : explColors[i % explColors.length];
         const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 1, side: THREE.DoubleSide });
-        let geo;
-        if (isSpark) {
-            geo = sparkCircleGeo;
-        } else {
-            geo = Math.random() > 0.5 ? circleGeo : squareGeo;
-        }
+        const geo = isSpark ? sparkCircleGeo : chunkOrbGeo;
         const m = new THREE.Mesh(geo, mat);
         explosionGroup.add(m);
         explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0, isSpark: isSpark });
@@ -2204,30 +2198,30 @@ window.onload = function() {
             p.mesh.material.opacity = 1;
             const theta = Math.random() * Math.PI * 2;
             const phi = Math.acos(2 * Math.random() - 1);
+            const s = spd * (0.3 + Math.random() * 0.7);
+            const radVx = Math.sin(phi) * Math.cos(theta) * s;
+            const radVy = Math.sin(phi) * Math.sin(theta) * s;
+            const fwdVz = -(Math.abs(Math.cos(phi)) * s + spd * 0.3);
             if (p.isSpark) {
-                // Sparks: small but visible, fast
                 const size = 0.3 + Math.random() * 0.5;
                 p.spinX = (Math.random() - 0.5) * 15;
                 p.spinY = (Math.random() - 0.5) * 15;
                 p.spinZ = (Math.random() - 0.5) * 15;
                 p.mesh.scale.setScalar(size);
-                const s = spd * (0.8 + Math.random() * 1.5);
-                p.vx = Math.sin(phi) * Math.cos(theta) * s;
-                p.vy = Math.sin(phi) * Math.sin(theta) * s;
-                p.vz = -(Math.abs(Math.cos(phi)) * s + spd * 0.5);
-                p.life = 0.5 + Math.random() * 0.8;
+                p.vx = radVx * 1.3;
+                p.vy = radVy * 1.3;
+                p.vz = fwdVz * 1.3;
+                p.life = 1.5 + Math.random() * 1.0;
             } else {
-                // Chunks: varied sizes, random aspect ratio
+                // Chunks: orbs, varied sizes
                 const size = 0.2 + Math.random() * 1.2 + intensity * 0.6;
-                const aspect = 0.4 + Math.random() * 1.2;
-                p.mesh.scale.set(size * aspect, size / aspect, 1);
+                p.mesh.scale.setScalar(size);
                 p.spinX = (Math.random() - 0.5) * 10;
                 p.spinY = (Math.random() - 0.5) * 10;
                 p.spinZ = (Math.random() - 0.5) * 10;
-                const s = spd * (0.3 + Math.random() * 0.7);
-                p.vx = Math.sin(phi) * Math.cos(theta) * s;
-                p.vy = Math.sin(phi) * Math.sin(theta) * s;
-                p.vz = -(Math.abs(Math.cos(phi)) * s + spd * 0.3);
+                p.vx = radVx;
+                p.vy = radVy;
+                p.vz = fwdVz;
                 p.life = 1.0;
             }
         }
@@ -2264,7 +2258,7 @@ window.onload = function() {
                 p.vz *= 0.9;
             }
 
-            p.life -= delta * (p.isSpark ? 0.9 : 0.35);
+            p.life -= delta * (p.isSpark ? 0.5 : 0.35);
             p.mesh.material.opacity = Math.max(0, p.life);
             if (p.isSpark) {
                 p.mesh.scale.multiplyScalar(0.97);
