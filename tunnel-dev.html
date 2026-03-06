@@ -2165,19 +2165,26 @@ window.onload = function() {
 
     // --- Explosion particle system ---
     const CHUNK_COUNT = 60;
-    const SPARK_COUNT = 80;
+    const SPARK_COUNT = 150;
     const EXPLOSION_COUNT = CHUNK_COUNT + SPARK_COUNT;
     const explosionParts = [];
     const explosionGroup = new THREE.Group();
     explosionGroup.visible = false;
     const explColors = [0xff0000, 0xff4400, 0xffdd00, 0xffaa00, 0xff8800];
-    const chunkGeo = new THREE.PlaneGeometry(1, 1);
-    const sparkGeo = new THREE.PlaneGeometry(1, 1);
+    const circleGeo = new THREE.CircleGeometry(1, 12);
+    const squareGeo = new THREE.PlaneGeometry(1, 1);
+    const sparkCircleGeo = new THREE.CircleGeometry(1, 8);
     for (let i = 0; i < EXPLOSION_COUNT; i++) {
         const isSpark = i >= CHUNK_COUNT;
         const col = isSpark ? 0xffffff : explColors[i % explColors.length];
         const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 1, side: THREE.DoubleSide });
-        const m = new THREE.Mesh(isSpark ? sparkGeo : chunkGeo, mat);
+        let geo;
+        if (isSpark) {
+            geo = sparkCircleGeo;
+        } else {
+            geo = Math.random() > 0.5 ? circleGeo : squareGeo;
+        }
+        const m = new THREE.Mesh(geo, mat);
         explosionGroup.add(m);
         explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0, isSpark: isSpark });
     }
@@ -2256,8 +2263,20 @@ window.onload = function() {
             if (p.isSpark) {
                 p.mesh.scale.multiplyScalar(0.97);
                 // White → orange over lifetime
-                const t = 1 - p.life;
+                const t = 1 - Math.max(0, p.life);
                 p.mesh.material.color.setRGB(1, 1 - t * 0.5, 1 - t);
+            } else {
+                // Chunks: orange → red → black over lifetime
+                const t = 1 - Math.max(0, p.life);
+                if (t < 0.5) {
+                    // Orange to red (first half)
+                    const h = t * 2;
+                    p.mesh.material.color.setRGB(1, 0.55 - h * 0.55, 0);
+                } else {
+                    // Red to black (second half)
+                    const h = (t - 0.5) * 2;
+                    p.mesh.material.color.setRGB(1 - h, 0, 0);
+                }
             }
             // Billboard: face camera
             p.mesh.quaternion.copy(camera.quaternion);
