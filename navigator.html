@@ -1320,14 +1320,6 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 </div>
 
 <!-- Persistent bottom bar — flashes while in a completed level -->
-<div id="level-done-bar" style="
-  display:none; position:fixed; bottom:60px; left:0; right:0;
-  text-align:center; z-index:590; pointer-events:none;
-  font-family:'Press Start 2P',monospace; font-size:9px;
-  color:#ffe000; letter-spacing:2px;
-  text-shadow:0 0 8px rgba(255,224,0,0.7);
-  animation: pulse 0.8s steps(1) infinite;
-"></div>
 
 <!-- Score popup floats up from ship -->
 <div id="score-popup" style="
@@ -4702,7 +4694,6 @@ function update(){
       if(nowZone >= 0) state.visitedLevels.add(nowZone);
       const _zLabel = nowZone >= 0 ? LEVELS[nowZone] : 'ASTEROID BELT';
       updateLevelDisplay(_zLabel);
-      updateLevelDoneBar();
       // Show EDIT flash only when actually inside the pen barrier; intermediary shows INTER
       if(nowZone === 1){
         const _pDist2 = state.x*state.x + state.y*state.y;
@@ -4766,8 +4757,6 @@ function update(){
         // Leaving pen into interzone — show MISSION 2 text + force-clear left HUD hint
         updateLevelDisplay('INTER');
         state._hudHintAt = 0;
-        const _doneBar = document.getElementById('level-done-bar');
-        if(_doneBar) _doneBar.style.display = 'none';
         if(!state._mission2Shown){
           state._mission2Shown = true;
           state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 2:', msg: 'NAVIGATE THE INTERZONE RINGS', _col: '#00ffcc' };
@@ -7647,13 +7636,6 @@ function drawGame(){
       else if(obj.shape==='circle'){ctx.arc(0,0,s,0,Math.PI*2);}
       else{ctx.moveTo(0,-s);ctx.lineTo(s*0.866,s*0.5);ctx.lineTo(-s*0.866,s*0.5);ctx.closePath();}
       ctx.fill();
-      // Cyan outline stroke on EDIT objects
-      if(obj.shape==='square'){
-        ctx.globalAlpha = pulse;
-        ctx.strokeStyle = '#00ffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      }
     }
     ctx.restore();
 
@@ -8394,21 +8376,21 @@ function drawGame(){
         const _tgtY = _d1 < _d2 ? _g1wy : _g2wy;
         const _toGapAng = Math.atan2(_tgtY - state.y, _tgtX - state.x);
         {
-          // Text: centred, 200px above ship
+          // Text + arrow on the radial side toward the gap (outward from ship)
+          const _nmTx = cx + Math.cos(_toGapAng) * 280;
+          const _nmTy = cy + Math.sin(_toGapAng) * 280;
           ctx.save();
           ctx.textAlign = 'center';
           ctx.fillStyle = '#00ffcc';
           ctx.shadowColor = '#00ffcc';
           ctx.shadowBlur = 10;
           ctx.font = 'bold 18px "Press Start 2P",monospace';
-          ctx.fillText('NEXT MISSION', cx, cy - 200);
+          ctx.fillText('NEXT MISSION', _nmTx, _nmTy);
           ctx.restore();
-          // Arrow: below the text, pointing toward the gap, bouncing along its direction
+          // Arrow: well past the text, further toward gap, bouncing
           const _bounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
-          const _arBaseX = cx;
-          const _arBaseY = cy - 200 + 50; // 50px below text baseline
-          const _arX = _arBaseX + Math.cos(_toGapAng) * _bounce;
-          const _arY = _arBaseY + Math.sin(_toGapAng) * _bounce;
+          const _arX = cx + Math.cos(_toGapAng) * (440 + _bounce);
+          const _arY = cy + Math.sin(_toGapAng) * (440 + _bounce);
           ctx.save();
           ctx.translate(_arX, _arY);
           ctx.rotate(_toGapAng);
@@ -9142,7 +9124,6 @@ function updateLevelDisplay(label){
     document.getElementById('level-name').textContent=_l;
   }
   // Refresh bottom bar whenever zone changes
-  if(typeof updateLevelDoneBar==='function') updateLevelDoneBar();
 }
 
 // Determine which level/category an item belongs to
@@ -9621,7 +9602,6 @@ function checkLevelComplete(){
       setTimeout(()=>showLevelComplete(_capturedCL), 400);
     }
   }
-  if(!_anyNewComplete) updateLevelDoneBar();
 }
 
 function showLevelComplete(lvlIdx){
@@ -9671,41 +9651,7 @@ function showLevelComplete(lvlIdx){
     else banner.style.opacity=fade;
   },50);
   // Persistent bottom bar — force-show for the completed zone
-  const _doneBar = document.getElementById('level-done-bar');
-  _doneBar.textContent = '★ ALL '+lvlName+' OBJECTS COLLECTED! ★';
-  _doneBar.style.display='block';
-  _doneBar.dataset.completedZone = lvlIdx !== undefined ? lvlIdx : state.currentLevel;
   checkAllLevelsCollected();
-}
-
-function updateLevelDoneBar(){
-  const bar = document.getElementById('level-done-bar');
-  const curIdx = state.currentLevel;
-  const lvlName = curIdx >= 0 ? LEVELS[curIdx] : null;
-  if(!lvlName){ bar.style.display='none'; return; }
-  // Hide bar in interzone (outside pen barrier, pen open) — EDIT bar should not persist
-  if(curIdx === 1 && state.penBarrier && (!state.penBarrier.closed || state.penBarrier.opening)){
-    const _pDist2 = state.x*state.x + state.y*state.y;
-    if(_pDist2 >= PEN_BARRIER_R*PEN_BARRIER_R){ bar.style.display='none'; return; }
-  }
-  // Show bar if this zone was previously completed (flag set) OR re-check items
-  const alreadyFlagged = state['completedLevel_'+curIdx];
-  if(alreadyFlagged){
-    bar.textContent = '★ ALL '+lvlName+' OBJECTS COLLECTED! ★';
-    bar.style.display='block';
-    return;
-  }
-  // Re-check from items in case flag isn't set yet
-  const levelItems = (CONTENT_DATA[lvlName]||[]);
-  if(levelItems.length === 0){ bar.style.display='none'; return; }
-  const permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
-  const done = levelItems.every(it=>permCollected.has(it.title));
-  if(done){
-    bar.textContent = '★ ALL '+lvlName+' OBJECTS COLLECTED! ★';
-    bar.style.display='block';
-  } else {
-    bar.style.display='none';
-  }
 }
 
 function checkAllLevelsCollected(){
@@ -10241,8 +10187,6 @@ function fullMissionReset(){
   // Clear persisted collections (keep high scores)
   try{ localStorage.removeItem('ps_collected'); }catch(e){}
   // Hide any in-game overlays
-  const bar = document.getElementById('level-done-bar');
-  if(bar) bar.style.display='none';
   document.getElementById('menu-overlay').classList.remove('open');
   state.menuOpen=false;
   // Full return to title screen — state reset happens inside
