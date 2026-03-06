@@ -2163,6 +2163,59 @@ window.onload = function() {
     shipContainer.add(gunshipGroup);
     scene.add(shipContainer);
 
+    // --- Explosion particle system ---
+    const EXPLOSION_COUNT = 60;
+    const explosionParts = [];
+    const explosionGroup = new THREE.Group();
+    explosionGroup.visible = false;
+    const explColors = [0xff4400, 0xff8800, 0xffcc00, 0xff2200, 0xffffff, 0xff6600];
+    for (let i = 0; i < EXPLOSION_COUNT; i++) {
+        const size = 0.3 + Math.random() * 0.8;
+        const geo = new THREE.BoxGeometry(size, size, size);
+        const mat = new THREE.MeshBasicMaterial({ color: explColors[i % explColors.length], transparent: true, opacity: 1 });
+        const m = new THREE.Mesh(geo, mat);
+        explosionGroup.add(m);
+        explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0 });
+    }
+    scene.add(explosionGroup);
+    let explosionTimer = 0;
+
+    function triggerExplosion(pos, intensity) {
+        explosionGroup.visible = true;
+        explosionGroup.position.copy(pos);
+        explosionTimer = 2.0;
+        const spd = 30 + intensity * 80;
+        for (let i = 0; i < EXPLOSION_COUNT; i++) {
+            const p = explosionParts[i];
+            p.mesh.position.set(0, 0, 0);
+            p.mesh.material.opacity = 1;
+            p.mesh.scale.setScalar(0.5 + intensity * 1.5);
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.random() * Math.PI;
+            const s = spd * (0.3 + Math.random() * 0.7);
+            p.vx = Math.sin(phi) * Math.cos(theta) * s;
+            p.vy = Math.sin(phi) * Math.sin(theta) * s;
+            p.vz = Math.cos(phi) * s;
+            p.life = 1.0;
+        }
+    }
+
+    function updateExplosion(delta) {
+        if (explosionTimer <= 0) return;
+        explosionTimer -= delta;
+        for (let i = 0; i < EXPLOSION_COUNT; i++) {
+            const p = explosionParts[i];
+            if (p.life <= 0) continue;
+            p.mesh.position.x += p.vx * delta;
+            p.mesh.position.y += p.vy * delta;
+            p.mesh.position.z += p.vz * delta;
+            p.life -= delta * 0.8;
+            p.mesh.material.opacity = Math.max(0, p.life);
+            p.mesh.scale.multiplyScalar(0.995);
+        }
+        if (explosionTimer <= 0) explosionGroup.visible = false;
+    }
+
     function setActiveShip(type) {
         if (!GUNSHIP_ENABLED) type = 'default';
         activeShip = type;
@@ -2599,13 +2652,16 @@ window.onload = function() {
     }
 
     function takeDamage() {
-        health -= 30;
+        // Damage scales with hyper: 30 at normal, 100+ at full hyper (instant kill)
+        const hyperFracNow = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
+        const dmg = 30 + hyperFracNow * 70;
+        health -= dmg;
         combo = 0; comboTimer = 0;
         AudioEngine.playSFX('hit');
-        flash('#ff4444');
-        cameraShake = 3;
+        flash(hyperFracNow > 0.5 ? '#ffffff' : '#ff4444');
+        cameraShake = 3 + hyperFracNow * 5;
         speed = Math.max(baseSpeed, speed - 80);
-        spawnPointBurst('-30 SHIELD', 'c-red');
+        spawnPointBurst('-' + Math.round(dmg) + ' SHIELD', 'c-red');
         if (health <= 0) triggerGameOver();
     }
 
@@ -2615,6 +2671,9 @@ window.onload = function() {
         flash('#ffffff');
         if (score > 0) saveHighScore(score);
 
+        // Explosion — bigger at higher speed
+        const hyperFracNow = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
+        triggerExplosion(shipContainer.position.clone(), 0.5 + hyperFracNow * 0.5);
         shipContainer.visible = false;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
@@ -4003,6 +4062,7 @@ window.onload = function() {
             tube2.position.x = 0; tube2.position.y = 0;
         }
 
+        updateExplosion(delta);
         renderer.render(scene, camera);
     }
 
