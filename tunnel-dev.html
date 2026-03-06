@@ -1954,11 +1954,11 @@ window.onload = function() {
     scene.add(tube2);
 
     // --- Hyper Boost Tracers ---
-    const TRACER_COUNT = 24;
+    const TRACER_COUNT = 40;
     const tracerGroup = new THREE.Group();
     tracerGroup.visible = false;
     const tracerMat = new THREE.MeshBasicMaterial({ color: 0xff8800, transparent: true, opacity: 0.6 });
-    const tracerGeo = new THREE.BoxGeometry(0.15, 0.15, 80);
+    const tracerGeo = new THREE.BoxGeometry(0.2, 0.2, 160);
     const tracers = [];
     for (let i = 0; i < TRACER_COUNT; i++) {
         const m = new THREE.Mesh(tracerGeo, tracerMat.clone());
@@ -2213,6 +2213,9 @@ window.onload = function() {
     let shipZOffset = -18;
     const BOOST_SPEED = 550;
     const HYPER_SPEED = 550 * 3;
+    const BASE_FOV = 75;
+    const HYPER_FOV = 110;
+    let currentFov = BASE_FOV;
     let throttle = 0, throttleSmooth = 0;
 
     // Cumulative angle — zones set the rate, physics accumulate it
@@ -3804,6 +3807,24 @@ window.onload = function() {
             engineLight.intensity = 4 + throttleSmooth * 8;
             gEngLight.intensity = 4 + throttleSmooth * 8;
 
+            // FOV widens during hyper for speed sensation
+            const targetFov = throttleSmooth > 1.0
+                ? BASE_FOV + (HYPER_FOV - BASE_FOV) * Math.min(1, (throttleSmooth - 1.0) / 0.5)
+                : BASE_FOV;
+            currentFov += (targetFov - currentFov) * 0.06;
+            camera.fov = currentFov;
+            camera.updateProjectionMatrix();
+
+            // Tunnel wireframe brightens during hyper
+            if (throttleSmooth > 1.0) {
+                const hf = Math.min(1, (throttleSmooth - 1.0) / 0.5);
+                wireMat.opacity = 0.55 + hf * 0.35;
+                wireMat.color.setHex(hf > 0.5 ? 0xff8844 : 0x44ffaa);
+            } else {
+                wireMat.opacity = 0.55;
+                wireMat.color.setHex(0x00ff88);
+            }
+
             // Wing half-span = 5.5 units. At 90° bank the wing points radially outward.
             // Max safe orbit = tubeRadius - wingSpan - safety margin
             const bankAbs = Math.abs(bankGroup.rotation.z);
@@ -3843,7 +3864,6 @@ window.onload = function() {
 
             engine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
-            wireMat.opacity = 0.55;
 
             if (cameraShake > 0) cameraShake *= 0.85;
             if (cameraShake < 0.1) cameraShake = 0;
