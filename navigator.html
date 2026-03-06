@@ -1821,7 +1821,7 @@ const ZONE_PALETTE = {
   DIRECT:  ['#ff69b4','#ff88cc','#ff44aa']
 };
 
-// Content pop-ups preference — always ON in production
+// Content pop-ups preference — persisted in localStorage
 let _contentPopupsOn = true;
 let _firstPopupShown = false;
 
@@ -2200,9 +2200,9 @@ const MIN_GAP         = 100;
 const populatedCells  = new Set();
 
 const EDIT_R   = 10140;  // inner radius of outer zones (buffer zone between ring 10 at 8700 and zone start)
-const ZONE_R   = 22317;
+const ZONE_R   = 16229;  // halved outer zone depth (was 22317)
 const BELT_R   = ZONE_R;
-const BELT_OUTER = ZONE_R + 5175; // belt depth preserved from original (34500*0.15=5175)
+const BELT_OUTER = ZONE_R + 5175; // belt depth preserved from original
 // Pen barrier — segmented arc ring confining player until EDIT mission complete
 const PEN_BARRIER_R        = 1800;   // effective EDIT zone radius (capped to barrier)
 const PEN_BARRIER_SEGMENTS = 16;
@@ -2216,6 +2216,11 @@ const INTERZONE_GAP_END   = 100;    // gap width at last ring (px)
 const INTERZONE_WALL_T    = 18;     // line thickness
 // Gap positions cycle through this degree pattern (repeating every 8 rings)
 const INTERZONE_GAP_DEGS  = [0, 90, 180, 240, 0, 80, 160, 260];
+// Bonanza mote bands: each { inner, outer } defines a radial ring of point motes
+const BONANZA_BANDS = [
+  { inner: INTERZONE_RINGS[4] - 200, outer: INTERZONE_RINGS[4] - 20 },  // ring 4-5 gap
+  { inner: INTERZONE_RINGS[7] - 200, outer: INTERZONE_RINGS[7] - 20 }   // ring 7-8 gap
+];
 // Precompute wall arcs per ring: 2 walls with 2 polar-opposite gaps
 const INTERZONE_ARCS = (function(){
   const PI2 = Math.PI * 2;
@@ -2397,7 +2402,7 @@ function dhash(a, b, salt){
 
 function tooClose(wx, wy, contentTitle){
   const g2=MIN_GAP*MIN_GAP;
-  const SAME_GAP2 = 4800*4800; // same-content objects must be at least 4800px apart
+  const SAME_GAP2 = 2400*2400; // same-content objects must be at least 2400px apart (fits 3 instances in halved zones)
   for(const o of state.objects){
     if(!o.collected){
       const dx=o.wx-wx,dy=o.wy-wy;
@@ -2453,40 +2458,23 @@ function populateCell(gcx, gcy){
   populatedCells.add(key);
   // EDIT zone objects are pre-clustered near launchpad — skip cell-based content spawning
   const allItems = lvlIdx === 1 ? [] : getLevelItems(lvlIdx);
-  const slotsToFill = allItems.length === 0 ? 0 : ((cellHash % 4 < 1) ? 1 : 0);
+  const slotsToFill = allItems.length === 0 ? 0 : ((cellHash % 3 < 2) ? 1 : 0); // ~2/3 cells spawn content → ~3 instances per item
 
   for(let slot=0; slot<slotsToFill; slot++){
     const itemIdx = (cellHash + slot * 7919) % allItems.length;
     const pick = allItems[itemIdx];
     if(!pick) continue;
-    // Check if this content already exists in THIS zone — if so, try polar-opposite position
-    const existingInst = state.objects.find(o=>
+    // Cap at 3 instances per content item per zone
+    const existingCount = state.objects.filter(o=>
       !o.collected && o.content && o.content.title===pick.title &&
       zoneAt(o.wx, o.wy) === lvlIdx
-    );
-    if(existingInst){
-      // Polar inversion through zone center: guaranteed max separation
-      const zc = zoneCentre(lvlIdx);
-      const px = 2*zc.x - existingInst.wx;
-      const py = 2*zc.y - existingInst.wy;
-      // Validate: polar point must still be in the same zone
-      if(zoneAt(px, py) === lvlIdx && !tooClose(px, py, pick.title)){
-        state.objects.push({
-          wx: px, wy: py,
-          shape: ZONE_SHAPES[lvlIdx] || 'triangle',
-          size:  (16 + dhash(gcx,gcy,slot*1000+3)*12) * 2,
-          content: pick, collected: false,
-          pulsePhase: dhash(gcx,gcy,slot*1000+4)*Math.PI*2,
-          colorIndex: (lvlIdx*3+itemIdx) % SPECTRUM.length,
-          rotSpeed:   (dhash(gcx,gcy,slot*1000+5)-0.5)*0.03
-        });
-      }
-      // Either placed at polar spot or skipped — don't fall through to random placement
-      continue;
-    }
+    ).length;
+    if(existingCount >= 3) continue;
     for(let attempt=0; attempt<20; attempt++){
       const wx = gcx*CELL_SIZE + margin + dhash(gcx,gcy,slot*1000+attempt+10)*span;
       const wy = gcy*CELL_SIZE + margin + dhash(gcx,gcy,slot*1000+attempt+510)*span;
+      // Ensure object actually falls inside its intended zone
+      if(zoneAt(wx, wy) !== lvlIdx) continue;
       if(!tooClose(wx,wy, pick.title)){
         state.objects.push({
           wx, wy,
@@ -2693,6 +2681,41 @@ function initObjects() {
   })();
   state._boostPadEffect = 0;
   state._trailBoost = null; // { timer, col }
+
+  // ── Points Bonanza: dense mote fields ──
+  state.bonanzaMotes = [];
+  state._bonanzaEntered = false;
+  (function(){
+    var _idx = 0;
+    for(var _bi = 0; _bi < BONANZA_BANDS.length; _bi++){
+      var _band = BONANZA_BANDS[_bi];
+      var _rStep = 25, _aStep = 25;
+      for(var _r = _band.inner; _r <= _band.outer; _r += _rStep){
+        var _circ = 2 * Math.PI * _r;
+        var _count = Math.floor(_circ / _aStep);
+        var _angStep = (2 * Math.PI) / _count;
+        for(var _a = 0; _a < _count; _a++){
+          var _ang = _a * _angStep;
+          var _jr = ((((_idx * 7919 + 1234) & 0xffff) / 0xffff) - 0.5) * 12;
+          var _ja = ((((_idx * 6271 + 5678) & 0xffff) / 0xffff) - 0.5) * (8 / _r);
+          var _fr = _r + _jr;
+          var _fa = _ang + _ja;
+          var _spd = 0.3 + ((((_idx * 4919 + 7777) & 0xffff) / 0xffff) * 0.4);
+          var _dir = ((_idx * 8123 + 3456) & 0xffff) / 0xffff * Math.PI * 2;
+          state.bonanzaMotes.push({
+            wx: Math.cos(_fa) * _fr,
+            wy: Math.sin(_fa) * _fr,
+            vx: Math.cos(_dir) * _spd,
+            vy: Math.sin(_dir) * _spd,
+            collected: false,
+            phase: ((_idx * 3571) & 0xffff) / 0xffff * Math.PI * 2,
+            _band: _bi
+          });
+          _idx++;
+        }
+      }
+    }
+  })();
   state.wormholes  = []; state.wormholeZoneSet = new Set();
   state.spaceRocks = [];
   state.explosions = [];
@@ -2983,10 +3006,33 @@ function tickWormholeTransition(){
       updateLevelDisplay(LEVELS[t.destLevel]);
       if(t.isExitSecret){
         // silent — no zone flash on secret level exit
+        // Preserve session state that initObjects() would reset
+        const _sv = state.visitedLevels;
+        const _sc = state.collectedItems.slice();
+        const _ss = state.score;
+        const _sf = state.fuel;
         initObjects(); // Restore boost gem, wave orbs, content (wiped by initSecretLevel)
+        state.visitedLevels = _sv;
+        state.collectedItems = _sc;
+        state.score = _ss;
+        state.fuel = _sf;
         updateFireModeUI();
       } else {
         state.zoneCrossFlash = { lvl: t.destLevel, timer: 150 };
+        // EDIT zone objects are spawned by initObjects(), not the cell system
+        if(t.destLevel === 1){
+          // Preserve session state that initObjects() would reset
+          const _savedVisited = state.visitedLevels;
+          const _savedCollected = state.collectedItems.slice();
+          const _savedScore = state.score;
+          const _savedFuel = state.fuel;
+          initObjects();
+          state.visitedLevels = _savedVisited;
+          state.collectedItems = _savedCollected;
+          state.score = _savedScore;
+          state.fuel = _savedFuel;
+          state.currentLevel = 1;
+        }
       }
     }
   }
@@ -4697,7 +4743,7 @@ function update(){
         if(_doneBar) _doneBar.style.display = 'none';
         if(!state._mission2Shown){
           state._mission2Shown = true;
-          state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 2:', msg: 'NAVIGATE THE INTERZONE', _col: '#00ffcc' };
+          state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 2:', msg: 'NAVIGATE THE INTERZONE RINGS', _col: '#00ffcc' };
         }
       }
     }
@@ -5005,6 +5051,24 @@ function update(){
       }
     }
 
+    // ── Points Bonanza text — visible only while inside any mote band ──
+    if(state.bonanzaMotes && state.bonanzaMotes.length > 0){
+      var _bdist = Math.sqrt(state.x * state.x + state.y * state.y);
+      var _inAnyBand = false;
+      for(var _bk = 0; _bk < BONANZA_BANDS.length; _bk++){
+        if(_bdist >= BONANZA_BANDS[_bk].inner && _bdist <= BONANZA_BANDS[_bk].outer){ _inAnyBand = true; break; }
+      }
+      if(_inAnyBand){
+        if(!state.zoneCrossFlash || !state.zoneCrossFlash._bonanza){
+          state.zoneCrossFlash = { lvl:-3, timer:60, msg:'POINTS BONANZA!', _col:'#ffe000', _bonanza:true };
+        } else if(state.zoneCrossFlash._bonanza && state.zoneCrossFlash.timer < 30){
+          state.zoneCrossFlash.timer = 60;
+        }
+      } else if(state.zoneCrossFlash && state.zoneCrossFlash._bonanza){
+        state.zoneCrossFlash.timer = 0;
+      }
+    }
+
     // Points for passing each new ring (moving outward)
     if(state._izRingMax === undefined) state._izRingMax = -1;
     const _izDist2 = state.x * state.x + state.y * state.y;
@@ -5019,7 +5083,7 @@ function update(){
         if(_sp){ _sp.textContent = _ringLabel + '  +' + _ringPts; _sp.style.opacity='1'; setTimeout(()=>{ _sp.style.opacity='0'; },800); }
         // Full-size flash matching mission text style
         // First ring: don't override Mission 2 text — add ring label as sub-line
-        if(ir2 === 0 && state.zoneCrossFlash && state.zoneCrossFlash.timer > 0 && state.zoneCrossFlash.msg === 'NAVIGATE THE INTERZONE'){
+        if(ir2 === 0 && state.zoneCrossFlash && state.zoneCrossFlash.timer > 0 && state.zoneCrossFlash.msg === 'NAVIGATE THE INTERZONE RINGS'){
           state.zoneCrossFlash.sub = _ringLabel;
         } else {
           state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'INTERZONE:', msg: _ringLabel, _col: '#00ffcc' };
@@ -5584,6 +5648,41 @@ function update(){
     state.fuelObjects.forEach(f=>{f.rotation+=0.012;f.liquidPhase+=0.04;});
   }
 
+  // ── Bonanza motes collection ──
+  if(state.bonanzaMotes && state.bonanzaMotes.length > 0){
+    for(var _mi = 0; _mi < state.bonanzaMotes.length; _mi++){
+      var _m = state.bonanzaMotes[_mi];
+      if(_m.collected) continue;
+      if(nearCenter(_m.wx, _m.wy, 12)){
+        _m.collected = true;
+        addScore(1);
+        if(audioCtx && !state.sfxMuted){
+          var _t = audioCtx.currentTime;
+          playBeep(noteFreq(600, (_mi % 12)), _t, 0.04, 'sine', 0.02);
+        }
+      }
+    }
+    // ── Animate motes: move + bounce inside their radial band ──
+    for(var _mj = 0; _mj < state.bonanzaMotes.length; _mj++){
+      var _mm = state.bonanzaMotes[_mj];
+      if(_mm.collected) continue;
+      _mm.wx += _mm.vx;
+      _mm.wy += _mm.vy;
+      var _bb = BONANZA_BANDS[_mm._band];
+      var _md2 = _mm.wx * _mm.wx + _mm.wy * _mm.wy;
+      if(_md2 > _bb.outer * _bb.outer || _md2 < _bb.inner * _bb.inner){
+        var _md = Math.sqrt(_md2);
+        var _rnx = _mm.wx / _md, _rny = _mm.wy / _md;
+        var _dot = _mm.vx * _rnx + _mm.vy * _rny;
+        _mm.vx -= 2 * _dot * _rnx;
+        _mm.vy -= 2 * _dot * _rny;
+        var _clampR = _md2 > _bb.outer * _bb.outer ? _bb.outer - 1 : _bb.inner + 1;
+        _mm.wx = _rnx * _clampR;
+        _mm.wy = _rny * _clampR;
+      }
+    }
+  }
+
   // Collect wave orbs — works in any zone including secret level
   state.waveOrbs.forEach(orb=>{
     if(orb.collected)return;
@@ -5749,7 +5848,7 @@ function hardRestart(){
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
-    passageHatch:{hits:0,broken:false,hitCooldown:0}});
+    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false});
   state.fireMode='boost'; updateFireModeUI();
   document.getElementById('refuel-popup').classList.remove('open');
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set();
@@ -6571,15 +6670,15 @@ function drawZoneHUD(){
   if(state._hudHoverItem){
     const hi = state._hudHoverItem;
     ctx.save();
-    ctx.font='8px "Press Start 2P",monospace';
+    ctx.font='12px "Press Start 2P",monospace';
     const tw = ctx.measureText(hi.title).width;
     const tx = hi.x + hi.r + 8;
     const ty = hi.y;
     ctx.fillStyle='rgba(5,9,18,0.9)';
-    ctx.fillRect(tx-4, ty-10, tw+8, 16);
+    ctx.fillRect(tx-4, ty-13, tw+8, 22);
     ctx.strokeStyle='rgba(0,255,204,0.4)';
     ctx.lineWidth=1;
-    ctx.strokeRect(tx-4, ty-10, tw+8, 16);
+    ctx.strokeRect(tx-4, ty-12, tw+8, 20);
     ctx.fillStyle=hi.collected ? '#00ffcc' : 'rgba(0,255,204,0.4)';
     ctx.textBaseline='middle';
     ctx.fillText(hi.title, tx, ty);
@@ -7088,6 +7187,26 @@ function drawGame(){
 
   // Wave orbs drawn in LATE pass (after rocks) — skipped here to ensure z-order
 
+  // ── Bonanza motes — tiny gold dots between rings 4-5 ──
+  if(state.bonanzaMotes && state.bonanzaMotes.length > 0){
+    ctx.save();
+    for(var _bi = 0; _bi < state.bonanzaMotes.length; _bi++){
+      var _bm = state.bonanzaMotes[_bi];
+      if(_bm.collected) continue;
+      var _bsx = _bm.wx - state.x + cx, _bsy = _bm.wy - state.y + cy;
+      if(_bsx < -20 || _bsx > canvas.width + 20 || _bsy < -20 || _bsy > canvas.height + 20) continue;
+      var _bAlpha = 0.55 + 0.45 * Math.sin(_bm.phase + state.frameCount * 0.06);
+      ctx.globalAlpha = _bAlpha;
+      ctx.fillStyle = '#ffe000';
+      ctx.shadowColor = '#ffe000';
+      ctx.shadowBlur = 4 * SB;
+      ctx.beginPath();
+      ctx.arc(_bsx, _bsy, 3, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+
   // Fuel objects — hidden in secret level; outer launchpad fuel drawn after pad
   if(!state.inSecretLevel) state.fuelObjects.forEach(f=>{
     if(f.collected)return;
@@ -7254,7 +7373,8 @@ function drawGame(){
     } else {
       // Glow halo — pulse via fill alpha, no shadowBlur (Safari perf)
       const glowPulse = Math.sin(state.frameCount*0.08 + obj.pulsePhase)*0.5+0.5;
-      ctx.fillStyle = objColor;
+      // EDIT squares: yellow fill + cyan border; others: normal zone color
+      ctx.fillStyle = obj.shape==='square' ? '#ffe800' : objColor;
       ctx.globalAlpha = pulse * (0.55 + glowPulse*0.45);
       ctx.beginPath();
       if(obj.shape==='hex'||obj.shape==='octagon'||obj.shape==='pentagon'){
@@ -7264,6 +7384,13 @@ function drawGame(){
       else if(obj.shape==='circle'){ctx.arc(0,0,s,0,Math.PI*2);}
       else{ctx.moveTo(0,-s);ctx.lineTo(s*0.866,s*0.5);ctx.lineTo(-s*0.866,s*0.5);ctx.closePath();}
       ctx.fill();
+      // Cyan outline stroke on EDIT objects
+      if(obj.shape==='square'){
+        ctx.globalAlpha = pulse;
+        ctx.strokeStyle = '#00ffff';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+      }
     }
     ctx.restore();
 
@@ -9045,7 +9172,7 @@ function updateMissionBriefing(){
     msg = 'COLLECT ALL OBJECTS IN THE EDIT ZONE';
   } else if(!state._interzoneComplete){
     pre = 'MISSION 2:';
-    msg = 'NAVIGATE THE INTERZONE';
+    msg = 'NAVIGATE THE INTERZONE RINGS';
   } else {
     pre = 'MISSION 3:';
     msg = 'COLLECT ALL ZONE OBJECTS';
