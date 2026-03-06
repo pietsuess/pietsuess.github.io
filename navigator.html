@@ -112,7 +112,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   /* ── HUD Toggles — gear-shift columns, right of centre title ── */
   #hud-toggles {
     display:none; position:absolute; z-index:101;
-    left:75%; top:4px; transform:translateX(-50%);
+    left:65%; top:4px; transform:translateX(-50%);
     gap:16px; pointer-events:all; align-items:flex-start;
   }
   #hud-toggles.visible { display:flex; }
@@ -1974,6 +1974,7 @@ document.addEventListener('click', function(e){
   for(let i=0; i<_zoneHUDIcons.length; i++){
     const ic = _zoneHUDIcons[i];
     if(ic.collected && Math.abs(mx-ic.x)<ic.r && Math.abs(my-ic.y)<ic.r){
+      state._hudHintAt = 0;  // permanently dismiss left HUD hint
       openContent(ic.item, true);
       e.stopPropagation();
       return;
@@ -2492,7 +2493,7 @@ function populateCell(gcx, gcy){
     }
     if(_onRing) continue;
     const ang = dhash(gcx,gcy,80000+ar*31+3)*Math.PI*2;
-    const spd = 0.03 + dhash(gcx,gcy,80000+ar*31+4)*0.15;
+    const spd = 0.3 + dhash(gcx,gcy,80000+ar*31+4)*0.7;
     const _ar = makeRock(wx, wy, sz, Math.cos(ang)*spd, Math.sin(ang)*spd);
     _ar._ambientCellKey = key; // track so cull can evict the cell for re-population
     state.spaceRocks.push(_ar);
@@ -4275,6 +4276,11 @@ function updateWaveBeams(){
       const boss=state.secretBoss;
       if((boss.wx-b.wx)**2+(boss.wy-b.wy)**2<(boss.bodyR+10)**2){
         boss.hits++;boss.flashTimer=15;b.maxAge=0;hit=true;
+        // Knockback — push boss away from beam direction
+        var _kbAng = Math.atan2(boss.wy - b.wy, boss.wx - b.wx);
+        var _kbForce = 18;
+        boss.wx += Math.cos(_kbAng) * _kbForce;
+        boss.wy += Math.sin(_kbAng) * _kbForce;
         if(audioCtx&&!state.sfxMuted){const _t=audioCtx.currentTime;playSFX(noteFreq(110,-5),_t,0.15,'sawtooth',0.1);}
         if(boss.hits>=boss.hitsNeeded)killSecretBoss();
       }
@@ -4521,6 +4527,13 @@ function update(){
       if(bDist < 1400 && bDist > 1) bodies.push({ dx:bDx, dy:bDy, dist:bDist, range:1400, weight:0.8 });
     }
 
+    // Black hole (secret level) — camera push within 1200px (freeze during captures)
+    if(state.secretBlackHole && state.inSecretLevel && !state.bhCapture && !state._bossCaptured){
+      const bhDx = state.secretBlackHole.wx - state.x, bhDy = state.secretBlackHole.wy - state.y;
+      const bhDist = Math.sqrt(bhDx*bhDx + bhDy*bhDy);
+      if(bhDist < 1200 && bhDist > 1) bodies.push({ dx:bhDx, dy:bhDy, dist:bhDist, range:1200, weight:0.9 });
+    }
+
     // Moon excluded — too small (80px) and its push fights Earth's
 
     // One-shot auto-kill boosters (per-body thresholds)
@@ -4713,22 +4726,30 @@ function update(){
       } else if(nowZone >= 0 && nowZone !== 1 && state._interzoneComplete){
         // Outer zone entry — zone name flash first, then mission briefing
         state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
-        if(!state._zoneEntryCount) state._zoneEntryCount = 0;
-        state._zoneEntryCount++;
         const _mZone = nowZone;
         const _zoneName = LEVELS[_mZone];
+        const _zoneEntryKey = '_zoneEntries_'+_mZone;
+        if(!state[_zoneEntryKey]) state[_zoneEntryKey] = 0;
+        state[_zoneEntryKey]++;
         const _zoneItems = CONTENT_DATA[_zoneName] || [];
-        const _zoneCollected = (state.collectedItems||[]).filter(c => c.zone === _zoneName).length;
         const _zoneTotal = _zoneItems.length;
-        // Show mission text: first 3 entries or when 4/5 collected (remaining prompt)
-        if(_zoneTotal > 0 && _zoneCollected >= Math.ceil(_zoneTotal * 0.8)){
-          setTimeout(function(){
-            state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
-          }, 1400);
-        } else if(state._zoneEntryCount <= 3){
-          setTimeout(function(){
-            state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
-          }, 1400);
+        const _permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
+        const _zoneCollected = _zoneItems.filter(it=>_permCollected.has(it.title)).length;
+        // Catch-up: if all items collected but flag was never set (e.g. drifted zones during checkLevelComplete timeout)
+        if(!state['completedLevel_'+_mZone] && _zoneTotal > 0 && _zoneCollected >= _zoneTotal){
+          state['completedLevel_'+_mZone] = true;
+        }
+        // Show mission text — skip if zone already completed
+        if(!state['completedLevel_'+_mZone]){
+          if(_zoneTotal > 0 && _zoneCollected >= Math.ceil(_zoneTotal * 0.8)){
+            setTimeout(function(){
+              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
+            }, 1400);
+          } else if(state[_zoneEntryKey] <= 3){
+            setTimeout(function(){
+              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
+            }, 1400);
+          }
         }
       } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated){
         // Entering asteroid belt — Mission 4: discover the secret level
@@ -5868,7 +5889,7 @@ function hardRestart(){
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_shortcutWarpsSpawned:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
-    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false});
+    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_zoneCompleteHintDelay:undefined});
   state.fireMode='boost'; updateFireModeUI();
   document.getElementById('refuel-popup').classList.remove('open');
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set();
@@ -6490,6 +6511,7 @@ function triggerCollision(wx,wy){
 }
 
 function triggerPeanutUnlock(){
+  if(state._peanutUnlocked) return; // already unlocked — don't re-trigger
   state._peanutUnlocked = true;
   state.cheat = 'peanut';
   // Show the ship-toggle in HUD and point an arrow at it
@@ -6599,12 +6621,14 @@ function tickBossExplosion(){
     state.secretBoss=null;state.secretBossHits=0;
     state._bossExplOriginX=undefined;state._bossExplOriginY=undefined;
     state._bossExplFlash=null;
-    state.rocksDestroyed=0;state.secretUnlocked=false;
+    state.rocksDestroyed=0;state.secretUnlocked=false;state._beltRocksDestroyed=0;
     state.x=0;state.y=0;state.vx=0;state.vy=0;state.fuel=0.5; resetEnclosure();
     state.paused=false;state.menuOpen=false;state.contentOpen=false;
     wormholeTransition=null;wormholeCooldown=0;state.currentLevel=1;updateLevelDisplay(LEVELS[1]);
     state.zoneCrossFlash={lvl:-3,timer:220,maxT:220,msg:'DESTROYED BY THE ALIEN'};
+    var _svV2=state.visitedLevels,_svC2=state.collectedItems?state.collectedItems.slice():[],_svS2=state.score;
     populatedCells.clear();initStars();initObjects();resumeMusic();updateFireModeUI();
+    state.visitedLevels=_svV2;state.collectedItems=_svC2;state.score=_svS2;
   }
 }
 // ── Zone Object HUD — left-side vertical progress column ──
@@ -6708,9 +6732,10 @@ function drawZoneHUD(){
   // (Drawer hint disabled — may revisit later)
 
   // Left HUD hint — arrow + text next to collected-object icons
-  // Appears after 3 objects collected, dismissed on next collection after that
+  // Appears after 3 objects collected; killed by: clicking HUD icon, leaving EDIT, or collecting more
   const _collCount = (state.collectedItems||[]).length;
-  if(_collCount >= 3){
+  if(state.editMissionComplete || zoneAt(state.x, state.y) !== 1) state._hudHintAt = 0;  // kill once left EDIT
+  if(_collCount >= 3 && state._hudHintAt !== 0){
     if(state._hudHintAt === undefined) state._hudHintAt = _collCount;
     if(_collCount <= state._hudHintAt){
       ctx.save();
@@ -6739,73 +6764,112 @@ function drawRadarMap(){
 
   const PI2 = Math.PI * 2;
   const Q = Math.PI / 4;
-  const mapR = 120;
-  const mapX = canvas.width - mapR - 50;
-  const mapY = canvas.height - mapR - 70;  // clear fuel bar
-  const scale = mapR / BELT_OUTER;
+  const mapR = 132;  // 10% bigger than original 120
+  const mapX = canvas.width - mapR - 200;  // left of zone title + hamburger
+  const mapY = mapR + 8;  // flush to top of screen
+
+  // ── Dynamic zoom: determine target view radius based on player distance ──
+  const shipR = Math.sqrt(state.x * state.x + state.y * state.y);
+  var targetViewR;
+  if(shipR < PEN_BARRIER_R){
+    targetViewR = PEN_BARRIER_R * 1.5;  // 2700 — pen fills radar
+  } else if(shipR < EDIT_R){
+    targetViewR = EDIT_R * 1.15;  // ~11661 — interzone rings visible
+  } else {
+    targetViewR = BELT_OUTER;  // 21404 — full map
+  }
+  // Smooth lerp toward target (0.03/frame ≈ 1.7s to converge)
+  if(state._radarViewR === undefined) state._radarViewR = targetViewR;
+  state._radarViewR += (targetViewR - state._radarViewR) * 0.03;
+  if(Math.abs(state._radarViewR - targetViewR) < 10) state._radarViewR = targetViewR;
+  var viewR = state._radarViewR;
+  var scale = mapR / viewR;
 
   ctx.save();
   ctx.globalAlpha = 0.85;
 
-  // Dark background circle
+  // Dark background circle — deep opacity for readability
   ctx.beginPath();
   ctx.arc(mapX, mapY, mapR + 4, 0, PI2);
-  ctx.fillStyle = 'rgba(0,4,14,0.75)';
+  ctx.fillStyle = 'rgba(0,2,8,0.92)';
   ctx.fill();
-  ctx.strokeStyle = 'rgba(0,255,204,0.2)';
-  ctx.lineWidth = 1;
+  ctx.shadowColor = 'rgba(0,255,204,0.15)';
+  ctx.shadowBlur = 12 * SB;
+  ctx.strokeStyle = 'rgba(0,255,204,0.35)';
+  ctx.lineWidth = 1.5;
   ctx.stroke();
+  ctx.shadowBlur = 0;
 
-  // Zone sectors — only visited ones
-  const visited = state.visitedLevels || new Set([1]);
-  const innerR = EDIT_R * scale;
-  const outerR = ZONE_R * scale;
-  const sectors = [
-    { idx: 2, a1: -Q,   a2: Q,   col: LEVEL_COLORS.ANIMATE, lbl: 'ANI' },
-    { idx: 4, a1: Q,    a2: 3*Q, col: LEVEL_COLORS.DESIGN,  lbl: 'DES' },
-    { idx: 3, a1: -3*Q, a2: -Q,  col: LEVEL_COLORS.PHOTO,   lbl: 'PHO' },
-    { idx: 0, a1: 3*Q,  a2: 5*Q, col: LEVEL_COLORS.DIRECT,  lbl: 'DIR' }
-  ];
-  for(let s = 0; s < sectors.length; s++){
-    const sec = sectors[s];
-    if(!visited.has(sec.idx)) continue;
-    // Filled wedge
-    ctx.beginPath();
-    ctx.arc(mapX, mapY, innerR, sec.a1, sec.a2);
-    ctx.arc(mapX, mapY, outerR, sec.a2, sec.a1, true);
-    ctx.closePath();
-    ctx.fillStyle = sec.col;
-    ctx.globalAlpha = 0.1;
-    ctx.fill();
-    ctx.globalAlpha = 0.85;
-    // Sector outline
-    ctx.strokeStyle = sec.col;
-    ctx.globalAlpha = 0.25;
-    ctx.lineWidth = 1;
-    ctx.stroke();
-    ctx.globalAlpha = 0.85;
-    // Label
-    const midA = (sec.a1 + sec.a2) / 2;
-    const midR = (innerR + outerR) / 2;
-    ctx.font = '10px "Press Start 2P",monospace';
-    ctx.fillStyle = sec.col;
-    ctx.globalAlpha = 0.5;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
-    ctx.fillText(sec.lbl, mapX + Math.cos(midA) * midR, mapY + Math.sin(midA) * midR);
-    ctx.globalAlpha = 0.85;
+  // RADAR label curving inside bottom (south) edge
+  ctx.font = '11px "Press Start 2P",monospace';
+  ctx.fillStyle = 'rgba(0,255,204,0.3)';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  var _rLabel = 'RADAR';
+  var _rLabelR = mapR - 2;  // right on the stroke
+  var _rCharSpan = 0.09;  // tighter spacing
+  var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;  // centred at south (π/2)
+  for(var _ri = 0; _ri < _rLabel.length; _ri++){
+    var _rAng = _rStartAng + _ri * _rCharSpan;
+    ctx.save();
+    ctx.translate(mapX + Math.cos(_rAng) * _rLabelR, mapY + Math.sin(_rAng) * _rLabelR);
+    ctx.rotate(_rAng - Math.PI / 2);  // tangent to curve, readable from centre
+    ctx.fillText(_rLabel[_ri], 0, 0);
+    ctx.restore();
   }
 
-  // Pen barrier ring — always visible
-  ctx.beginPath();
-  ctx.arc(mapX, mapY, PEN_BARRIER_R * scale, 0, PI2);
-  ctx.strokeStyle = state.penBarrier && state.penBarrier.closed && !state.penBarrier.opening
-    ? 'rgba(0,255,204,0.5)' : 'rgba(0,255,204,0.2)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // Zone sectors — only visited ones, only if both radii fit in view
+  const visited = state.visitedLevels || new Set([1]);
+  var innerR = EDIT_R * scale;
+  var outerR = ZONE_R * scale;
+  if(innerR <= mapR + 2 && outerR <= mapR + 2){
+    var sectors = [
+      { idx: 2, a1: -Q,   a2: Q,   col: LEVEL_COLORS.ANIMATE, lbl: 'ANI' },
+      { idx: 4, a1: Q,    a2: 3*Q, col: LEVEL_COLORS.DESIGN,  lbl: 'DES' },
+      { idx: 3, a1: -3*Q, a2: -Q,  col: LEVEL_COLORS.PHOTO,   lbl: 'PHO' },
+      { idx: 0, a1: 3*Q,  a2: 5*Q, col: LEVEL_COLORS.DIRECT,  lbl: 'DIR' }
+    ];
+    for(var s = 0; s < sectors.length; s++){
+      var sec = sectors[s];
+      if(!visited.has(sec.idx)) continue;
+      ctx.beginPath();
+      ctx.arc(mapX, mapY, innerR, sec.a1, sec.a2);
+      ctx.arc(mapX, mapY, outerR, sec.a2, sec.a1, true);
+      ctx.closePath();
+      ctx.fillStyle = sec.col;
+      ctx.globalAlpha = 0.1;
+      ctx.fill();
+      ctx.globalAlpha = 0.85;
+      ctx.strokeStyle = sec.col;
+      ctx.globalAlpha = 0.25;
+      ctx.lineWidth = 1;
+      ctx.stroke();
+      ctx.globalAlpha = 0.85;
+      var midA = (sec.a1 + sec.a2) / 2;
+      var midR = (innerR + outerR) / 2;
+      ctx.font = '10px "Press Start 2P",monospace';
+      ctx.fillStyle = sec.col;
+      ctx.globalAlpha = 0.5;
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillText(sec.lbl, mapX + Math.cos(midA) * midR, mapY + Math.sin(midA) * midR);
+      ctx.globalAlpha = 0.85;
+    }
+  }
 
-  // EDIT_R ring (interzone boundary) — show after pen barrier opened
-  if(!state.penBarrier || !state.penBarrier.closed || state.penBarrier.opening){
+  // Pen barrier ring — if within view
+  if(PEN_BARRIER_R * scale <= mapR + 2){
+    ctx.beginPath();
+    ctx.arc(mapX, mapY, PEN_BARRIER_R * scale, 0, PI2);
+    ctx.strokeStyle = state.penBarrier && state.penBarrier.closed && !state.penBarrier.opening
+      ? 'rgba(0,255,204,0.5)' : 'rgba(0,255,204,0.2)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // EDIT_R ring — show after pen opens, if within view
+  if((!state.penBarrier || !state.penBarrier.closed || state.penBarrier.opening)
+     && EDIT_R * scale <= mapR + 2){
     ctx.beginPath();
     ctx.arc(mapX, mapY, EDIT_R * scale, 0, PI2);
     ctx.strokeStyle = 'rgba(0,255,204,0.12)';
@@ -6813,41 +6877,78 @@ function drawRadarMap(){
     ctx.stroke();
   }
 
-  // ZONE_R ring
-  ctx.beginPath();
-  ctx.arc(mapX, mapY, ZONE_R * scale, 0, PI2);
-  ctx.strokeStyle = 'rgba(0,255,204,0.1)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // Interzone rings — faint circles when zoomed in enough to see them
+  if(viewR < BELT_OUTER && (!state.penBarrier || !state.penBarrier.closed)){
+    for(var ir = 0; ir < INTERZONE_RINGS.length; ir++){
+      var rPx = INTERZONE_RINGS[ir] * scale;
+      if(rPx > mapR + 2) break;
+      ctx.beginPath();
+      ctx.arc(mapX, mapY, rPx, 0, PI2);
+      ctx.strokeStyle = 'rgba(0,255,204,0.08)';
+      ctx.lineWidth = 0.5;
+      ctx.stroke();
+    }
+  }
 
-  // Belt ring
-  ctx.beginPath();
-  ctx.arc(mapX, mapY, BELT_OUTER * scale, 0, PI2);
-  ctx.strokeStyle = 'rgba(180,80,255,0.3)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
+  // ZONE_R ring — only if within view
+  if(ZONE_R * scale <= mapR + 2){
+    ctx.beginPath();
+    ctx.arc(mapX, mapY, ZONE_R * scale, 0, PI2);
+    ctx.strokeStyle = 'rgba(0,255,204,0.1)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
 
-  // EDIT label at centre — only if visited
+  // Belt ring — only if within view
+  if(BELT_OUTER * scale <= mapR + 2){
+    ctx.beginPath();
+    ctx.arc(mapX, mapY, BELT_OUTER * scale, 0, PI2);
+    ctx.strokeStyle = 'rgba(180,80,255,0.3)';
+    ctx.lineWidth = 1;
+    ctx.stroke();
+  }
+
+  // EDIT label at centre — scale font with zoom
   if(visited.has(1)){
-    ctx.font = '8px "Press Start 2P",monospace';
+    var editFs = viewR < 5000 ? 12 : viewR < 15000 ? 10 : 8;
+    ctx.font = editFs + 'px "Press Start 2P",monospace';
     ctx.fillStyle = 'rgba(0,255,204,0.5)';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     ctx.fillText('EDIT', mapX, mapY);
   }
 
-  // Player blip
-  const px = mapX + state.x * scale;
-  const py = mapY + state.y * scale;
-  // Clamp blip inside radar circle
-  const blipDx = px - mapX, blipDy = py - mapY;
-  const blipDist = Math.sqrt(blipDx * blipDx + blipDy * blipDy);
-  const bx = blipDist > mapR ? mapX + (blipDx / blipDist) * mapR : px;
-  const by = blipDist > mapR ? mapY + (blipDy / blipDist) * mapR : py;
-  const blipPulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
-  ctx.globalAlpha = blipPulse;
+  // ── Object dots — uncollected content objects ──
+  ctx.globalAlpha = 0.6;
+  for(var oi = 0; oi < state.objects.length; oi++){
+    var obj = state.objects[oi];
+    if(obj.collected || !obj.content || obj._bio || obj._social || obj._barrierBoost) continue;
+    var ox = mapX + obj.wx * scale;
+    var oy = mapY + obj.wy * scale;
+    var odx = ox - mapX, ody = oy - mapY;
+    var odist = Math.sqrt(odx * odx + ody * ody);
+    if(odist > mapR - 2) continue;  // skip objects outside radar view
+    var oZone = zoneAt(obj.wx, obj.wy);
+    var oCol = oZone >= 0 ? LEVEL_COLORS[LEVELS[oZone]] : '#aa55ff';
+    ctx.beginPath();
+    ctx.arc(ox, oy, 2.5, 0, PI2);
+    ctx.fillStyle = oCol;
+    ctx.fill();
+  }
+  ctx.globalAlpha = 0.85;
+
+  // Player blip — zoom-aware clamping
+  var px = mapX + state.x * scale;
+  var py = mapY + state.y * scale;
+  var blipDx = px - mapX, blipDy = py - mapY;
+  var blipDist = Math.sqrt(blipDx * blipDx + blipDy * blipDy);
+  var isClipped = blipDist > mapR;
+  var bx = isClipped ? mapX + (blipDx / blipDist) * (mapR - 3) : px;
+  var by = isClipped ? mapY + (blipDy / blipDist) * (mapR - 3) : py;
+  var blipPulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
+  ctx.globalAlpha = isClipped ? blipPulse * 0.6 : blipPulse;
   ctx.beginPath();
-  ctx.arc(bx, by, 4, 0, PI2);
+  ctx.arc(bx, by, isClipped ? 3 : 4, 0, PI2);
   ctx.fillStyle = '#00ffcc';
   ctx.fill();
 
@@ -7873,16 +7974,17 @@ function drawGame(){
       drawBossVisual(ctx,mwb,mbsx,mbsy);
       ctx.restore();
     }
-    // Off-screen arrow
+    // Off-screen arrow — bouncing, close to ship
     if(!mwb.dead){
       const _mwEdx=mwb.wx-state.x,_mwEdy=mwb.wy-state.y,_mwEd=Math.sqrt(_mwEdx*_mwEdx+_mwEdy*_mwEdy);
-      const hw3=canvas.width/2,hh3=canvas.height/2;
-      if(_mwEd>Math.min(hw3,hh3)*0.85){
-        const a4=Math.atan2(_mwEdy,_mwEdx),ir2=Math.min(hw3,hh3)*0.80;
-        ctx.save();ctx.translate(hw3+Math.cos(a4)*ir2,hh3+Math.sin(a4)*ir2);ctx.rotate(a4);
+      if(_mwEd > 200){
+        const a4=Math.atan2(_mwEdy,_mwEdx);
+        const _bossBounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
+        const _bossArrowDist = 150 + _bossBounce; // close to ship, matching NEXT MISSION style
+        ctx.save();ctx.translate(cx+Math.cos(a4)*_bossArrowDist,cy+Math.sin(a4)*_bossArrowDist);ctx.rotate(a4);
         ctx.globalAlpha=0.7+0.3*Math.sin(state.frameCount*0.09);
-        ctx.beginPath();ctx.moveTo(38,0);ctx.lineTo(-19,-17);ctx.lineTo(-19,17);ctx.closePath();
-        ctx.fillStyle='#cc44ff';ctx.fill();ctx.shadowBlur=12;ctx.shadowColor='#cc44ff';
+        ctx.beginPath();ctx.moveTo(24,0);ctx.lineTo(-14,-14);ctx.lineTo(-14,14);ctx.closePath();
+        ctx.fillStyle='#cc44ff';ctx.fill();ctx.shadowBlur=12*SB;ctx.shadowColor='#cc44ff';
         ctx.restore();
       }
     }
@@ -8185,7 +8287,9 @@ function drawGame(){
   }
 
   // "NEXT MISSION" hint after interzone — point toward nearest outer zone
-  if(state._interzoneComplete && !state.inSecretLevel){
+  // Kill this hint once ANY outer zone has been completed
+  if(state._interzoneComplete && !state.inSecretLevel
+     && !state.completedLevel_0 && !state.completedLevel_2 && !state.completedLevel_3 && !state.completedLevel_4){
     const _shipR = Math.sqrt(state.x*state.x + state.y*state.y);
     const _inInterzone = _shipR >= PEN_BARRIER_R && _shipR < EDIT_R;
     if(_inInterzone){
@@ -8222,6 +8326,69 @@ function drawGame(){
         ctx.shadowBlur = 0;
         ctx.restore();
       }
+    }
+  }
+
+  // "NEXT MISSION" hint after completing all objects in an outer zone — 3 arrows
+  if(state._interzoneComplete && !state.inSecretLevel){
+    var _curZ = zoneAt(state.x, state.y);
+    if(_curZ >= 0 && _curZ !== 1 && state['completedLevel_'+_curZ]){
+      // Delay timer — 6 seconds (~360 frames)
+      if(state._zoneCompleteHintDelay === undefined) state._zoneCompleteHintDelay = 360;
+      if(state._zoneCompleteHintDelay > 0){ state._zoneCompleteHintDelay--; }
+      else {
+        // Neighbor zones: each outer zone borders two others
+        var _neighborMap = { 0:[3,4], 2:[3,4], 3:[2,0], 4:[2,0] };
+        var _neighbors = _neighborMap[_curZ] || [];
+        // Count remaining missions from this zone
+        var _hasNeighborMission = _neighbors.some(function(_nz){ return !state['completedLevel_'+_nz]; });
+        var _hasBeltMission = !state.secretBossDefeated;
+        if(!_hasNeighborMission && !_hasBeltMission) {} // all missions done — suppress hint entirely
+        else {
+        // "NEXT MISSION" text
+        ctx.save();
+        ctx.textAlign = 'center';
+        ctx.fillStyle = '#00ffcc';
+        ctx.shadowColor = '#00ffcc';
+        ctx.shadowBlur = 10;
+        ctx.font = 'bold 18px "Press Start 2P",monospace';
+        ctx.fillText('NEXT MISSION', cx, cy - 200);
+        ctx.restore();
+        var _bounce3 = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
+        var _arrowDist = 150;  // distance from ship centre
+        // Arrow 1: toward asteroid belt (radially outward) — skip if boss defeated
+        if(!state.secretBossDefeated){
+          var _beltAng = Math.atan2(state.y, state.x);
+          ctx.save();
+          ctx.translate(cx + Math.cos(_beltAng) * (_arrowDist + _bounce3), cy + Math.sin(_beltAng) * (_arrowDist + _bounce3));
+          ctx.rotate(_beltAng);
+          ctx.fillStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16 * SB;
+          ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-16, -16); ctx.lineTo(-16, 16); ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0; ctx.restore();
+        }
+        // Arrows 2 & 3: tangent along arc toward neighboring zones
+        var _zoneAngles = { 0: Math.PI, 2: 0, 3: -Math.PI/2, 4: Math.PI/2 };
+        var _playerAng = Math.atan2(state.y, state.x);
+        for(var _ni = 0; _ni < _neighbors.length; _ni++){
+          if(state['completedLevel_'+_neighbors[_ni]]) continue;  // skip completed zones
+          var _neighborAng = _zoneAngles[_neighbors[_ni]];
+          // Shortest angular difference to determine CW vs CCW
+          var _angDiff = _neighborAng - _playerAng;
+          while(_angDiff > Math.PI) _angDiff -= 2 * Math.PI;
+          while(_angDiff < -Math.PI) _angDiff += 2 * Math.PI;
+          // Tangent direction: CCW if neighbor is CCW, CW if neighbor is CW
+          var _tangentAng = _angDiff > 0 ? (_playerAng + Math.PI/2) : (_playerAng - Math.PI/2);
+          ctx.save();
+          ctx.translate(cx + Math.cos(_tangentAng) * (_arrowDist + _bounce3), cy + Math.sin(_tangentAng) * (_arrowDist + _bounce3));
+          ctx.rotate(_tangentAng);
+          ctx.fillStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16 * SB;
+          ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-16, -16); ctx.lineTo(-16, 16); ctx.closePath(); ctx.fill();
+          ctx.shadowBlur = 0; ctx.restore();
+        }
+        } // end else (has remaining missions)
+      }
+    } else {
+      state._zoneCompleteHintDelay = undefined;  // reset when not in completed zone
     }
   }
 
@@ -9226,24 +9393,42 @@ function closeContactSuccess(){
 function updateMissionBriefing(){
   var mb = document.getElementById('mission-briefing');
   if(!mb) return;
-  var title, lines;
-  var pre, msg;
-  if(!state.editMissionComplete){
-    pre = 'YOUR FIRST MISSION:';
-    msg = 'COLLECT ALL OBJECTS IN THE EDIT ZONE';
-  } else if(!state._interzoneComplete){
-    pre = 'MISSION 2:';
-    msg = 'NAVIGATE THE INTERZONE RINGS';
-  } else if(zoneAt(state.x, state.y) === -1 && !state.secretUnlocked && !state.secretBossDefeated){
-    pre = 'MISSION 4:';
-    msg = 'DISCOVER THE SECRET LEVEL';
-  } else {
-    pre = 'MISSION 3:';
-    msg = 'COLLECT ALL ZONE OBJECTS';
+  var html = '<div style="color:#00ffcc;font-size:13px;letter-spacing:3px;margin-bottom:20px;">MISSION LOG</div>';
+  // Helper: mission line
+  function mLine(done, label, indent){
+    var col = done ? '#00ff88' : '#668899';
+    var icon = done ? '&#10003;' : '&#9675;';
+    var pad = indent ? 'padding-left:22px;' : '';
+    return '<div style="text-align:left;font-size:' + (indent ? '8' : '9') + 'px;line-height:2.2;color:' + col + ';letter-spacing:1px;' + pad + '">' +
+      '<span style="display:inline-block;width:18px;text-align:center;">' + icon + '</span> ' + label + '</div>';
   }
-  mb.innerHTML = '<div style="color:#00ffcc;font-size:14px;letter-spacing:2px;margin-bottom:18px;">' + pre + '</div>' +
-    '<div style="color:#00ffcc;font-size:11px;line-height:2.4;letter-spacing:2px;">' + msg + '</div>' +
-    '<div style="margin-top:20px;font-size:7px;color:#aaa;">[ PRESS ANY KEY TO CONTINUE ]</div>';
+  // Mission 1: always shown
+  html += mLine(state.editMissionComplete, 'MISSION 1: COLLECT ALL EDIT OBJECTS');
+  // Mission 2: shown once Mission 1 complete
+  if(state.editMissionComplete){
+    html += mLine(state._interzoneComplete, 'MISSION 2: NAVIGATE THE INTERZONE RINGS');
+  }
+  // Mission 3: shown once Mission 2 complete — sub-items per zone
+  if(state._interzoneComplete){
+    var _allZonesDone = state.completedLevel_0 && state.completedLevel_2 && state.completedLevel_3 && state.completedLevel_4;
+    html += mLine(_allZonesDone, 'MISSION 3: COLLECT ALL ZONE OBJECTS');
+    // Sub-items for each outer zone — only show if visited
+    var _zoneList = [{idx:2,name:'ANIMATE'},{idx:3,name:'PHOTO'},{idx:4,name:'DESIGN'},{idx:0,name:'DIRECT'}];
+    for(var _zi = 0; _zi < _zoneList.length; _zi++){
+      var _z = _zoneList[_zi];
+      var _visited = state.visitedLevels && state.visitedLevels.has(_z.idx);
+      var _done = state['completedLevel_'+_z.idx];
+      if(_visited || _done){
+        html += mLine(_done, _z.name, true);
+      }
+    }
+  }
+  // Mission 4: shown once player has been to the belt
+  if(state._beltMissionShown || state.secretBossDefeated || state.secretVisitCount > 0){
+    html += mLine(state.secretBossDefeated, 'MISSION 4: DEFEAT THE ALIEN BOSS');
+  }
+  html += '<div style="margin-top:20px;font-size:7px;color:#aaa;">[ PRESS ANY KEY TO CONTINUE ]</div>';
+  mb.innerHTML = html;
 }
 function closeMissionBriefing(){
   document.getElementById('mission-briefing').style.display='none';
@@ -9271,21 +9456,22 @@ function closeContent(){
 }
 
 function checkLevelComplete(){
-  const lvlName = LEVELS[state.currentLevel]||'EDIT';
-  const allItems = getLevelItems(state.currentLevel);
-  // getLevelItems already filters out collected — if empty, all done
-  const remaining = allItems.filter(it=>!it.isBio && it.title !== (lvlName+' // ABOUT'));
+  // Check ALL zones for completion — not just currentLevel — since the player
+  // may have drifted to a different zone during the collection timeout
   const permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
-  const levelItems = (CONTENT_DATA[lvlName]||[]);
-  const allCollected = levelItems.length > 0 && levelItems.every(it => permCollected.has(it.title));
-  if(allCollected && !state['completedLevel_'+state.currentLevel]){
-    state['completedLevel_'+state.currentLevel] = true;
-    const _capturedLevel = state.currentLevel;
-    setTimeout(()=>showLevelComplete(_capturedLevel), 400);
-  } else {
-    // Even if not newly completed, refresh bar (level may already be done)
-    updateLevelDoneBar();
+  var _anyNewComplete = false;
+  for(var _cli = 0; _cli < LEVELS.length; _cli++){
+    if(state['completedLevel_'+_cli]) continue; // already done
+    const _clName = LEVELS[_cli];
+    const _clItems = CONTENT_DATA[_clName] || [];
+    if(_clItems.length > 0 && _clItems.every(it => permCollected.has(it.title))){
+      state['completedLevel_'+_cli] = true;
+      _anyNewComplete = true;
+      const _capturedCL = _cli;
+      setTimeout(()=>showLevelComplete(_capturedCL), 400);
+    }
   }
+  if(!_anyNewComplete) updateLevelDoneBar();
 }
 
 function showLevelComplete(lvlIdx){
@@ -11616,7 +11802,7 @@ function initSecretLevel(){
     const bossDist=bhDist*2.5;
     const N_TENT=8;
     state.secretBoss={wx:state.x+Math.cos(bossAng)*bossDist,wy:state.y+Math.sin(bossAng)*bossDist,
-      bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:18,dead:false,deathTimer:0,flashTimer:0,
+      bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:60,dead:false,deathTimer:0,flashTimer:0,
       phase:0,pulsePhase:0,facing:bossAng,
       // Per-tentacle HOME angles (fixed, evenly spaced — they WAVE from home, not orbit)
       homeAngles:Array.from({length:N_TENT},(_,i)=>(Math.PI*2/N_TENT)*i),
@@ -11824,8 +12010,8 @@ function updateSecretLevel(){
       const _bh=state.secretBlackHole;
       const _bdx=boss.wx-_bh.wx, _bdy=boss.wy-_bh.wy;
       const _bdist=Math.sqrt(_bdx*_bdx+_bdy*_bdy);
-      if(_bdist < 600){
-        const _bStr=Math.pow(1-Math.min(1,(_bdist-_bh.r)/435),3)*3.0;
+      if(_bdist < 1200){
+        const _bStr=Math.pow(1-Math.min(1,(_bdist-_bh.r)/1035),3)*12.0;
         boss.wx -= (_bdx/_bdist)*_bStr;
         boss.wy -= (_bdy/_bdist)*_bStr;
       }
@@ -11853,7 +12039,7 @@ function updateSecretLevel(){
         state.secretBossDefeated=true; // allows exit
         boss.dead=true; boss.deathTimer=0;
         addScore(13750);
-        state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,msg:'THE BEAST ESCAPES... +13,750',_col:'#aa00ff'};
+        state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,pre:'SUCCESS!',msg:'YOU LURED THE OCTOALIEN INTO THE BLACK HOLE',_col:'#aa00ff'};
         if(!state.scoreFlashes) state.scoreFlashes=[];
         state.scoreFlashes.push({wx:boss.wx,wy:boss.wy,score:13750,age:0,hue:280});
         if(audioCtx&&!state.sfxMuted){
@@ -12172,13 +12358,14 @@ function exitSecretLevel(){
   state.secretBoss=null;state.secretBossExploding=0;state.secretBossHits=0;
   state.rocksDestroyed=0;
   state.secretUnlocked=false;
+  state._beltRocksDestroyed=0;
   state.zoneCrossFlash = null;
   state.secretVisitCount=(state.secretVisitCount||0)+1;
   state.secretThreshold=10; // always same; boss defeat blocks future access
   // Always drop back in EDIT zone
   const destLvl=1;
   wormholeCooldown=0;
-  // Longer dramatic wormhole — 240 frames (~4s)
+  wormholeTransition=null; // clear any lingering transition
   // Teleport directly to launchpad
   state.x = 0; state.y = 0; resetEnclosure();
   state.vx = 0; state.vy = 0;
@@ -12193,7 +12380,14 @@ function exitSecretLevel(){
   state._implodeTimer = 0; state._implosionCountdown = 0;
   state.bhCapture = null;
   state.paused = false;
+  // Preserve session state through initObjects() rebuild
+  const _svVisited = state.visitedLevels;
+  const _svCollected = state.collectedItems ? state.collectedItems.slice() : [];
+  const _svScore = state.score;
   populatedCells.clear(); initObjects(); updateFireModeUI(); updateFuelBar();
+  state.visitedLevels = _svVisited;
+  state.collectedItems = _svCollected;
+  state.score = _svScore;
   updateLevelDisplay(LEVELS[1]);
   selectTrack(3);
 }
@@ -12319,31 +12513,6 @@ function drawSecretLevel(ctx,cx,cy){
     ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.shadowBlur=0; ctx.fill();
     ctx.restore();
   });
-    // Draw Boss — Purple Monster
-  if(state.secretBoss){
-    const boss=state.secretBoss,bsx=boss.wx-state.x+cx,bsy=boss.wy-state.y+cy;
-    const maxTLen=Math.max(...(boss.tentacleLens||[boss.tentacleLen]));
-    const _on=Math.abs(bsx-cx)<ctx.canvas.width/2+maxTLen+120&&Math.abs(bsy-cy)<ctx.canvas.height/2+maxTLen+120;
-    if(_on&&!(boss.dead&&boss.deathTimer>60)){
-      ctx.save();if(boss.dead)ctx.globalAlpha=Math.max(0,1-boss.deathTimer/60);
-      // Scale down during BH capture
-      if(boss._captureScale!=null&&boss._captureScale<1){
-        ctx.translate(bsx,bsy);ctx.scale(boss._captureScale,boss._captureScale);ctx.translate(-bsx,-bsy);
-      }
-      drawBossVisual(ctx,boss,bsx,bsy);
-      ctx.restore();
-    }
-    // Off-screen indicator — OUTSIDE _on check so it draws when boss is far away
-    if(!boss.dead && state._waveOrbSpawned){const edx=boss.wx-state.x,edy=boss.wy-state.y,ed=Math.sqrt(edx*edx+edy*edy);
-      const hw=ctx.canvas.width/2,hh=ctx.canvas.height/2;
-      if(ed>Math.min(hw,hh)*0.85){const a3=Math.atan2(edy,edx),ir=Math.min(hw,hh)*0.80;
-        ctx.save();ctx.translate(hw+Math.cos(a3)*ir,hh+Math.sin(a3)*ir);ctx.rotate(a3);
-        ctx.globalAlpha=0.7+0.3*Math.sin(state.frameCount*0.09);
-        ctx.beginPath();ctx.moveTo(32,0);ctx.lineTo(-16,-14);ctx.lineTo(-16,14);ctx.closePath();
-        ctx.fillStyle='#cc44ff';ctx.fill();
-        ctx.shadowBlur=12;ctx.shadowColor='#cc44ff';
-        ctx.restore();}}
-  }
   // Fire / burst particles (ship explosion, boss explosion, impact sparks)
   if(state._bossExplFlash){
     // Expanding white ring on ship death
@@ -12546,6 +12715,30 @@ function drawSecretLevel(ctx,cx,cy){
       ctx.beginPath(); ctx.moveTo(38,0); ctx.lineTo(-19,-17); ctx.lineTo(-19,17); ctx.closePath();
       ctx.strokeStyle='#aa44ff'; ctx.lineWidth=2.5; ctx.shadowBlur=8; ctx.shadowColor='#aa44ff'; ctx.stroke(); ctx.restore();}
     }
+  }
+
+  // Draw Boss — Purple Monster (ON TOP of black hole)
+  if(state.secretBoss){
+    const boss=state.secretBoss,bsx=boss.wx-state.x+cx,bsy=boss.wy-state.y+cy;
+    const maxTLen=Math.max(...(boss.tentacleLens||[boss.tentacleLen]));
+    const _on=Math.abs(bsx-cx)<ctx.canvas.width/2+maxTLen+120&&Math.abs(bsy-cy)<ctx.canvas.height/2+maxTLen+120;
+    if(_on&&!(boss.dead&&boss.deathTimer>60)){
+      ctx.save();if(boss.dead)ctx.globalAlpha=Math.max(0,1-boss.deathTimer/60);
+      if(boss._captureScale!=null&&boss._captureScale<1){
+        ctx.translate(bsx,bsy);ctx.scale(boss._captureScale,boss._captureScale);ctx.translate(-bsx,-bsy);
+      }
+      drawBossVisual(ctx,boss,bsx,bsy);
+      ctx.restore();
+    }
+    if(!boss.dead && state._waveOrbSpawned){const edx=boss.wx-state.x,edy=boss.wy-state.y,ed=Math.sqrt(edx*edx+edy*edy);
+      const hw=ctx.canvas.width/2,hh=ctx.canvas.height/2;
+      if(ed>Math.min(hw,hh)*0.85){const a3=Math.atan2(edy,edx),ir=Math.min(hw,hh)*0.80;
+        ctx.save();ctx.translate(hw+Math.cos(a3)*ir,hh+Math.sin(a3)*ir);ctx.rotate(a3);
+        ctx.globalAlpha=0.7+0.3*Math.sin(state.frameCount*0.09);
+        ctx.beginPath();ctx.moveTo(32,0);ctx.lineTo(-16,-14);ctx.lineTo(-16,14);ctx.closePath();
+        ctx.fillStyle='#cc44ff';ctx.fill();
+        ctx.shadowBlur=12;ctx.shadowColor='#cc44ff';
+        ctx.restore();}}
   }
 }
 
@@ -12822,7 +13015,7 @@ function drawSecretLevel(ctx,cx,cy){
     state.mainWorldBoss={
       wx:_bx, wy:0,
       bodyR:132, tentacles:N_T, tentacleLen:450,
-      hits:0, hitsNeeded:18, dead:false, deathTimer:0, flashTimer:0,
+      hits:0, hitsNeeded:60, dead:false, deathTimer:0, flashTimer:0,
       phase:0, pulsePhase:0, facing:Math.PI, mouthPhase:0, eyeGlow:0,
       homeAngles:Array.from({length:N_T},function(_,i){return(Math.PI*2/N_T)*i;}),
       swingPhases:Array.from({length:N_T},function(){return Math.random()*Math.PI*2;}),
@@ -12843,7 +13036,8 @@ function drawSecretLevel(ctx,cx,cy){
     if(typeof triggerSecretLevelUnlock==='function') triggerSecretLevelUnlock();
   };
   window.devCollectAllZone = function(){
-    var zone=typeof LEVELS!=='undefined'?LEVELS[state.currentLevel||1]:'EDIT';
+    var _cl = (state.currentLevel !== undefined && state.currentLevel !== null && state.currentLevel >= 0) ? state.currentLevel : 1;
+    var zone=typeof LEVELS!=='undefined'?LEVELS[_cl]:'EDIT';
     var items=(typeof CONTENT_DATA!=='undefined'?CONTENT_DATA[zone]||[]:[]);
     items.forEach(function(it){if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push(it);});
     state.objects.forEach(function(o){if(o.content&&items.find(function(it){return it.title===o.content.title;}))o.collected=true;});
@@ -12856,6 +13050,7 @@ function drawSecretLevel(ctx,cx,cy){
       (CONTENT_DATA[zone]||[]).forEach(function(it){if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push(it);});
     });
     state.objects.forEach(function(o){if(o.content)o.collected=true;});
+    if(typeof checkLevelComplete==='function') checkLevelComplete();
     if(typeof checkAllLevelsCollected==='function') checkAllLevelsCollected();
   };
   window.devForceCollect = function(idx){
