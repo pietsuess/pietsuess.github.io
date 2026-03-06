@@ -2226,15 +2226,15 @@ window.onload = function() {
     let currentFov = BASE_FOV;
     let throttle = 0, throttleSmooth = 0;
 
-    // Cumulative angle — zones set the rate, physics accumulate it
-    // Horizontal: outer halves (0–25%, 75–100%) = fast roll
-    //             inner halves (25–50%, 50–75%) = slow roll
-    // Vertical:   touch above bottom 25% = boost
-    let turnRate = 0;  // rad/s, set from zone each frame
+    // Drag-based controls
+    let turnRate = 0;
+    let touchStartY = 0;
+    const HYPER_DRAG_DIST = 150; // pixels of upward drag for full hyper
 
     function handleInputStart(x, y) {
         if (gameState !== 'playing') return;
         isTouching = true;
+        touchStartY = y;
         updateZones(x, y);
     }
 
@@ -2251,24 +2251,20 @@ window.onload = function() {
 
     function updateZones(x, y) {
         const W = window.innerWidth, H = window.innerHeight;
-        const xn = (x / W - 0.5) * 2;  // -1 (far left) to +1 (far right)
-        // Centre column (middle 1/5 = ±0.2) = boost only, no roll
+        const xn = (x / W - 0.5) * 2;
         if (Math.abs(xn) < 0.167) {
             turnRate = 0;
         } else {
-            // Remap outer zones to still feel full range
-            const outer = (Math.abs(xn) - 0.167) / 0.833;  // 0→1 outside centre
+            const outer = (Math.abs(xn) - 0.167) / 0.833;
             const curved = Math.pow(outer, 1.8);
             turnRate = -Math.sign(xn) * curved * 5.5;
         }
-        // Bottom 10%: no thrust. Middle 60%: normal boost. Top 30%: hyper ramp
-        if (y >= H * 0.90) {
-            throttle = 0;
-        } else if (y >= H * 0.30) {
-            throttle = 1.0;
-        } else {
-            // Smooth ramp: y=0.30*H → 1.0, y=0 → 1.5
-            throttle = 1.0 + 0.5 * (1.0 - y / (H * 0.30));
+        // Touch = normal boost. Drag up from start = hyper ramp.
+        throttle = 1.0;
+        const dragUp = touchStartY - y; // positive = dragged upward
+        if (dragUp > 0) {
+            const hyperT = Math.min(1, dragUp / HYPER_DRAG_DIST);
+            throttle = 1.0 + 0.5 * hyperT;
         }
     }
 
