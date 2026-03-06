@@ -1919,8 +1919,16 @@ window.onload = function() {
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+    renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
+
+    // --- Ghosting / afterimage fade quad ---
+    const fadeScene = new THREE.Scene();
+    const fadeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+    const fadeMat = new THREE.MeshBasicMaterial({ color: 0x000000, transparent: true, opacity: 0.3 });
+    const fadeQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), fadeMat);
+    fadeScene.add(fadeQuad);
+    let ghostingActive = false;
 
     // --- Lighting ---
     const ambientLight = new THREE.AmbientLight(0x222244, 1.5);
@@ -2212,7 +2220,7 @@ window.onload = function() {
     let isTouching = false;
     let shipZOffset = -18;
     const BOOST_SPEED = 550;
-    const HYPER_SPEED = 550 * 3;
+    const HYPER_SPEED = 550 * 4;
     const BASE_FOV = 75;
     const HYPER_FOV = 110;
     let currentFov = BASE_FOV;
@@ -3875,6 +3883,7 @@ window.onload = function() {
 
             // Hyper tracers
             const isHyper = throttleSmooth > 1.02;
+            ghostingActive = isHyper;
             tracerGroup.visible = isHyper;
             if (isHyper) {
                 const hyperT = Math.min(1, (throttleSmooth - 1.0) / 0.5);
@@ -3998,7 +4007,17 @@ window.onload = function() {
             tube2.position.x = 0; tube2.position.y = 0;
         }
 
-        renderer.render(scene, camera);
+        if (ghostingActive) {
+            // Ghosting: don't fully clear — fade previous frame, then render on top
+            const hyperT = Math.min(1, (throttleSmooth - 1.0) / 0.5);
+            fadeMat.opacity = 0.15 + (1 - hyperT) * 0.55; // more ghosting at higher speed
+            renderer.autoClear = false;
+            renderer.render(fadeScene, fadeCam);
+            renderer.render(scene, camera);
+            renderer.autoClear = true;
+        } else {
+            renderer.render(scene, camera);
+        }
     }
 
     animate();
