@@ -2375,9 +2375,9 @@ function populateCell(gcx, gcy){
     populatedCells.add(key); // Mark populated first — prevents infinite retry on cap
     // No rocks east of launchpad (homeward zone is clear space)
     if(cellCx > OUTER_TARGET_WX) return;
-    // Mars clearance zone — no rocks near Mars
-    const _mdxM = cellCx - MARS_WX, _mdyM = cellCy - MARS_WY;
-    if(_mdxM*_mdxM + _mdyM*_mdyM < 1200*1200) return;
+    // Mars clearance zone — HIDDEN FOR NOW
+    // const _mdxM = cellCx - MARS_WX, _mdyM = cellCy - MARS_WY;
+    // if(_mdxM*_mdxM + _mdyM*_mdyM < 1200*1200) return;
     // Outside barrier: only spawn rocks if NOT in the east corridor (|y| < 600)
     const _cellDist2 = cellCx*cellCx + cellCy*cellCy;
     const _outsideBarrier = _cellDist2 > BELT_OUTER*BELT_OUTER;
@@ -4699,6 +4699,12 @@ function update(){
         const _pDist2 = state.x*state.x + state.y*state.y;
         if(_pDist2 < PEN_BARRIER_R*PEN_BARRIER_R){
           state.zoneCrossFlash = { lvl: nowZone, timer: 150 };
+          // Show mission reminder if EDIT not yet complete
+          if(!state.editMissionComplete){
+            setTimeout(function(){
+              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 1:', msg: 'COLLECT ALL OBJECTS IN THE EDIT ZONE', _col: '#00ffcc' };
+            }, 1400);
+          }
         } else {
           updateLevelDisplay('INTER');
         }
@@ -4724,7 +4730,7 @@ function update(){
             setTimeout(function(){
               state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
             }, 1400);
-          } else if(state[_zoneEntryKey] <= 3){
+          } else {
             setTimeout(function(){
               state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
             }, 1400);
@@ -4733,12 +4739,10 @@ function update(){
       } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated){
         // Entering asteroid belt — Mission 4: discover the secret level
         state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
-        if(!state._beltMissionShown){
-          state._beltMissionShown = true;
-          setTimeout(function(){
-            state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
-          }, 1400);
-        }
+        state._beltMissionShown = true;
+        setTimeout(function(){
+          state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
+        }, 1400);
       } else {
         state.zoneCrossFlash = { lvl: nowZone, timer: 150 };
       }
@@ -6702,6 +6706,27 @@ function drawZoneHUD(){
       ctx.stroke();
     }
   }
+  // Bio diamond — only shown after collected
+  const _bioTitle = zoneName + ' // ABOUT';
+  const _bioCollected = LEVEL_BIOS[zoneName] && collectedSet.has(_bioTitle);
+  if(_bioCollected){
+    const _bioY = startY + count * spacing;
+    const _bioCol = '#aa44ff';
+    // Diamond shape (rotated square)
+    ctx.beginPath();
+    const _ds = iconSize * 0.85;
+    ctx.moveTo(xPos, _bioY - _ds);
+    ctx.lineTo(xPos + _ds, _bioY);
+    ctx.lineTo(xPos, _bioY + _ds);
+    ctx.lineTo(xPos - _ds, _bioY);
+    ctx.closePath();
+    ctx.fillStyle = _bioCol;
+    ctx.shadowBlur = 8;
+    ctx.shadowColor = _bioCol;
+    ctx.globalAlpha = 0.9 * hudFade;
+    ctx.fill();
+    _zoneHUDIcons.push({ x:xPos, y:_bioY, r:iconSize+4, item:{title:_bioTitle}, collected:true });
+  }
   ctx.restore();
 
   // Draw hover tooltip if active
@@ -8188,7 +8213,7 @@ function drawGame(){
   // Moon & Earth inside zoom transform
   drawMoon(ctx, cx, cy);
   drawEarth(ctx, cx, cy);
-  drawMars(ctx, cx, cy);
+  // drawMars(ctx, cx, cy);  // HIDDEN FOR NOW
   drawDebrisWall(ctx, cx, cy);
 
   if(state._victoryPhase==='zoom'){
