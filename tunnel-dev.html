@@ -2171,13 +2171,12 @@ window.onload = function() {
     const explosionGroup = new THREE.Group();
     explosionGroup.visible = false;
     const explColors = [0xff0000, 0xff4400, 0xffdd00, 0xffaa00, 0xff8800];
-    const sparkColors = [0xffffaa, 0xffdd44, 0xffffff, 0xffcc00, 0xff8800];
-    const chunkGeo = new THREE.SphereGeometry(1, 8, 6);
-    const sparkGeo = new THREE.SphereGeometry(1, 4, 3);
+    const chunkGeo = new THREE.PlaneGeometry(1, 1);
+    const sparkGeo = new THREE.PlaneGeometry(1, 1);
     for (let i = 0; i < EXPLOSION_COUNT; i++) {
         const isSpark = i >= CHUNK_COUNT;
-        const colors = isSpark ? sparkColors : explColors;
-        const mat = new THREE.MeshBasicMaterial({ color: colors[i % colors.length], transparent: true, opacity: 1 });
+        const col = isSpark ? 0xffffff : explColors[i % explColors.length];
+        const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 1, side: THREE.DoubleSide });
         const m = new THREE.Mesh(isSpark ? sparkGeo : chunkGeo, mat);
         explosionGroup.add(m);
         explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0, isSpark: isSpark });
@@ -2208,9 +2207,10 @@ window.onload = function() {
                 p.vz = -(Math.abs(Math.cos(phi)) * s + spd * 0.5);
                 p.life = 0.5 + Math.random() * 0.8;
             } else {
-                // Chunks: varied sizes from small to large
+                // Chunks: varied sizes, random aspect ratio
                 const size = 0.2 + Math.random() * 1.2 + intensity * 0.6;
-                p.mesh.scale.setScalar(size);
+                const aspect = 0.4 + Math.random() * 1.2;
+                p.mesh.scale.set(size * aspect, size / aspect, 1);
                 const s = spd * (0.3 + Math.random() * 0.7);
                 p.vx = Math.sin(phi) * Math.cos(theta) * s;
                 p.vy = Math.sin(phi) * Math.sin(theta) * s;
@@ -2253,7 +2253,14 @@ window.onload = function() {
 
             p.life -= delta * (p.isSpark ? 0.9 : 0.35);
             p.mesh.material.opacity = Math.max(0, p.life);
-            if (p.isSpark) p.mesh.scale.multiplyScalar(0.97);
+            if (p.isSpark) {
+                p.mesh.scale.multiplyScalar(0.97);
+                // White → orange over lifetime
+                const t = 1 - p.life;
+                p.mesh.material.color.setRGB(1, 1 - t * 0.5, 1 - t);
+            }
+            // Billboard: face camera
+            p.mesh.quaternion.copy(camera.quaternion);
         }
         if (explosionTimer <= 0) explosionGroup.visible = false;
     }
