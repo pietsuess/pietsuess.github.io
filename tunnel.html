@@ -2163,6 +2163,159 @@ window.onload = function() {
     shipContainer.add(gunshipGroup);
     scene.add(shipContainer);
 
+    // --- Explosion particle system ---
+    const CHUNK_COUNT = 60;
+    const STRAND_COUNT = 25;
+    const SPARK_COUNT = 150;
+    const EXPLOSION_COUNT = CHUNK_COUNT + STRAND_COUNT + SPARK_COUNT;
+    const explosionParts = [];
+    const explosionGroup = new THREE.Group();
+    explosionGroup.visible = false;
+    const explColors = [0xff0000, 0xff4400, 0xffdd00, 0xffaa00, 0xff8800];
+    const chunkOrbGeo = new THREE.SphereGeometry(1, 8, 6);
+    const strandGeo = new THREE.CylinderGeometry(0.04, 0.04, 1, 4);
+    const sparkCircleGeo = new THREE.CircleGeometry(1, 8);
+    for (let i = 0; i < EXPLOSION_COUNT; i++) {
+        const isChunk = i < CHUNK_COUNT;
+        const isStrand = i >= CHUNK_COUNT && i < CHUNK_COUNT + STRAND_COUNT;
+        const isSpark = i >= CHUNK_COUNT + STRAND_COUNT;
+        const col = isStrand ? 0xffffee : isSpark ? 0xffffff : explColors[i % explColors.length];
+        const mat = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 1, side: THREE.DoubleSide });
+        const geo = isStrand ? strandGeo : isSpark ? sparkCircleGeo : chunkOrbGeo;
+        const m = new THREE.Mesh(geo, mat);
+        explosionGroup.add(m);
+        explosionParts.push({ mesh: m, vx: 0, vy: 0, vz: 0, life: 0, isSpark: isSpark, isStrand: isStrand, startR: 1, startG: 0.5, startB: 0 });
+    }
+    scene.add(explosionGroup);
+    let explosionTimer = 0;
+    let explosionOrigin = new THREE.Vector3();
+
+    function triggerExplosion(pos, intensity, shipSpeed) {
+        explosionGroup.visible = true;
+        explosionGroup.position.set(0, 0, 0);
+        explosionOrigin.copy(pos);
+        explosionTimer = 3.0;
+        // Radial burst is always present, forward momentum comes from ship speed
+        const radSpd = 20 + intensity * 40;
+        const fwdSpd = shipSpeed * 0.025;
+        for (let i = 0; i < EXPLOSION_COUNT; i++) {
+            const p = explosionParts[i];
+            p.mesh.position.copy(pos);
+            p.mesh.material.opacity = 1;
+            const theta = Math.random() * Math.PI * 2;
+            const phi = Math.acos(2 * Math.random() - 1);
+            const rs = radSpd * (0.3 + Math.random() * 0.7);
+            const radVx = Math.sin(phi) * Math.cos(theta) * rs;
+            const radVy = Math.sin(phi) * Math.sin(theta) * rs;
+            const fwdVz = -(fwdSpd * (0.5 + Math.random()) + rs * 0.2);
+            if (p.isSpark) {
+                const size = 0.3 + Math.random() * 0.5;
+                p.spinX = (Math.random() - 0.5) * 15;
+                p.spinY = (Math.random() - 0.5) * 15;
+                p.spinZ = (Math.random() - 0.5) * 15;
+                p.mesh.scale.setScalar(size);
+                p.vx = radVx * 1.3;
+                p.vy = radVy * 1.3;
+                p.vz = fwdVz * 1.3;
+                p.life = 1.5 + Math.random() * 1.0;
+            } else if (p.isStrand) {
+                // Strands: long thin bright lines
+                const len = 3 + Math.random() * 8;
+                p.mesh.scale.set(1, len, 1);
+                p.spinX = (Math.random() - 0.5) * 20;
+                p.spinY = (Math.random() - 0.5) * 20;
+                p.spinZ = (Math.random() - 0.5) * 20;
+                p.mesh.material.color.setHex(Math.random() > 0.4 ? 0xffffdd : 0xffffff);
+                p.vx = radVx * 1.5;
+                p.vy = radVy * 1.5;
+                p.vz = fwdVz * 1.5;
+                p.life = 1.0 + Math.random() * 0.8;
+            } else {
+                // Chunks: orbs, wide size range + color variation
+                const r = Math.random();
+                const size = r < 0.25 ? (0.08 + Math.random() * 0.2)
+                           : r < 0.55 ? (0.25 + Math.random() * 0.5)
+                           : r < 0.85 ? (0.5 + Math.random() * 0.7)
+                           : (0.9 + Math.random() * 0.6 + intensity * 0.3);
+                p.mesh.scale.setScalar(size);
+                // Color variation: random pick + brightness/hue shift
+                const baseCol = explColors[Math.floor(Math.random() * explColors.length)];
+                const br = ((baseCol >> 16) & 0xff) / 255;
+                const bg = ((baseCol >> 8) & 0xff) / 255;
+                const bb = (baseCol & 0xff) / 255;
+                const v = 0.7 + Math.random() * 0.5;
+                const hShift = (Math.random() - 0.5) * 0.25;
+                p.startR = Math.min(1, br * v + hShift);
+                p.startG = Math.min(1, Math.max(0, bg * v + hShift * 0.7));
+                p.startB = Math.min(1, Math.max(0, bb * v + hShift * 0.3));
+                p.mesh.material.color.setRGB(p.startR, p.startG, p.startB);
+                p.spinX = (Math.random() - 0.5) * 10;
+                p.spinY = (Math.random() - 0.5) * 10;
+                p.spinZ = (Math.random() - 0.5) * 10;
+                p.vx = radVx;
+                p.vy = radVy;
+                p.vz = fwdVz;
+                p.life = 1.0;
+            }
+        }
+    }
+
+    function updateExplosion(delta) {
+        if (explosionTimer <= 0) return;
+        explosionTimer -= delta;
+        const wallR = tubeRadius - 1.5;
+        for (let i = 0; i < EXPLOSION_COUNT; i++) {
+            const p = explosionParts[i];
+            if (p.life <= 0) continue;
+            p.mesh.position.x += p.vx * delta;
+            p.mesh.position.y += p.vy * delta;
+            p.mesh.position.z += p.vz * delta;
+
+            // Bounce off tunnel walls
+            const rx = p.mesh.position.x;
+            const ry = p.mesh.position.y;
+            const dist = Math.sqrt(rx * rx + ry * ry);
+            if (dist > wallR) {
+                // Reflect velocity off the circular wall (normal = radial direction)
+                const nx = rx / dist;
+                const ny = ry / dist;
+                const dot = p.vx * nx + p.vy * ny;
+                p.vx -= 2 * dot * nx;
+                p.vy -= 2 * dot * ny;
+                // Push back inside
+                p.mesh.position.x = nx * wallR;
+                p.mesh.position.y = ny * wallR;
+                // Lose a little energy on bounce
+                p.vx *= 0.75;
+                p.vy *= 0.75;
+                p.vz *= 0.9;
+            }
+
+            p.life -= delta * (p.isSpark ? 0.5 : p.isStrand ? 0.6 : 0.35);
+            p.mesh.material.opacity = Math.max(0, p.life);
+            if (p.isSpark) {
+                p.mesh.scale.multiplyScalar(0.97);
+                // White → orange
+                const t = 1 - Math.max(0, p.life);
+                p.mesh.material.color.setRGB(1, 1 - t * 0.5, 1 - t);
+            } else if (p.isStrand) {
+                // Bright white/yellow → fade out
+                const t = 1 - Math.max(0, p.life);
+                p.mesh.material.color.setRGB(1, 1 - t * 0.3, 1 - t * 0.7);
+            } else {
+                // Chunks: initial color → darken to black
+                const t = 1 - Math.max(0, p.life);
+                const fade = 1 - t * t; // ease into black
+                p.mesh.material.color.setRGB(p.startR * fade, p.startG * fade, p.startB * fade);
+            }
+            // Spin
+            p.mesh.rotation.x += p.spinX * delta;
+            p.mesh.rotation.y += p.spinY * delta;
+            p.mesh.rotation.z += p.spinZ * delta;
+        }
+        if (explosionTimer <= 0) explosionGroup.visible = false;
+    }
+
     function setActiveShip(type) {
         if (!GUNSHIP_ENABLED) type = 'default';
         activeShip = type;
@@ -2599,35 +2752,53 @@ window.onload = function() {
     }
 
     function takeDamage() {
-        health -= 30;
+        // Damage scales with hyper: 30 at normal, 100+ at full hyper (instant kill)
+        const hyperFracNow = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
+        const dmg = 30 + hyperFracNow * 70;
+        health -= dmg;
         combo = 0; comboTimer = 0;
         AudioEngine.playSFX('hit');
-        flash('#ff4444');
-        cameraShake = 3;
+        flash(hyperFracNow > 0.5 ? '#ffffff' : '#ff4444');
+        cameraShake = 3 + hyperFracNow * 5;
         speed = Math.max(baseSpeed, speed - 80);
-        spawnPointBurst('-30 SHIELD', 'c-red');
+        spawnPointBurst('-' + Math.round(dmg) + ' SHIELD', 'c-red');
         if (health <= 0) triggerGameOver();
     }
 
     function triggerGameOver() {
         gameState = 'dead';
+        // Capture speed-based intensity before resetting
+        const deathSpeed = speed;
+        const speedFrac = Math.min(1, speed / HYPER_SPEED);
+        const explIntensity = 0.4 + speedFrac * 0.6;
+        throttle = 0;
+        throttleSmooth = 0;
+        currentFov = BASE_FOV;
+        camera.fov = BASE_FOV;
+        camera.updateProjectionMatrix();
         AudioEngine.playSFX('hit');
         flash('#ffffff');
         if (score > 0) saveHighScore(score);
 
+        // Explosion — always fires, scales with speed
+        const explPos = new THREE.Vector3(0, 0, camera.position.z - 30);
+        triggerExplosion(explPos, explIntensity, deathSpeed);
         shipContainer.visible = false;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
 
-        document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
-        document.getElementById('initials-entry').style.display = 'block';
-        document.getElementById('go-post-submit').style.display = 'none';
-        document.getElementById('retry-sector-btn').style.display = '';
-        document.getElementById('abort-run-btn').style.display = '';
-        ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
-        document.getElementById('game-over-screen').style.display = 'flex';
-        document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
-        setTimeout(function(){ var el=document.getElementById('ini-1'); if(el) el.focus(); }, 100);
+        // Delay game-over screen so explosion plays out
+        setTimeout(function() {
+            document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
+            document.getElementById('initials-entry').style.display = 'block';
+            document.getElementById('go-post-submit').style.display = 'none';
+            document.getElementById('retry-sector-btn').style.display = '';
+            document.getElementById('abort-run-btn').style.display = '';
+            ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
+            document.getElementById('game-over-screen').style.display = 'flex';
+            document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
+            setTimeout(function(){ var el=document.getElementById('ini-1'); if(el) el.focus(); }, 100);
+        }, 1500);
     }
 
     // ── FINALE — fireworks + score submission ──────────────────────
@@ -3989,6 +4160,25 @@ window.onload = function() {
             }
         }
 
+        // --- Dead state: ease to stop, reset camera to tunnel center ---
+        if (gameState === 'dead') {
+            // Ease camera to tunnel center (0,0) and angle to 0 — no Z movement
+            camera.position.x += (0 - camera.position.x) * 0.05;
+            camera.position.y += (0 - camera.position.y) * 0.05;
+            camera.rotation.z += (Math.PI / 2 - camera.rotation.z) * 0.05;
+
+            // Reset hyper effects
+            tracerGroup.visible = false;
+            throttleSmooth += (0 - throttleSmooth) * 0.1;
+            currentFov += (BASE_FOV - currentFov) * 0.15;
+            if (Math.abs(currentFov - BASE_FOV) < 0.5) currentFov = BASE_FOV;
+            camera.fov = currentFov;
+            camera.updateProjectionMatrix();
+            wireMat.opacity += (0.55 - wireMat.opacity) * 0.08;
+            wireMat.color.lerp(new THREE.Color(0x00ff88), 0.08);
+            cameraShake *= 0.9;
+        }
+
         if (cameraShake > 0) {
             const sx = (Math.random() - 0.5) * cameraShake;
             const sy = (Math.random() - 0.5) * cameraShake;
@@ -4003,6 +4193,7 @@ window.onload = function() {
             tube2.position.x = 0; tube2.position.y = 0;
         }
 
+        updateExplosion(delta);
         renderer.render(scene, camera);
     }
 
