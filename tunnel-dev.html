@@ -2383,14 +2383,21 @@ window.onload = function() {
         const padLength = 40;   // units long in Z (the "runway" stretch)
         const arcSegs = 12;
         const lenSegs = 1;
+        const r = tubeRadius - 0.3;
         const geo = new THREE.CylinderGeometry(
-            tubeRadius - 0.3, tubeRadius - 0.3,  // match tunnel radius, slightly inside
-            padLength, arcSegs, lenSegs,
-            true,                                  // open-ended
-            -arcSpan / 2, arcSpan                  // arc segment
+            r, r, padLength, arcSegs, lenSegs,
+            true, -arcSpan / 2, arcSpan
         );
-        // Cylinder axis is Y by default — rotate so length runs along Z
+        // Flip normals inward (we're inside the tunnel looking at inner surface)
+        geo.scale(-1, 1, 1);
+        // Cylinder axis is Y — rotate so length runs along Z
         geo.rotateX(Math.PI / 2);
+        // Flip UVs so chevrons point away from player (down the tunnel)
+        const uvAttr = geo.attributes.uv;
+        for (let i = 0; i < uvAttr.count; i++) {
+            uvAttr.setY(i, 1.0 - uvAttr.getY(i));
+        }
+        uvAttr.needsUpdate = true;
         const mesh = new THREE.Mesh(geo, boostPadMat.clone());
         return mesh;
     }
@@ -4188,10 +4195,31 @@ window.onload = function() {
                 if (item.userData.rotSpeedY) item.rotation.y += item.userData.rotSpeedY;
 
                 // --- Collision Logic ---
-                if (item.position.z > shipContainer.position.z - 5 && item.position.z < shipContainer.position.z + 5) {
-                    
+                // Boost pad: centered at (0,0,z), uses angle + Z overlap
+                if (item.userData.type === 'boost_pad' && !isFlipping) {
+                    if (item.position.z > shipContainer.position.z - 25 && item.position.z < shipContainer.position.z + 25) {
+                        var padArc = 0.35;
+                        var relA = ((shipAngle - item.rotation.z) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+                        if (relA > Math.PI) relA -= Math.PI * 2;
+                        if (Math.abs(relA) < padArc / 2 + 0.15) {
+                            isFlipping = true;
+                            flipTimer = 0;
+                            flipStartAngle = shipAngle;
+                            flipCameraAngle = shipAngle;
+                            flipDirection = Math.random() > 0.5 ? 1 : -1;
+                            AudioEngine.playSFX('jump');
+                            flash('#ffaa00');
+                            spawnPointBurst('BOOST!', 'c-cyan');
+                            score += 200;
+                            scene.remove(item);
+                            items.splice(i, 1);
+                            continue;
+                        }
+                    }
+                }
+                else if (item.position.z > shipContainer.position.z - 5 && item.position.z < shipContainer.position.z + 5) {
+
                     if (item.userData.type === 'laser_wall') {
-                        // Check if ship angle falls within the barrier arc
                         var arcLen = item.userData.arcLength || Math.PI * 2;
                         var relAngle = ((shipAngle - item.rotation.z) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
                         if (relAngle < arcLen && currentHover > 22) {
@@ -4200,26 +4228,12 @@ window.onload = function() {
                             items.splice(i, 1);
                             continue;
                         }
-                    } 
+                    }
                     else {
                         let dist = shipContainer.position.distanceTo(item.position);
-                        
+
                         if (dist < shipHitRadius + item.userData.hitRadius) {
-                            if (item.userData.type === 'boost_pad' && !isFlipping) {
-                                isFlipping = true;
-                                flipTimer = 0;
-                                flipStartAngle = shipAngle;
-                                flipCameraAngle = shipAngle;
-                                flipDirection = Math.random() > 0.5 ? 1 : -1;
-                                AudioEngine.playSFX('jump');
-                                flash('#ffaa00');
-                                spawnPointBurst('BOOST!', 'c-cyan');
-                                score += 200;
-                                scene.remove(item);
-                                items.splice(i, 1);
-                                continue;
-                            }
-                            else if (item.userData.type === 'ramp' && !isJumping) {
+                            if (item.userData.type === 'ramp' && !isJumping) {
                                 isJumping = true;
                                 jumpTimer = 0;
                                 AudioEngine.playSFX('jump');
