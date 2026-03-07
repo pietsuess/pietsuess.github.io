@@ -1226,6 +1226,27 @@ var AudioEngine = {
       for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*0.15*(1-i/nd.length);
       n.buffer=nb; var ng=audioCtx.createGain(); n.connect(ng); ng.connect(sfxGainNode);
       ng.gain.setValueAtTime(0.2,t); ng.gain.linearRampToValueAtTime(0,t+0.15); n.start(t); n.stop(t+0.15);
+    } else if (type === 'ring') {
+      // Bright ding — high sine with quick decay
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+      o.type='sine'; o.frequency.setValueAtTime(1320,t); o.frequency.setValueAtTime(1760,t+0.02);
+      g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.25); o.start(); o.stop(t+0.25);
+    } else if (type === 'core') {
+      // Warm double chime — two tones
+      var o1=audioCtx.createOscillator(),g1=audioCtx.createGain(); o1.connect(g1); g1.connect(sfxGainNode);
+      o1.type='sine'; o1.frequency.setValueAtTime(660,t);
+      g1.gain.setValueAtTime(0.15,t); g1.gain.linearRampToValueAtTime(0,t+0.3); o1.start(); o1.stop(t+0.3);
+      var o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2); g2.connect(sfxGainNode);
+      o2.type='sine'; o2.frequency.setValueAtTime(880,t+0.08);
+      g2.gain.setValueAtTime(0,t); g2.gain.linearRampToValueAtTime(0.15,t+0.09); g2.gain.linearRampToValueAtTime(0,t+0.35); o2.start(t+0.08); o2.stop(t+0.35);
+    } else if (type === 'star') {
+      // Power-up rising sweep — ascending triad
+      var freqs=[660,880,1320]; for(var si=0;si<3;si++){
+        var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+        o.type='sine'; o.frequency.setValueAtTime(freqs[si],t+si*0.07);
+        g.gain.setValueAtTime(0,t+si*0.07); g.gain.linearRampToValueAtTime(0.18,t+si*0.07+0.02);
+        g.gain.linearRampToValueAtTime(0,t+si*0.07+0.35); o.start(t+si*0.07); o.stop(t+si*0.07+0.35);
+      }
     }
   },
   suspend: function() { stopMusic(); pauseMusic(); },
@@ -2112,6 +2133,10 @@ window.onload = function() {
     engineLight.position.set(0, -0.1, 7.0);
     shipGroup.add(engineLight);
 
+    const shieldLight = new THREE.PointLight(0x00ccff, 0, 30);
+    shieldLight.position.set(0, 0, 0);
+    shipGroup.add(shieldLight);
+
     shipGroup.scale.set(0.55, 0.55, 0.55);
 
     // --- Gunship (alt ship) ---
@@ -2390,6 +2415,13 @@ window.onload = function() {
 
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
+
+    // Star — temporary invincibility shield
+    const starGeo = new THREE.OctahedronGeometry(3.5, 0);
+    const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00ccff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
+    let shieldsUp = false;
+    let shieldsUpTimer = 0;
+    const SHIELDS_UP_DURATION = 5.0; // seconds of invincibility
 
     // Boost pad — double chevron painted flat on tunnel wall (curved cylinder arc)
     // dir: 1 = point upper-right (right side of tunnel), -1 = point upper-left (left side)
@@ -2709,7 +2741,10 @@ window.onload = function() {
             scene.add(bMesh); items.push(bMesh);
             return;
         }
-        if (rand < coreChance) {
+        // Star — rare invincibility pickup, S4+
+        if (s >= 4 && rand < 0.02) {
+            mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
+        } else if (rand < coreChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
         } else if (rand < coreChance + ringChance) {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
@@ -2755,7 +2790,8 @@ window.onload = function() {
     function updateShieldBar() {
         const bar = document.getElementById('shield-bar');
         bar.style.height = Math.max(0, health) + '%';
-        if (health > 50) { bar.style.background = '#00ffff'; bar.style.boxShadow = '0 0 10px #00ffff'; }
+        if (shieldsUp) { bar.style.background = '#00ccff'; bar.style.boxShadow = '0 0 16px #00ccff, 0 0 30px rgba(0,204,255,0.4)'; }
+        else if (health > 50) { bar.style.background = '#00ffff'; bar.style.boxShadow = '0 0 10px #00ffff'; }
         else if (health > 25) { bar.style.background = '#ffcc00'; bar.style.boxShadow = '0 0 10px #ffcc00'; }
         else { bar.style.background = '#ff0055'; bar.style.boxShadow = '0 0 10px #ff0055'; }
     }
@@ -3157,7 +3193,7 @@ window.onload = function() {
         var baseZ = camera.position.z - 600;
 
         // If this sector has baked layout data, spawn it
-        var maxBakedDist = sectorDistance * 0.80 - 400;  // same cutoff as procedural
+        var maxBakedDist = sectorDistance * 0.72;  // same cutoff as procedural — no items past finish line
         if (bakedLevels[currentSector] && bakedLevels[currentSector].length) {
             bakedLevels[currentSector].forEach(function(obj) {
                 // Skip objects beyond the runway zone
@@ -3170,6 +3206,7 @@ window.onload = function() {
                 else if (obj.type === 'mine')   { mesh = new THREE.Mesh(mineGeo,  hazardMat); hitRadius = 5.5; utype = 'hazard'; }
                 else if (obj.type === 'knot')   { mesh = new THREE.Mesh(knotGeo,  hazardMat); hitRadius = 5.0; utype = 'hazard'; }
                 else if (obj.type === 'core')   { mesh = new THREE.Mesh(coreGeo,  coreMat);   hitRadius = 5.5; utype = 'health'; }
+                else if (obj.type === 'star')   { mesh = new THREE.Mesh(starGeo,  starMat.clone()); hitRadius = 5.5; utype = 'star'; }
                 else if (obj.type === 'ramp')    { mesh = new THREE.Mesh(rampGeo,      rampMat);      hitRadius = 16.0;         utype = 'ramp';       }
                 else if (obj.type === 'barrier') {
                     mesh = new THREE.Mesh(buildBarrierGeo(obj.arcLength || Math.PI * 2), barrierMat);
@@ -3201,7 +3238,7 @@ window.onload = function() {
         var spacing = currentSector === 3 ? 50 : Math.max(70, 180 - (currentSector - 1) * 12);
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.75;
+        var lastItemDist = sectorDistance * 0.72;
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
@@ -3520,6 +3557,7 @@ window.onload = function() {
         showZoneAnnouncement(zone);
         sectorStartScore = score;
         combo = 0;
+        shieldsUp = false; shieldsUpTimer = 0;
         initializeFlight(false);
     }
 
@@ -3570,6 +3608,7 @@ window.onload = function() {
         introSpawned = false;
         if (finishRing) { scene.remove(finishRing); finishRing = null; }
         isJumping = false;
+        shieldsUp = false; shieldsUpTimer = 0;
         lastRampZ = 0;
         spiralAngle = -Math.PI / 2;
         projectiles.forEach(p => scene.remove(p));
@@ -4067,6 +4106,18 @@ window.onload = function() {
             var comboEl = document.getElementById('combo-display');
             if (combo > 1) { comboEl.textContent = 'x' + Math.min(combo, 4); comboEl.classList.add('active'); }
             else { comboEl.classList.remove('active'); }
+
+            // Shields Up timer + visual
+            if (shieldsUp) {
+                shieldsUpTimer -= delta;
+                if (shieldsUpTimer <= 0) { shieldsUp = false; shieldsUpTimer = 0; updateShieldBar(); }
+                // Pulsing cyan glow on ship, flicker faster in last 2 seconds
+                var shieldFlicker = shieldsUpTimer < 2 ? Math.sin(performance.now() * 0.02) * 0.5 + 0.5 : 1;
+                shieldLight.intensity = 6 * shieldFlicker;
+                updateShieldBar();
+            } else {
+                shieldLight.intensity = 0;
+            }
             let moveDist = speed * delta;
             distanceTraveled += moveDist;
             if (Math.random() < 0.01) console.log('SECTOR DEBUG:', {
@@ -4292,6 +4343,14 @@ window.onload = function() {
                 if (item.userData.type === 'boost_pad') {
                     item.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
                 }
+                // Star pulse + fast spin
+                if (item.userData.type === 'star') {
+                    item.rotation.y += 0.05;
+                    item.rotation.x += 0.03;
+                    var starPulse = 0.8 + 0.5 * Math.sin(performance.now() * 0.008);
+                    item.scale.setScalar(starPulse);
+                    item.material.emissiveIntensity = 1.5 + Math.sin(performance.now() * 0.01) * 0.8;
+                }
 
                 // --- Collision Logic ---
                 // Boost pad: centered at (0,0,z), uses angle + Z overlap
@@ -4324,7 +4383,14 @@ window.onload = function() {
                         var arcLen = item.userData.arcLength || Math.PI * 2;
                         var relAngle = ((shipAngle - item.rotation.z) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
                         if (relAngle < arcLen && currentHover > 22) {
-                            takeDamage();
+                            if (shieldsUp) {
+                                AudioEngine.playSFX('destroy');
+                                flash('#00ccff');
+                                spawnPointBurst('SMASH!', 'c-cyan');
+                                score += 100;
+                            } else {
+                                takeDamage();
+                            }
                             scene.remove(item);
                             items.splice(i, 1);
                             continue;
@@ -4343,14 +4409,31 @@ window.onload = function() {
                                 score += 125;
                             }
                             else if (item.userData.type === 'hazard' && !isJumping) {
-                                takeDamage();
-                                if (TUT.active) tutHit('hazard');
+                                if (shieldsUp) {
+                                    // Invincible — smash through, destroy the hazard
+                                    AudioEngine.playSFX('destroy');
+                                    flash('#00ccff');
+                                    spawnPointBurst('SMASH!', 'c-cyan');
+                                    score += 100;
+                                } else {
+                                    takeDamage();
+                                    if (TUT.active) tutHit('hazard');
+                                }
+                            }
+                            else if (item.userData.type === 'star') {
+                                sectorCollectiblesCollected++;
+                                shieldsUp = true;
+                                shieldsUpTimer = SHIELDS_UP_DURATION;
+                                AudioEngine.playSFX('star');
+                                flash('#00ccff');
+                                spawnPointBurst('SHIELDS UP!', 'c-cyan');
+                                score += 500;
                             }
                             else if (item.userData.type === 'health') {
                                 sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 15);
                                 score += 250;
-                                AudioEngine.playSFX('pickup');
+                                AudioEngine.playSFX('core');
                                 flash('#ffaa00');
                                 spawnPointBurst('+15 SHIELD', 'c-gold');
                                 if (TUT.active) tutHit('health');
@@ -4362,7 +4445,7 @@ window.onload = function() {
                                 const mult = Math.min(combo, 4);
                                 const pts = 625 * mult;
                                 score += pts;
-                                AudioEngine.playSFX('pickup');
+                                AudioEngine.playSFX('ring');
                                 flash('#00ff88');
                                 const label = mult > 1 ? '+'+pts+' x'+mult+'!' : '+'+pts;
                                 spawnPointBurst(label, 'c-green');
