@@ -736,6 +736,21 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 .dev-obj-collect { cursor:pointer; color:#00ffcc; font-size:7px; padding:2px 6px; border:1px solid rgba(0,255,204,0.3); border-radius:2px; margin-left:4px; }
 .dev-obj-collect:hover { background:rgba(0,255,204,0.12); }
 
+/* Victory Room — zone item menu */
+.vroom-menu-item {
+  padding: 10px 18px;
+  font-size: 9px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  border-left: 3px solid transparent;
+  transition: background 0.1s;
+  line-height: 1.6;
+  font-family: 'Press Start 2P', monospace;
+}
+.vroom-menu-item:hover {
+  background: rgba(255,255,255,0.1) !important;
+}
+
 </style>
 </head>
 <body>
@@ -952,6 +967,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="devTriggerSecretUnlock()">UNLOCK SECRET</button>
           <button class="dev-btn gold" onclick="if(typeof triggerLaunchpadVictory==='function')triggerLaunchpadVictory()">LAUNCHPAD WIN</button>
           <button class="dev-btn gold" onclick="if(typeof enterVictoryRoom==='function')enterVictoryRoom()">VICTORY ROOM</button>
+          <button class="dev-btn danger" onclick="devCollectAll();devTeleport(EARTH_WX+300,EARTH_WY);state.outsideBarrier=true;state._committedInside=false;">NEAR EARTH ★</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
           <button class="dev-btn" onclick="if(typeof triggerCollision==='function')triggerCollision(state.x,state.y)">FAKE COLLISION</button>
           <button class="dev-btn purple" onclick="if(typeof spawnShowAllCircle==='function')spawnShowAllCircle()">SPAWN WORMHOLES</button>
@@ -1032,6 +1048,11 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="if(typeof killSecretBoss==='function')killSecretBoss()">KILL BOSS</button>
           <button class="dev-btn danger" onclick="if(typeof exitSecretLevel==='function')exitSecretLevel()">EXIT SECRET</button>
           <button class="dev-btn gold" id="dab-mainboss" onclick="devToggleMainBoss()">ALIEN → MAIN</button>
+          <div style="display:flex;align-items:center;gap:6px;margin-top:4px;width:100%;">
+            <span style="font-size:9px;color:#aaa;white-space:nowrap;">BOSS HP</span>
+            <input type="range" id="dev-boss-hp" min="0" max="60" value="0" style="flex:1;accent-color:#aa00ff;" oninput="devSetBossHP(this.value)">
+            <span id="dev-boss-hp-label" style="font-size:9px;color:#ccc;min-width:32px;text-align:right;">0/60</span>
+          </div>
         </div>
       </div>
     </div>
@@ -1376,7 +1397,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   <div id="vic-summary" style="display:none;position:fixed;inset:0;z-index:2;width:100%;height:100vh;overflow-y:auto;padding:0 20px 30px;box-sizing:border-box;display:flex;align-items:center;flex-direction:column;">
     <div style="font-size:clamp(8px,2vw,14px);color:#aaa;margin-top:clamp(16px,4vh,36px);margin-bottom:20px;letter-spacing:2px;">TREASURES BROUGHT HOME</div>
     <div id="vic-collected-list" style="width:100%;max-width:500px;text-align:left;margin-bottom:24px;"></div>
-    <button onclick="victoryReturnToTitle()" style="
+    <button onclick="enterVictoryRoom()" style="
       cursor:pointer;color:#44ddff;font-size:clamp(7px,1.8vw,9px);
       border:2px solid #44ddff;padding:12px 28px;
       background:rgba(68,221,255,0.08);font-family:'Press Start 2P',monospace;
@@ -1387,7 +1408,15 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   </div>
 </div>
 
+<!-- Victory Room UI elements moved to NAVIGATOR-VICTORY.html -->
+
 <script>
+// ── Return from victory room — clean up localStorage flag ──
+if(localStorage.getItem('ps_vroom_return')){
+  localStorage.removeItem('ps_vroom_return');
+  localStorage.removeItem('ps_vroom_state');
+}
+
 const LEVELS = ['DIRECT','EDIT','ANIMATE','PHOTO','DESIGN'];
 // Shape per zone — lvlIdx 0=DIRECT 1=EDIT 2=ANIMATE 3=PHOTO 4=DESIGN
 const ZONE_SHAPES = ['octagon','square','circle','pentagon','triangle'];
@@ -1929,6 +1958,8 @@ var _zoneHUDIcons = [];
 document.addEventListener('mousemove', function(e){
   if(!state.started || state.gameOver){ state._hudHoverItem=null; return; }
   const mx = e.clientX, my = e.clientY;
+  // Victory room: no canvas hover (menu is HTML-based)
+  if(state._victoryPhase === 'room') return;
   let found = null;
   for(let i=0; i<_zoneHUDIcons.length; i++){
     const ic = _zoneHUDIcons[i];
@@ -1940,6 +1971,8 @@ document.addEventListener('mousemove', function(e){
 document.addEventListener('click', function(e){
   if(!state.started || state.gameOver) return;
   const mx = e.clientX, my = e.clientY;
+  // Victory room: no canvas clicks (menu is HTML-based)
+  if(state._victoryPhase === 'room') return;
   for(let i=0; i<_zoneHUDIcons.length; i++){
     const ic = _zoneHUDIcons[i];
     if(ic.collected && Math.abs(mx-ic.x)<ic.r && Math.abs(my-ic.y)<ic.r){
@@ -3899,6 +3932,7 @@ window.addEventListener('keydown',e=>{
       closeMissionBriefing(); return;
     }
   }
+  // Victory room key handling removed — now in NAVIGATOR-VICTORY.html
   if(e.code==='Space'){
     // Don't intercept space if user is typing in a text field
     const activeTag=(document.activeElement||{}).tagName;
@@ -4216,7 +4250,7 @@ function updateWaveBeams(){
           // Track belt-only rock kills for secret level unlock
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
-            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
+            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
               state.secretUnlocked = true;
               setTimeout(triggerSecretLevelUnlock, 500);
             }
@@ -4249,6 +4283,7 @@ function updateWaveBeams(){
       const boss=state.secretBoss;
       if((boss.wx-b.wx)**2+(boss.wy-b.wy)**2<(boss.bodyR+10)**2){
         boss.hits++;boss.flashTimer=15;b.maxAge=0;hit=true;
+        if(typeof devSyncBossHP==='function') devSyncBossHP();
         // Knockback — push boss away from beam direction
         var _kbAng = Math.atan2(boss.wy - b.wy, boss.wx - b.wx);
         var _kbForce = 18;
@@ -4469,15 +4504,6 @@ function update(){
   if(!state.started||state.paused||state.gameOver)return;
   state.frameCount++;
 
-  // ── Toggle tutorial popup — show ~4s after peanut unlock flash fades ──
-  if(state._peanutUnlocked && state.cheat==='peanut' && !state._shipToggleTutorialDone){
-    state._peanutModeFrames = (state._peanutModeFrames||0) + 1;
-    if(state._peanutModeFrames >= 540){
-      var _ttEl = document.getElementById('toggle-tutorial');
-      if(_ttEl){ _ttEl.style.display=''; }
-      state.paused = true;
-    }
-  }
 
   // ── Camera offset — shift player off-center near large bodies ──
   {
@@ -4521,16 +4547,18 @@ function update(){
 
     // One-shot auto-kill boosters (per-body thresholds)
     // Earth: 1130px (400px outside outermost debris ring ~730px)
-    // Boss: 800px (just outside tentacle reach ~600px)
+    // Boss: 800px — only on FIRST approach (not while fighting)
+    const _nearBoss = _camBoss && !_camBoss.dead && Math.sqrt((_camBoss.wx-state.x)**2+(_camBoss.wy-state.y)**2) < 800;
     if(state.hyperspace && !_camBoostKilled){
-      if(eDist < 1130 || (_camBoss && !_camBoss.dead && Math.sqrt((_camBoss.wx-state.x)**2+(_camBoss.wy-state.y)**2) < 800)){
+      if(eDist < 1130 || (_nearBoss && !state._bossBoostKillDone)){
         state.hyperspace = false;
         state.hsTail = [];
         _camBoostKilled = true;
+        if(_nearBoss) state._bossBoostKillDone = true; // never kill boost near boss again
       }
     }
-    // Reset one-shot flag when outside all kill zones
-    if(eDist >= 1130 && !(_camBoss && !_camBoss.dead && Math.sqrt((_camBoss.wx-state.x)**2+(_camBoss.wy-state.y)**2) < 800)){
+    // Reset one-shot flag when outside all kill zones (Earth only after boss first-approach done)
+    if(eDist >= 1130 && !(_nearBoss && !state._bossBoostKillDone)){
       _camBoostKilled = false;
     }
 
@@ -4727,8 +4755,8 @@ function update(){
         if(!state['completedLevel_'+_mZone] && _zoneTotal > 0 && _zoneCollected >= _zoneTotal){
           state['completedLevel_'+_mZone] = true;
         }
-        // Show mission text — skip if zone already completed
-        if(!state['completedLevel_'+_mZone]){
+        // Show mission text — skip if zone already completed, or if fighting boss
+        if(!state['completedLevel_'+_mZone] && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
           if(_zoneTotal > 0 && _zoneCollected >= Math.ceil(_zoneTotal * 0.8)){
             setTimeout(function(){
               state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
@@ -4739,11 +4767,12 @@ function update(){
             }, 1400);
           }
         }
-      } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated){
-        // Entering asteroid belt — Mission 4: discover the secret level
+      } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
+        // Entering asteroid belt — Mission 4: discover the secret level (only if never visited)
         state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
         state._beltMissionShown = true;
         setTimeout(function(){
+          if(state.mainWorldBoss && !state.mainWorldBoss.dead) return; // suppress if boss appeared
           state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
         }, 1400);
       } else {
@@ -5400,7 +5429,7 @@ function update(){
           // Track belt-only rock kills for secret level unlock
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
-            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
+            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
               state.secretUnlocked = true;
               setTimeout(triggerSecretLevelUnlock, 500);
             }
@@ -5485,6 +5514,8 @@ function update(){
       if(mwb.swingPhases) mwb.swingPhases[ti]+=mwb.swingSpeeds[ti];
     }
     if(mwb.flashTimer>0) mwb.flashTimer--;
+    if(mwb._shakeTimer>0) mwb._shakeTimer--;
+    if(mwb._angerTimer>0) mwb._angerTimer--;
     // Solid body collision — can't fly on top of boss, bounces player off (no damage)
     const _mwDx=state.x-mwb.wx, _mwDy=state.y-mwb.wy;
     const _mwDist=Math.sqrt(_mwDx*_mwDx+_mwDy*_mwDy);
@@ -5538,35 +5569,83 @@ function update(){
     const _mwFleeing = mwb.hits >= mwb.hitsNeeded * 0.75;
     if(_mwFleeing && !mwb._fleeing){
       mwb._fleeing = true;
-      // Pick first waypoint — random angle on outer belt ring
+      mwb._guarding = false;
+      // Pick first waypoint — within asteroid belt bounds
       var _fAng = Math.random() * Math.PI * 2;
-      var _fR = BELT_OUTER - 200 + Math.random() * 300;
+      var _fR = BELT_R + (BELT_OUTER - BELT_R) * (0.3 + Math.random() * 0.7);
       mwb._fleeWX = Math.cos(_fAng) * _fR;
       mwb._fleeWY = Math.sin(_fAng) * _fR;
     }
     if(_mwFleeing && mwb._fleeing){
-      // Roam toward current waypoint
-      var _fDx = mwb._fleeWX - mwb.wx, _fDy = mwb._fleeWY - mwb.wy;
-      var _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
-      if(_fDist < 300){
-        // Pick new waypoint — random angle, stay in belt ring
-        var _fAng2 = Math.random() * Math.PI * 2;
-        var _fR2 = BELT_OUTER - 400 + Math.random() * 600;
-        mwb._fleeWX = Math.cos(_fAng2) * _fR2;
-        mwb._fleeWY = Math.sin(_fAng2) * _fR2;
-        _fDx = mwb._fleeWX - mwb.wx; _fDy = mwb._fleeWY - mwb.wy;
-        _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
+      const _lastHit = mwb.hits >= mwb.hitsNeeded - 1; // final hit — desperate evasion
+      if(_lastHit){
+        // ── Desperate mode: repel directly away from player like opposite magnet ──
+        const _repDx = mwb.wx - state.x, _repDy = mwb.wy - state.y;
+        const _repDist = Math.sqrt(_repDx * _repDx + _repDy * _repDy);
+        const _repSpd = 7.2; // faster than normal flee
+        if(_repDist > 1){
+          var _fvx = (_repDx / _repDist) * _repSpd, _fvy = (_repDy / _repDist) * _repSpd;
+          // Clamp to belt region — don't fly off into space
+          const _nextR = Math.sqrt((mwb.wx+_fvx)*(mwb.wx+_fvx) + (mwb.wy+_fvy)*(mwb.wy+_fvy));
+          if(_nextR > BELT_OUTER + 200){
+            // Deflect tangentially along the barrier
+            const _tanAng = Math.atan2(mwb.wy, mwb.wx) + Math.PI/2 * (Math.random()<0.5?1:-1);
+            _fvx = Math.cos(_tanAng) * _repSpd;
+            _fvy = Math.sin(_tanAng) * _repSpd;
+          } else if(_nextR < BELT_R){
+            // Don't flee past inner belt edge — deflect outward
+            const _outAng = Math.atan2(mwb.wy, mwb.wx);
+            _fvx = (_fvx + Math.cos(_outAng) * _repSpd) * 0.5;
+            _fvy = (_fvy + Math.sin(_outAng) * _repSpd) * 0.5;
+          }
+          mwb.wx += _fvx; mwb.wy += _fvy;
+          mwb._velX = _fvx; mwb._velY = _fvy;
+        }
+        // Snap facing away from player — fast aggressive turn
+        var _fFace = Math.atan2(_repDy, _repDx);
+        var _fFD = _fFace - (mwb.facing || 0);
+        while(_fFD > Math.PI) _fFD -= Math.PI * 2;
+        while(_fFD < -Math.PI) _fFD += Math.PI * 2;
+        mwb.facing = (mwb.facing || 0) + _fFD * 0.15; // very fast turn
+      } else {
+        // ── Normal flee: roam toward random waypoints ──
+        var _fDx = mwb._fleeWX - mwb.wx, _fDy = mwb._fleeWY - mwb.wy;
+        var _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
+        if(_fDist < 300){
+          var _fAng2 = Math.random() * Math.PI * 2;
+          var _fR2 = BELT_R + (BELT_OUTER - BELT_R) * (0.3 + Math.random() * 0.7);
+          mwb._fleeWX = Math.cos(_fAng2) * _fR2;
+          mwb._fleeWY = Math.sin(_fAng2) * _fR2;
+          _fDx = mwb._fleeWX - mwb.wx; _fDy = mwb._fleeWY - mwb.wy;
+          _fDist = Math.sqrt(_fDx * _fDx + _fDy * _fDy);
+        }
+        var _fleeSpd = 5.4;
+        if(_fDist > 1){
+          var _fvx = (_fDx / _fDist) * _fleeSpd, _fvy = (_fDy / _fDist) * _fleeSpd;
+          mwb.wx += _fvx; mwb.wy += _fvy;
+          mwb._velX = _fvx; mwb._velY = _fvy;
+        }
+        var _fFace = Math.atan2(_fDy, _fDx);
+        var _fFD = _fFace - (mwb.facing || 0);
+        while(_fFD > Math.PI) _fFD -= Math.PI * 2;
+        while(_fFD < -Math.PI) _fFD += Math.PI * 2;
+        mwb.facing = (mwb.facing || 0) + _fFD * 0.06;
       }
-      // Move toward waypoint at moderate speed
-      var _fleeSpd = 1.8;
-      if(_fDist > 1){ mwb.wx += (_fDx / _fDist) * _fleeSpd; mwb.wy += (_fDy / _fDist) * _fleeSpd; }
-      // Face movement direction (away from player, toward waypoint)
-      var _fFace = Math.atan2(_fDy, _fDx);
-      var _fFD = _fFace - (mwb.facing || 0);
-      while(_fFD > Math.PI) _fFD -= Math.PI * 2;
-      while(_fFD < -Math.PI) _fFD += Math.PI * 2;
-      mwb.facing = (mwb.facing || 0) + _fFD * 0.03; // turn toward waypoint
+      // ── Hard clamp: keep boss inside asteroid belt ──
+      const _bossR = Math.sqrt(mwb.wx * mwb.wx + mwb.wy * mwb.wy);
+      if(_bossR > BELT_OUTER){
+        const _clampA = Math.atan2(mwb.wy, mwb.wx);
+        mwb.wx = Math.cos(_clampA) * BELT_OUTER;
+        mwb.wy = Math.sin(_clampA) * BELT_OUTER;
+      } else if(_bossR < BELT_R){
+        const _clampA = Math.atan2(mwb.wy, mwb.wx);
+        mwb.wx = Math.cos(_clampA) * BELT_R;
+        mwb.wy = Math.sin(_clampA) * BELT_R;
+      }
     } else {
+      mwb._velX = 0; mwb._velY = 0;
+      mwb._guarding = true;
+      mwb._wallAngle = Math.atan2(mwb.wy, mwb.wx); // angle toward barrier wall
       // Normal: slowly face toward player (ambient awareness, no aggression)
       const _mwToP=Math.atan2(_mwDy,_mwDx);
       let _mwFD=_mwToP-(mwb.facing||0);
@@ -5586,6 +5665,15 @@ function update(){
         const wbD=Math.sqrt(wbDx*wbDx+wbDy*wbDy);
         if(wbD<mwb.bodyR+30&&(!mwb._waveCD||mwb._waveCD<=0)){
           mwb.hits++; mwb.flashTimer=8; mwb._waveCD=20;
+          if(typeof devSyncBossHP==='function') devSyncBossHP();
+          // Knockback — push boss away from beam
+          var _kbAng = Math.atan2(mwb.wy - wb.wy, mwb.wx - wb.wx);
+          var _kbForce = 18;
+          mwb.wx += Math.cos(_kbAng) * _kbForce;
+          mwb.wy += Math.sin(_kbAng) * _kbForce;
+          // Angry reaction: shimmy shake + rage timer
+          mwb._shakeTimer = 20;
+          mwb._angerTimer = Math.min((mwb._angerTimer || 0) + 40, 180); // builds with each hit
           if(audioCtx&&!state.sfxMuted){const t=audioCtx.currentTime;playSFX(noteFreq(400,mwb.hits),t,0.3,'square',0.08);}
           if(mwb.hits>=mwb.hitsNeeded) killMainWorldBoss();
         }
@@ -6071,21 +6159,6 @@ function triggerHoneySplit(){
   state.honeySplitTimer=90;
 }
 
-const VROOM_R       = 480;
-const VROOM_ZONE_R  = 290;
-const VROOM_ZONE_ANGLES = {
-  EDIT:   null,
-  ANIMATE: 0,
-  PHOTO:  -Math.PI/2,
-  DESIGN:  Math.PI/2,
-  DIRECT:  Math.PI
-};
-// Zone labels positioned just outside cluster
-const VROOM_ZONE_COLORS = {
-  DIRECT:'#ff69b4', EDIT:'#00ffff', ANIMATE:'#00ff88',
-  PHOTO:'#ffcc00',  DESIGN:'#ff8c00'
-};
-
 function enterVictoryRoom(){
   // Hide overlay
   const ov = document.getElementById('all-collected-overlay');
@@ -6093,124 +6166,17 @@ function enterVictoryRoom(){
   stopVictoryFireworks();
   _fwParticles = []; _fwRockets = [];
 
-  // Full world clear — no debris, rocks, explosions, wormholes, trails
-  state.debrisWall    = [];
-  state.spaceRocks    = [];
-  state.explosions    = [];
-  state.wormholes     = []; state.wormholeZoneSet=new Set();
-  state.tracers       = [];
-  state.tronTrail     = [];
-  state.hsTail        = [];
-  state.waveBeams     = [];
-  state.fuelObjects   = [];
-  populatedCells.clear();
+  // Save minimal state for victory room
+  localStorage.setItem('ps_vroom_state', JSON.stringify({
+    score: state.score,
+    musicMuted: state.musicMuted,
+    sfxMuted: state.sfxMuted
+  }));
 
-  // Ship: spawn just above centre (where GAME OVER text sits at top)
-  // GAME OVER is drawn at y=18px screen-top → world y=0 is screen centre
-  // Spawn ship ~200px above world centre so it floats above GAME OVER
-  state.x = 0; state.y = -180;
-  state.vx = 0; state.vy = 0;
-  state.angle = 0;
-  state.fuel = 1.0; updateFuelBar();
-  state.hyperspace = false;
-  state.cheat = null;
-  state._shipDestroyed = false;
-  state._implosionCountdown = 0;
-  state._implodeTimer = 0;
-  state._driftingDead = false;
-  state.inSecretLevel = true;   // suppresses fuel drain, rock spawns, wormholes
-  state.outsideBarrier = false;
-  state._victoryPhase = 'room';
-  state._victoryTimer = 0;
-  state._vroomFW = 0;
-
-  // No room objects — clean empty space
-  state.objects = [];
-
-  // Play music
-  if(!state.musicMuted){
-    const homeIdx = MOODS.findIndex(m=>m.name==='HOMEWARD');
-    state.songIndex = homeIdx >= 0 ? homeIdx : 4;
-    musicBarCount = 0;
-    if(audioCtx && audioCtx.state==='suspended') try{audioCtx.resume();}catch(e){}
-    playSong(state.songIndex);
-  }
+  // Navigate to separate victory room file
+  window.location.href = 'NAVIGATOR-VICTORY.html';
 }
 
-function tickVictoryRoom(){
-  state._victoryTimer++;
-  // Fuel infinite in room
-  state.fuel = 1.0;
-
-  // Octagon walls — soft bounce
-  const dx=state.x, dy=state.y;
-  const dist=Math.sqrt(dx*dx+dy*dy);
-  if(dist > VROOM_R - 20){
-    const nx=dx/dist, ny=dy/dist;
-    // Push back
-    state.x = nx*(VROOM_R-22);
-    state.y = ny*(VROOM_R-22);
-    // Reflect velocity
-    const dot=state.vx*nx+state.vy*ny;
-    state.vx -= 2*dot*nx*0.7;
-    state.vy -= 2*dot*ny*0.7;
-  }
-
-  // Silent fireworks every ~90 frames
-  state._vroomFW = (state._vroomFW||0)+1;
-  if(state._vroomFW % 80 === 0){
-    const fwCanvas=document.getElementById('fireworks-canvas');
-    if(fwCanvas){
-      fwCanvas.width=window.innerWidth; fwCanvas.height=window.innerHeight;
-      _fireworkBurst();
-    }
-  }
-  tickVictoryFireworks(true);
-}
-
-function drawVictoryRoom(ctx){
-  if(state._victoryPhase !== 'room') return;
-  const cx=CX(), cy=CY();
-  const W=canvas.width, H=canvas.height;
-  const T=state.frameCount;
-
-  // MISSION COMPLETE — big pulsing, at screen top
-  const pulse = 1.0 + Math.sin(T*0.06)*0.06;
-  const goSize = Math.max(18, W*0.038) * pulse;
-  ctx.save();
-  ctx.font=`${goSize}px 'Press Start 2P',monospace`;
-  ctx.textAlign='center'; ctx.textBaseline='top';
-  ctx.fillStyle='#00ffcc';
-  ctx.shadowBlur=40; ctx.shadowColor='#00ffcc';
-  ctx.globalAlpha=0.95;
-  ctx.fillText('★ MISSION COMPLETE ★', cx, 18);
-  ctx.restore();
-
-}
-
-let _fwParticles = [];
-let _fwRockets   = [];
-let _fwInterval  = null;
-let _victoryTextAlpha = 0;
-
-function triggerEarthVictory(){
-  state._victoryPhase = 'zoom';
-  state._victoryTimer = 0;
-  state._victoryZoom  = 1;
-  state.hyperspace    = false;
-  state.hsTail        = [];
-  state.vx = 0; state.vy = 0;
-  stopMusic();
-  _victoryTextAlpha   = 0;
-  // NOTE: do NOT set gameOver=true — that kills the update loop
-  // Swell chord
-  if(audioCtx && !state.sfxMuted){
-    const t=audioCtx.currentTime;
-    [[0,0],[4,0.3],[7,0.6],[12,1.0],[16,1.5]].forEach(([s,d])=>
-      playBeep(noteFreq(220,s), t+d, 3.0, 'sine', 0.06)
-    );
-  }
-}
 
 function tickVictory(){
   state._victoryTimer++;
@@ -6270,9 +6236,7 @@ function tickVictory(){
     tickVictoryFireworks(true);
     if(_fwRockets.length===0 && _fwParticles.length<20) _fireworkBurst();
   }
-  else if(state._victoryPhase==='room'){
-    tickVictoryRoom();
-  }
+  // Victory room phase is now handled by NAVIGATOR-VICTORY.html
 }
 
 let _vicShipAngle = Math.PI * 0.75;
@@ -6456,17 +6420,25 @@ function submitVictoryScore(){
   enterVictoryRoom();
 }
 
-function victoryReturnToTitle(){
-  stopVictoryFireworks();
-  _fwParticles=[];
-  document.getElementById('all-collected-overlay').style.display='none';
-  document.getElementById('vic-initials').style.display='none';
-  document.getElementById('vic-summary').style.display='none';
-  const fwCanvas=document.getElementById('fireworks-canvas');
-  if(fwCanvas){const fc=fwCanvas.getContext('2d');fc.clearRect(0,0,fwCanvas.width,fwCanvas.height);}
-  state._victoryPhase=null; state._victoryTimer=0; state._victoryZoom=1;
-  state.inSecretLevel=false;
-  returnToTitleWithScore('---', state.score);
+// victoryReturnToTitle removed — now handled by NAVIGATOR-VICTORY.html
+
+function triggerEarthVictory(){
+  state._victoryPhase = 'zoom';
+  state._victoryTimer = 0;
+  state._victoryZoom  = 1;
+  state.hyperspace    = false;
+  state.hsTail        = [];
+  state.vx = 0; state.vy = 0;
+  stopMusic();
+  _victoryTextAlpha   = 0;
+  // NOTE: do NOT set gameOver=true — that kills the update loop
+  // Swell chord
+  if(audioCtx && !state.sfxMuted){
+    const t=audioCtx.currentTime;
+    [[0,0],[4,0.3],[7,0.6],[12,1.0],[16,1.5]].forEach(([s,d])=>
+      playBeep(noteFreq(220,s), t+d, 3.0, 'sine', 0.06)
+    );
+  }
 }
 
 function triggerLaunchpadVictory(){
@@ -6553,6 +6525,12 @@ function triggerPeanutUnlock(){
   }
   // +2500 points
   addScore(2500);
+  // Show toggle tutorial ~9s after unlock (one-shot, not a persistent timer)
+  setTimeout(()=>{
+    if(state._shipToggleTutorialDone || state._victoryPhase) return;
+    const el = document.getElementById('toggle-tutorial');
+    if(el){ el.style.display=''; state.paused=true; }
+  }, 9000);
 }
 
 function triggerRockSplit(wx, wy, sz){
@@ -6661,11 +6639,11 @@ function drawHUDShape(ctx, shape, x, y, sz){
 
 function drawZoneHUD(){
   _zoneHUDIcons = [];
+  if(state._victoryPhase) return;
   if(state.inSecretLevel){ drawBubbleHUD(); return; }
   const lvl=state.currentLevel;
   if(lvl<0||lvl>4) return;
   if(wormholeTransition) return;
-  if(state._victoryPhase) return;
 
   const zoneName=LEVELS[lvl];
   const items=CONTENT_DATA[zoneName];
@@ -8302,7 +8280,7 @@ function drawGame(){
     }
   });
 
-  drawVictoryRoom(ctx);
+  // Victory room is now in NAVIGATOR-VICTORY.html (drawVictoryRoom removed)
   // Victory text — drawn after ship so it's on top
   drawVictoryText(ctx);
 
@@ -8387,7 +8365,9 @@ function drawGame(){
   }
 
   // "NEXT MISSION" arrow hint — delayed, only if not heading toward gap
-  if(state.editMissionComplete && !state._interzoneComplete && (state._izRingMax === undefined || state._izRingMax < 0)){
+  // Suppress all NEXT MISSION hints while fighting the main world boss
+  const _mwbAlive = state.mainWorldBoss && !state.mainWorldBoss.dead;
+  if(!state._victoryPhase && !_mwbAlive && state.editMissionComplete && !state._interzoneComplete && (state._izRingMax === undefined || state._izRingMax < 0)){
     // Count down delay timer
     if(state._nextMissionHintDelay === undefined) state._nextMissionHintDelay = 360;
     if(state._nextMissionHintDelay > 0){ state._nextMissionHintDelay--; }
@@ -8443,7 +8423,7 @@ function drawGame(){
 
   // "NEXT MISSION" hint after interzone — point toward nearest outer zone
   // Kill this hint once ANY outer zone has been completed
-  if(state._interzoneComplete && !state.inSecretLevel
+  if(state._interzoneComplete && !state.inSecretLevel && !_mwbAlive
      && !state.completedLevel_0 && !state.completedLevel_2 && !state.completedLevel_3 && !state.completedLevel_4){
     const _shipR = Math.sqrt(state.x*state.x + state.y*state.y);
     const _inInterzone = _shipR >= PEN_BARRIER_R && _shipR < EDIT_R;
@@ -8487,7 +8467,7 @@ function drawGame(){
   }
 
   // "NEXT MISSION" hint after completing all objects in an outer zone — 3 arrows
-  if(state._interzoneComplete && !state.inSecretLevel){
+  if(state._interzoneComplete && !state.inSecretLevel && !_mwbAlive){
     var _curZ = zoneAt(state.x, state.y);
     if(_curZ >= 0 && _curZ !== 1 && state['completedLevel_'+_curZ]){
       // Delay timer — 6 seconds (~360 frames)
@@ -8499,7 +8479,7 @@ function drawGame(){
         var _neighbors = _neighborMap[_curZ] || [];
         // Count remaining missions from this zone
         var _hasNeighborMission = _neighbors.some(function(_nz){ return !state['completedLevel_'+_nz]; });
-        var _hasBeltMission = !state.secretBossDefeated;
+        var _hasBeltMission = !state.secretBossDefeated && !(state.secretVisitCount > 0) && !state._bossInMainWorld;
         if(!_hasNeighborMission && !_hasBeltMission) {} // all missions done — suppress hint entirely
         else {
         // "NEXT MISSION" text
@@ -8513,8 +8493,8 @@ function drawGame(){
         ctx.restore();
         var _bounce3 = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
         var _arrowDist = 150;  // distance from ship centre
-        // Arrow 1: toward asteroid belt (radially outward) — skip if boss defeated
-        if(!state.secretBossDefeated){
+        // Arrow 1: toward asteroid belt (radially outward) — skip if secret level already visited
+        if(!state.secretBossDefeated && !(state.secretVisitCount > 0) && !state._bossInMainWorld){
           var _beltAng = Math.atan2(state.y, state.x);
           ctx.save();
           ctx.translate(cx + Math.cos(_beltAng) * (_arrowDist + _bounce3), cy + Math.sin(_beltAng) * (_arrowDist + _bounce3));
@@ -8675,6 +8655,7 @@ function drawGame(){
   }
 
   // Player
+  if(state._victoryPhase === 'room') { /* ship hidden — pixel art scene draws the parked ship */ } else
   {
     // When fuel empty: ship stays fully visible with slow amber warning pulse (not random flicker)
     const alpha=noFuel?(0.7+Math.sin(state.frameCount*0.08)*0.3):(state.frameCount%30<15)?1:0.65;
@@ -9609,9 +9590,9 @@ function closeContent(){
   document.getElementById('content-video').innerHTML='';
   state.contentOpen=false; state.paused=false;
   if(hadVideo) resumeMusic();
-  checkLevelComplete();
-  // First-popup prompt: show once after the very first content popup is closed (not in boring mode)
-  if(!_firstPopupShown && !window._boringModeWasStarted && document.getElementById('boring-mode-popup').style.display!=='flex'){
+  if(!state._victoryPhase) checkLevelComplete();
+  // First-popup prompt: show once after the very first content popup is closed (not in boring mode, not in victory room)
+  if(!_firstPopupShown && !window._boringModeWasStarted && !state._victoryPhase && document.getElementById('boring-mode-popup').style.display!=='flex'){
     _firstPopupShown=true;
     setTimeout(_showPopupPrompt, 300);
   }
@@ -11653,6 +11634,7 @@ function _dismissTopmostPopup(e){
     const t=e.target;
     if(t.closest('button,a,input,select,textarea,.dev-btn,.lb-btn,.gallery-thumb,.photo-flex-thumb,[onclick]')) return;
   }
+  // Victory room zone menu removed — now in NAVIGATOR-VICTORY.html
   const lb=document.getElementById('gallery-lightbox');
   if(lb && lb.classList.contains('open')){ closeLightbox(); return true; }
   const pf=document.getElementById('photo-fullscreen');
@@ -12513,19 +12495,56 @@ function drawBossVisual(ctx,boss,bsx,bsy){
     const tWidths=boss.tentacleWidths||Array(boss.tentacles).fill(6);
     for(let ti=0;ti<boss.tentacles;ti++){
       const swingOff = boss.swingPhases ? Math.sin(boss.swingPhases[ti])*boss.swingAmps[ti] : 0;
-      const ba=(boss.homeAngles?boss.homeAngles[ti]:(Math.PI*2/boss.tentacles)*ti)+swingOff+(boss.facing||0);
+      let ba=(boss.homeAngles?boss.homeAngles[ti]:(Math.PI*2/boss.tentacles)*ti)+swingOff+(boss.facing||0);
+      let _waveMul = 1; // wave amplitude multiplier (reduced for guard/flee poses)
+      // ── Guard pose: 6 tentacles hug wall, 2 front reach toward player ──
+      if(boss._guarding){
+        const wallAng = boss._wallAngle || 0;
+        if(ti < 3){
+          // Upper wall-huggers: point toward wall, spread upward
+          ba = wallAng + (ti + 1) * 0.35;
+          _waveMul = 0.08;
+        } else if(ti < 6){
+          // Lower wall-huggers: point toward wall, spread downward
+          ba = wallAng - (ti - 2) * 0.35;
+          _waveMul = 0.08;
+        } else {
+          // 2 front tentacles: reach toward player with gentle sway
+          const frontAng = wallAng + Math.PI;
+          ba = frontAng + (ti === 6 ? -0.3 : 0.3) + swingOff * 0.5;
+          _waveMul = 0.35;
+        }
+      }
+      // ── Flee pose: all tentacles stream behind in movement direction ──
+      if(boss._fleeing && (boss._velX || boss._velY)){
+        const moveAng = Math.atan2(boss._velY, boss._velX);
+        const behindAng = moveAng + Math.PI;
+        ba = behindAng + (ti - 3.5) * 0.11;
+        _waveMul = 0.12;
+      }
       const segs=30;const tLen=tLens[ti]||boss.tentacleLen;
       const tAmp=boss.tentacleAmps?boss.tentacleAmps[ti]:50;
       const tPh=boss.tentaclePhases[ti];
       const pts=[];
+      // Tentacle trailing: drag segments backward opposite to velocity (tips drag most)
+      const _tvx=boss._velX||0, _tvy=boss._velY||0;
+      const _tDragF = boss._fleeing ? 8 : 18; // reduced during flee (angles already point backward)
       for(let s=0;s<=segs;s++){
         const f=s/segs,segLen=tLen*f;
         const w1=Math.sin(tPh+f*4.0)*tAmp*f;
         const w2=Math.sin(tPh*1.6+f*6.5+ti)*57*f*f;
         const curl=Math.sin(tPh*0.55+f*2.5)*79*f*f*f;
-        const tw=w1+w2+curl;
-        pts.push({x:bsx+Math.cos(ba)*segLen+Math.cos(ba+Math.PI/2)*tw,
-                   y:bsy+Math.sin(ba)*segLen+Math.sin(ba+Math.PI/2)*tw,frac:f});
+        const tw=(w1+w2+curl)*_waveMul;
+        const dragX = -_tvx * f * f * _tDragF;
+        const dragY = -_tvy * f * f * _tDragF;
+        // Guard wall-hugging: bend tentacle segments toward wall tangent (N/S)
+        let segAng = ba;
+        if(boss._guarding && ti < 6){
+          const tangent = (ti < 3) ? Math.PI/2 : -Math.PI/2;
+          segAng = ba + (tangent - ba) * f * f * 0.7;
+        }
+        pts.push({x:bsx+Math.cos(segAng)*segLen+Math.cos(segAng+Math.PI/2)*tw+dragX,
+                   y:bsy+Math.sin(segAng)*segLen+Math.sin(segAng+Math.PI/2)*tw+dragY,frac:f});
       }
       // Draw thick-to-thin with purple gradient
       for(let s=1;s<pts.length;s++){
@@ -12550,52 +12569,86 @@ function drawBossVisual(ctx,boss,bsx,bsy){
     }
   }
   // Body — bulbous purple alien head
+  // Shimmy shake when hit
+  let _shX=0, _shY=0;
+  if(boss._shakeTimer>0){
+    const _shInt = Math.sin(boss._shakeTimer*2.5)*boss._shakeTimer*0.4;
+    _shX = _shInt * (boss._shakeTimer%2===0?1:-1);
+    _shY = Math.cos(boss._shakeTimer*3.1)*boss._shakeTimer*0.2;
+  }
+  const _bx=bsx+_shX, _by=bsy+_shY;
   const bP=1+Math.sin(boss.pulsePhase)*0.08,bR=boss.bodyR*bP;
   const fl=boss.flashTimer>0&&boss.flashTimer%4<2;
-  ctx.beginPath();ctx.arc(bsx,bsy,bR*1.15,0,Math.PI*2);
-  ctx.fillStyle=fl?'rgba(255,200,255,0.3)':'rgba(80,0,120,0.25)';ctx.fill();
-  ctx.beginPath();ctx.arc(bsx,bsy,bR,0,Math.PI*2);
-  ctx.fillStyle=fl?'#eeccff':'#3a0060';ctx.fill();
-  ctx.strokeStyle=fl?'#ffffff':'#7700cc';ctx.lineWidth=3;ctx.stroke();
+  const _angry = (boss._angerTimer||0) > 0;
+  ctx.beginPath();ctx.arc(_bx,_by,bR*1.15,0,Math.PI*2);
+  ctx.fillStyle=fl?'rgba(255,200,255,0.3)':(_angry?'rgba(160,0,40,0.25)':'rgba(80,0,120,0.25)');ctx.fill();
+  ctx.beginPath();ctx.arc(_bx,_by,bR,0,Math.PI*2);
+  ctx.fillStyle=fl?'#eeccff':(_angry?'#5a0030':'#3a0060');ctx.fill();
+  ctx.strokeStyle=fl?'#ffffff':(_angry?'#cc0044':'#7700cc');ctx.lineWidth=3;ctx.stroke();
   // Veins
   if(!boss.dead){for(let v=0;v<6;v++){const va=boss.pulsePhase*0.3+v*(Math.PI/3);
     const vr=bR*(0.3+Math.sin(va*2)*0.15);ctx.beginPath();
-    ctx.moveTo(bsx+Math.cos(va)*bR*0.2,bsy+Math.sin(va)*bR*0.2);
-    ctx.quadraticCurveTo(bsx+Math.cos(va+0.3)*vr,bsy+Math.sin(va+0.3)*vr,
-      bsx+Math.cos(va+0.5)*bR*0.85,bsy+Math.sin(va+0.5)*bR*0.85);
-    ctx.strokeStyle='rgba(140,0,220,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
+    ctx.moveTo(_bx+Math.cos(va)*bR*0.2,_by+Math.sin(va)*bR*0.2);
+    ctx.quadraticCurveTo(_bx+Math.cos(va+0.3)*vr,_by+Math.sin(va+0.3)*vr,
+      _bx+Math.cos(va+0.5)*bR*0.85,_by+Math.sin(va+0.5)*bR*0.85);
+    ctx.strokeStyle=_angry?'rgba(200,0,60,0.45)':'rgba(140,0,220,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
   // Mouth — gaping maw with fangs
   if(!boss.dead){const ea=Math.atan2(state.y-boss.wy,state.x-boss.wx);
-    const mOpen=0.3+Math.sin((boss.mouthPhase||0))*0.15;
-    const mx=bsx+Math.cos(ea)*bR*0.3,my=bsy+Math.sin(ea)*bR*0.3;
+    // Angry = mouth opens wider
+    const mOpen=_angry?(0.45+Math.sin((boss.mouthPhase||0))*0.2):(0.3+Math.sin((boss.mouthPhase||0))*0.15);
+    const mx=_bx+Math.cos(ea)*bR*0.3,my=_by+Math.sin(ea)*bR*0.3;
     ctx.save();ctx.translate(mx,my);ctx.rotate(ea);
     ctx.beginPath();ctx.ellipse(0,0,bR*0.35,bR*mOpen,0,0,Math.PI*2);
-    ctx.fillStyle='#0a0015';ctx.fill();
+    ctx.fillStyle=_angry?'#1a0008':'#0a0015';ctx.fill();
     for(let fi=-1;fi<=1;fi+=2){ctx.beginPath();ctx.moveTo(bR*0.15*fi,-bR*mOpen*0.8);
       ctx.lineTo(bR*0.08*fi,bR*mOpen*0.5);ctx.lineTo(bR*0.22*fi,-bR*mOpen*0.3);
-      ctx.closePath();ctx.fillStyle='#ccaaff';ctx.fill();}
+      ctx.closePath();ctx.fillStyle=_angry?'#ff99cc':'#ccaaff';ctx.fill();}
     const iG=ctx.createRadialGradient(0,0,0,0,0,bR*0.25);
-    iG.addColorStop(0,'rgba(200,0,255,0.4)');iG.addColorStop(1,'rgba(0,0,0,0)');
+    iG.addColorStop(0,_angry?'rgba(255,0,80,0.5)':'rgba(200,0,255,0.4)');iG.addColorStop(1,'rgba(0,0,0,0)');
     ctx.beginPath();ctx.arc(0,0,bR*0.25,0,Math.PI*2);ctx.fillStyle=iG;ctx.fill();
     ctx.restore();
-    // Eyes — three glowing purple
+    // Eyes — three glowing purple (blink + angry)
+    // Blink: brief eye close every ~3s (180 frames), lasts 6 frames
+    const _blinkCycle = (boss.phase * 55.5) % 180;
+    const _blinking = _blinkCycle < 6;
     const eyePos=[{off:-0.55,sz:0.3},{off:0,sz:0.35},{off:0.55,sz:0.3}];
     eyePos.forEach(ep=>{const eA=ea+Math.PI+ep.off;
-      const ex=bsx+Math.cos(eA)*bR*0.55,ey=bsy+Math.sin(eA)*bR*0.55,esz=bR*ep.sz;
-      ctx.beginPath();ctx.arc(ex,ey,esz,0,Math.PI*2);ctx.fillStyle='#1a0030';ctx.fill();
-      ctx.strokeStyle='#6600aa';ctx.lineWidth=1.5;ctx.stroke();
-      ctx.beginPath();ctx.arc(ex,ey,esz*0.7,0,Math.PI*2);ctx.fillStyle='#9900ff';ctx.fill();
-      const pX=ex+Math.cos(ea)*esz*0.2,pY=ey+Math.sin(ea)*esz*0.2;
-      ctx.beginPath();ctx.arc(pX,pY,esz*0.35,0,Math.PI*2);ctx.fillStyle='#220044';ctx.fill();
-      ctx.beginPath();ctx.arc(ex-esz*0.15,ey-esz*0.15,esz*0.15,0,Math.PI*2);
-      ctx.fillStyle='rgba(200,150,255,0.5)';ctx.fill();
+      const ex=_bx+Math.cos(eA)*bR*0.55,ey=_by+Math.sin(eA)*bR*0.55,esz=bR*ep.sz;
+      if(_blinking){
+        // Blink: narrow horizontal slit
+        ctx.beginPath();ctx.ellipse(ex,ey,esz,esz*0.15,0,0,Math.PI*2);
+        ctx.fillStyle='#1a0030';ctx.fill();
+      } else {
+        // Sclera
+        ctx.beginPath();ctx.arc(ex,ey,esz,0,Math.PI*2);
+        ctx.fillStyle=_angry?'#2a0010':'#1a0030';ctx.fill();
+        ctx.strokeStyle=_angry?'#aa0033':'#6600aa';ctx.lineWidth=1.5;ctx.stroke();
+        // Angry: draw angular brow ridge over eye
+        if(_angry){
+          ctx.beginPath();
+          const browA = eA - (boss.facing||0);
+          ctx.moveTo(ex-esz*1.1,ey-esz*0.3);
+          ctx.lineTo(ex+esz*0.4,ey-esz*1.0);
+          ctx.strokeStyle='#aa0033';ctx.lineWidth=3;ctx.stroke();
+        }
+        // Iris — red tint when angry
+        ctx.beginPath();ctx.arc(ex,ey,esz*0.7,0,Math.PI*2);
+        ctx.fillStyle=_angry?'#ff2200':'#9900ff';ctx.fill();
+        // Pupil
+        const pX=ex+Math.cos(ea)*esz*0.2,pY=ey+Math.sin(ea)*esz*0.2;
+        ctx.beginPath();ctx.arc(pX,pY,esz*0.35,0,Math.PI*2);
+        ctx.fillStyle=_angry?'#440000':'#220044';ctx.fill();
+        // Highlight
+        ctx.beginPath();ctx.arc(ex-esz*0.15,ey-esz*0.15,esz*0.15,0,Math.PI*2);
+        ctx.fillStyle=_angry?'rgba(255,150,150,0.5)':'rgba(200,150,255,0.5)';ctx.fill();
+      }
     });
     // Horns
     for(let hi=-1;hi<=1;hi+=2){const ha=ea+Math.PI+hi*0.8;
-      const hx1=bsx+Math.cos(ha)*bR*0.8,hy1=bsy+Math.sin(ha)*bR*0.8;
-      const hx2=bsx+Math.cos(ha-hi*0.3)*bR*1.4,hy2=bsy+Math.sin(ha-hi*0.3)*bR*1.4;
+      const hx1=_bx+Math.cos(ha)*bR*0.8,hy1=_by+Math.sin(ha)*bR*0.8;
+      const hx2=_bx+Math.cos(ha-hi*0.3)*bR*1.4,hy2=_by+Math.sin(ha-hi*0.3)*bR*1.4;
       ctx.beginPath();ctx.moveTo(hx1,hy1);
-      ctx.quadraticCurveTo(bsx+Math.cos(ha)*bR*1.2,bsy+Math.sin(ha)*bR*1.2,hx2,hy2);
+      ctx.quadraticCurveTo(_bx+Math.cos(ha)*bR*1.2,_by+Math.sin(ha)*bR*1.2,hx2,hy2);
       ctx.strokeStyle='#550088';ctx.lineWidth=4;ctx.lineCap='round';ctx.stroke();
       ctx.beginPath();ctx.arc(hx2,hy2,3,0,Math.PI*2);ctx.fillStyle='#aa00ff';ctx.fill();}
   }
@@ -13137,6 +13190,31 @@ function drawSecretLevel(ctx,cx,cy){
       _shipCD:0
     };
     var btn=document.getElementById('dab-mainboss');if(btn)btn.textContent='REMOVE ALIEN';
+    devSyncBossHP();
+  };
+  window.devSetBossHP = function(val){
+    var boss = state.mainWorldBoss || state.secretBoss;
+    if(!boss) return;
+    boss.hits = parseInt(val);
+    // Trigger flee state if crossing 75% threshold
+    if(boss === state.mainWorldBoss && boss.hits >= boss.hitsNeeded * 0.75 && !boss._fleeing){
+      boss._fleeing = true; boss._guarding = false;
+      var _a = Math.random()*Math.PI*2, _r = (typeof BELT_OUTER!=='undefined'?BELT_OUTER:21404)-200+Math.random()*300;
+      boss._fleeWX = Math.cos(_a)*_r; boss._fleeWY = Math.sin(_a)*_r;
+    }
+    // Revert to guard if moved below threshold
+    if(boss === state.mainWorldBoss && boss.hits < boss.hitsNeeded * 0.75 && boss._fleeing){
+      boss._fleeing = false; boss._guarding = true;
+    }
+    devSyncBossHP();
+  };
+  window.devSyncBossHP = function(){
+    var boss = state.mainWorldBoss || state.secretBoss;
+    var sl = document.getElementById('dev-boss-hp');
+    var lb = document.getElementById('dev-boss-hp-label');
+    if(!boss){ if(sl)sl.value=0; if(lb)lb.textContent='—'; return; }
+    if(sl){ sl.max=boss.hitsNeeded; sl.value=boss.hits; }
+    if(lb) lb.textContent=boss.hits+'/'+boss.hitsNeeded;
   };
   window.devTriggerSecretUnlock = function(){
     state.secretUnlocked=true;state.rocksDestroyed=state.secretThreshold+1;
