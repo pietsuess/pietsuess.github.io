@@ -2380,6 +2380,7 @@ window.onload = function() {
     const flipDuration = 0.8; // seconds for full 360°
     let flipStartAngle = 0;
     let flipDirection = 1; // +1 or -1
+    let flipCameraAngle = 0; // camera holds here during flip
 
     // WIDER SAFE ZONE for Laser Wall (Hole is 22 radius instead of 18)
     const laserWallGeo = new THREE.RingGeometry(22, tubeRadius, 32);
@@ -2586,10 +2587,11 @@ window.onload = function() {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
             const bMesh = createBoostPadMesh();
-            const bR = tubeRadius - 4;
+            const bR = tubeRadius - 1;
             bMesh.position.set(Math.cos(bAngle) * bR, Math.sin(bAngle) * bR, zPos);
-            bMesh.rotation.z = bAngle;
-            bMesh.rotation.x = Math.PI / 4; // 45° angled
+            bMesh.rotation.order = 'ZXY';
+            bMesh.rotation.z = bAngle - Math.PI / 2;
+            bMesh.rotation.x = -Math.PI / 2;
             bMesh.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(bMesh); items.push(bMesh);
             return;
@@ -3078,11 +3080,13 @@ window.onload = function() {
         // TEST: boost pad right at start of sector 1
         if (currentSector === 1) {
             const testPad = createBoostPadMesh();
-            const tR = tubeRadius - 4;
+            const tR = tubeRadius - 1;
             const tAngle = -Math.PI / 2; // bottom of tunnel (where player starts)
             testPad.position.set(Math.cos(tAngle) * tR, Math.sin(tAngle) * tR, baseZ - 100);
-            testPad.rotation.z = tAngle;
-            testPad.rotation.x = Math.PI / 4;
+            // Flat on the wall: orient radially outward then face incoming ship
+            testPad.rotation.order = 'ZXY';
+            testPad.rotation.z = tAngle - Math.PI / 2;
+            testPad.rotation.x = -Math.PI / 2;
             testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(testPad); items.push(testPad);
         }
@@ -4125,9 +4129,11 @@ window.onload = function() {
             gunBankGroup.rotation.order = 'ZXY';
             gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
 
-            camera.position.x = Math.cos(shipAngle) * (tubeRadius - 16);
-            camera.position.y = Math.sin(shipAngle) * (tubeRadius - 16);
-            camera.rotation.z = shipAngle + Math.PI/2;
+            // Camera holds in place during flip so you watch ship orbit the tunnel
+            const camAngle = isFlipping ? flipCameraAngle : shipAngle;
+            camera.position.x = Math.cos(camAngle) * (tubeRadius - 16);
+            camera.position.y = Math.sin(camAngle) * (tubeRadius - 16);
+            camera.rotation.z = camAngle + Math.PI/2;
 
             engine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
@@ -4187,6 +4193,7 @@ window.onload = function() {
                                 isFlipping = true;
                                 flipTimer = 0;
                                 flipStartAngle = shipAngle;
+                                flipCameraAngle = shipAngle;
                                 flipDirection = Math.random() > 0.5 ? 1 : -1;
                                 AudioEngine.playSFX('jump');
                                 flash('#ffaa00');
