@@ -2348,26 +2348,31 @@ window.onload = function() {
     // Boost pad — double chevron painted flat on tunnel wall (curved cylinder arc)
     function makeBoostPadTexture() {
         const c = document.createElement('canvas');
-        c.width = 128; c.height = 256;
+        c.width = 256; c.height = 512;
         const ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, 128, 256);
+        ctx.clearRect(0, 0, 256, 512);
+        // Rotate entire canvas 45° so chevrons appear angled on the tunnel surface
+        ctx.save();
+        ctx.translate(128, 256);
+        ctx.rotate(-Math.PI / 4);
+        ctx.translate(-128, -256);
         ctx.fillStyle = '#ffaa00';
         ctx.shadowColor = '#ff6600';
-        ctx.shadowBlur = 12;
-        // Draw two chevrons pointing "up" (toward top of canvas = forward in tunnel)
+        ctx.shadowBlur = 16;
         function drawChevron(cx, cy, w, h) {
             ctx.beginPath();
-            ctx.moveTo(cx, cy - h / 2);           // tip
-            ctx.lineTo(cx + w / 2, cy + h / 2);   // bottom right
+            ctx.moveTo(cx, cy - h / 2);
+            ctx.lineTo(cx + w / 2, cy + h / 2);
             ctx.lineTo(cx + w / 2 - w * 0.15, cy + h / 2);
-            ctx.lineTo(cx, cy - h * 0.15);         // inner notch
+            ctx.lineTo(cx, cy - h * 0.15);
             ctx.lineTo(cx - w / 2 + w * 0.15, cy + h / 2);
-            ctx.lineTo(cx - w / 2, cy + h / 2);   // bottom left
+            ctx.lineTo(cx - w / 2, cy + h / 2);
             ctx.closePath();
             ctx.fill();
         }
-        drawChevron(64, 80, 80, 70);
-        drawChevron(64, 170, 80, 70);
+        drawChevron(128, 160, 120, 100);
+        drawChevron(128, 310, 120, 100);
+        ctx.restore();
         const tex = new THREE.CanvasTexture(c);
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         return tex;
@@ -2378,41 +2383,38 @@ window.onload = function() {
     });
 
     function createBoostPadMesh() {
-        // Curved plane that sits on tunnel wall, tilted 45° into the tunnel
-        // Built as a strip of quads that follow the tunnel curvature (arc)
+        // Flat on tunnel wall, follows the curvature. Chevrons drawn at 45° on texture.
         const arcSpan = 0.3;      // radians wide on tunnel wall
-        const padLength = 30;     // length along tunnel axis (Z)
+        const padLength = 40;     // length along tunnel Z axis (runway)
         const arcSegs = 8;
-        const r = tubeRadius - 0.2;
+        const lenSegs = 4;        // subdivisions along length for smooth curve
+        const r = tubeRadius - 0.15;
 
         const geo = new THREE.BufferGeometry();
         const verts = [];
         const uvs = [];
         const indices = [];
 
-        // Two rows: back edge (on wall) and front edge (raised 45° into tunnel)
-        // "back" = closer to player, "front" = further into tunnel
-        const liftR = r - padLength * Math.sin(Math.PI / 4); // how far front edge lifts inward
-        const zSpan = padLength * Math.cos(Math.PI / 4);     // Z extent after tilt
-
-        for (let i = 0; i <= arcSegs; i++) {
-            const t = i / arcSegs;
-            const a = -arcSpan / 2 + arcSpan * t;
-            const u = t;
-
-            // Back edge: on the wall surface, z = 0
-            verts.push(Math.cos(a) * r, Math.sin(a) * r, 0);
-            uvs.push(u, 1);
-
-            // Front edge: lifted inward, pushed forward in z
-            verts.push(Math.cos(a) * liftR, Math.sin(a) * liftR, -zSpan);
-            uvs.push(u, 0);
+        for (let j = 0; j <= lenSegs; j++) {
+            const v = j / lenSegs;
+            const z = -padLength * v;  // extends forward (negative Z = away from player)
+            for (let i = 0; i <= arcSegs; i++) {
+                const t = i / arcSegs;
+                const a = -arcSpan / 2 + arcSpan * t;
+                verts.push(Math.cos(a) * r, Math.sin(a) * r, z);
+                uvs.push(t, 1 - v);
+            }
         }
 
-        for (let i = 0; i < arcSegs; i++) {
-            const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
-            indices.push(a, c, b);
-            indices.push(b, c, d);
+        for (let j = 0; j < lenSegs; j++) {
+            for (let i = 0; i < arcSegs; i++) {
+                const row = j * (arcSegs + 1);
+                const nextRow = (j + 1) * (arcSegs + 1);
+                const a = row + i, b = row + i + 1;
+                const c = nextRow + i, d = nextRow + i + 1;
+                indices.push(a, c, b);
+                indices.push(b, c, d);
+            }
         }
 
         geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
@@ -2427,7 +2429,7 @@ window.onload = function() {
     // Flip state
     let isFlipping = false;
     let flipTimer = 0;
-    const flipDuration = 0.8; // seconds for full 360°
+    const flipDuration = 1.6; // seconds for full 360°
     let flipStartAngle = 0;
     let flipDirection = 1; // +1 or -1
     let flipCameraAngle = 0; // camera holds here during flip
@@ -4148,7 +4150,7 @@ window.onload = function() {
 
             // Z offset deepens as bank increases
             // During flip, ship pushes ahead so you watch it orbit in front of camera
-            const flipAhead = isFlipping ? -60 : 0;
+            const flipAhead = isFlipping ? -30 : 0;
             const baseZOffset = -18 - bankFraction * 5 + flipAhead;
             shipZOffset += ((baseZOffset - throttleSmooth * 4) - shipZOffset) * (isFlipping ? 0.12 : 0.08);
 
