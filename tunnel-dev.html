@@ -2576,14 +2576,20 @@ window.onload = function() {
         const s = currentSector;
         var _sCfg = _getSpawnCfg(s);
 
-        // --- Ramp + Laser Wall sequences — frequency scales with sector ---
+        // ═══════════════════════════════════════════════════════════════
+        // BARRIER RULE: Every barrier ring MUST be passable.
+        //   • Full ring (no gap) → MUST have a ramp before it to jump over
+        //   • Partial ring (gap) → player steers through the gap, no ramp needed
+        // This is the ONLY place barriers spawn procedurally.
+        // Baked levels must also follow this rule.
+        // ═══════════════════════════════════════════════════════════════
         const rampThreshold = (_sCfg && typeof _sCfg.ramp === 'number') ? _sCfg.ramp : (s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26);
         if (s >= 2 && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
             // S2: always gap barrier (no ramp needed). S3+: 40% gap, 60% ramp+full barrier
             if (s <= 2 || Math.random() < 0.4) {
-                // Gap barrier — passable without jumping
+                // Gap barrier — passable without jumping (BARRIER RULE: has gap)
                 const gapSize = Math.PI * (0.6 + Math.random() * 0.5); // gap of 0.6π to 1.1π
                 const gapAngle = Math.random() * Math.PI * 2;
                 const arcLen = Math.PI * 2 - gapSize;
@@ -2593,7 +2599,7 @@ window.onload = function() {
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.03, arcLength: arcLen };
                 scene.add(wallMesh); items.push(wallMesh);
             } else {
-                // Ramp + full barrier pair
+                // Full ring + ramp pair (BARRIER RULE: ramp always spawns with full ring)
                 let rampMesh = new THREE.Mesh(rampGeo, rampMat);
                 rampMesh.position.set(Math.cos(angle) * (tubeRadius - 2), Math.sin(angle) * (tubeRadius - 2), zPos);
                 rampMesh.rotation.z = angle;
