@@ -2043,9 +2043,32 @@ window.onload = function() {
     dGeo.computeVertexNormals();
     bankGroup.add(new THREE.Mesh(dGeo, matBody));
 
-    // ── Fuselage: ends before wing nose tip (-5.5), stops before thruster ──
-    const spine = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.4, 6.0), matUnder);
-    spine.position.set(0, 0.3, -0.5);  // runs z=-3.5 to z=2.5
+    // ── Fuselage: rounded front edges, ends before wing tip ──
+    const spineGeo = new THREE.BoxGeometry(2.2, 1.4, 6.0, 4, 1, 1);
+    // Round off front verts — pull corners inward at the front face (z = -3)
+    const spVerts = spineGeo.attributes.position;
+    for (let i = 0; i < spVerts.count; i++) {
+        const z = spVerts.getZ(i);
+        if (z < -2.5) {
+            const x = spVerts.getX(i);
+            const y = spVerts.getY(i);
+            const cornerDist = Math.sqrt(x * x + y * y);
+            const maxR = 0.9;
+            if (cornerDist > maxR) {
+                const scale = maxR / cornerDist;
+                spVerts.setX(i, x * scale);
+                spVerts.setY(i, y * scale);
+            }
+            // Taper Z inward for roundness
+            const taper = 1 - ((-2.5 - z) / 0.5) * 0.3;
+            spVerts.setX(i, spVerts.getX(i) * taper);
+            spVerts.setY(i, spVerts.getY(i) * taper);
+        }
+    }
+    spVerts.needsUpdate = true;
+    spineGeo.computeVertexNormals();
+    const spine = new THREE.Mesh(spineGeo, matUnder);
+    spine.position.set(0, 0.3, -0.5);
     bankGroup.add(spine);
 
     // ── Cockpit canopy ────────────────────────────────────────────────
@@ -2059,7 +2082,7 @@ window.onload = function() {
     thrusterGeo.rotateX(Math.PI / 2);
     const matThruster = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x333333, emissiveIntensity: 0.2, metalness: 0.7, roughness: 0.3, flatShading: true });
     const thruster = new THREE.Mesh(thrusterGeo, matThruster);
-    thruster.position.set(0, 0.3, 2.8);
+    thruster.position.set(0, 0.1, 2.8);
     bankGroup.add(thruster);
 
     // Engine fire removed — just the thruster housing for now
