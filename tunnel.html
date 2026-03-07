@@ -47,6 +47,8 @@
         #score-display { font-family: 'Press Start 2P', monospace; font-size: 15px; color: #00ffcc; text-shadow: 0 0 6px rgba(0,255,204,0.6); letter-spacing: 1px; }
         #timer-display { font-family: 'Press Start 2P', monospace; font-size: 11px; color: #00ff88; text-shadow: 0 0 6px rgba(0,255,136,0.6); }
         #sector-display { font-family: 'Press Start 2P', monospace; font-size: 15px; color: #ffe000; text-shadow: 0 0 6px rgba(255,224,0,0.6); }
+        #combo-display { font-family: 'Press Start 2P', monospace; font-size: 10px; color: #ff69b4; text-shadow: 0 0 8px rgba(255,105,180,0.7); opacity: 0; transition: opacity 0.2s; text-align: left; padding-left: 4px; }
+        #combo-display.active { opacity: 1; }
 
         /* Hamburger */
         #hamburger-btn {
@@ -405,7 +407,7 @@
 
         /* ── Video Player ── */
         #tr-video-player {
-            display:none; position:fixed; inset:0; z-index:560;
+            display:none; position:fixed; inset:0; z-index:580;
             background:rgba(0,0,0,0.98); flex-direction:column;
             align-items:center; justify-content:center;
             touch-action:auto; pointer-events:auto;
@@ -604,7 +606,7 @@
     <div id="hud-title">PIET SUESS</div>
     <div id="hud-progress"><div id="progress-container"><div id="progress-bar"></div></div></div>
     <div id="hud-row">
-        <div id="score-display"><span id="score">000000</span></div>
+        <div id="score-display"><span id="score">000000</span><div id="combo-display"></div></div>
         <div id="timer-display"><span id="hud-timer">0:00.0</span></div>
         <div id="sector-display"><span id="sector-text">01</span></div>
     </div>
@@ -2695,8 +2697,9 @@ window.onload = function() {
         let mesh, type, hitRadius;
 
 
-        // Boost pad — rare, sector 3+
-        if (s >= 3 && rand < 0.04 && !isFlipping) {
+        // Boost pad — rare, sector 3+ (rate configurable via level editor)
+        var boostThreshold = (_sCfg && typeof _sCfg.boost === 'number') ? _sCfg.boost : (s >= 3 ? 0.04 : 0);
+        if (boostThreshold > 0 && rand < boostThreshold) {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
             const bMesh = createBoostPadMesh(bAngle);
@@ -4061,6 +4064,9 @@ window.onload = function() {
                 comboTimer -= delta;
                 if (comboTimer <= 0) { combo = 0; }
             }
+            var comboEl = document.getElementById('combo-display');
+            if (combo > 1) { comboEl.textContent = 'x' + Math.min(combo, 4); comboEl.classList.add('active'); }
+            else { comboEl.classList.remove('active'); }
             let moveDist = speed * delta;
             distanceTraveled += moveDist;
             if (Math.random() < 0.01) console.log('SECTOR DEBUG:', {
@@ -4282,6 +4288,10 @@ window.onload = function() {
                 if (item.userData.rotSpeedZ) item.rotation.z += item.userData.rotSpeedZ;
                 if (item.userData.rotSpeedX) item.rotation.x += item.userData.rotSpeedX;
                 if (item.userData.rotSpeedY) item.rotation.y += item.userData.rotSpeedY;
+                // Boost pad pulse glow
+                if (item.userData.type === 'boost_pad') {
+                    item.material.opacity = 0.6 + 0.4 * Math.sin(performance.now() * 0.006);
+                }
 
                 // --- Collision Logic ---
                 // Boost pad: centered at (0,0,z), uses angle + Z overlap
@@ -4324,7 +4334,7 @@ window.onload = function() {
                         let dist = shipContainer.position.distanceTo(item.position);
 
                         if (dist < shipHitRadius + item.userData.hitRadius) {
-                            if (item.userData.type === 'ramp' && !isJumping) {
+                            if (item.userData.type === 'ramp' && !isJumping && !isFlipping) {
                                 isJumping = true;
                                 jumpTimer = 0;
                                 AudioEngine.playSFX('jump');
