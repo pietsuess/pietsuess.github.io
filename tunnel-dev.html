@@ -2424,13 +2424,72 @@ window.onload = function() {
         }
         wrap.appendChild(makePanel('RIGHT SIDE (angle 0)', makeBoostPadTexture, 1));
         wrap.appendChild(makePanel('LEFT SIDE (angle π)', makeBoostPadTexture, -1));
-        // Big PAUSE button
-        const pauseBtn = document.createElement('div');
-        pauseBtn.textContent = '⏸ PAUSE';
-        pauseBtn.style.cssText = 'align-self:flex-start;background:#ffaa00;color:#000;font:bold 16px monospace;padding:12px 20px;cursor:pointer;border-radius:4px;user-select:none;touch-action:none;';
-        pauseBtn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); togglePause(); });
-        pauseBtn.addEventListener('click', function(e) { e.stopPropagation(); togglePause(); });
-        wrap.appendChild(pauseBtn);
+        // Dev freeze + nudge controls
+        const ctrlDiv = document.createElement('div');
+        ctrlDiv.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;align-self:flex-start;';
+
+        const freezeBtn = document.createElement('div');
+        freezeBtn.textContent = '⏸ FREEZE';
+        freezeBtn.style.cssText = 'background:#ffe000;color:#000;font:bold 14px monospace;padding:10px 18px;cursor:pointer;border-radius:4px;user-select:none;touch-action:none;text-align:center;';
+        var _devFrozen = false;
+        function devToggleFreeze() {
+            _devFrozen = !_devFrozen;
+            gameState = _devFrozen ? 'paused' : 'playing';
+            if (!_devFrozen) clock.getDelta();
+            freezeBtn.textContent = _devFrozen ? '▶ PLAY' : '⏸ FREEZE';
+            freezeBtn.style.background = _devFrozen ? '#00ff88' : '#ffe000';
+        }
+        freezeBtn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); devToggleFreeze(); });
+        freezeBtn.addEventListener('click', function(e) { e.stopPropagation(); devToggleFreeze(); });
+        ctrlDiv.appendChild(freezeBtn);
+
+        // Nudge arrows (forward/back through tunnel)
+        var _nudgeIv = null;
+        function tileTubes() {
+            var cz = camera.position.z;
+            tube1.position.z = cz - ((cz % tubeLen) + tubeLen) % tubeLen + tubeLen / 2;
+            tube2.position.z = tube1.position.z - tubeLen;
+        }
+        function nudgeStart(dir) {
+            nudgeStop();
+            function step() {
+                camera.position.z += dir * 3;
+                shipContainer.position.z = camera.position.z + shipZOffset;
+                tileTubes();
+                renderer.render(scene, camera);
+            }
+            step();
+            _nudgeIv = setInterval(step, 16);
+        }
+        function nudgeStop() { if (_nudgeIv) { clearInterval(_nudgeIv); _nudgeIv = null; } }
+
+        const nudgeRow = document.createElement('div');
+        nudgeRow.style.cssText = 'display:flex;gap:6px;';
+        const btnStyle = 'background:#001133;color:#aaf;font:bold 16px monospace;border:2px solid #44f;padding:10px 16px;cursor:pointer;border-radius:3px;user-select:none;touch-action:none;';
+
+        const fwdBtn = document.createElement('div');
+        fwdBtn.textContent = '▲ FWD';
+        fwdBtn.style.cssText = btnStyle;
+        fwdBtn.addEventListener('mousedown', function() { nudgeStart(-1); });
+        fwdBtn.addEventListener('mouseup', nudgeStop);
+        fwdBtn.addEventListener('mouseleave', nudgeStop);
+        fwdBtn.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); nudgeStart(-1); });
+        fwdBtn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); nudgeStop(); });
+
+        const backBtn = document.createElement('div');
+        backBtn.textContent = '▼ BACK';
+        backBtn.style.cssText = btnStyle;
+        backBtn.addEventListener('mousedown', function() { nudgeStart(1); });
+        backBtn.addEventListener('mouseup', nudgeStop);
+        backBtn.addEventListener('mouseleave', nudgeStop);
+        backBtn.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); nudgeStart(1); });
+        backBtn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); nudgeStop(); });
+
+        nudgeRow.appendChild(fwdBtn);
+        nudgeRow.appendChild(backBtn);
+        ctrlDiv.appendChild(nudgeRow);
+
+        wrap.appendChild(ctrlDiv);
         document.body.appendChild(wrap);
     })();
     function makeBoostPadMat(angle) {
