@@ -2085,13 +2085,20 @@ window.onload = function() {
     thruster.position.set(0, -0.1, 2.8);
     bankGroup.add(thruster);
 
-    // Engine fire removed — just the thruster housing for now
-    const engineGeo = new THREE.CylinderGeometry(0.01, 0.01, 0.01, 4);
-    engineGeo.rotateX(Math.PI / 2);
-    const engine = new THREE.Mesh(engineGeo, matEngine);
-    engine.position.set(0, 0.3, 4.5);
-    engine.visible = false;
-    bankGroup.add(engine);
+    // ── Thruster flame: cone that scales with speed and flickers ────────
+    const flameGeo = new THREE.ConeGeometry(1.2, 3.0, 10);
+    flameGeo.rotateX(-Math.PI / 2); // point backward (+Z)
+    const matFlameInner = new THREE.MeshBasicMaterial({ color: 0xffddaa, transparent: true, opacity: 0.9 });
+    const matFlameOuter = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.6 });
+    const flameInner = new THREE.Mesh(flameGeo, matFlameInner);
+    const flameOuter = new THREE.Mesh(flameGeo, matFlameOuter);
+    flameInner.position.set(0, -0.1, 4.8);
+    flameOuter.position.set(0, -0.1, 4.8);
+    flameOuter.scale.set(1.4, 1.4, 1.1);
+    bankGroup.add(flameOuter);
+    bankGroup.add(flameInner);
+    // Keep engine ref for existing code that references it
+    const engine = flameInner;
 
     const engineLight = new THREE.PointLight(0xff69b4, 4.0, 18);
     engineLight.position.set(0, 0, 4.8);
@@ -4233,7 +4240,21 @@ window.onload = function() {
             camera.position.y = Math.sin(camAngle) * (tubeRadius - 16);
             camera.rotation.z = camAngle + Math.PI/2;
 
-            engine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
+            // Thruster flame: scales with throttle, flickers constantly
+            var flameSize = 0.3 + throttleSmooth * 0.7 + hyperFrac * 1.0;
+            var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
+            var fz = flameSize * flicker;
+            var fx = (0.6 + throttleSmooth * 0.4) * (1 + Math.random() * 0.08);
+            flameInner.scale.set(fx, fx, fz);
+            flameOuter.scale.set(fx * 1.4, fx * 1.4, fz * 1.1);
+            // Color shift: orange at idle → blue-white at hyper
+            if (hyperFrac > 0.1) {
+                matFlameInner.color.setHex(0xaaddff);
+                matFlameOuter.color.setHex(0x4488ff);
+            } else {
+                matFlameInner.color.setHex(0xffddaa);
+                matFlameOuter.color.setHex(0xff6600);
+            }
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
 
             if (cameraShake > 0) cameraShake *= 0.85;
