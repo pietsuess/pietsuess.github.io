@@ -2378,26 +2378,48 @@ window.onload = function() {
     });
 
     function createBoostPadMesh() {
-        // Curved arc segment that hugs the tunnel wall
-        const arcSpan = 0.35;   // radians wide (~20° of tunnel circumference)
-        const padLength = 40;   // units long in Z (the "runway" stretch)
-        const arcSegs = 12;
-        const lenSegs = 1;
-        const r = tubeRadius - 0.3;
-        const geo = new THREE.CylinderGeometry(
-            r, r, padLength, arcSegs, lenSegs,
-            true, -arcSpan / 2, arcSpan
-        );
-        // Flip normals inward (we're inside the tunnel looking at inner surface)
-        geo.scale(-1, 1, 1);
-        // Cylinder axis is Y — rotate so length runs along Z
-        geo.rotateX(Math.PI / 2);
-        // Flip UVs so chevrons point away from player (down the tunnel)
-        const uvAttr = geo.attributes.uv;
-        for (let i = 0; i < uvAttr.count; i++) {
-            uvAttr.setY(i, 1.0 - uvAttr.getY(i));
+        // Curved plane that sits on tunnel wall, tilted 45° into the tunnel
+        // Built as a strip of quads that follow the tunnel curvature (arc)
+        const arcSpan = 0.3;      // radians wide on tunnel wall
+        const padLength = 30;     // length along tunnel axis (Z)
+        const arcSegs = 8;
+        const r = tubeRadius - 0.2;
+
+        const geo = new THREE.BufferGeometry();
+        const verts = [];
+        const uvs = [];
+        const indices = [];
+
+        // Two rows: back edge (on wall) and front edge (raised 45° into tunnel)
+        // "back" = closer to player, "front" = further into tunnel
+        const liftR = r - padLength * Math.sin(Math.PI / 4); // how far front edge lifts inward
+        const zSpan = padLength * Math.cos(Math.PI / 4);     // Z extent after tilt
+
+        for (let i = 0; i <= arcSegs; i++) {
+            const t = i / arcSegs;
+            const a = -arcSpan / 2 + arcSpan * t;
+            const u = t;
+
+            // Back edge: on the wall surface, z = 0
+            verts.push(Math.cos(a) * r, Math.sin(a) * r, 0);
+            uvs.push(u, 1);
+
+            // Front edge: lifted inward, pushed forward in z
+            verts.push(Math.cos(a) * liftR, Math.sin(a) * liftR, -zSpan);
+            uvs.push(u, 0);
         }
-        uvAttr.needsUpdate = true;
+
+        for (let i = 0; i < arcSegs; i++) {
+            const a = i * 2, b = a + 1, c = a + 2, d = a + 3;
+            indices.push(a, c, b);
+            indices.push(b, c, d);
+        }
+
+        geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+        geo.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2));
+        geo.setIndex(indices);
+        geo.computeVertexNormals();
+
         const mesh = new THREE.Mesh(geo, boostPadMat.clone());
         return mesh;
     }
@@ -3102,14 +3124,15 @@ window.onload = function() {
             return; // baked layout replaces procedural spawn
         }
 
-        // TEST: boost pad right at start of sector 1
+        // TEST: three boost pads at start of sector 1, at shipAngle=0
         if (currentSector === 1) {
-            const testPad = createBoostPadMesh();
-            const tAngle = -Math.PI / 2; // bottom of tunnel (where player starts)
-            testPad.position.set(0, 0, baseZ - 100);
-            testPad.rotation.z = tAngle;
-            testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
-            scene.add(testPad); items.push(testPad);
+            for (let tp = 0; tp < 3; tp++) {
+                const testPad = createBoostPadMesh();
+                testPad.position.set(0, 0, baseZ - 200 - tp * 80);
+                testPad.rotation.z = 0; // angle 0 = where ship starts
+                testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+                scene.add(testPad); items.push(testPad);
+            }
         }
 
         // Set ramp limit per sector: S1=0, S2=1, S3+=uncapped
