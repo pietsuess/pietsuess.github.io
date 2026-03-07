@@ -2483,17 +2483,31 @@ window.onload = function() {
         if (s >= 2 && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
-            let rampMesh = new THREE.Mesh(rampGeo, rampMat);
-            rampMesh.position.set(Math.cos(angle) * (tubeRadius - 2), Math.sin(angle) * (tubeRadius - 2), zPos);
-            rampMesh.rotation.z = angle;
-            rampMesh.rotation.x = 0.2;
-            rampMesh.userData = { type: 'ramp', hitRadius: 16.0, rotSpeedX: 0, rotSpeedY: 0 };
-            scene.add(rampMesh); items.push(rampMesh);
-            let peakDist = speed * (jumpDuration / 2);
-            let wallMesh = new THREE.Mesh(laserWallGeo, laserWallMat);
-            wallMesh.position.set(0, 0, zPos - peakDist);
-            wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 };
-            scene.add(wallMesh); items.push(wallMesh);
+            // 40% chance: gap barrier (no ramp needed), 60%: ramp + full barrier
+            if (Math.random() < 0.4) {
+                // Gap barrier — passable without jumping
+                const gapSize = Math.PI * (0.6 + Math.random() * 0.5); // gap of 0.6π to 1.1π
+                const gapAngle = Math.random() * Math.PI * 2;
+                const arcLen = Math.PI * 2 - gapSize;
+                let wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), barrierMat);
+                wallMesh.position.set(0, 0, zPos);
+                wallMesh.rotation.z = gapAngle;
+                wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.03, arcLength: arcLen };
+                scene.add(wallMesh); items.push(wallMesh);
+            } else {
+                // Ramp + full barrier pair
+                let rampMesh = new THREE.Mesh(rampGeo, rampMat);
+                rampMesh.position.set(Math.cos(angle) * (tubeRadius - 2), Math.sin(angle) * (tubeRadius - 2), zPos);
+                rampMesh.rotation.z = angle;
+                rampMesh.rotation.x = 0.2;
+                rampMesh.userData = { type: 'ramp', hitRadius: 16.0, rotSpeedX: 0, rotSpeedY: 0 };
+                scene.add(rampMesh); items.push(rampMesh);
+                let peakDist = speed * (jumpDuration / 2);
+                let wallMesh = new THREE.Mesh(laserWallGeo, laserWallMat);
+                wallMesh.position.set(0, 0, zPos - peakDist);
+                wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 };
+                scene.add(wallMesh); items.push(wallMesh);
+            }
             _rampCountThisSector++;
             return;
         }
