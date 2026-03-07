@@ -2345,33 +2345,54 @@ window.onload = function() {
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
-    // Boost pad — double chevron that flips you around the tunnel
-    function makeChevronShape() {
-        const s = new THREE.Shape();
-        s.moveTo(0, 4);
-        s.lineTo(3, 0);
-        s.lineTo(2, 0);
-        s.lineTo(0, 3);
-        s.lineTo(-2, 0);
-        s.lineTo(-3, 0);
-        s.closePath();
-        return s;
+    // Boost pad — double chevron painted flat on tunnel wall (curved cylinder arc)
+    function makeBoostPadTexture() {
+        const c = document.createElement('canvas');
+        c.width = 128; c.height = 256;
+        const ctx = c.getContext('2d');
+        ctx.clearRect(0, 0, 128, 256);
+        ctx.fillStyle = '#ffaa00';
+        ctx.shadowColor = '#ff6600';
+        ctx.shadowBlur = 12;
+        // Draw two chevrons pointing "up" (toward top of canvas = forward in tunnel)
+        function drawChevron(cx, cy, w, h) {
+            ctx.beginPath();
+            ctx.moveTo(cx, cy - h / 2);           // tip
+            ctx.lineTo(cx + w / 2, cy + h / 2);   // bottom right
+            ctx.lineTo(cx + w / 2 - w * 0.15, cy + h / 2);
+            ctx.lineTo(cx, cy - h * 0.15);         // inner notch
+            ctx.lineTo(cx - w / 2 + w * 0.15, cy + h / 2);
+            ctx.lineTo(cx - w / 2, cy + h / 2);   // bottom left
+            ctx.closePath();
+            ctx.fill();
+        }
+        drawChevron(64, 80, 80, 70);
+        drawChevron(64, 170, 80, 70);
+        const tex = new THREE.CanvasTexture(c);
+        tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+        return tex;
     }
-    const chevronExtrudeSettings = { depth: 1.2, bevelEnabled: false };
-    const chevronGeo = new THREE.ExtrudeGeometry(makeChevronShape(), chevronExtrudeSettings);
-    chevronGeo.center();
-    const boostPadMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xff6600, emissiveIntensity: 1.5, transparent: true, opacity: 0.85 });
+    const boostPadTex = makeBoostPadTexture();
+    const boostPadMat = new THREE.MeshBasicMaterial({
+        map: boostPadTex, transparent: true, side: THREE.DoubleSide, depthWrite: false
+    });
 
     function createBoostPadMesh() {
-        const group = new THREE.Group();
-        const m1 = new THREE.Mesh(chevronGeo, boostPadMat.clone());
-        m1.position.y = 3;
-        m1.scale.set(2.5, 2.5, 2.5);
-        const m2 = new THREE.Mesh(chevronGeo, boostPadMat.clone());
-        m2.position.y = -3;
-        m2.scale.set(2.5, 2.5, 2.5);
-        group.add(m1, m2);
-        return group;
+        // Curved arc segment that hugs the tunnel wall
+        const arcSpan = 0.35;   // radians wide (~20° of tunnel circumference)
+        const padLength = 40;   // units long in Z (the "runway" stretch)
+        const arcSegs = 12;
+        const lenSegs = 1;
+        const geo = new THREE.CylinderGeometry(
+            tubeRadius - 0.3, tubeRadius - 0.3,  // match tunnel radius, slightly inside
+            padLength, arcSegs, lenSegs,
+            true,                                  // open-ended
+            -arcSpan / 2, arcSpan                  // arc segment
+        );
+        // Cylinder axis is Y by default — rotate so length runs along Z
+        geo.rotateX(Math.PI / 2);
+        const mesh = new THREE.Mesh(geo, boostPadMat.clone());
+        return mesh;
     }
 
     // Flip state
@@ -2587,11 +2608,8 @@ window.onload = function() {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
             const bMesh = createBoostPadMesh();
-            const bR = tubeRadius - 1;
-            bMesh.position.set(Math.cos(bAngle) * bR, Math.sin(bAngle) * bR, zPos);
-            bMesh.rotation.order = 'ZXY';
-            bMesh.rotation.z = bAngle - Math.PI / 2;
-            bMesh.rotation.x = -Math.PI / 2;
+            bMesh.position.set(0, 0, zPos);
+            bMesh.rotation.z = bAngle;
             bMesh.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(bMesh); items.push(bMesh);
             return;
@@ -3080,13 +3098,9 @@ window.onload = function() {
         // TEST: boost pad right at start of sector 1
         if (currentSector === 1) {
             const testPad = createBoostPadMesh();
-            const tR = tubeRadius - 1;
             const tAngle = -Math.PI / 2; // bottom of tunnel (where player starts)
-            testPad.position.set(Math.cos(tAngle) * tR, Math.sin(tAngle) * tR, baseZ - 100);
-            // Flat on the wall: orient radially outward then face incoming ship
-            testPad.rotation.order = 'ZXY';
-            testPad.rotation.z = tAngle - Math.PI / 2;
-            testPad.rotation.x = -Math.PI / 2;
+            testPad.position.set(0, 0, baseZ - 100);
+            testPad.rotation.z = tAngle;
             testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(testPad); items.push(testPad);
         }
@@ -4103,12 +4117,14 @@ window.onload = function() {
             const orbitRadius = currentHover;  // fixed orbit — only tilt changes, no radial movement
 
             // Z offset deepens as bank increases
-            const baseZOffset = -18 - bankFraction * 5;
-            shipZOffset += ((baseZOffset - throttleSmooth * 4) - shipZOffset) * 0.08;
+            // During flip, ship pushes ahead so you watch it orbit in front of camera
+            const flipAhead = isFlipping ? -60 : 0;
+            const baseZOffset = -18 - bankFraction * 5 + flipAhead;
+            shipZOffset += ((baseZOffset - throttleSmooth * 4) - shipZOffset) * (isFlipping ? 0.12 : 0.08);
 
             // Lateral drift — ship slides toward the roll direction (tangent of orbit)
             // At half bank (±0.725 rad) ship is at ~half of max drift
-            const driftAmount = bankGroup._bank * 4.5;  // tune: 4.5 = half-ish extent at full bank
+            const driftAmount = isFlipping ? 0 : bankGroup._bank * 4.5;  // no drift during flip
             const tx = -Math.sin(shipAngle);  // tangent direction X
             const ty =  Math.cos(shipAngle);  // tangent direction Y
 
