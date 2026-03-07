@@ -2345,6 +2345,17 @@ window.onload = function() {
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
+    // Boost pad — angled chevron that flips you around the tunnel
+    const boostPadGeo = new THREE.BoxGeometry(5, 20, 2);
+    const boostPadMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xff6600, emissiveIntensity: 1.5, transparent: true, opacity: 0.85 });
+
+    // Flip state
+    let isFlipping = false;
+    let flipTimer = 0;
+    const flipDuration = 0.8; // seconds for full 360°
+    let flipStartAngle = 0;
+    let flipDirection = 1; // +1 or -1
+
     // WIDER SAFE ZONE for Laser Wall (Hole is 22 radius instead of 18)
     const laserWallGeo = new THREE.RingGeometry(22, tubeRadius, 32);
 
@@ -2545,6 +2556,19 @@ window.onload = function() {
         let mesh, type, hitRadius;
 
 
+        // Boost pad — rare, sector 3+
+        if (s >= 3 && rand < 0.04 && !isFlipping) {
+            spiralAngle += 1.1;
+            const bAngle = spiralAngle;
+            const bMesh = new THREE.Mesh(boostPadGeo, boostPadMat.clone());
+            const bR = tubeRadius - 4;
+            bMesh.position.set(Math.cos(bAngle) * bR, Math.sin(bAngle) * bR, zPos);
+            bMesh.rotation.z = bAngle;
+            bMesh.rotation.x = Math.PI / 4; // 45° angled
+            bMesh.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+            scene.add(bMesh); items.push(bMesh);
+            return;
+        }
         if (rand < coreChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
         } else if (rand < coreChance + ringChance) {
@@ -3970,9 +3994,21 @@ window.onload = function() {
 
 
             // --- Ship Physics ---
+            // Boost pad flip — overrides steering
+            if (isFlipping) {
+                flipTimer += delta;
+                const flipProgress = Math.min(1, flipTimer / flipDuration);
+                // Smooth ease: sine curve for natural feel
+                const easedProgress = 0.5 - 0.5 * Math.cos(flipProgress * Math.PI);
+                shipAngle = flipStartAngle + flipDirection * Math.PI * 2 * easedProgress;
+                if (flipProgress >= 1) {
+                    isFlipping = false;
+                    shipAngle = flipStartAngle + flipDirection * Math.PI * 2;
+                }
+            }
             // Drive shipAngle directly — no target/lerp lag
             // Ship is exactly where you steer it
-            if (isTouching) {
+            else if (isTouching) {
                 shipAngle += turnRate * delta;
             }
             // targetAngle tracks shipAngle for banking visual only
@@ -4110,7 +4146,20 @@ window.onload = function() {
                         let dist = shipContainer.position.distanceTo(item.position);
                         
                         if (dist < shipHitRadius + item.userData.hitRadius) {
-                            if (item.userData.type === 'ramp' && !isJumping) {
+                            if (item.userData.type === 'boost_pad' && !isFlipping) {
+                                isFlipping = true;
+                                flipTimer = 0;
+                                flipStartAngle = shipAngle;
+                                flipDirection = Math.random() > 0.5 ? 1 : -1;
+                                AudioEngine.playSFX('jump');
+                                flash('#ffaa00');
+                                spawnPointBurst('BOOST!', 'c-cyan');
+                                score += 200;
+                                scene.remove(item);
+                                items.splice(i, 1);
+                                continue;
+                            }
+                            else if (item.userData.type === 'ramp' && !isJumping) {
                                 isJumping = true;
                                 jumpTimer = 0;
                                 AudioEngine.playSFX('jump');
