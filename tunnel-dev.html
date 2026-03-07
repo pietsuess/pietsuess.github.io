@@ -2345,9 +2345,34 @@ window.onload = function() {
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
-    // Boost pad — angled chevron that flips you around the tunnel
-    const boostPadGeo = new THREE.BoxGeometry(5, 20, 2);
+    // Boost pad — double chevron that flips you around the tunnel
+    function makeChevronShape() {
+        const s = new THREE.Shape();
+        s.moveTo(0, 4);
+        s.lineTo(3, 0);
+        s.lineTo(2, 0);
+        s.lineTo(0, 3);
+        s.lineTo(-2, 0);
+        s.lineTo(-3, 0);
+        s.closePath();
+        return s;
+    }
+    const chevronExtrudeSettings = { depth: 1.2, bevelEnabled: false };
+    const chevronGeo = new THREE.ExtrudeGeometry(makeChevronShape(), chevronExtrudeSettings);
+    chevronGeo.center();
     const boostPadMat = new THREE.MeshStandardMaterial({ color: 0xffaa00, emissive: 0xff6600, emissiveIntensity: 1.5, transparent: true, opacity: 0.85 });
+
+    function createBoostPadMesh() {
+        const group = new THREE.Group();
+        const m1 = new THREE.Mesh(chevronGeo, boostPadMat.clone());
+        m1.position.y = 3;
+        m1.scale.set(2.5, 2.5, 2.5);
+        const m2 = new THREE.Mesh(chevronGeo, boostPadMat.clone());
+        m2.position.y = -3;
+        m2.scale.set(2.5, 2.5, 2.5);
+        group.add(m1, m2);
+        return group;
+    }
 
     // Flip state
     let isFlipping = false;
@@ -2560,7 +2585,7 @@ window.onload = function() {
         if (s >= 3 && rand < 0.04 && !isFlipping) {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
-            const bMesh = new THREE.Mesh(boostPadGeo, boostPadMat.clone());
+            const bMesh = createBoostPadMesh();
             const bR = tubeRadius - 4;
             bMesh.position.set(Math.cos(bAngle) * bR, Math.sin(bAngle) * bR, zPos);
             bMesh.rotation.z = bAngle;
@@ -3048,6 +3073,18 @@ window.onload = function() {
                 scene.add(mesh); items.push(mesh);
             });
             return; // baked layout replaces procedural spawn
+        }
+
+        // TEST: boost pad right at start of sector 1
+        if (currentSector === 1) {
+            const testPad = createBoostPadMesh();
+            const tR = tubeRadius - 4;
+            const tAngle = -Math.PI / 2; // bottom of tunnel (where player starts)
+            testPad.position.set(Math.cos(tAngle) * tR, Math.sin(tAngle) * tR, baseZ - 100);
+            testPad.rotation.z = tAngle;
+            testPad.rotation.x = Math.PI / 4;
+            testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+            scene.add(testPad); items.push(testPad);
         }
 
         // Set ramp limit per sector: S1=0, S2=1, S3+=uncapped
