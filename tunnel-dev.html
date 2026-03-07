@@ -2346,45 +2346,57 @@ window.onload = function() {
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
     // Boost pad — double chevron painted flat on tunnel wall (curved cylinder arc)
-    function makeBoostPadTexture() {
+    // dir: 1 = point upper-right (right side of tunnel), -1 = point upper-left (left side)
+    function makeBoostPadTexture(dir) {
         const c = document.createElement('canvas');
-        c.width = 256; c.height = 512;
+        c.width = 256; c.height = 256;
         const ctx = c.getContext('2d');
-        ctx.clearRect(0, 0, 256, 512);
+        ctx.clearRect(0, 0, 256, 256);
         ctx.fillStyle = '#ffaa00';
         ctx.shadowColor = '#ff6600';
-        ctx.shadowBlur = 16;
-        // 45° chevron: each arm spreads at 45° from center vertical
-        // Width = height for true 45° arms
+        ctx.shadowBlur = 14;
+        // Draw double chevron rotated 45° on the surface
+        // UV: U = circumferential (left-right on wall), V = along tunnel (forward)
+        // 45° means tip points diag: forward + sideways away from center
+        ctx.save();
+        ctx.translate(128, 128);
+        ctx.rotate(dir * Math.PI / 4); // 45° CW for right, CCW for left
+        ctx.translate(-128, -128);
         function drawChevron(cx, cy, size, thickness) {
             ctx.beginPath();
-            // Outer V
-            ctx.moveTo(cx, cy);                           // tip (top center)
-            ctx.lineTo(cx + size, cy + size);             // right arm end (45°)
-            ctx.lineTo(cx + size, cy + size + thickness); // right arm thickness
-            ctx.lineTo(cx, cy + thickness);               // inner notch
-            ctx.lineTo(cx - size, cy + size + thickness); // left arm thickness
-            ctx.lineTo(cx - size, cy + size);             // left arm end (45°)
+            ctx.moveTo(cx, cy);
+            ctx.lineTo(cx + size, cy + size);
+            ctx.lineTo(cx + size, cy + size + thickness);
+            ctx.lineTo(cx, cy + thickness);
+            ctx.lineTo(cx - size, cy + size + thickness);
+            ctx.lineTo(cx - size, cy + size);
             ctx.closePath();
             ctx.fill();
         }
-        drawChevron(128, 100, 90, 25);
-        drawChevron(128, 280, 90, 25);
+        drawChevron(128, 40, 60, 18);
+        drawChevron(128, 130, 60, 18);
+        ctx.restore();
         const tex = new THREE.CanvasTexture(c);
         tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
         return tex;
     }
-    const boostPadTex = makeBoostPadTexture();
-    const boostPadMat = new THREE.MeshBasicMaterial({
-        map: boostPadTex, transparent: true, side: THREE.DoubleSide, depthWrite: false
-    });
+    const boostPadTexR = makeBoostPadTexture(1);   // right side
+    const boostPadTexL = makeBoostPadTexture(-1);  // left side
+    function makeBoostPadMat(angle) {
+        // Pick texture based on which side of tunnel (right vs left of center)
+        var normA = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2);
+        var tex = (normA > Math.PI) ? boostPadTexL : boostPadTexR;
+        return new THREE.MeshBasicMaterial({
+            map: tex, transparent: true, side: THREE.DoubleSide, depthWrite: false
+        });
+    }
 
-    function createBoostPadMesh() {
-        // Flat on tunnel wall, follows the curvature. Chevrons drawn at 45° on texture.
+    function createBoostPadMesh(angle) {
+        // Flat on tunnel wall, follows the curvature
         const arcSpan = 0.3;      // radians wide on tunnel wall
         const padLength = 40;     // length along tunnel Z axis (runway)
         const arcSegs = 8;
-        const lenSegs = 4;        // subdivisions along length for smooth curve
+        const lenSegs = 4;
         const r = tubeRadius - 0.15;
 
         const geo = new THREE.BufferGeometry();
@@ -2394,7 +2406,7 @@ window.onload = function() {
 
         for (let j = 0; j <= lenSegs; j++) {
             const v = j / lenSegs;
-            const z = -padLength * v;  // extends forward (negative Z = away from player)
+            const z = -padLength * v;
             for (let i = 0; i <= arcSegs; i++) {
                 const t = i / arcSegs;
                 const a = -arcSpan / 2 + arcSpan * t;
@@ -2419,7 +2431,7 @@ window.onload = function() {
         geo.setIndex(indices);
         geo.computeVertexNormals();
 
-        const mesh = new THREE.Mesh(geo, boostPadMat.clone());
+        const mesh = new THREE.Mesh(geo, makeBoostPadMat(angle));
         return mesh;
     }
 
@@ -2635,7 +2647,7 @@ window.onload = function() {
         if (s >= 3 && rand < 0.04 && !isFlipping) {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
-            const bMesh = createBoostPadMesh();
+            const bMesh = createBoostPadMesh(bAngle);
             bMesh.position.set(0, 0, zPos);
             bMesh.rotation.z = bAngle;
             bMesh.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
@@ -3123,12 +3135,13 @@ window.onload = function() {
             return; // baked layout replaces procedural spawn
         }
 
-        // TEST: six boost pads at start of sector 1, at shipAngle=0
+        // TEST: six boost pads at start of sector 1, just left of centre 0
         if (currentSector === 1) {
+            var testAngle = 0.15; // just left of centre
             for (let tp = 0; tp < 6; tp++) {
-                const testPad = createBoostPadMesh();
+                const testPad = createBoostPadMesh(testAngle);
                 testPad.position.set(0, 0, baseZ - 200 - tp * 80);
-                testPad.rotation.z = 0; // angle 0 = where ship starts
+                testPad.rotation.z = testAngle;
                 testPad.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
                 scene.add(testPad); items.push(testPad);
             }
