@@ -10,6 +10,33 @@
   body{background:#000;overflow:hidden;touch-action:none;}
   canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;}
 
+  /* Splash screen */
+  #splash{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:300;
+    background:#000;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    font-family:'Press Start 2P',monospace;
+  }
+  #splash-title{
+    font-size:18px;color:#ffe000;letter-spacing:4px;margin-bottom:12px;
+    text-shadow:0 0 20px #ffe000, 0 4px 0 #b39800;
+  }
+  #splash-sub{font-size:7px;color:#888;letter-spacing:2px;margin-bottom:50px;}
+  .splash-btn{
+    background:none;border:2px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:9px;
+    padding:18px 36px;cursor:pointer;letter-spacing:2px;
+    margin:8px;min-width:280px;text-align:center;
+    transition:all 0.15s;
+  }
+  .splash-btn:hover{background:rgba(68,221,255,0.12);transform:scale(1.03);}
+  .splash-btn.pixel{border-color:#00ff88;color:#00ff88;}
+  .splash-btn.pixel:hover{background:rgba(0,255,136,0.12);}
+  .splash-hint{font-size:6px;color:#555;margin-top:6px;letter-spacing:1px;}
+  #splash canvas{
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    margin-bottom:30px;
+  }
   #popup{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     display:none;z-index:100;
@@ -154,6 +181,35 @@
   #lightbox-prev{left:10px;}
   #lightbox-next{right:10px;}
 
+  /* Tile Editor */
+  #tile-editor{
+    display:none;position:fixed;top:10px;left:10px;z-index:200;
+    background:rgba(0,0,20,0.94);border:2px solid #00ff88;
+    box-shadow:0 0 20px rgba(0,255,136,0.3);
+    padding:12px;font-family:'Press Start 2P',monospace;
+    font-size:7px;color:#fff;user-select:none;
+  }
+  #tile-editor.open{display:block;}
+  #tile-editor .te-title{color:#00ff88;font-size:8px;margin-bottom:8px;letter-spacing:2px;cursor:grab;}
+  #tile-editor .te-title:active{cursor:grabbing;}
+  #pal-wrap{max-height:216px;overflow-y:auto;overflow-x:hidden;margin-bottom:8px;border:1px solid #333;}
+  #pal-canvas{cursor:crosshair;display:block;}
+  #tile-editor .te-info{color:#888;font-size:6px;margin:6px 0;line-height:2;}
+  #tile-editor button{
+    background:none;border:1px solid #00ff88;color:#00ff88;
+    font-family:'Press Start 2P',monospace;font-size:6px;
+    padding:5px 8px;cursor:pointer;margin:3px 2px;letter-spacing:1px;
+  }
+  #tile-editor button:hover{background:rgba(0,255,136,0.15);}
+  #tile-editor button.warn{border-color:#ff4444;color:#ff4444;}
+  #tile-editor button.warn:hover{background:rgba(255,68,68,0.15);}
+  #tile-hint{
+    position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:200;
+    font-family:'Press Start 2P',monospace;font-size:7px;
+    color:#00ff88;letter-spacing:2px;text-shadow:0 0 10px #00ff88;
+    pointer-events:none;opacity:0;transition:opacity 0.3s;
+  }
+  #tile-hint.show{opacity:1;}
 
   /* Responsive */
   @media(max-width:600px){
@@ -188,6 +244,15 @@
 </head>
 <body>
 <div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
+<div id="splash">
+  <div id="splash-title">VICTORY WALK</div>
+  <div id="splash-sub">CHOOSE YOUR STYLE</div>
+  <canvas id="splash-preview" width="320" height="80"></canvas>
+  <button class="splash-btn" onclick="startGame('original')">ORIGINAL</button>
+  <div class="splash-hint">vector art background</div>
+  <button class="splash-btn pixel" onclick="startGame('pixel')">PIXEL ART</button>
+  <div class="splash-hint">tileset with parallax</div>
+</div>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -199,9 +264,28 @@
 <div id="editor-panel">
   <div id="ep-content">Press E to toggle editor<br>Click a hitzone to select</div>
   <hr style="border-color:#333;margin:8px 0;">
-  <button id="label-mode-btn" onclick="toggleEditorLabelMode()" style="border-color:#ffe000;color:#ffe000;">LABELS</button>
   <button onclick="editorUndo()">UNDO (⌘Z)</button>
   <button class="export" onclick="editorExport()">EXPORT ALL</button>
+</div>
+<div id="tile-hint">TILE EDITOR — click to paint</div>
+<div id="tile-editor">
+  <div class="te-title">TILE EDITOR</div>
+  <div style="margin-bottom:8px;">
+    <button class="te-layer-btn" onclick="setLayer(0)">SKY</button>
+    <button class="te-layer-btn" onclick="setLayer(1)">MTN</button>
+    <button class="te-layer-btn" onclick="setLayer(2)" style="border-color:#ffe000;color:#ffe000;">GND</button>
+  </div>
+  <div id="pal-wrap"><canvas id="pal-canvas"></canvas></div>
+  <div class="te-info">
+    <span id="pal-sel">ERASE (empty)</span><br>
+    T = toggle | RMB = erase
+  </div>
+  <hr style="border-color:#333;margin:8px 0;">
+  <button onclick="teSave()">SAVE</button>
+  <button onclick="teLoad()">LOAD</button>
+  <button onclick="teExport()">EXPORT</button>
+  <button onclick="teImport()">IMPORT</button>
+  <button class="warn" onclick="teReset()">RESET</button>
 </div>
 <div id="content-overlay">
   <div id="content-box">
@@ -253,8 +337,8 @@ const ANIM_FPS = 16;
 const ORIG_ANIMS = {
   idle:     { row:0, start:0, count:1,  fps:1,  loop:false },
   walk:     { row:0, start:0, count:10, fps:16, loop:true },
-  kneel:    { row:1, start:0, count:8,  fps:12, loop:false },
-  jump:     { row:2, frames:[0, 5,6,7,8,9,10,11,12,13], fps:20, loop:false },
+  kneel:    { row:1, start:0, count:10, fps:12, loop:false },
+  jump:     { row:2, start:0, count:14, fps:14, loop:false },
 };
 let origAnim = 'idle';
 let origFrame = 0;
@@ -270,14 +354,55 @@ function setOrigAnim(name){
 function tickOrigAnim(dt){
   const a = ORIG_ANIMS[origAnim];
   if(!a) return;
-  const frameCount = a.frames ? a.frames.length : a.count;
   origAnimTimer += dt;
   if(origAnimTimer >= 1/a.fps){
     origAnimTimer = 0;
     origFrame++;
-    if(origFrame >= frameCount){
+    if(origFrame >= a.count){
       if(a.loop){ origFrame = 0; }
-      else { origFrame = frameCount - 1; }
+      else { origFrame = a.count - 1; }
+    }
+  }
+}
+
+// Pixel art mode sprite (caveman) — 10 cols × 4 rows grid
+const PX_FRAME_W = 61;
+const PX_FRAME_H = 108;
+const PX_PILOT_H = 90;
+const PX_PILOT_W = PX_PILOT_H * (PX_FRAME_W / PX_FRAME_H);
+
+// Caveman animation definitions: { row, start, count, fps, loop }
+const PX_ANIMS = {
+  idle:    { row:0, start:0, count:4, fps:4,  loop:true },
+  walk:    { row:0, start:5, count:5, fps:10, loop:true },
+  run:     { row:1, start:0, count:10,fps:16, loop:true },
+  jump:    { row:2, start:0, count:3, fps:10, loop:false },
+  roll:    { row:2, start:3, count:5, fps:12, loop:true },
+  recover: { row:2, start:8, count:2, fps:8,  loop:false },
+  crouch:  { row:3, start:0, count:2, fps:6,  loop:false },
+};
+let pxAnim = 'idle';
+let pxFrame = 0;
+let pxAnimTimer = 0;
+let pxRolling = false;
+
+function setPxAnim(name){
+  if(pxAnim === name) return;
+  pxAnim = name;
+  pxFrame = 0;
+  pxAnimTimer = 0;
+}
+
+function tickPxAnim(dt){
+  const a = PX_ANIMS[pxAnim];
+  if(!a) return;
+  pxAnimTimer += dt;
+  if(pxAnimTimer >= 1/a.fps){
+    pxAnimTimer = 0;
+    pxFrame++;
+    if(pxFrame >= a.count){
+      if(a.loop){ pxFrame = 0; }
+      else { pxFrame = a.count - 1; } // hold last frame
     }
   }
 }
@@ -393,37 +518,40 @@ const objects = [
       {x:541, y:1623, w:77, h:10, rot:-1.093},
       {x:-1, y:1592, w:594, h:20},
     ]},
-  {name:'SQUARE', key:'square', zone:'EDITING', contentZone:'EDIT', zoneColor:'#00ffff', wx:2643.5, wy:1489.7, ww:198.92, wh:97.71, depthY:1543, labelX:2668, labelY:1481, collide:true, interact:true,
+  {name:'SQUARE', key:'square', zone:'EDIT', zoneColor:'#00ffff', wx:2643.5, wy:1489.7, ww:198.92, wh:97.71, depthY:1543, collide:true, interact:true,
     hitboxes:[
       {x:2676, y:1537, w:165, h:49},
       {x:2645, y:1537, w:187, h:5},
       {x:2652, y:1554, w:42, h:20, rot:0.979},
       {x:2649, y:1543, w:26, h:17, rot:0.965},
     ]},
-  {name:'HEXAGRAM', key:'hexagram', zone:'DIRECTION', contentZone:'DIRECT', zoneColor:'#ff69b4', wx:3246.6, wy:1345.9, ww:178.67, wh:92.12, depthY:1415, labelX:3207, labelY:1391, collide:true, interact:true,
+  {name:'HEXAGRAM', key:'hexagram', zone:'DIRECT', zoneColor:'#ff69b4', wx:3246.6, wy:1345.9, ww:178.67, wh:92.12, depthY:1415, collide:true, interact:true,
     hitboxes:[
-      {x:3288, y:1353, w:95, h:84},
-      {x:3248, y:1385, w:177, h:19},
-      {x:3252, y:1363, w:63, h:33, rot:-0.672},
+      {x:3288, y:1361, w:95, h:76},
+      {x:3248, y:1379, w:177, h:25},
+      {x:3269, y:1361, w:130, h:20},
       {x:3249, y:1402, w:49, h:20, rot:0.703},
       {x:3371, y:1403, w:53, h:20, rot:-0.644},
-      {x:3362, y:1365, w:50, h:46, rot:0.688},
     ]},
-  {name:'TRIANGLE', key:'triangle', zone:'DESIGN', zoneColor:'#ff8c00', wx:3565.8, wy:1493.1, ww:168.31, wh:163.04, depthY:1627, labelX:3581, labelY:1500, collide:true, interact:true,
+  {name:'TRIANGLE', key:'triangle', zone:'DESIGN', zoneColor:'#ff8c00', wx:3565.8, wy:1493.1, ww:168.31, wh:163.04, depthY:1627, collide:true, interact:true,
     hitboxes:[
-      {x:3571, y:1632, w:35, h:20, rot:0.185},
-      {x:3598, y:1620, w:116, h:23, rot:-0.234},
-      {x:3575, y:1609, w:137, h:27, rot:-0.243},
-      {x:3695, y:1604, w:32, h:16, rot:1.092},
+      {x:3569, y:1630, w:57, h:20},
+      {x:3637, y:1607, w:92, h:20},
+      {x:3576, y:1620, w:100, h:20},
+      {x:3598, y:1612, w:100, h:20},
     ]},
-  {name:'PENTAGRAM', key:'pentagram', zone:'PHOTO', zoneColor:'#ffcc00', wx:3899, wy:1332.8, ww:193.01, wh:118.31, depthY:1432, labelX:3866, labelY:1427, collide:true, interact:true,
+  {name:'PENTAGRAM', key:'pentagram', zone:'PHOTO', zoneColor:'#ffcc00', wx:3899, wy:1332.8, ww:193.01, wh:118.31, depthY:1432, collide:true, interact:true,
     hitboxes:[
-      {x:3908, y:1349, w:106, h:93, rot:0.164},
-      {x:3990, y:1369, w:92, h:68, rot:-0.356},
-      {x:3919, y:1336, w:117, h:53, rot:-0.073},
-      {x:4018, y:1343, w:48, h:31, rot:0.609},
+      {x:3924, y:1362, w:120, h:74},
+      {x:3901, y:1414, w:157, h:19},
+      {x:3985, y:1396, w:35, h:50},
+      {x:3913, y:1361, w:157, h:67},
+      {x:3987, y:1370, w:88, h:55},
+      {x:3991, y:1398, w:100, h:21},
+      {x:3981, y:1374, w:100, h:23},
+      {x:3946, y:1421, w:100, h:20},
     ]},
-  {name:'SPHERE', key:'sphere', zone:'ANIMATE', zoneColor:'#00ff88', wx:4309.7, wy:1298.19, ww:273.57, wh:347.41, depthY:1557, labelX:4273, labelY:1428, collide:true, interact:true,
+  {name:'SPHERE', key:'sphere', zone:'ANIMATE', zoneColor:'#00ff88', wx:4309.7, wy:1298.19, ww:273.57, wh:347.41, depthY:1557, collide:true, interact:true,
     hitboxes:[
       {cx:4419, cy:1491, r:59},
       {cx:4466, cy:1496, r:58},
@@ -561,17 +689,21 @@ for(const obj of objects){
   }
 }
 
-const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, vy:0, grounded:false, jumpOffY:0 };
+const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, vy:0, grounded:false };
 const keys = {};
 let popupOpen = false;
 let debugHitboxes = false;
+let gameMode = null; // 'original' or 'pixel'
+let gameStarted = false;
 
 // Load images (all modes)
 const imgs = {};
 const bgImg = new Image();
-bgImg.src = 'Victory-Background-02.svg';
+bgImg.src = 'Victory-Background-01.svg';
 const sprite = new Image();
 sprite.src = 'spritesheet.png';
+const pxSprite = new Image();
+pxSprite.src = 'caveman-sprite.png';
 imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'Victory-Background_DeltaWing.svg';
 imgs['square']    = new Image(); imgs['square'].src    = 'Victory-Background_Square.svg';
 imgs['hexagram']  = new Image(); imgs['hexagram'].src  = 'Victory-Background_Hexagram.svg';
@@ -580,13 +712,428 @@ imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'Victory-Background_Pen
 imgs['sphere']    = new Image(); imgs['sphere'].src    = 'Victory-Background_Sphere.svg';
 imgs['hanger']    = new Image(); imgs['hanger'].src    = 'Victory-Background_Hanger.svg';
 
-// Pixel art mode removed — see pilot-game-pixel.html
+// Tileset for pixel art mode
+const tilesetImg = new Image();
+tilesetImg.src = 'tileset.png';
+
+// ===================== PIXEL ART CONSTANTS =====================
+const TILE = 24;
+const PX_SCALE = 1;
+const TS = TILE * PX_SCALE;
+const PX_SKY_SPEED = 0.08;
+const PX_MTN_SPEED = 0.3;
+
+// ===================== MULTI-LAYER TILEMAP SYSTEM =====================
+let TS_COLS = 16, TS_ROWS = 16;
+
+function gridId(gc, gr){ return gr * TS_COLS + gc + 1; }
+function tileToSrc(id){
+  if(id === 0) return null;
+  const idx = id - 1;
+  const c = idx % TS_COLS, r = Math.floor(idx / TS_COLS);
+  return [c*TILE, r*TILE, TILE, TILE];
+}
+
+// Layer definitions: sky (slow parallax), mountains (medium), ground (1:1)
+const LAYERS = [
+  { name:'SKY', cols:50, rows:20, y0:0,    speedX:PX_SKY_SPEED, speedY:PX_SKY_SPEED, map:null },
+  { name:'MTN', cols:100, rows:8, y0:1280,  speedX:PX_MTN_SPEED, speedY:1.0,          map:null },
+  { name:'GND', cols:200, rows:25, y0:1080, speedX:1.0,          speedY:1.0,          map:null },
+];
+const LY_SKY=0, LY_MTN=1, LY_GND=2;
+let activeLayer = LY_GND;
+
+const GROUND_ROW = 14;
+const GRAVITY = 1200;
+const JUMP_VEL = -420;
+const PLAT_HW = 10;
+const PX_FEET_OFFSET = 13; // push pilot down so sprite sits on ground visually
+
+// Collision only checks ground layer
+function tileAt(wx, wy){
+  const L = LAYERS[LY_GND];
+  const c = Math.floor(wx / TILE);
+  const r = Math.floor((wy - L.y0) / TILE);
+  if(r<0||r>=L.rows||c<0||c>=L.cols) return 0;
+  return L.map ? L.map[r][c] : 0;
+}
+function tileSolid(wx, wy){ return tileAt(wx, wy) !== 0; }
+
+function applyLayerData(data){
+  if(data.sky) LAYERS[LY_SKY].map = data.sky;
+  if(data.mtn) LAYERS[LY_MTN].map = data.mtn;
+  if(data.gnd) LAYERS[LY_GND].map = data.gnd;
+}
+
+function buildAllLayers(){
+  // 1) Try localStorage (editor overrides)
+  const saved = localStorage.getItem('pilotGame_tileMap');
+  if(saved){
+    try{
+      const data = JSON.parse(saved);
+      if(data.sky && data.mtn && data.gnd){
+        applyLayerData(data);
+        console.log('[LAYERS] Loaded from localStorage');
+        return;
+      }
+    } catch(e){}
+  }
+
+  // 2) Try fetching levels.json (committed level data)
+  fetch('levels.json').then(r => {
+    if(!r.ok) throw new Error('no levels.json');
+    return r.json();
+  }).then(data => {
+    if(data.sky && data.mtn && data.gnd){
+      applyLayerData(data);
+      console.log('[LAYERS] Loaded from levels.json');
+    }
+  }).catch(() => {
+    // 3) Fall back to hardcoded defaults
+    for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+    console.log('[LAYERS] Built defaults (no levels.json)');
+  });
+
+  // Init with defaults immediately (fetch will overwrite if successful)
+  if(!LAYERS[LY_GND].map){
+    for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+  }
+}
+
+function buildLayerDefaults(idx){
+  const L = LAYERS[idx];
+  L.map = [];
+  for(let r=0; r<L.rows; r++) L.map[r] = new Array(L.cols).fill(0);
+
+  if(idx === LY_SKY){
+    // Scatter some cloud tiles from tileset row 3-4
+    const rng = (seed) => { let s=seed; return()=>{s=(s*16807)%2147483647;return s/2147483647;}; };
+    const rand = rng(77);
+    const cloudTiles = [gridId(5,3),gridId(6,3),gridId(8,3),gridId(9,3),gridId(10,3),gridId(5,4),gridId(8,4)];
+    for(let i=0; i<25; i++){
+      const c = Math.floor(rand()*L.cols);
+      const r = Math.floor(rand()*L.rows*0.7);
+      const t = cloudTiles[Math.floor(rand()*cloudTiles.length)];
+      if(c<L.cols && r<L.rows) L.map[r][c] = t;
+    }
+  }
+
+  if(idx === LY_MTN){
+    // Tile mountain sprites (tileset row 0) across bottom rows
+    for(let c=0; c<L.cols; c++){
+      for(let gc=0; gc<TS_COLS; gc++){
+        if(c % TS_COLS === gc){
+          L.map[L.rows-2][c] = gridId(gc, 0);
+          L.map[L.rows-1][c] = gridId(gc, 0);
+        }
+      }
+    }
+  }
+
+  if(idx === LY_GND){
+    const G = gridId(0,1), D = gridId(0,2), P = gridId(1,7);
+    for(let c=0; c<L.cols; c++){
+      L.map[GROUND_ROW][c] = G;
+      for(let r=GROUND_ROW+1; r<L.rows; r++) L.map[r][c] = D;
+    }
+    const gaps = [[28,32],[55,63],[90,95],[130,135],[165,172]];
+    for(const [a,b] of gaps)
+      for(let c=a;c<b;c++) for(let r=GROUND_ROW;r<L.rows;r++) L.map[r][c]=0;
+    const plats = [
+      [25,29,GROUND_ROW-3],[31,35,GROUND_ROW-5],[50,54,GROUND_ROW-4],
+      [57,59,GROUND_ROW-2],[61,63,GROUND_ROW-3],[70,76,GROUND_ROW-6],
+      [80,85,GROUND_ROW-4],[92,94,GROUND_ROW-2],[96,100,GROUND_ROW-5],
+      [110,116,GROUND_ROW-7],[120,125,GROUND_ROW-4],[132,134,GROUND_ROW-2],
+      [140,148,GROUND_ROW-6],[155,160,GROUND_ROW-3],[167,170,GROUND_ROW-2],
+      [175,182,GROUND_ROW-5],
+    ];
+    for(const [a,b,row] of plats)
+      for(let c=a;c<b;c++) L.map[row][c] = P;
+    for(let c=100;c<110;c++){ L.map[GROUND_ROW][c]=D; L.map[GROUND_ROW-1][c]=D; L.map[GROUND_ROW-2][c]=G; }
+    for(let c=150;c<165;c++){ L.map[GROUND_ROW][c]=D; L.map[GROUND_ROW-1][c]=G; }
+  }
+}
+
+function renderLayerTiles(idx, lcx, lcy){
+  const L = LAYERS[idx];
+  if(!L.map) return;
+  const ms = getScale();
+  const vw = W / ms;
+  const startCol = Math.max(0, Math.floor(lcx / TILE));
+  const endCol = Math.min(L.cols, Math.ceil((lcx + vw) / TILE) + 1);
+  const startRow = Math.max(0, Math.floor((lcy - L.y0) / TILE));
+  const endRow = Math.min(L.rows, Math.ceil((lcy - L.y0 + VISIBLE_H) / TILE) + 1);
+  const ts = tilesetImg;
+  for(let r=startRow; r<endRow; r++){
+    for(let c=startCol; c<endCol; c++){
+      const t = L.map[r][c];
+      if(t===0) continue;
+      const s = tileToSrc(t);
+      if(!s) continue;
+      ctx.drawImage(ts, s[0],s[1],s[2],s[3], c*TILE, L.y0+r*TILE, TILE, TILE);
+    }
+  }
+  // Grid overlay for active layer in editor
+  if(tileEdMode && activeLayer === idx){
+    ctx.strokeStyle = 'rgba(0,255,136,0.15)';
+    ctx.lineWidth = 0.5;
+    for(let c=startCol; c<=endCol; c++){
+      ctx.beginPath(); ctx.moveTo(c*TILE, L.y0+startRow*TILE);
+      ctx.lineTo(c*TILE, L.y0+endRow*TILE); ctx.stroke();
+    }
+    for(let r=startRow; r<=endRow; r++){
+      ctx.beginPath(); ctx.moveTo(startCol*TILE, L.y0+r*TILE);
+      ctx.lineTo(endCol*TILE, L.y0+r*TILE); ctx.stroke();
+    }
+  }
+}
+
+// ===================== TILE EDITOR =====================
+let tileEdMode = false;
+let edTileId = 0; // 0 = erase, >0 = tile from palette
+const PAL_SCALE = 3; // palette display scale
+let palCanvas = null, palCtx = null;
+
+function toggleTileEditor(){
+  if(gameMode !== 'pixel') return;
+  tileEdMode = !tileEdMode;
+  document.getElementById('tile-editor').classList.toggle('open', tileEdMode);
+  document.getElementById('tile-hint').classList.toggle('show', tileEdMode);
+  if(tileEdMode && !palCanvas) initPalette();
+}
+
+function initPalette(){
+  palCanvas = document.getElementById('pal-canvas');
+  palCtx = palCanvas.getContext('2d');
+  palCtx.imageSmoothingEnabled = false;
+  const tw = tilesetImg.naturalWidth, th = tilesetImg.naturalHeight;
+  palCanvas.width = tw * PAL_SCALE;
+  palCanvas.height = th * PAL_SCALE;
+  drawPalette();
+
+  palCanvas.addEventListener('click', e => {
+    const rect = palCanvas.getBoundingClientRect();
+    const x = (e.clientX - rect.left) * (palCanvas.width / rect.width);
+    const y = (e.clientY - rect.top) * (palCanvas.height / rect.height);
+    const gc = Math.floor(x / (TILE * PAL_SCALE));
+    const gr = Math.floor(y / (TILE * PAL_SCALE));
+    if(gc >= 0 && gc < TS_COLS && gr >= 0 && gr < TS_ROWS){
+      edTileId = gridId(gc, gr);
+      drawPalette();
+      document.getElementById('pal-sel').textContent = 'Tile ['+gc+','+gr+']';
+    }
+  });
+
+  palCanvas.addEventListener('contextmenu', e => {
+    e.preventDefault();
+    edTileId = 0;
+    drawPalette();
+    document.getElementById('pal-sel').textContent = 'ERASE (empty)';
+  });
+}
+
+function drawPalette(){
+  if(!palCtx) return;
+  const tw = tilesetImg.naturalWidth, th = tilesetImg.naturalHeight;
+  palCtx.clearRect(0,0,palCanvas.width,palCanvas.height);
+  palCtx.drawImage(tilesetImg, 0,0, tw,th, 0,0, tw*PAL_SCALE, th*PAL_SCALE);
+
+  // Grid
+  palCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+  palCtx.lineWidth = 1;
+  for(let c=0; c<=TS_COLS; c++){
+    palCtx.beginPath(); palCtx.moveTo(c*TILE*PAL_SCALE, 0);
+    palCtx.lineTo(c*TILE*PAL_SCALE, th*PAL_SCALE); palCtx.stroke();
+  }
+  for(let r=0; r<=TS_ROWS; r++){
+    palCtx.beginPath(); palCtx.moveTo(0, r*TILE*PAL_SCALE);
+    palCtx.lineTo(tw*PAL_SCALE, r*TILE*PAL_SCALE); palCtx.stroke();
+  }
+
+  // Highlight selected
+  if(edTileId > 0){
+    const idx = edTileId - 1;
+    const sc = idx % TS_COLS, sr = Math.floor(idx / TS_COLS);
+    palCtx.strokeStyle = '#00ff88';
+    palCtx.lineWidth = 3;
+    palCtx.strokeRect(sc*TILE*PAL_SCALE+1, sr*TILE*PAL_SCALE+1, TILE*PAL_SCALE-2, TILE*PAL_SCALE-2);
+  }
+}
+
+// Layer selector
+function setLayer(idx){
+  activeLayer = idx;
+  document.querySelectorAll('.te-layer-btn').forEach((b,i)=>{
+    b.style.borderColor = i===idx ? '#ffe000' : '#00ff88';
+    b.style.color = i===idx ? '#ffe000' : '#00ff88';
+  });
+  document.getElementById('tile-hint').textContent = 'TILE EDITOR — ' + LAYERS[idx].name + ' layer';
+}
+
+// Paint tiles on game canvas
+let tePainting = false;
+canvas.addEventListener('mousedown', e => {
+  if(!tileEdMode || !LAYERS[activeLayer].map) return;
+  if(e.button === 2){
+    tePaintAt(e.clientX, e.clientY, 0); tePainting = 'erase';
+  } else {
+    tePaintAt(e.clientX, e.clientY, edTileId); tePainting = 'paint';
+  }
+});
+canvas.addEventListener('mousemove', e => {
+  if(!tePainting) return;
+  tePaintAt(e.clientX, e.clientY, tePainting === 'erase' ? 0 : edTileId);
+});
+canvas.addEventListener('mouseup', () => { tePainting = false; });
+canvas.addEventListener('contextmenu', e => { if(tileEdMode) e.preventDefault(); });
+
+function tePaintAt(sx, sy, id){
+  const s = getScale();
+  const L = LAYERS[activeLayer];
+  const lcx = camX * L.speedX;
+  const lcy = camY * L.speedY;
+  const wx = sx / s + lcx;
+  const wy = sy / s + lcy;
+  const c = Math.floor(wx / TILE);
+  const r = Math.floor((wy - L.y0) / TILE);
+  if(r<0||r>=L.rows||c<0||c>=L.cols) return;
+  L.map[r][c] = id;
+}
+
+function teSave(){
+  const data = { sky:LAYERS[0].map, mtn:LAYERS[1].map, gnd:LAYERS[2].map };
+  localStorage.setItem('pilotGame_tileMap', JSON.stringify(data));
+  document.getElementById('pal-sel').textContent = 'SAVED!';
+  setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
+}
+
+function teLoad(){
+  const saved = localStorage.getItem('pilotGame_tileMap');
+  if(!saved){ alert('No saved map'); return; }
+  try{
+    const data = JSON.parse(saved);
+    if(data.sky) LAYERS[0].map = data.sky;
+    if(data.mtn) LAYERS[1].map = data.mtn;
+    if(data.gnd) LAYERS[2].map = data.gnd;
+  } catch(e){ alert('Load error'); }
+}
+
+function teExport(){
+  const data = { sky:LAYERS[0].map, mtn:LAYERS[1].map, gnd:LAYERS[2].map };
+  const json = JSON.stringify(data);
+  // Download as levels.json file
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'levels.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.getElementById('pal-sel').textContent = 'DOWNLOADED!';
+  setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
+}
+
+function teImport(){
+  const json = prompt('Paste tilemap JSON:');
+  if(!json) return;
+  try{
+    const data = JSON.parse(json);
+    if(data.sky) LAYERS[0].map = data.sky;
+    if(data.mtn) LAYERS[1].map = data.mtn;
+    if(data.gnd) LAYERS[2].map = data.gnd;
+  } catch(e){ alert('Invalid JSON'); }
+}
+
+function teReset(){
+  if(!confirm('Reset ALL layers to default?')) return;
+  localStorage.removeItem('pilotGame_tileMap');
+  for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+}
 
 
+// Tile editor drag
+(function(){
+  const panel = document.getElementById('tile-editor');
+  const handle = panel.querySelector('.te-title');
+  let dx=0, dy=0, dragging=false;
+  handle.addEventListener('mousedown', e=>{
+    dragging=true;
+    dx = e.clientX - panel.offsetLeft;
+    dy = e.clientY - panel.offsetTop;
+    e.preventDefault();
+  });
+  handle.addEventListener('touchstart', e=>{
+    dragging=true;
+    const t = e.touches[0];
+    dx = t.clientX - panel.offsetLeft;
+    dy = t.clientY - panel.offsetTop;
+  }, {passive:true});
+  window.addEventListener('mousemove', e=>{
+    if(!dragging) return;
+    panel.style.left = (e.clientX - dx) + 'px';
+    panel.style.top = (e.clientY - dy) + 'px';
+  });
+  window.addEventListener('touchmove', e=>{
+    if(!dragging) return;
+    const t = e.touches[0];
+    panel.style.left = (t.clientX - dx) + 'px';
+    panel.style.top = (t.clientY - dy) + 'px';
+  }, {passive:true});
+  window.addEventListener('mouseup', ()=>{ dragging=false; });
+  window.addEventListener('touchend', ()=>{ dragging=false; });
+})();
 
-let gameMode = "original";
-let gameStarted = true;
-const tileEdMode = false;
+// Draw splash preview animation
+function drawSplashPreview(){
+  const pc = document.getElementById('splash-preview');
+  if(!pc || !tilesetImg.complete) return;
+  const px = pc.getContext('2d');
+  px.imageSmoothingEnabled = false;
+  px.clearRect(0, 0, 320, 80);
+  // Sky
+  const grad = px.createLinearGradient(0, 0, 0, 50);
+  grad.addColorStop(0, '#5BA3D9');
+  grad.addColorStop(1, '#87CEEB');
+  px.fillStyle = grad;
+  px.fillRect(0, 0, 320, 50);
+  // Mountains
+  for(let x = 0; x < 320; x += 384 * 0.8){
+    px.drawImage(tilesetImg, 0, 0, 384, 24, x, 24, 384 * 0.8, 24);
+  }
+  // Some clouds
+  px.drawImage(tilesetImg, 128, 80, 48, 20, 40, 8, 72, 24);
+  px.drawImage(tilesetImg, 192, 80, 36, 16, 200, 14, 48, 18);
+  // Ground
+  for(let x = 0; x < 320; x += 192 * 0.8){
+    px.drawImage(tilesetImg, 0, 24, 192, 24, x, 48, 192 * 0.8, 24);
+  }
+  // Dirt fill
+  px.fillStyle = '#8B6914';
+  px.fillRect(0, 68, 320, 12);
+}
+tilesetImg.onload = () => {
+  TS_COLS = Math.floor(tilesetImg.naturalWidth / TILE);
+  TS_ROWS = Math.floor(tilesetImg.naturalHeight / TILE);
+  console.log('[TILESET] Grid: '+TS_COLS+'x'+TS_ROWS);
+  drawSplashPreview();
+};
+
+function startGame(mode){
+  gameMode = mode;
+  document.getElementById('splash').style.display = 'none';
+  if(mode === 'pixel'){
+    buildAllLayers();
+    pilot.x = 100;
+    pilot.y = LAYERS[LY_GND].y0 + GROUND_ROW * TILE + PX_FEET_OFFSET;
+    pilot.vy = 0;
+    pilot.grounded = true;
+  }
+  gameStarted = true;
+  // Images should already be loaded by now, start loop if ready
+  if(loaded >= totalImgs && !_loopStarted){
+    _loopStarted = true;
+    requestAnimationFrame(loop);
+  }
+}
 let _loopStarted = false;
 
 let W, H, renderW, renderH, screenScale;
@@ -607,15 +1154,7 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if(e.code === 'Space'){
     e.preventDefault();
-    if(!editorMode && !contentViewOpen && !popupOpen && !_kneelPending && !e.repeat){
-      if(pilot.nearObj !== null){
-        // Kneel first, then open popup after animation completes
-        _kneelPending = pilot.nearObj;
-        setOrigAnim('kneel');
-      } else {
-        _jumpPressed = true;
-      }
-    }
+    if(!editorMode && !contentViewOpen && pilot.nearObj !== null && !popupOpen) openPopup(pilot.nearObj);
   }
   if(e.code === 'ArrowLeft' && document.getElementById('lightbox').classList.contains('open')){ lbNav(-1); e.preventDefault(); }
   if(e.code === 'ArrowRight' && document.getElementById('lightbox').classList.contains('open')){ lbNav(1); e.preventDefault(); }
@@ -627,13 +1166,12 @@ window.addEventListener('keydown', e => {
   }
   if(e.code === 'KeyD' && !popupOpen && !editorMode && !e.repeat) debugHitboxes = !debugHitboxes;
   if(e.code === 'KeyE' && !popupOpen && !e.repeat) toggleEditor();
+  if(e.code === 'KeyT' && !popupOpen && !e.repeat) toggleTileEditor();
   if(e.code === 'KeyZ' && (e.metaKey || e.ctrlKey) && editorMode && !e.repeat){ e.preventDefault(); editorUndo(); }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 let _currentPopupZone = null;
-let _kneelPending = null; // object index waiting for kneel to finish
-let _jumpPressed = false;
 let lightboxItems = [];
 let lightboxIdx = 0;
 let contentViewOpen = false;
@@ -641,9 +1179,8 @@ let contentViewOpen = false;
 function openPopup(idx){
   const obj = objects[idx];
   const zone = obj.zone;
-  const dataZone = obj.contentZone || zone;
   const color = obj.zoneColor || '#44ddff';
-  _currentPopupZone = dataZone;
+  _currentPopupZone = zone;
   const popup = document.getElementById('popup');
   popup.style.borderColor = color;
   popup.style.boxShadow = '0 0 40px ' + color + ', inset 0 0 20px rgba(0,0,0,0.5)';
@@ -666,7 +1203,7 @@ function openPopup(idx){
         'text-shadow:0 0 10px #00ffcc;' +
       '">[ RETURN TO SPACE ]</button>';
   } else {
-    const items = dataZone ? (CONTENT_DATA[dataZone] || []) : [];
+    const items = zone ? (CONTENT_DATA[zone] || []) : [];
     if(!items.length){
       body.innerHTML = '<span style="color:#666;">No content yet</span>';
     } else {
@@ -675,7 +1212,7 @@ function openPopup(idx){
         const hasMedia = item.youtubeId || item.vimeoId || item.gallery || item.isSinglePhoto;
         const cursor = hasMedia ? 'cursor:pointer;' : '';
         const hover = hasMedia ? ` onmouseover="this.style.background='${color}11'" onmouseout="this.style.background=''"` : '';
-        const click = hasMedia ? ` onclick="openContentView('${dataZone}',${i})"` : '';
+        const click = hasMedia ? ` onclick="openContentView('${zone}',${i})"` : '';
         html += '<div style="margin-bottom:2px;text-align:left;padding:12px 18px;border-bottom:1px solid #1a1a1a;border-left:3px solid transparent;'+cursor+'"'+hover+click+'>';
         html += '<div style="color:'+color+';font-size:9px;margin-bottom:8px;letter-spacing:1px;">'+item.title;
         if(hasMedia) html += ' <span style="font-size:6px;opacity:0.5;">\u25B6</span>';
@@ -698,7 +1235,6 @@ function closePopup(){
   popupOpen = false;
   contentViewOpen = false;
   _currentPopupZone = null;
-  if(origAnim === 'kneel') setOrigAnim('idle');
 }
 
 function openContentView(zone, itemIdx){
@@ -837,7 +1373,7 @@ function lbNav(dir){
 document.getElementById('content-overlay').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
 document.getElementById('lightbox').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
 
-const INTERACT_R = 60;
+const INTERACT_R = 150;
 const promptEl = document.getElementById('prompt');
 
 const drawList = [];
@@ -848,33 +1384,17 @@ function renderObjects(list, start, end, scale){
   for(let i=start; i<end; i++){
     const obj = list[i];
     ctx.drawImage(objBitmaps[obj.key], obj.wx, obj.wy, obj.ww, obj.wh);
-    // Zone label — only show when pilot is close enough (or in editor)
-    const LABEL_SHOW_R = 200;
-    const objCX = obj.wx + obj.ww/2, objCY = obj.wy + obj.wh/2;
-    const distToPilot = Math.sqrt((pilot.x - objCX)**2 + ((pilot.y + pilot.jumpOffY) - objCY)**2);
-    if(obj.zone && (editorMode || distToPilot < LABEL_SHOW_R)){
-      const labelX = (obj.labelX !== undefined) ? obj.labelX : obj.wx + obj.ww / 2;
-      const labelY = (obj.labelY !== undefined) ? obj.labelY : obj.wy + obj.wh / 2;
+    // Zone label centered on object body
+    if(obj.zone){
+      const labelX = obj.wx + obj.ww / 2;
+      const labelY = obj.wy + obj.wh / 2;
       const fontSize = Math.round(28 / scale);
-      const LABEL_FADE_START = 150; // full opacity inside this range
-      const labelAlpha = editorMode ? 1 : distToPilot < LABEL_FADE_START ? 1 : Math.max(0, 1 - ((distToPilot - LABEL_FADE_START) / (LABEL_SHOW_R - LABEL_FADE_START)));
       ctx.save();
-      ctx.globalAlpha = labelAlpha;
       ctx.font = fontSize + 'px "Press Start 2P", monospace';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       ctx.fillStyle = '#ffffff';
       ctx.fillText(obj.zone, labelX, labelY);
-      // Editor: draw label drag handle
-      if(editorMode){
-        ctx.strokeStyle = '#ffe000';
-        ctx.lineWidth = 1/scale;
-        ctx.setLineDash([4/scale, 4/scale]);
-        const tw = ctx.measureText(obj.zone).width;
-        const th = fontSize;
-        ctx.strokeRect(labelX - tw/2 - 4/scale, labelY - th/2 - 2/scale, tw + 8/scale, th + 4/scale);
-        ctx.setLineDash([]);
-      }
       ctx.restore();
     }
   }
@@ -916,7 +1436,6 @@ function distToZone(px, py, b){
 
 // ===================== EDITOR =====================
 let editorMode = false;
-let edLabelMode = false; // true = editing labels, false = editing hitzones
 let edSelObj = null;
 let edSelBox = null;
 let edDrag = null;
@@ -929,8 +1448,6 @@ function snapshotState(){
   for(const obj of objects){
     snap.push({
       depthY: obj.depthY,
-      labelX: obj.labelX,
-      labelY: obj.labelY,
       hitboxes: obj.hitboxes ? obj.hitboxes.map(cloneZone) : null
     });
   }
@@ -947,8 +1464,6 @@ function editorUndo(){
   const snap = undoStack.pop();
   for(let i=0; i<objects.length; i++){
     objects[i].depthY = snap[i].depthY;
-    objects[i].labelX = snap[i].labelX;
-    objects[i].labelY = snap[i].labelY;
     if(snap[i].hitboxes) objects[i].hitboxes = snap[i].hitboxes;
   }
   updateEditorPanel();
@@ -961,24 +1476,10 @@ const EDGE_GRAB = 6;
 
 function toggleEditor(){
   editorMode = !editorMode;
-  edLabelMode = false;
   editorPanelEl.classList.toggle('open', editorMode);
   editorHintEl.classList.toggle('show', editorMode);
-  if(editorMode){ debugHitboxes = true; editorDeselect(); updateEditorHint(); }
+  if(editorMode){ debugHitboxes = true; editorDeselect(); }
   if(!editorMode) editorHintEl.classList.remove('show');
-}
-
-function toggleEditorLabelMode(){
-  edLabelMode = !edLabelMode;
-  editorDeselect();
-  updateEditorHint();
-  const btn = document.getElementById('label-mode-btn');
-  btn.textContent = edLabelMode ? 'HITZONES' : 'LABELS';
-  btn.style.background = edLabelMode ? 'rgba(255,224,0,0.15)' : 'none';
-}
-
-function updateEditorHint(){
-  editorHintEl.textContent = edLabelMode ? 'LABEL MODE — drag labels to reposition' : 'EDITOR MODE — click hitzones to edit';
 }
 
 function editorDeselect(){
@@ -1002,9 +1503,6 @@ function updateEditorPanel(){
   const b = (edSelBox !== null && obj.hitboxes) ? obj.hitboxes[edSelBox] : null;
   let html = '<div class="obj-name">' + obj.name + '</div>';
   html += '<span class="label">depthY:</span> <span class="val">' + Math.round(obj.depthY) + '</span><br>';
-  if(obj.labelX !== undefined){
-    html += '<span class="label">label:</span> <span class="val">' + Math.round(obj.labelX) + ', ' + Math.round(obj.labelY) + '</span><br>';
-  }
   if(b){
     if(isCircle(b)){
       html += '<span class="label">circle ' + edSelBox + ':</span><br>';
@@ -1066,7 +1564,6 @@ function editorExport(){
     if(!obj.hitboxes) continue;
     out += '// ' + obj.name + '\n';
     out += '//   depthY: ' + Math.round(obj.depthY) + '\n';
-    if(obj.labelX !== undefined) out += '//   labelX: ' + Math.round(obj.labelX) + ', labelY: ' + Math.round(obj.labelY) + '\n';
     out += '//   hitboxes: [\n';
     for(const b of obj.hitboxes){
       if(isCircle(b)){
@@ -1108,28 +1605,6 @@ function distToCenter(wx, wy, b){
 canvas.addEventListener('mousedown', e => {
   if(!editorMode) return;
   const w = screenToWorld(e.clientX, e.clientY);
-
-  // LABEL MODE: only drag labels
-  if(edLabelMode){
-    for(let oi=0; oi<objects.length; oi++){
-      const obj = objects[oi];
-      if(!obj.zone) continue;
-      const lx = (obj.labelX !== undefined) ? obj.labelX : obj.wx + obj.ww / 2;
-      const ly = (obj.labelY !== undefined) ? obj.labelY : obj.wy + obj.wh / 2;
-      const s = getScale();
-      const fontSize = Math.round(28 / s);
-      const hitW = fontSize * obj.zone.length * 0.9 + 20/s;
-      const hitH = fontSize + 20/s;
-      if(Math.abs(w.x - lx) < hitW/2 && Math.abs(w.y - ly) < hitH/2){
-        pushUndo();
-        edSelObj = oi; edSelBox = null;
-        edDrag = {type:'label', origLX:lx, origLY:ly, startMX:e.clientX, startMY:e.clientY};
-        updateEditorPanel();
-        return;
-      }
-    }
-    return; // label mode ignores hitzones
-  }
 
   // Check rotation handle on currently selected box
   if(edSelObj !== null && edSelBox !== null){
@@ -1228,13 +1703,6 @@ canvas.addEventListener('mousemove', e => {
 
   if(edDrag.type === 'depthY'){
     objects[edSelObj].depthY = edDrag.origDepthY + dy;
-    updateEditorPanel();
-    return;
-  }
-
-  if(edDrag.type === 'label'){
-    objects[edSelObj].labelX = edDrag.origLX + dx;
-    objects[edSelObj].labelY = edDrag.origLY + dy;
     updateEditorPanel();
     return;
   }
@@ -1401,13 +1869,108 @@ function loop(time){
   if(dt > 0.1 || dt <= 0) return;
 
   if(!popupOpen && !edDrag && !contentViewOpen){
-    {
+    if(gameMode === 'pixel' && LAYERS[LY_GND].map){
+      // ===== PIXEL ART: Side-scroller physics =====
+      // Horizontal movement
+      let moveX = 0;
+      if(keys['ArrowRight']){ moveX = WALK_SPEED; pilot.facing = 1; }
+      if(keys['ArrowLeft']){ moveX = -WALK_SPEED; pilot.facing = -1; }
+      if(touchJoyDx !== 0){
+        moveX = touchJoyDx * WALK_SPEED;
+        if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+      }
+
+      // Horizontal tile collision
+      if(moveX !== 0){
+        const newX = pilot.x + moveX;
+        const side = moveX > 0 ? newX + PLAT_HW : newX - PLAT_HW;
+        // Check at feet-1, mid-body, head+1
+        const blocked = tileSolid(side, pilot.y - 2) ||
+                        tileSolid(side, pilot.y - PX_PILOT_H/2) ||
+                        tileSolid(side, pilot.y - PX_PILOT_H + 2);
+        if(!blocked) pilot.x = newX;
+      }
+
+      // Jump
+      if((keys['ArrowUp'] || keys[' ']) && pilot.grounded){
+        pilot.vy = JUMP_VEL;
+        pilot.grounded = false;
+      }
+
+      // Gravity
+      pilot.vy += GRAVITY * dt;
+      pilot.y += pilot.vy * dt;
+
+      // Vertical tile collision — landing
+      if(pilot.vy >= 0){
+        const footL = pilot.x - PLAT_HW, footR = pilot.x + PLAT_HW;
+        if(tileSolid(footL, pilot.y) || tileSolid(footR, pilot.y)){
+          const row = Math.floor((pilot.y - LAYERS[LY_GND].y0) / TILE);
+          pilot.y = LAYERS[LY_GND].y0 + row * TILE + PX_FEET_OFFSET;
+          pilot.vy = 0;
+          pilot.grounded = true;
+        } else {
+          pilot.grounded = false;
+        }
+      }
+
+      // Head bonk
+      if(pilot.vy < 0){
+        const headY = pilot.y - PX_PILOT_H;
+        if(tileSolid(pilot.x - PLAT_HW, headY) || tileSolid(pilot.x + PLAT_HW, headY)){
+          const row = Math.floor((headY - LAYERS[LY_GND].y0) / TILE);
+          pilot.y = LAYERS[LY_GND].y0 + (row + 1) * TILE + PX_PILOT_H;
+          pilot.vy = 0;
+        }
+      }
+
+      // Fall off bottom — respawn
+      if(pilot.y > LAYERS[LY_GND].y0 + LAYERS[LY_GND].rows * TILE + 200){
+        pilot.x = 100;
+        pilot.y = LAYERS[LY_GND].y0 + GROUND_ROW * TILE + PX_FEET_OFFSET;
+        pilot.vy = 0;
+        pilot.grounded = true;
+      }
+
+      // World bounds
+      if(pilot.x < PLAT_HW) pilot.x = PLAT_HW;
+      if(pilot.x > LAYERS[LY_GND].cols * TILE - PLAT_HW) pilot.x = LAYERS[LY_GND].cols * TILE - PLAT_HW;
+
+      // Animation state machine
+      pilot.walking = (moveX !== 0 && pilot.grounded);
+      const isDown = keys['ArrowDown'] || (touchJoyDy > 0.5);
+      if(pxRolling){
+        // Roll continues until animation finishes or we hit ground idle
+        if(pilot.grounded && pxAnim === 'roll' && pxFrame >= PX_ANIMS.roll.count - 1){
+          setPxAnim('recover');
+          pxRolling = false;
+        } else if(pxAnim === 'recover' && pxFrame >= PX_ANIMS.recover.count - 1){
+          pxRolling = false;
+        }
+      } else if(isDown && pilot.grounded){
+        setPxAnim('crouch');
+      } else if(!pilot.grounded){
+        if(pilot.vy < 0) setPxAnim('jump');
+        else if(pxAnim !== 'jump') setPxAnim('jump'); // falling
+      } else if(pilot.walking){
+        setPxAnim('run');
+      } else {
+        setPxAnim('idle');
+      }
+      // Trigger roll: press down while in air
+      if(isDown && !pilot.grounded && !pxRolling){
+        setPxAnim('roll');
+        pxRolling = true;
+      }
+      tickPxAnim(dt);
+
+    } else {
       // ===== ORIGINAL: Free roam =====
       pilot.walking = false;
-      const isJumping = _jumpPressed && pilot.nearObj === null && !popupOpen;
-      _jumpPressed = false;
+      const isKneeling = keys['KeyK'];
+      const isJumping = keys['KeyJ'];
 
-      if(origAnim !== 'kneel'){
+      if(!isKneeling && origAnim !== 'jump'){
         if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
         if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
         if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
@@ -1430,9 +1993,8 @@ function loop(time){
         for(const obj of objects){
           if(!obj.collide || !obj.hitboxes) continue;
           for(const b of obj.hitboxes){
-            const feetY = pilot.y + pilot.jumpOffY;
             const pL = pilot.x - PILOT_W*0.15, pR = pilot.x + PILOT_W*0.15;
-            const pT = feetY - 15, pB = feetY - 5;
+            const pT = pilot.y - 15, pB = pilot.y - 5;
             const pW = pR - pL, pH = pB - pT;
 
             let push;
@@ -1446,33 +2008,17 @@ function loop(time){
         }
       }
 
-      // Jump arc offset — smooth time-based, independent of sprite frames
-      const JUMP_HEIGHT = 80;
-      const JUMP_DURATION = 0.5; // seconds for full arc
-      if(origAnim === 'jump'){
-        pilot.jumpTime = (pilot.jumpTime || 0) + dt;
-        const t = Math.min(pilot.jumpTime / JUMP_DURATION, 1);
-        pilot.jumpOffY = -JUMP_HEIGHT * Math.sin(Math.PI * t);
-      } else {
-        pilot.jumpTime = 0;
-        pilot.jumpOffY = 0;
-      }
-
       // Animation state machine
-      if(origAnim === 'kneel'){
-        if(origFrame >= ORIG_ANIMS.kneel.count - 1){
-          // Kneel finished — open popup if pending, or stay kneeled while popup open
-          if(_kneelPending !== null){
-            openPopup(_kneelPending);
-            _kneelPending = null;
-          }
-          if(!popupOpen && !contentViewOpen) setOrigAnim('idle');
-          // else: hold last kneel frame while popup/content is open
-        }
+      if(isKneeling){
+        setOrigAnim('kneel');
       } else if(isJumping && origAnim !== 'jump'){
         setOrigAnim('jump');
       } else if(origAnim === 'jump'){
-        if(pilot.jumpTime >= JUMP_DURATION) setOrigAnim('idle');
+        // Let jump animation finish, then return to idle
+        if(origFrame >= ORIG_ANIMS.jump.count - 1) setOrigAnim('idle');
+      } else if(origAnim === 'kneel'){
+        // Released kneel key — snap back to idle
+        setOrigAnim('idle');
       } else if(pilot.walking){
         setOrigAnim('walk');
       } else {
@@ -1484,7 +2030,6 @@ function loop(time){
 
   // Nearest interactable
   pilot.nearObj = null;
-  const pInteractY = pilot.y + pilot.jumpOffY;
   if(!editorMode){
     let nd = Infinity;
     for(let i=0; i<objects.length; i++){
@@ -1494,10 +2039,10 @@ function loop(time){
       for(const b of obj.hitboxes){
         let dd;
         if(isCircle(b)){
-          dd = Math.sqrt((pilot.x-b.cx)**2 + (pInteractY-b.cy)**2) - b.r;
+          dd = Math.sqrt((pilot.x-b.cx)**2 + (pilot.y-b.cy)**2) - b.r;
         } else {
           const bc2 = boxCenter(b);
-          dd = Math.sqrt((pilot.x-bc2.x)**2 + (pInteractY-bc2.y)**2);
+          dd = Math.sqrt((pilot.x-bc2.x)**2 + (pilot.y-bc2.y)**2);
         }
         if(dd < d) d = dd;
       }
@@ -1511,7 +2056,7 @@ function loop(time){
   const visH = VISIBLE_H;
   const vww = W / mainScale;
   camX = pilot.x - vww/2;
-  const camPH = PILOT_H;
+  const camPH = gameMode === 'pixel' ? PX_PILOT_H : PILOT_H;
   camY = (pilot.y - camPH/2) - visH/2;
   if(camX<0) camX=0; if(camX>WORLD_W-vww) camX=WORLD_W-vww;
   if(camY<0) camY=0; if(camY>WORLD_H-visH) camY=WORLD_H-visH;
@@ -1520,10 +2065,12 @@ function loop(time){
   ctx.clearRect(0,0,W,H);
 
   drawList.length = 0;
-  for(const obj of objects){
-    if(objBitmaps[obj.key]) drawList.push(obj);
+  if(gameMode !== 'pixel'){
+    for(const obj of objects){
+      if(objBitmaps[obj.key]) drawList.push(obj);
+    }
+    drawList.sort(sortCompare);
   }
-  drawList.sort(sortCompare);
 
   behindCount = 0;
   for(let i=0; i<drawList.length; i++){
@@ -1533,7 +2080,43 @@ function loop(time){
   // All rendering direct on main canvas
   // mainScale already computed above with camera
 
-  {
+  if(gameMode === 'pixel' && LAYERS[LY_GND].map){
+    // ===== PIXEL ART MODE WITH PARALLAX LAYERS =====
+    const skyCamX = camX * PX_SKY_SPEED;
+    const skyCamY = camY * PX_SKY_SPEED;
+    const mtnCamX = camX * PX_MTN_SPEED;
+
+    // Layer 1: Sky gradient + sky tiles
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-skyCamX, -skyCamY);
+    // Sky gradient behind tiles
+    const grad = ctx.createLinearGradient(0, 0, 0, LAYERS[LY_SKY].rows * TILE);
+    grad.addColorStop(0, '#5BA3D9');
+    grad.addColorStop(0.5, '#87CEEB');
+    grad.addColorStop(1, '#C8E6F0');
+    ctx.fillStyle = grad;
+    ctx.fillRect(skyCamX - 10, skyCamY - 10, vww + 20, VISIBLE_H + 20);
+    renderLayerTiles(LY_SKY, skyCamX, skyCamY);
+    ctx.restore();
+
+    // Layer 2: Mountain tiles
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-mtnCamX, -camY);
+    renderLayerTiles(LY_MTN, mtnCamX, camY);
+    ctx.restore();
+
+    // Layer 3: Ground tiles
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-camX, -camY);
+    renderLayerTiles(LY_GND, camX, camY);
+    ctx.restore();
+  } else {
     // ===== ORIGINAL SVG MODE =====
     ctx.save();
     ctx.imageSmoothingEnabled = false;
@@ -1555,19 +2138,28 @@ function loop(time){
   }
 
   // 3) Pilot — anchored at feet
+  const isPx = gameMode === 'pixel';
   const pilotScreenX = (pilot.x - camX) * mainScale;
   const pilotFeetScreenY = (pilot.y - camY) * mainScale;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  {
+  if(isPx){
+    // Grid-based spritesheet: row × col
+    const a = PX_ANIMS[pxAnim];
+    const srcX = (a.start + pxFrame) * PX_FRAME_W;
+    const srcY = a.row * PX_FRAME_H;
+    const pilotDrawW = PX_PILOT_W * mainScale;
+    const pilotDrawH = PX_PILOT_H * mainScale;
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
+    if(pilot.facing<0) ctx.scale(-1,1);
+    ctx.drawImage(pxSprite, srcX, srcY, PX_FRAME_W, PX_FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+  } else {
     const a = ORIG_ANIMS[origAnim];
-    const col = a.frames ? a.frames[origFrame] : (a.start + origFrame);
-    const srcX = col * FRAME_W;
+    const srcX = (a.start + origFrame) * FRAME_W;
     const srcY = a.row * FRAME_H;
     const pilotDrawW = PILOT_W * mainScale;
     const pilotDrawH = PILOT_H * mainScale;
-    const jumpOffset = pilot.jumpOffY * mainScale;
-    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH + jumpOffset);
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
     if(pilot.facing<0) ctx.scale(-1,1);
     ctx.drawImage(sprite, srcX, srcY, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
   }
@@ -1584,7 +2176,7 @@ function loop(time){
   }
 
   // Hanger hint arrow + return-to-game trigger
-  {
+  if(gameMode !== 'pixel'){
     const HANGER_HINT_X = 700; // show arrow when pilot x < this
     const HANGER_ENTER_X = 80; // far back wall triggers return
 
@@ -1938,12 +2530,10 @@ const objBitmaps = {};
 function checkStart(){
   loaded++;
   if(loaded >= totalImgs){
-    // Rasterize bg SVG to bitmap canvas at world size
     bgBitmap = document.createElement('canvas');
     bgBitmap.width = WORLD_W; bgBitmap.height = WORLD_H;
     const bgc = bgBitmap.getContext('2d');
     bgc.drawImage(bgImg, 0, 0, WORLD_W, WORLD_H);
-    console.log('[BG] rasterized '+WORLD_W+'x'+WORLD_H);
     for(const obj of objects){
       const img = imgs[obj.key];
       if(!img) continue;
@@ -1953,7 +2543,8 @@ function checkStart(){
       cx2.drawImage(img, 0, 0, obj.ww, obj.wh);
       objBitmaps[obj.key] = c;
     }
-    if(!_loopStarted){
+    // Don't auto-start — wait for splash screen choice
+    if(gameStarted && !_loopStarted){
       _loopStarted = true;
       requestAnimationFrame(loop);
     }
