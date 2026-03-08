@@ -1063,8 +1063,10 @@ function editorDeselect(){
   updateEditorPanel();
 }
 
+function getScale(){ return gameMode === 'pixel' ? 1 : H / VISIBLE_H; }
+
 function screenToWorld(sx, sy){
-  const s = H / VISIBLE_H;
+  const s = getScale();
   return { x: sx / s + camX, y: sy / s + camY };
 }
 
@@ -1186,7 +1188,7 @@ canvas.addEventListener('mousedown', e => {
     if(!isCircle(selB)){
       const bc = boxCenter(selB), ba = boxRot(selB);
       const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba);
-      const ds = H / VISIBLE_H;
+      const ds = getScale();
       const rhDist = 25/ds;
       const rhX = selB.x + selB.w/2, rhY = selB.y - rhDist;
       if(Math.sqrt((lp.x-rhX)**2 + (lp.y-rhY)**2) < 10/ds){
@@ -1200,7 +1202,7 @@ canvas.addEventListener('mousedown', e => {
   // Check depthY line
   if(edSelObj !== null){
     const obj = objects[edSelObj];
-    const lineScreenY = (obj.depthY - camY) * (H / VISIBLE_H);
+    const lineScreenY = (obj.depthY - camY) * getScale();
     if(Math.abs(e.clientY - lineScreenY) < 8){
       pushUndo();
       edDrag = {type:'depthY', origDepthY:obj.depthY, startMY:e.clientY};
@@ -1238,7 +1240,7 @@ canvas.addEventListener('mousedown', e => {
       const bc = boxCenter(b), ba = boxRot(b);
       const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba); // local space point
       // Check rotation handle first (above top edge in local space)
-      const ds = H / VISIBLE_H;
+      const ds = getScale();
       const rotHandleDist = 25/ds;
       const rotHandleY = b.y - rotHandleDist;
       const rotHandleX = b.x + b.w/2;
@@ -1271,7 +1273,7 @@ canvas.addEventListener('mousedown', e => {
 
 canvas.addEventListener('mousemove', e => {
   if(!editorMode || !edDrag) return;
-  const s = H / VISIBLE_H;
+  const s = getScale();
   const dx = (e.clientX - edDrag.startMX) / s;
   const dy = (e.clientY - edDrag.startMY) / s;
 
@@ -1338,7 +1340,7 @@ canvas.addEventListener('mousemove', e => {
 
   // depthY line
   if(edSelObj !== null){
-    const lineScreenY = (objects[edSelObj].depthY - camY) * (H / VISIBLE_H);
+    const lineScreenY = (objects[edSelObj].depthY - camY) * getScale();
     if(Math.abs(e.clientY - lineScreenY) < 8){ canvas.style.cursor = 'ns-resize'; return; }
   }
 
@@ -1355,7 +1357,7 @@ canvas.addEventListener('mousemove', e => {
         const bc = boxCenter(b), ba = boxRot(b);
         const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba);
         // Check rotation handle
-        const ds2 = H / VISIBLE_H;
+        const ds2 = getScale();
         const rhDist = 25/ds2;
         const rhX = b.x+b.w/2, rhY = b.y - rhDist;
         if(Math.sqrt((lp.x-rhX)**2 + (lp.y-rhY)**2) < 10/ds2){
@@ -1511,11 +1513,13 @@ function loop(time){
   promptEl.classList.toggle('show', pilot.nearObj!==null && !popupOpen);
 
   // Camera
-  const vww = renderW/screenScale;
+  const mainScale = getScale();
+  const visH = gameMode === 'pixel' ? H : VISIBLE_H;
+  const vww = W / mainScale;
   camX = pilot.x - vww/2;
-  camY = (pilot.y - PILOT_H/2) - VISIBLE_H/2;
+  camY = (pilot.y - PILOT_H/2) - visH/2;
   if(camX<0) camX=0; if(camX>WORLD_W-vww) camX=WORLD_W-vww;
-  if(camY<0) camY=0; if(camY>WORLD_H-VISIBLE_H) camY=WORLD_H-VISIBLE_H;
+  if(camY<0) camY=0; if(camY>WORLD_H-visH) camY=WORLD_H-visH;
 
   // === RENDER ===
   ctx.clearRect(0,0,W,H);
@@ -1532,11 +1536,10 @@ function loop(time){
   }
 
   // All rendering direct on main canvas
-  const mainScale = H / VISIBLE_H;
+  // mainScale already computed above with camera
 
   if(gameMode === 'pixel' && pxSky){
     // ===== PIXEL ART MODE WITH PARALLAX =====
-    const vww2 = W / mainScale;
 
     // Layer 1: Sky (slowest parallax)
     ctx.save();
@@ -1547,7 +1550,7 @@ function loop(time){
     ctx.translate(-skyCamX, -skyCamY);
     // Tile sky if needed
     const skyDrawX = Math.floor(skyCamX / pxSky.width) * pxSky.width;
-    for(let sx = skyDrawX; sx < skyCamX + vww2; sx += pxSky.width){
+    for(let sx = skyDrawX; sx < skyCamX + vww; sx += pxSky.width){
       ctx.drawImage(pxSky, sx, 0);
     }
     ctx.restore();
@@ -1561,7 +1564,7 @@ function loop(time){
     // Position mountains above the ground
     const mtnY = TARMAC_TOP - pxMtns.height;
     const mtnDrawX = Math.floor(mtnCamX / pxMtns.width) * pxMtns.width;
-    for(let mx = mtnDrawX; mx < mtnCamX + vww2; mx += pxMtns.width){
+    for(let mx = mtnDrawX; mx < mtnCamX + vww; mx += pxMtns.width){
       ctx.drawImage(pxMtns, mx, mtnY);
     }
     ctx.restore();
@@ -1584,11 +1587,10 @@ function loop(time){
 
     // 1) Background
     if(bgBitmap){
-      const vww2 = W / mainScale;
       const sx = Math.max(0, Math.floor(camX));
       const sy = Math.max(0, Math.floor(camY));
-      const sw = Math.min(WORLD_W - sx, Math.ceil(vww2) + 2);
-      const sh = Math.min(WORLD_H - sy, Math.ceil(VISIBLE_H) + 2);
+      const sw = Math.min(WORLD_W - sx, Math.ceil(vww) + 2);
+      const sh = Math.min(WORLD_H - sy, Math.ceil(visH) + 2);
       ctx.drawImage(bgBitmap, sx, sy, sw, sh, sx, sy, sw, sh);
     }
 
@@ -1597,14 +1599,16 @@ function loop(time){
     ctx.restore();
   }
 
-  // 3) Pilot — draw at 1:1 screen pixels, anchored at feet
+  // 3) Pilot — anchored at feet
   const pilotScreenX = (pilot.x - camX) * mainScale;
   const pilotFeetScreenY = (pilot.y - camY) * mainScale;
+  const pilotDrawW = PILOT_W * mainScale;
+  const pilotDrawH = PILOT_H * mainScale;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(pilotScreenX, pilotFeetScreenY - FRAME_H);
+  ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
   if(pilot.facing<0) ctx.scale(-1,1);
-  ctx.drawImage(sprite, pilot.frame*FRAME_W, 0, FRAME_W, FRAME_H, -FRAME_W/2, 0, FRAME_W, FRAME_H);
+  ctx.drawImage(sprite, pilot.frame*FRAME_W, 0, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
   ctx.restore();
 
   // 4) In-front-of-pilot objects
@@ -1619,7 +1623,7 @@ function loop(time){
 
   // Debug / Editor overlay
   if(debugHitboxes || editorMode){
-    const ds = H / VISIBLE_H;
+    const ds = mainScale;
     ctx.save();
     ctx.scale(ds,ds);
     ctx.translate(-camX,-camY);
