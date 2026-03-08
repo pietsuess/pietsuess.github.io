@@ -9,6 +9,34 @@
   *{margin:0;padding:0;box-sizing:border-box;}
   body{background:#000;overflow:hidden;touch-action:none;}
   canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;}
+
+  /* Splash screen */
+  #splash{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:300;
+    background:#000;display:flex;flex-direction:column;
+    align-items:center;justify-content:center;
+    font-family:'Press Start 2P',monospace;
+  }
+  #splash-title{
+    font-size:18px;color:#ffe000;letter-spacing:4px;margin-bottom:12px;
+    text-shadow:0 0 20px #ffe000, 0 4px 0 #b39800;
+  }
+  #splash-sub{font-size:7px;color:#888;letter-spacing:2px;margin-bottom:50px;}
+  .splash-btn{
+    background:none;border:2px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:9px;
+    padding:18px 36px;cursor:pointer;letter-spacing:2px;
+    margin:8px;min-width:280px;text-align:center;
+    transition:all 0.15s;
+  }
+  .splash-btn:hover{background:rgba(68,221,255,0.12);transform:scale(1.03);}
+  .splash-btn.pixel{border-color:#00ff88;color:#00ff88;}
+  .splash-btn.pixel:hover{background:rgba(0,255,136,0.12);}
+  .splash-hint{font-size:6px;color:#555;margin-top:6px;letter-spacing:1px;}
+  #splash canvas{
+    image-rendering:pixelated;image-rendering:crisp-edges;
+    margin-bottom:30px;
+  }
   #popup{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     display:none;z-index:100;
@@ -167,6 +195,15 @@
 </style>
 </head>
 <body>
+<div id="splash">
+  <div id="splash-title">VICTORY WALK</div>
+  <div id="splash-sub">CHOOSE YOUR STYLE</div>
+  <canvas id="splash-preview" width="320" height="80"></canvas>
+  <button class="splash-btn" onclick="startGame('original')">ORIGINAL</button>
+  <div class="splash-hint">vector art background</div>
+  <button class="splash-btn pixel" onclick="startGame('pixel')">PIXEL ART</button>
+  <div class="splash-hint">tileset with parallax</div>
+</div>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -506,8 +543,10 @@ const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, n
 const keys = {};
 let popupOpen = false;
 let debugHitboxes = false;
+let gameMode = null; // 'original' or 'pixel'
+let gameStarted = false;
 
-// Load images
+// Load images (all modes)
 const imgs = {};
 const bgImg = new Image();
 bgImg.src = 'Victory-Background-01.svg';
@@ -520,6 +559,171 @@ imgs['triangle']  = new Image(); imgs['triangle'].src  = 'Victory-Background_Tri
 imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'Victory-Background_Pentagram.svg';
 imgs['sphere']    = new Image(); imgs['sphere'].src    = 'Victory-Background_Sphere.svg';
 imgs['hanger']    = new Image(); imgs['hanger'].src    = 'Victory-Background_Hanger.svg';
+
+// Tileset for pixel art mode
+const tilesetImg = new Image();
+tilesetImg.src = 'tileset.png';
+
+// ===================== PIXEL ART PARALLAX LAYERS =====================
+// Built from tileset on demand when pixel mode is chosen
+const TILE = 24; // base tile size in tileset
+const PX_SCALE = 4; // scale up tiles for world coordinates
+const TS = TILE * PX_SCALE; // 96px per tile in world space
+
+// Parallax layer canvases (built in buildPixelLayers)
+let pxSky = null;    // sky + clouds (slowest)
+let pxMtns = null;   // mountains
+let pxGround = null; // grass + dirt (1:1 with camera)
+
+// Parallax speeds
+const PX_SKY_SPEED = 0.08;
+const PX_MTN_SPEED = 0.3;
+// ground is 1.0 (locked to camera)
+
+function buildPixelLayers(){
+  if(!tilesetImg.complete) return;
+  const ts = tilesetImg;
+
+  // Ground layer: grass top + dirt, tiled across WORLD_W
+  // Grass strip: y=24-48 in tileset (24px tall)
+  // Sub-ground/dirt: y=48-72
+  // We need ground from TARMAC_TOP to WORLD_H
+  const groundH = Math.ceil(WORLD_H - TARMAC_TOP + 200);
+  pxGround = document.createElement('canvas');
+  pxGround.width = Math.ceil(WORLD_W);
+  pxGround.height = groundH;
+  const gc = pxGround.getContext('2d');
+  gc.imageSmoothingEnabled = false;
+
+  // Fill dirt background
+  gc.fillStyle = '#8B6914';
+  gc.fillRect(0, 0, pxGround.width, groundH);
+
+  // Tile grass strip across top (tileset y=24-48, first 192px is the detailed grass)
+  const grassSrcW = 192; // usable grass section width
+  for(let x = 0; x < WORLD_W; x += grassSrcW * PX_SCALE){
+    gc.drawImage(ts, 0, 24, grassSrcW, 24, x, 0, grassSrcW * PX_SCALE, TILE * PX_SCALE);
+  }
+
+  // Tile sub-ground dirt (tileset y=48-72) below grass
+  for(let x = 0; x < WORLD_W; x += grassSrcW * PX_SCALE){
+    for(let y = TS; y < groundH; y += TS){
+      gc.drawImage(ts, 0, 48, grassSrcW, 24, x, y, grassSrcW * PX_SCALE, TS);
+    }
+  }
+
+  // Scatter some trees/bushes from the grass row (tileset y=24-48, individual sprites)
+  // Trees at ~x=96,y=24 (16x24), bush at ~x=144,y=32 (16x16)
+  const treeDefs = [
+    {sx:96, sy:24, sw:24, sh:24},   // big tree
+    {sx:144, sy:28, sw:20, sh:20},   // bush
+    {sx:120, sy:28, sw:16, sh:20},   // small tree
+  ];
+  // Place trees along the ground
+  const rng = (seed) => { let s=seed; return()=>{s=(s*16807)%2147483647;return s/2147483647;}; };
+  const rand = rng(42);
+  for(let x = 200; x < WORLD_W - 200; x += 180 + Math.floor(rand() * 300)){
+    const t = treeDefs[Math.floor(rand() * treeDefs.length)];
+    const scale = PX_SCALE * (0.8 + rand() * 0.6);
+    const dw = t.sw * scale, dh = t.sh * scale;
+    gc.drawImage(ts, t.sx, t.sy, t.sw, t.sh, x, -dh + 20, dw, dh);
+  }
+
+  // Mountain layer: purple mountains tiled (tileset y=0-24)
+  const mtnW = Math.ceil(WORLD_W * 0.6); // shorter since it scrolls slower
+  pxMtns = document.createElement('canvas');
+  pxMtns.width = mtnW;
+  pxMtns.height = TS * 2;
+  const mc = pxMtns.getContext('2d');
+  mc.imageSmoothingEnabled = false;
+  for(let x = 0; x < mtnW; x += 384 * PX_SCALE){
+    mc.drawImage(ts, 0, 0, 384, 24, x, 0, 384 * PX_SCALE, TS);
+    // Double up for taller mountains
+    mc.drawImage(ts, 0, 0, 384, 24, x, TS * 0.5, 384 * PX_SCALE, TS);
+  }
+
+  // Sky layer: light blue with scattered clouds
+  const skyW = Math.ceil(WORLD_W * 0.4);
+  const skyH = Math.ceil(WORLD_H * 0.8);
+  pxSky = document.createElement('canvas');
+  pxSky.width = skyW;
+  pxSky.height = skyH;
+  const sc = pxSky.getContext('2d');
+  sc.imageSmoothingEnabled = false;
+  // Sky gradient
+  const grad = sc.createLinearGradient(0, 0, 0, skyH);
+  grad.addColorStop(0, '#5BA3D9');
+  grad.addColorStop(0.5, '#87CEEB');
+  grad.addColorStop(1, '#C8E6F0');
+  sc.fillStyle = grad;
+  sc.fillRect(0, 0, skyW, skyH);
+
+  // Cloud sprites from tileset (y=72-120 area, various positions)
+  const cloudDefs = [
+    {sx:128, sy:80, sw:48, sh:20},  // big cloud
+    {sx:192, sy:80, sw:36, sh:16},  // medium cloud
+    {sx:240, sy:88, sw:28, sh:12},  // small cloud
+    {sx:288, sy:80, sw:48, sh:20},  // another big
+    {sx:192, sy:100, sw:40, sh:16}, // medium low
+    {sx:128, sy:100, sw:32, sh:14}, // small low
+  ];
+  const rand2 = rng(77);
+  for(let i = 0; i < 30; i++){
+    const cd = cloudDefs[Math.floor(rand2() * cloudDefs.length)];
+    const cx = rand2() * skyW;
+    const cy = rand2() * skyH * 0.7;
+    const cscale = PX_SCALE * (0.6 + rand2() * 1.0);
+    sc.drawImage(ts, cd.sx, cd.sy, cd.sw, cd.sh, cx, cy, cd.sw * cscale, cd.sh * cscale);
+  }
+
+  console.log('[PIXEL] Layers built: sky='+skyW+'x'+skyH+', mtn='+mtnW+'x'+pxMtns.height+', ground='+pxGround.width+'x'+groundH);
+}
+
+// Draw splash preview animation
+function drawSplashPreview(){
+  const pc = document.getElementById('splash-preview');
+  if(!pc || !tilesetImg.complete) return;
+  const px = pc.getContext('2d');
+  px.imageSmoothingEnabled = false;
+  px.clearRect(0, 0, 320, 80);
+  // Sky
+  const grad = px.createLinearGradient(0, 0, 0, 50);
+  grad.addColorStop(0, '#5BA3D9');
+  grad.addColorStop(1, '#87CEEB');
+  px.fillStyle = grad;
+  px.fillRect(0, 0, 320, 50);
+  // Mountains
+  for(let x = 0; x < 320; x += 384 * 0.8){
+    px.drawImage(tilesetImg, 0, 0, 384, 24, x, 24, 384 * 0.8, 24);
+  }
+  // Some clouds
+  px.drawImage(tilesetImg, 128, 80, 48, 20, 40, 8, 72, 24);
+  px.drawImage(tilesetImg, 192, 80, 36, 16, 200, 14, 48, 18);
+  // Ground
+  for(let x = 0; x < 320; x += 192 * 0.8){
+    px.drawImage(tilesetImg, 0, 24, 192, 24, x, 48, 192 * 0.8, 24);
+  }
+  // Dirt fill
+  px.fillStyle = '#8B6914';
+  px.fillRect(0, 68, 320, 12);
+}
+tilesetImg.onload = drawSplashPreview;
+
+function startGame(mode){
+  gameMode = mode;
+  document.getElementById('splash').style.display = 'none';
+  if(mode === 'pixel'){
+    buildPixelLayers();
+    // Adjust pilot start position — pixel mode tarmac is at same coords
+  }
+  gameStarted = true;
+  // Images should already be loaded by now, start loop if ready
+  if(loaded >= totalImgs && !_loopStarted){
+    _loopStarted = true;
+    requestAnimationFrame(loop);
+  }
+}
+let _loopStarted = false;
 
 let W, H, renderW, renderH, screenScale;
 function resize(){
@@ -1329,24 +1533,69 @@ function loop(time){
 
   // All rendering direct on main canvas
   const mainScale = H / VISIBLE_H;
-  ctx.save();
-  ctx.imageSmoothingEnabled = false;
-  ctx.scale(mainScale, mainScale);
-  ctx.translate(-camX, -camY);
 
-  // 1) Background
-  if(bgBitmap){
+  if(gameMode === 'pixel' && pxSky){
+    // ===== PIXEL ART MODE WITH PARALLAX =====
     const vww2 = W / mainScale;
-    const sx = Math.max(0, Math.floor(camX));
-    const sy = Math.max(0, Math.floor(camY));
-    const sw = Math.min(WORLD_W - sx, Math.ceil(vww2) + 2);
-    const sh = Math.min(WORLD_H - sy, Math.ceil(VISIBLE_H) + 2);
-    ctx.drawImage(bgBitmap, sx, sy, sw, sh, sx, sy, sw, sh);
-  }
 
-  // 2) Behind-pilot objects
-  renderObjects(drawList, 0, behindCount, mainScale);
-  ctx.restore();
+    // Layer 1: Sky (slowest parallax)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    const skyCamX = camX * PX_SKY_SPEED;
+    const skyCamY = camY * PX_SKY_SPEED;
+    ctx.translate(-skyCamX, -skyCamY);
+    // Tile sky if needed
+    const skyDrawX = Math.floor(skyCamX / pxSky.width) * pxSky.width;
+    for(let sx = skyDrawX; sx < skyCamX + vww2; sx += pxSky.width){
+      ctx.drawImage(pxSky, sx, 0);
+    }
+    ctx.restore();
+
+    // Layer 2: Mountains (medium parallax)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    const mtnCamX = camX * PX_MTN_SPEED;
+    ctx.translate(-mtnCamX, -camY);
+    // Position mountains above the ground
+    const mtnY = TARMAC_TOP - pxMtns.height;
+    const mtnDrawX = Math.floor(mtnCamX / pxMtns.width) * pxMtns.width;
+    for(let mx = mtnDrawX; mx < mtnCamX + vww2; mx += pxMtns.width){
+      ctx.drawImage(pxMtns, mx, mtnY);
+    }
+    ctx.restore();
+
+    // Layer 3: Ground (1:1 with camera)
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-camX, -camY);
+    ctx.drawImage(pxGround, 0, TARMAC_TOP - 20);
+    // 2) Behind-pilot objects
+    renderObjects(drawList, 0, behindCount, mainScale);
+    ctx.restore();
+  } else {
+    // ===== ORIGINAL SVG MODE =====
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-camX, -camY);
+
+    // 1) Background
+    if(bgBitmap){
+      const vww2 = W / mainScale;
+      const sx = Math.max(0, Math.floor(camX));
+      const sy = Math.max(0, Math.floor(camY));
+      const sw = Math.min(WORLD_W - sx, Math.ceil(vww2) + 2);
+      const sh = Math.min(WORLD_H - sy, Math.ceil(VISIBLE_H) + 2);
+      ctx.drawImage(bgBitmap, sx, sy, sw, sh, sx, sy, sw, sh);
+    }
+
+    // 2) Behind-pilot objects
+    renderObjects(drawList, 0, behindCount, mainScale);
+    ctx.restore();
+  }
 
   // 3) Pilot — draw at 1:1 screen pixels, anchored at feet
   const pilotScreenX = (pilot.x - camX) * mainScale;
@@ -1542,7 +1791,11 @@ function checkStart(){
       cx2.drawImage(img, 0, 0, obj.ww, obj.wh);
       objBitmaps[obj.key] = c;
     }
-    requestAnimationFrame(loop);
+    // Don't auto-start — wait for splash screen choice
+    if(gameStarted && !_loopStarted){
+      _loopStarted = true;
+      requestAnimationFrame(loop);
+    }
   }
 }
 bgImg.onload = checkStart; bgImg.onerror = checkStart;
