@@ -539,7 +539,7 @@ for(const obj of objects){
   }
 }
 
-const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null };
+const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, vy:0, grounded:false };
 const keys = {};
 let popupOpen = false;
 let debugHitboxes = false;
@@ -679,6 +679,102 @@ function buildPixelLayers(){
   console.log('[PIXEL] Layers built: sky='+skyW+'x'+skyH+', mtn='+mtnW+'x'+pxMtns.height+', ground='+pxGround.width+'x'+groundH);
 }
 
+// ===================== TILEMAP SIDE-SCROLLER (pixel mode) =====================
+const T_EMPTY=0, T_GRASS=1, T_DIRT=2, T_PLAT=3;
+const TILE_SRC = {
+  [T_GRASS]: [0,24,24,24],    // grass-topped ground
+  [T_DIRT]:  [0,48,24,24],    // underground dirt
+  [T_PLAT]:  [24,168,24,24],  // cyan floating platform
+};
+const MAP_COLS = 200;
+const MAP_ROWS = 25;
+const MAP_Y0 = 1080; // world Y of tilemap top row
+const GROUND_ROW = 14; // ground surface = MAP_Y0 + 14*24 = 1416
+const GRAVITY = 1200;
+const JUMP_VEL = -420;
+const PLAT_HW = 10; // pilot half-width for tile collision
+let tileMap = null;
+
+function tileAt(wx, wy){
+  const c = Math.floor(wx / TILE);
+  const r = Math.floor((wy - MAP_Y0) / TILE);
+  if(r<0||r>=MAP_ROWS||c<0||c>=MAP_COLS) return T_EMPTY;
+  return tileMap[r][c];
+}
+function tileSolid(wx, wy){ return tileAt(wx, wy) !== T_EMPTY; }
+
+function buildTileMap(){
+  tileMap = [];
+  for(let r=0; r<MAP_ROWS; r++) tileMap[r] = new Uint8Array(MAP_COLS);
+
+  // Ground + dirt fill
+  for(let c=0; c<MAP_COLS; c++){
+    tileMap[GROUND_ROW][c] = T_GRASS;
+    for(let r=GROUND_ROW+1; r<MAP_ROWS; r++) tileMap[r][c] = T_DIRT;
+  }
+
+  // Gaps in ground
+  const gaps = [[28,32],[55,63],[90,95],[130,135],[165,172]];
+  for(const [a,b] of gaps)
+    for(let c=a;c<b;c++) for(let r=GROUND_ROW;r<MAP_ROWS;r++) tileMap[r][c]=T_EMPTY;
+
+  // Floating platforms
+  const plats = [
+    [25,29, GROUND_ROW-3],   // above first gap
+    [31,35, GROUND_ROW-5],
+    [50,54, GROUND_ROW-4],   // stepping before big gap
+    [57,59, GROUND_ROW-2],   // stepping stones in big gap
+    [61,63, GROUND_ROW-3],
+    [70,76, GROUND_ROW-6],   // high platform
+    [80,85, GROUND_ROW-4],
+    [92,94, GROUND_ROW-2],   // over gap
+    [96,100, GROUND_ROW-5],
+    [110,116, GROUND_ROW-7], // high run
+    [120,125, GROUND_ROW-4],
+    [132,134, GROUND_ROW-2], // over gap
+    [140,148, GROUND_ROW-6],
+    [155,160, GROUND_ROW-3],
+    [167,170, GROUND_ROW-2], // over last gap
+    [175,182, GROUND_ROW-5],
+  ];
+  for(const [a,b,row] of plats)
+    for(let c=a;c<b;c++) tileMap[row][c] = T_PLAT;
+
+  // Elevated hill sections (raise ground)
+  for(let c=100;c<110;c++){
+    tileMap[GROUND_ROW][c] = T_DIRT;
+    tileMap[GROUND_ROW-1][c] = T_DIRT;
+    tileMap[GROUND_ROW-2][c] = T_GRASS;
+  }
+  for(let c=150;c<165;c++){
+    tileMap[GROUND_ROW][c] = T_DIRT;
+    tileMap[GROUND_ROW-1][c] = T_GRASS;
+  }
+
+  console.log('[TILEMAP] Built '+MAP_COLS+'x'+MAP_ROWS+' map, ground at row '+GROUND_ROW);
+}
+
+function renderTileMap(){
+  const ms = getScale();
+  const vw = W / ms;
+  const vh = VISIBLE_H;
+  const startCol = Math.max(0, Math.floor(camX / TILE));
+  const endCol = Math.min(MAP_COLS, Math.ceil((camX + vw) / TILE) + 1);
+  const startRow = Math.max(0, Math.floor((camY - MAP_Y0) / TILE));
+  const endRow = Math.min(MAP_ROWS, Math.ceil((camY - MAP_Y0 + vh) / TILE) + 1);
+  const ts = tilesetImg;
+  for(let r=startRow; r<endRow; r++){
+    for(let c=startCol; c<endCol; c++){
+      const t = tileMap[r][c];
+      if(t===T_EMPTY) continue;
+      const s = TILE_SRC[t];
+      if(!s) continue;
+      ctx.drawImage(ts, s[0],s[1],s[2],s[3], c*TILE, MAP_Y0+r*TILE, TILE, TILE);
+    }
+  }
+}
+
+
 // Draw splash preview animation
 function drawSplashPreview(){
   const pc = document.getElementById('splash-preview');
@@ -714,7 +810,11 @@ function startGame(mode){
   document.getElementById('splash').style.display = 'none';
   if(mode === 'pixel'){
     buildPixelLayers();
-    // Adjust pilot start position — pixel mode tarmac is at same coords
+    buildTileMap();
+    pilot.x = 100;
+    pilot.y = MAP_Y0 + GROUND_ROW * TILE; // feet on ground
+    pilot.vy = 0;
+    pilot.grounded = true;
   }
   gameStarted = true;
   // Images should already be loaded by now, start loop if ready
@@ -1444,49 +1544,120 @@ function loop(time){
   if(dt > 0.1 || dt <= 0) return;
 
   if(!popupOpen && !edDrag && !contentViewOpen){
-    pilot.walking = false;
-    // Keyboard
-    if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
-    if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
-    if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
-    if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
-    // Touch joystick
-    if(touchJoyDx !== 0 || touchJoyDy !== 0){
-      pilot.x += touchJoyDx * WALK_SPEED;
-      pilot.y += touchJoyDy * WALK_SPEED;
-      pilot.walking = true;
-      if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
-    }
+    if(gameMode === 'pixel' && tileMap){
+      // ===== PIXEL ART: Side-scroller physics =====
+      // Horizontal movement
+      let moveX = 0;
+      if(keys['ArrowRight']){ moveX = WALK_SPEED; pilot.facing = 1; }
+      if(keys['ArrowLeft']){ moveX = -WALK_SPEED; pilot.facing = -1; }
+      if(touchJoyDx !== 0){
+        moveX = touchJoyDx * WALK_SPEED;
+        if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+      }
 
-    if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
-    if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
-    if(pilot.y < TARMAC_TOP) pilot.y = TARMAC_TOP;
-    if(pilot.y > TARMAC_BOTTOM) pilot.y = TARMAC_BOTTOM;
+      // Horizontal tile collision
+      if(moveX !== 0){
+        const newX = pilot.x + moveX;
+        const side = moveX > 0 ? newX + PLAT_HW : newX - PLAT_HW;
+        // Check at feet-1, mid-body, head+1
+        const blocked = tileSolid(side, pilot.y - 2) ||
+                        tileSolid(side, pilot.y - PILOT_H/2) ||
+                        tileSolid(side, pilot.y - PILOT_H + 2);
+        if(!blocked) pilot.x = newX;
+      }
 
-    // Collision (skip in editor mode)
-    if(!editorMode){
-      for(const obj of objects){
-        if(!obj.collide || !obj.hitboxes) continue;
-        for(const b of obj.hitboxes){
-          const pL = pilot.x - PILOT_W*0.15, pR = pilot.x + PILOT_W*0.15;
-          const pT = pilot.y - 15, pB = pilot.y - 5;
-          const pW = pR - pL, pH = pB - pT;
+      // Jump
+      if((keys['ArrowUp'] || keys[' ']) && pilot.grounded){
+        pilot.vy = JUMP_VEL;
+        pilot.grounded = false;
+      }
 
-          let push;
-          if(isCircle(b)){
-            push = rectCircleCollide(pL, pT, pW, pH, b.cx, b.cy, b.r);
-          } else {
-            push = rotBoxCollide(b, pL, pT, pW, pH);
-          }
-          if(push){ pilot.x += push.px; pilot.y += push.py; }
+      // Gravity
+      pilot.vy += GRAVITY * dt;
+      pilot.y += pilot.vy * dt;
+
+      // Vertical tile collision — landing
+      if(pilot.vy >= 0){
+        const footL = pilot.x - PLAT_HW, footR = pilot.x + PLAT_HW;
+        if(tileSolid(footL, pilot.y) || tileSolid(footR, pilot.y)){
+          const row = Math.floor((pilot.y - MAP_Y0) / TILE);
+          pilot.y = MAP_Y0 + row * TILE;
+          pilot.vy = 0;
+          pilot.grounded = true;
+        } else {
+          pilot.grounded = false;
         }
       }
-    }
 
-    if(pilot.walking){
-      pilot.animTimer += dt;
-      if(pilot.animTimer > 1/ANIM_FPS){ pilot.animTimer=0; pilot.frame++; if(pilot.frame>=TOTAL_FRAMES) pilot.frame=1; }
-    } else { pilot.frame=0; pilot.animTimer=0; }
+      // Head bonk
+      if(pilot.vy < 0){
+        const headY = pilot.y - PILOT_H;
+        if(tileSolid(pilot.x - PLAT_HW, headY) || tileSolid(pilot.x + PLAT_HW, headY)){
+          const row = Math.floor((headY - MAP_Y0) / TILE);
+          pilot.y = MAP_Y0 + (row + 1) * TILE + PILOT_H;
+          pilot.vy = 0;
+        }
+      }
+
+      // Fall off bottom — respawn
+      if(pilot.y > MAP_Y0 + MAP_ROWS * TILE + 200){
+        pilot.x = 100;
+        pilot.y = MAP_Y0 + GROUND_ROW * TILE;
+        pilot.vy = 0;
+        pilot.grounded = true;
+      }
+
+      // World bounds
+      if(pilot.x < PLAT_HW) pilot.x = PLAT_HW;
+      if(pilot.x > MAP_COLS * TILE - PLAT_HW) pilot.x = MAP_COLS * TILE - PLAT_HW;
+
+      // Standing frame only
+      pilot.frame = 0;
+
+    } else {
+      // ===== ORIGINAL: Free roam =====
+      pilot.walking = false;
+      if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
+      if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
+      if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
+      if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
+      if(touchJoyDx !== 0 || touchJoyDy !== 0){
+        pilot.x += touchJoyDx * WALK_SPEED;
+        pilot.y += touchJoyDy * WALK_SPEED;
+        pilot.walking = true;
+        if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+      }
+
+      if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
+      if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
+      if(pilot.y < TARMAC_TOP) pilot.y = TARMAC_TOP;
+      if(pilot.y > TARMAC_BOTTOM) pilot.y = TARMAC_BOTTOM;
+
+      // Collision (skip in editor mode)
+      if(!editorMode){
+        for(const obj of objects){
+          if(!obj.collide || !obj.hitboxes) continue;
+          for(const b of obj.hitboxes){
+            const pL = pilot.x - PILOT_W*0.15, pR = pilot.x + PILOT_W*0.15;
+            const pT = pilot.y - 15, pB = pilot.y - 5;
+            const pW = pR - pL, pH = pB - pT;
+
+            let push;
+            if(isCircle(b)){
+              push = rectCircleCollide(pL, pT, pW, pH, b.cx, b.cy, b.r);
+            } else {
+              push = rotBoxCollide(b, pL, pT, pW, pH);
+            }
+            if(push){ pilot.x += push.px; pilot.y += push.py; }
+          }
+        }
+      }
+
+      if(pilot.walking){
+        pilot.animTimer += dt;
+        if(pilot.animTimer > 1/ANIM_FPS){ pilot.animTimer=0; pilot.frame++; if(pilot.frame>=TOTAL_FRAMES) pilot.frame=1; }
+      } else { pilot.frame=0; pilot.animTimer=0; }
+    }
   }
 
   // Nearest interactable
@@ -1569,14 +1740,12 @@ function loop(time){
     }
     ctx.restore();
 
-    // Layer 3: Ground (1:1 with camera)
+    // Layer 3: Tilemap (1:1 with camera)
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.scale(mainScale, mainScale);
     ctx.translate(-camX, -camY);
-    ctx.drawImage(pxGround, 0, TARMAC_TOP - 20);
-    // 2) Behind-pilot objects
-    renderObjects(drawList, 0, behindCount, mainScale);
+    if(tileMap) renderTileMap();
     ctx.restore();
   } else {
     // ===== ORIGINAL SVG MODE =====
