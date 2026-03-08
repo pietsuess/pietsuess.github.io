@@ -656,34 +656,45 @@ function tileAt(wx, wy){
 }
 function tileSolid(wx, wy){ return tileAt(wx, wy) !== 0; }
 
+function applyLayerData(data){
+  if(data.sky) LAYERS[LY_SKY].map = data.sky;
+  if(data.mtn) LAYERS[LY_MTN].map = data.mtn;
+  if(data.gnd) LAYERS[LY_GND].map = data.gnd;
+}
+
 function buildAllLayers(){
-  // Try loading saved data
+  // 1) Try localStorage (editor overrides)
   const saved = localStorage.getItem('pilotGame_tileMap');
   if(saved){
     try{
       const data = JSON.parse(saved);
-      // New format: {sky:[], mtn:[], gnd:[]}
       if(data.sky && data.mtn && data.gnd){
-        LAYERS[LY_SKY].map = data.sky;
-        LAYERS[LY_MTN].map = data.mtn;
-        LAYERS[LY_GND].map = data.gnd;
-        console.log('[LAYERS] Loaded all from localStorage');
-        return;
-      }
-      // Old format: just ground array
-      if(Array.isArray(data) && data.length === LAYERS[LY_GND].rows){
-        LAYERS[LY_GND].map = data;
-        buildLayerDefaults(LY_SKY);
-        buildLayerDefaults(LY_MTN);
-        console.log('[LAYERS] Loaded ground from old format, built sky/mtn defaults');
+        applyLayerData(data);
+        console.log('[LAYERS] Loaded from localStorage');
         return;
       }
     } catch(e){}
   }
 
-  // Build all defaults
-  for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
-  console.log('[LAYERS] Built all defaults');
+  // 2) Try fetching levels.json (committed level data)
+  fetch('levels.json').then(r => {
+    if(!r.ok) throw new Error('no levels.json');
+    return r.json();
+  }).then(data => {
+    if(data.sky && data.mtn && data.gnd){
+      applyLayerData(data);
+      console.log('[LAYERS] Loaded from levels.json');
+    }
+  }).catch(() => {
+    // 3) Fall back to hardcoded defaults
+    for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+    console.log('[LAYERS] Built defaults (no levels.json)');
+  });
+
+  // Init with defaults immediately (fetch will overwrite if successful)
+  if(!LAYERS[LY_GND].map){
+    for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+  }
 }
 
 function buildLayerDefaults(idx){
@@ -907,14 +918,15 @@ function teLoad(){
 function teExport(){
   const data = { sky:LAYERS[0].map, mtn:LAYERS[1].map, gnd:LAYERS[2].map };
   const json = JSON.stringify(data);
-  navigator.clipboard.writeText(json).then(()=>{
-    document.getElementById('pal-sel').textContent = 'COPIED!';
-    setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
-  }).catch(()=>{
-    const ta = document.createElement('textarea'); ta.value = json;
-    document.body.appendChild(ta); ta.select(); document.execCommand('copy');
-    document.body.removeChild(ta);
-  });
+  // Download as levels.json file
+  const blob = new Blob([json], {type:'application/json'});
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'levels.json';
+  a.click();
+  URL.revokeObjectURL(a.href);
+  document.getElementById('pal-sel').textContent = 'DOWNLOADED!';
+  setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
 }
 
 function teImport(){
