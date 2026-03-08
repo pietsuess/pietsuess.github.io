@@ -1611,8 +1611,12 @@ function loop(time){
       if(pilot.x < PLAT_HW) pilot.x = PLAT_HW;
       if(pilot.x > MAP_COLS * TILE - PLAT_HW) pilot.x = MAP_COLS * TILE - PLAT_HW;
 
-      // Standing frame only
-      pilot.frame = 0;
+      // Walk cycle when moving horizontally, standing when idle/airborne
+      pilot.walking = (moveX !== 0 && pilot.grounded);
+      if(pilot.walking){
+        pilot.animTimer += dt;
+        if(pilot.animTimer > 1/ANIM_FPS){ pilot.animTimer=0; pilot.frame++; if(pilot.frame>=TOTAL_FRAMES) pilot.frame=1; }
+      } else { pilot.frame=0; pilot.animTimer=0; }
 
     } else {
       // ===== ORIGINAL: Free roam =====
@@ -1696,10 +1700,12 @@ function loop(time){
   ctx.clearRect(0,0,W,H);
 
   drawList.length = 0;
-  for(const obj of objects){
-    if(objBitmaps[obj.key]) drawList.push(obj);
+  if(gameMode !== 'pixel'){
+    for(const obj of objects){
+      if(objBitmaps[obj.key]) drawList.push(obj);
+    }
+    drawList.sort(sortCompare);
   }
-  drawList.sort(sortCompare);
 
   behindCount = 0;
   for(let i=0; i<drawList.length; i++){
