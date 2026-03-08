@@ -308,11 +308,48 @@ const FRAME_H = 360;
 const TOTAL_FRAMES = 10;
 const ANIM_FPS = 16;
 
-// Pixel art mode sprite (caveman)
+// Pixel art mode sprite (caveman) — 10 cols × 4 rows grid
 const PX_FRAME_W = 61;
-const PX_FRAME_H = 60;
+const PX_FRAME_H = 108;
 const PX_PILOT_H = 90;
 const PX_PILOT_W = PX_PILOT_H * (PX_FRAME_W / PX_FRAME_H);
+
+// Caveman animation definitions: { row, start, count, fps, loop }
+const PX_ANIMS = {
+  idle:    { row:0, start:0, count:4, fps:4,  loop:true },
+  walk:    { row:0, start:5, count:5, fps:10, loop:true },
+  run:     { row:1, start:0, count:10,fps:16, loop:true },
+  jump:    { row:2, start:0, count:3, fps:10, loop:false },
+  roll:    { row:2, start:3, count:5, fps:12, loop:true },
+  recover: { row:2, start:8, count:2, fps:8,  loop:false },
+  crouch:  { row:3, start:0, count:2, fps:6,  loop:false },
+};
+let pxAnim = 'idle';
+let pxFrame = 0;
+let pxAnimTimer = 0;
+let pxRolling = false;
+
+function setPxAnim(name){
+  if(pxAnim === name) return;
+  pxAnim = name;
+  pxFrame = 0;
+  pxAnimTimer = 0;
+}
+
+function tickPxAnim(dt){
+  const a = PX_ANIMS[pxAnim];
+  if(!a) return;
+  pxAnimTimer += dt;
+  if(pxAnimTimer >= 1/a.fps){
+    pxAnimTimer = 0;
+    pxFrame++;
+    if(pxFrame >= a.count){
+      if(a.loop){ pxFrame = 0; }
+      else { pxFrame = a.count - 1; } // hold last frame
+    }
+  }
+}
+
 const WALK_SPEED = 6;
 const TARMAC_TOP = 1405;
 const TARMAC_BOTTOM = 1650;
@@ -1829,12 +1866,33 @@ function loop(time){
       if(pilot.x < PLAT_HW) pilot.x = PLAT_HW;
       if(pilot.x > LAYERS[LY_GND].cols * TILE - PLAT_HW) pilot.x = LAYERS[LY_GND].cols * TILE - PLAT_HW;
 
-      // Walk cycle when moving horizontally, standing when idle/airborne
+      // Animation state machine
       pilot.walking = (moveX !== 0 && pilot.grounded);
-      if(pilot.walking){
-        pilot.animTimer += dt;
-        if(pilot.animTimer > 1/ANIM_FPS){ pilot.animTimer=0; pilot.frame++; if(pilot.frame>=TOTAL_FRAMES) pilot.frame=1; }
-      } else { pilot.frame=0; pilot.animTimer=0; }
+      const isDown = keys['ArrowDown'] || (touchJoyDy > 0.5);
+      if(pxRolling){
+        // Roll continues until animation finishes or we hit ground idle
+        if(pilot.grounded && pxAnim === 'roll' && pxFrame >= PX_ANIMS.roll.count - 1){
+          setPxAnim('recover');
+          pxRolling = false;
+        } else if(pxAnim === 'recover' && pxFrame >= PX_ANIMS.recover.count - 1){
+          pxRolling = false;
+        }
+      } else if(isDown && pilot.grounded){
+        setPxAnim('crouch');
+      } else if(!pilot.grounded){
+        if(pilot.vy < 0) setPxAnim('jump');
+        else if(pxAnim !== 'jump') setPxAnim('jump'); // falling
+      } else if(pilot.walking){
+        setPxAnim('run');
+      } else {
+        setPxAnim('idle');
+      }
+      // Trigger roll: press down while in air
+      if(isDown && !pilot.grounded && !pxRolling){
+        setPxAnim('roll');
+        pxRolling = true;
+      }
+      tickPxAnim(dt);
 
     } else {
       // ===== ORIGINAL: Free roam =====
@@ -1993,20 +2051,27 @@ function loop(time){
 
   // 3) Pilot — anchored at feet
   const isPx = gameMode === 'pixel';
-  const curSprite = isPx ? pxSprite : sprite;
-  const curFW = isPx ? PX_FRAME_W : FRAME_W;
-  const curFH = isPx ? PX_FRAME_H : FRAME_H;
-  const curPW = isPx ? PX_PILOT_W : PILOT_W;
-  const curPH = isPx ? PX_PILOT_H : PILOT_H;
   const pilotScreenX = (pilot.x - camX) * mainScale;
   const pilotFeetScreenY = (pilot.y - camY) * mainScale;
-  const pilotDrawW = curPW * mainScale;
-  const pilotDrawH = curPH * mainScale;
   ctx.save();
   ctx.imageSmoothingEnabled = false;
-  ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
-  if(pilot.facing<0) ctx.scale(-1,1);
-  ctx.drawImage(curSprite, pilot.frame*curFW, 0, curFW, curFH, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+  if(isPx){
+    // Grid-based spritesheet: row × col
+    const a = PX_ANIMS[pxAnim];
+    const srcX = (a.start + pxFrame) * PX_FRAME_W;
+    const srcY = a.row * PX_FRAME_H;
+    const pilotDrawW = PX_PILOT_W * mainScale;
+    const pilotDrawH = PX_PILOT_H * mainScale;
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
+    if(pilot.facing<0) ctx.scale(-1,1);
+    ctx.drawImage(pxSprite, srcX, srcY, PX_FRAME_W, PX_FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+  } else {
+    const pilotDrawW = PILOT_W * mainScale;
+    const pilotDrawH = PILOT_H * mainScale;
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
+    if(pilot.facing<0) ctx.scale(-1,1);
+    ctx.drawImage(sprite, pilot.frame*FRAME_W, 0, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+  }
   ctx.restore();
 
   // 4) In-front-of-pilot objects
