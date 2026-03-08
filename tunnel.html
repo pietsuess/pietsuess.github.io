@@ -2137,6 +2137,23 @@ window.onload = function() {
     shieldLight.position.set(0, 0, 0);
     shipGroup.add(shieldLight);
 
+    // ── Exhaust particle trail ────────────────────────────────────────
+    const TRAIL_COUNT = 30;
+    const trailParticles = [];
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0xff8833, transparent: true, opacity: 0.6, depthWrite: false });
+    const trailGeo = new THREE.PlaneGeometry(1, 1);
+    for (let ti = 0; ti < TRAIL_COUNT; ti++) {
+        const p = new THREE.Mesh(trailGeo, trailMat.clone());
+        p.visible = false;
+        p.userData.life = 0;
+        p.userData.maxLife = 0;
+        p.userData.vx = 0;
+        p.userData.vy = 0;
+        scene.add(p);
+        trailParticles.push(p);
+    }
+    let trailIdx = 0;
+
     shipGroup.scale.set(0.55, 0.55, 0.55);
 
     // --- Gunship (alt ship) ---
@@ -2416,12 +2433,18 @@ window.onload = function() {
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
-    // Star — temporary invincibility shield
-    const starGeo = new THREE.OctahedronGeometry(3.5, 0);
+    // Star — temporary invincibility shield (dodecahedron — visually distinct from octahedron core)
+    const starGeo = new THREE.DodecahedronGeometry(3.5, 0);
     const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00ccff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
     let shieldsUp = false;
     let shieldsUpTimer = 0;
-    const SHIELDS_UP_DURATION = 5.0; // seconds of invincibility
+    function getShieldsDuration(sector) {
+        var _sCfg = _getSpawnCfg(sector);
+        if (_sCfg && typeof _sCfg.shieldsDuration === 'number') return _sCfg.shieldsDuration;
+        if (sector >= 9) return 3.5;
+        if (sector >= 7) return 4.0;
+        return 5.0;
+    }
 
     // Boost pad — double chevron painted flat on tunnel wall (curved cylinder arc)
     // dir: 1 = point upper-right (right side of tunnel), -1 = point upper-left (left side)
@@ -2741,8 +2764,9 @@ window.onload = function() {
             scene.add(bMesh); items.push(bMesh);
             return;
         }
-        // Star — rare invincibility pickup, S4+
-        if (s >= 4 && rand < 0.02) {
+        // Star — rare invincibility pickup, S4+ (rate scales with sector, configurable via editor)
+        var starChance = (_sCfg && typeof _sCfg.star === 'number') ? _sCfg.star : (s >= 10 ? 0.04 : s >= 9 ? 0.04 : s >= 8 ? 0.035 : s >= 7 ? 0.03 : s >= 6 ? 0.025 : s >= 5 ? 0.02 : s >= 4 ? 0.015 : 0);
+        if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (rand < coreChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
@@ -3193,7 +3217,7 @@ window.onload = function() {
         var baseZ = camera.position.z - 600;
 
         // If this sector has baked layout data, spawn it
-        var maxBakedDist = sectorDistance * 0.72;  // same cutoff as procedural — no items past finish line
+        var maxBakedDist = sectorDistance * 0.77;  // same cutoff as procedural — no items past finish line
         if (bakedLevels[currentSector] && bakedLevels[currentSector].length) {
             bakedLevels[currentSector].forEach(function(obj) {
                 // Skip objects beyond the runway zone
@@ -3238,7 +3262,7 @@ window.onload = function() {
         var spacing = currentSector === 3 ? 50 : Math.max(70, 180 - (currentSector - 1) * 12);
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.72;
+        var lastItemDist = sectorDistance * 0.77;
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
@@ -3614,6 +3638,7 @@ window.onload = function() {
         projectiles.forEach(p => scene.remove(p));
         projectiles.length = 0;
         fireCooldownTimer = 0;
+        for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
         
         document.getElementById('progress-bar').style.width = '0%';
         document.getElementById('score').innerText = score.toString().padStart(6, '0');
@@ -4307,6 +4332,47 @@ window.onload = function() {
             matFlameOuter.opacity = 0.4 + bright * 0.2;
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
 
+            // ── Exhaust particle trail ──────────────────────────────
+            if (throttleSmooth > 0.05) {
+                // Spawn 1-2 particles per frame depending on throttle
+                var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
+                for (var si = 0; si < spawnCount; si++) {
+                    var tp = trailParticles[trailIdx];
+                    trailIdx = (trailIdx + 1) % TRAIL_COUNT;
+                    // Get thruster world position
+                    flameOuter.getWorldPosition(tp.position);
+                    // Push slightly behind thruster
+                    tp.position.z += 2 + Math.random() * 2;
+                    // Random spread perpendicular to tube
+                    tp.userData.vx = (Math.random() - 0.5) * 1.5;
+                    tp.userData.vy = (Math.random() - 0.5) * 1.5;
+                    tp.userData.life = 0;
+                    tp.userData.maxLife = 0.3 + Math.random() * 0.4 + throttleSmooth * 0.3;
+                    tp.scale.setScalar(0.6 + throttleSmooth * 0.8 + Math.random() * 0.3);
+                    tp.material.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
+                    tp.material.opacity = 0.5 + throttleSmooth * 0.3;
+                    tp.visible = true;
+                    // Billboard: face camera
+                    tp.lookAt(camera.position);
+                }
+            }
+            // Update all trail particles
+            for (var ti = 0; ti < TRAIL_COUNT; ti++) {
+                var tp = trailParticles[ti];
+                if (!tp.visible) continue;
+                tp.userData.life += delta;
+                var frac = tp.userData.life / tp.userData.maxLife;
+                if (frac >= 1) { tp.visible = false; continue; }
+                // Drift backward (+Z toward camera) and spread
+                tp.position.z += (speed * 0.003 + 8) * delta;
+                tp.position.x += tp.userData.vx * delta;
+                tp.position.y += tp.userData.vy * delta;
+                // Fade and shrink
+                tp.material.opacity = (1 - frac) * 0.5;
+                tp.scale.multiplyScalar(1 - delta * 1.2);
+                tp.lookAt(camera.position);
+            }
+
             if (cameraShake > 0) cameraShake *= 0.85;
             if (cameraShake < 0.1) cameraShake = 0;
             // Hyper boost screen shake — same frequency, tighter distance
@@ -4423,7 +4489,7 @@ window.onload = function() {
                             else if (item.userData.type === 'star') {
                                 sectorCollectiblesCollected++;
                                 shieldsUp = true;
-                                shieldsUpTimer = SHIELDS_UP_DURATION;
+                                shieldsUpTimer = getShieldsDuration(currentSector);
                                 AudioEngine.playSFX('star');
                                 flash('#00ccff');
                                 spawnPointBurst('SHIELDS UP!', 'c-cyan');
