@@ -68,6 +68,102 @@
     pointer-events:none;opacity:0;transition:opacity 0.3s;
   }
   #editor-hint.show{opacity:1;}
+
+  /* Content overlay — full viewer for video/gallery/design */
+  #content-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:120;
+    background:rgba(0,0,10,0.97);display:none;overflow-y:auto;
+  }
+  #content-overlay.open{display:block;}
+  #content-box{
+    max-width:680px;margin:40px auto;padding:0;
+    font-family:'Press Start 2P',monospace;
+    background:#000;border:3px solid #ff69b4;
+    box-shadow:0 0 30px #ff69b4, 0 0 60px rgba(255,105,180,0.3);
+  }
+  #content-header{
+    background:#ff69b4;padding:14px 20px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  #content-title{font-size:8px;color:#000;letter-spacing:2px;}
+  #content-close-x{
+    background:none;border:none;color:#000;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:12px;padding:0 4px;
+  }
+  #content-video{
+    position:relative;width:100%;padding-top:56.25%;display:none;
+    background:#000;
+  }
+  #content-video iframe{
+    position:absolute;top:0;left:0;width:100%;height:100%;border:none;
+  }
+  #content-body{padding:20px;}
+  #content-text{
+    font-size:6px;color:#aaa;line-height:2.2;white-space:pre-wrap;
+    margin-bottom:16px;
+  }
+  #gallery-label{font-size:7px;color:#888;letter-spacing:2px;margin-bottom:10px;}
+  #gallery-grid{display:flex;flex-wrap:wrap;gap:6px;}
+  .gallery-thumb{
+    cursor:pointer;overflow:hidden;position:relative;
+    flex:0 0 calc(33.33% - 4px);
+  }
+  .gallery-thumb img{
+    width:100%;display:block;aspect-ratio:4/3;object-fit:cover;
+  }
+  .gallery-thumb:hover{opacity:0.8;}
+  .gallery-thumb-label{
+    position:absolute;bottom:0;left:0;right:0;
+    font-size:5px;color:#fff;background:rgba(0,0,0,0.7);
+    padding:4px 6px;letter-spacing:1px;
+    font-family:'Press Start 2P',monospace;
+  }
+  .design-thumb img{background:transparent;object-fit:contain;aspect-ratio:auto;}
+
+  /* Design theme */
+  .design-theme{background:#FAFFA5 !important;border-color:#c8a000 !important;
+    box-shadow:0 0 30px rgba(250,255,165,0.4), 0 0 60px rgba(250,255,165,0.15) !important;}
+  .design-theme #content-header{background:#c8a000 !important;}
+  .design-theme #content-text{color:#333 !important;text-shadow:none !important;}
+  .design-theme #gallery-label{color:#666 !important;}
+
+  /* Lightbox */
+  #lightbox{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:250;
+    background:rgba(0,0,0,0.95);display:none;
+    align-items:center;justify-content:center;flex-direction:column;
+  }
+  #lightbox.open{display:flex;}
+  #lightbox-img{max-width:90vw;max-height:80vh;object-fit:contain;}
+  #lightbox-caption{
+    font-family:'Press Start 2P',monospace;font-size:6px;
+    color:#aaa;margin-top:12px;letter-spacing:2px;
+  }
+  #lightbox-close{
+    position:absolute;top:20px;right:20px;
+    background:none;border:none;color:#fff;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:14px;
+  }
+  .lb-nav{
+    position:absolute;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:#fff;cursor:pointer;
+    font-size:24px;padding:20px;opacity:0.6;
+  }
+  .lb-nav:hover{opacity:1;}
+  #lightbox-prev{left:10px;}
+  #lightbox-next{right:10px;}
+
+  /* Responsive */
+  @media(max-width:600px){
+    #popup{width:92vw;max-height:80vh;padding:20px;}
+    #popup-title{font-size:8px;}
+    #content-box{margin:10px auto;max-width:95vw;}
+    #content-body{padding:14px;}
+    .gallery-thumb{flex:0 0 calc(50% - 3px);}
+    .lb-nav{padding:10px;}
+    #lightbox-prev{left:2px;}
+    #lightbox-next{right:2px;}
+  }
 </style>
 </head>
 <body>
@@ -84,6 +180,27 @@
   <hr style="border-color:#333;margin:8px 0;">
   <button onclick="editorUndo()">UNDO (⌘Z)</button>
   <button class="export" onclick="editorExport()">EXPORT ALL</button>
+</div>
+<div id="content-overlay">
+  <div id="content-box">
+    <div id="content-header">
+      <span id="content-title">TITLE</span>
+      <button id="content-close-x" onclick="closeContentView()">✕</button>
+    </div>
+    <div id="content-video"></div>
+    <div id="content-body">
+      <div id="gallery-label"></div>
+      <div id="gallery-grid"></div>
+      <div id="content-text"></div>
+    </div>
+  </div>
+</div>
+<div id="lightbox">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button class="lb-nav" id="lightbox-prev" onclick="lbNav(-1)">◀</button>
+  <img id="lightbox-img" src="">
+  <div id="lightbox-caption"></div>
+  <button class="lb-nav" id="lightbox-next" onclick="lbNav(1)">▶</button>
 </div>
 <script>
 const canvas = document.getElementById('c');
@@ -258,58 +375,125 @@ const objects = [
 
 const CONTENT_DATA = {
   DIRECT:[
-    {title:'SACRIFICE \u2014 KALE BEAUDRY', text:'Produced by Kale Beaudry\nDirected, Filmed, Edited & Animated by Piet Suess\nStarring Alexandra-Jane Lang & Kale Beaudry\nTitle illustration by Alice Forde'},
-    {title:'JUNIPER AND THE ALCHEMIST', text:'Promotional film\nConcept, Direction, Camera & Post: Piet Suess\nStarring: Natalie Lisa Moore, Eric Niehe, Tanner Graeburn, Kali Nevada\nMusic: Matt Robertson'},
-    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel'},
-    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess'},
-    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze'},
-    {title:"WE'LL BURY HIM IN THE DESERT", text:'Short Film\nDirection, Camera & Post: Piet Suess\nStarring: Chris Lovick & Jeremy Schuetze\nMusic: The Tailor'},
-    {title:"LEAVIN' ALONE \u2014 ADRIAN GLYNN", text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn'},
-    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser'},
-    {title:'INTO THE WILD \u2014 LP', text:'Direction & Post: Piet Suess\nMusic: LP'},
-    {title:'BALLAD OF A CHRISTIAN MAN \u2014 ADRIAN GLYNN', text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn'},
-    {title:'SNACK SMART WITH CHEF LENA', text:'Educational\nDirected by Piet Suess\nWritten by Piet Suess & Maya Suess\nArt & Animation by Maya Suess'},
+    {title:'SACRIFICE \u2014 KALE BEAUDRY', text:'Produced by Kale Beaudry\nDirected, Filmed, Edited & Animated by Piet Suess\nStarring Alexandra-Jane Lang & Kale Beaudry\nTitle illustration by Alice Forde', youtubeId:'aT1ijvxxxwo'},
+    {title:'JUNIPER AND THE ALCHEMIST', text:'Promotional film\nConcept, Direction, Camera & Post: Piet Suess\nStarring: Natalie Lisa Moore, Eric Niehe, Tanner Graeburn, Kali Nevada\nMusic: Matt Robertson', youtubeId:'Q8fgz-aMMto'},
+    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel', youtubeId:'OuesN29J-t0'},
+    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess', vimeoId:'679859456'},
+    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze', vimeoId:'647509675'},
+    {title:"WE'LL BURY HIM IN THE DESERT", text:'Short Film\nDirection, Camera & Post: Piet Suess\nStarring: Chris Lovick & Jeremy Schuetze\nMusic: The Tailor', vimeoId:'21099202'},
+    {title:"LEAVIN' ALONE \u2014 ADRIAN GLYNN", text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn', vimeoId:'33372184'},
+    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser', vimeoId:'49118961'},
+    {title:'INTO THE WILD \u2014 LP', text:'Direction & Post: Piet Suess\nMusic: LP', vimeoId:'25889225'},
+    {title:'BALLAD OF A CHRISTIAN MAN \u2014 ADRIAN GLYNN', text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn', vimeoId:'5433807'},
+    {title:'SNACK SMART WITH CHEF LENA', text:'Educational\nDirected by Piet Suess\nWritten by Piet Suess & Maya Suess\nArt & Animation by Maya Suess', youtubeId:'hqpzVS1nbeg'},
   ],
   EDIT:[
-    {title:'THE LEGEND OF OTTO DES\u0106INSKI', text:'Client: Autodesk\nRole: Editor / Post'},
-    {title:'BETWEEN THE MOUNTAIN AND THE SKY', text:'Client: MPWR Content / Duplass Brothers\nRole: Feature Film Editor'},
-    {title:'PACIFIC WILD ALLIANCE \u2014 F*#K OFF FISH FARMS', text:'Client: Pacific Wild Alliance\nRole: On-Set Editor / Editor / Post'},
-    {title:'BETTY BOOZE', text:'Client: Betty Booze\nRole: Editor / Post'},
-    {title:'AVIATION GIN \u2014 FRIENDSGIVING', text:'Client: Aviation Gin\nRole: Editor / Post'},
-    {title:'BOLT \u2014 ABANDONED CARTS', text:'Client: Bolt\nRole: Editor / Post'},
-    {title:'ADIMVERSE \u2014 WELCOME TO ADIM', text:'Client: Adim\nRole: Editor / Post'},
-    {title:'WREXHAM FC \u2014 STAND UP, WREXHAM', text:'Client: Wrexham FC\nRole: Editor / Post'},
-    {title:'FUBO TV \u2014 FUBOOOOOOOOOOOOOO', text:'3 spots\nClient: Fubo\nRole: Editor / Post'},
-    {title:'LEAD FROM BEHIND \u2014 $H!T TALKING WITH DAK PRESCOTT', text:'Client: Lead From Behind\nRole: Editor / Post'},
-    {title:'AVIATION GIN \u2014 THE OTHER ROB', text:'Client: Aviation Gin\nRole: Editor / Post'},
-    {title:'AVIATION GIN \u2014 PUMPKIN SPICE SEASON', text:'Client: Aviation Gin\nRole: Editor / Post'},
-    {title:'MINT MOBILE \u2014 DEFLATES PRICES', text:'Client: Mint Mobile\nRole: Editor / Post'},
-    {title:'MINT MOBILE \u2014 JURY DUTY', text:'Client: Mint Mobile\nRole: Editor / Post'},
-    {title:'DELOITTE \u2014 WALKING DEAD', text:'Client: Deloitte\nRole: Editor / Post'},
-    {title:'DAVE VS BUSTA', text:"Client: Dave N Buster's\nRole: Editor / Post"},
+    {title:'THE LEGEND OF OTTO DES\u0106INSKI', text:'Client: Autodesk\nRole: Editor / Post', youtubeId:'h2nrvx2ZrqQ'},
+    {title:'BETWEEN THE MOUNTAIN AND THE SKY', text:'Client: MPWR Content / Duplass Brothers\nRole: Feature Film Editor', youtubeId:'efgqePhb7is'},
+    {title:'PACIFIC WILD ALLIANCE \u2014 F*#K OFF FISH FARMS', text:'Client: Pacific Wild Alliance\nRole: On-Set Editor / Editor / Post', youtubeId:'DMtI2rtiQ-Q'},
+    {title:'BETTY BOOZE', text:'Client: Betty Booze\nRole: Editor / Post', youtubeId:'MVbWV237B9U'},
+    {title:'AVIATION GIN \u2014 FRIENDSGIVING', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'kia6jjnFZBY'},
+    {title:'BOLT \u2014 ABANDONED CARTS', text:'Client: Bolt\nRole: Editor / Post', youtubeId:'QCL9z25N4m8'},
+    {title:'ADIMVERSE \u2014 WELCOME TO ADIM', text:'Client: Adim\nRole: Editor / Post', youtubeId:'ZX2aiXPD2JU'},
+    {title:'WREXHAM FC \u2014 STAND UP, WREXHAM', text:'Client: Wrexham FC\nRole: Editor / Post', youtubeId:'rtQN-maifVk'},
+    {title:'FUBO TV \u2014 FUBOOOOOOOOOOOOOO', text:'3 spots\nClient: Fubo\nRole: Editor / Post', youtubeId:'sVg7fqapikU'},
+    {title:'LEAD FROM BEHIND \u2014 $H!T TALKING WITH DAK PRESCOTT', text:'Client: Lead From Behind\nRole: Editor / Post', youtubeId:'OKmQ4Tf8n9U'},
+    {title:'AVIATION GIN \u2014 THE OTHER ROB', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'1dsWl2DuUNo'},
+    {title:'AVIATION GIN \u2014 PUMPKIN SPICE SEASON', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'LaXPxnntOOk'},
+    {title:'MINT MOBILE \u2014 DEFLATES PRICES', text:'Client: Mint Mobile\nRole: Editor / Post', youtubeId:'bgIXiljcuVo'},
+    {title:'MINT MOBILE \u2014 JURY DUTY', text:'Client: Mint Mobile\nRole: Editor / Post', youtubeId:'LQakmDqQtpM'},
+    {title:'DELOITTE \u2014 WALKING DEAD', text:'Client: Deloitte\nRole: Editor / Post', youtubeId:'_a3PYMptU7Y'},
+    {title:'DAVE VS BUSTA', text:"Client: Dave N Buster's\nRole: Editor / Post", youtubeId:'6IN7a9mLVzM'},
   ],
   ANIMATE:[
-    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel'},
-    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess'},
-    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser'},
-    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze'},
-    {title:'ANTHEMS TRAILER', text:'A trailer for an entire show made for Maximum Effort Channel.\nAnthems of the world \u2014 a flag from every country, animated.\nAnthems remade for every nation.'},
-    {title:'MAXIMUM EFFORT CHANNEL STATION ID', text:'Station ID animated for the Maximum Effort Channel.\nA throwback to the MTV station IDs.'},
+    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel', youtubeId:'OuesN29J-t0'},
+    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess', vimeoId:'679859456'},
+    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser', vimeoId:'49118961'},
+    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze', vimeoId:'647509675'},
+    {title:'ANTHEMS TRAILER', text:'A trailer for an entire show made for Maximum Effort Channel.\nAnthems of the world \u2014 a flag from every country, animated.\nAnthems remade for every nation.', youtubeId:'k5vgJGejPV8'},
+    {title:'MAXIMUM EFFORT CHANNEL STATION ID', text:'Station ID animated for the Maximum Effort Channel.\nA throwback to the MTV station IDs.', youtubeId:'wSFeKj96vy0'},
   ],
   PHOTO:[
     {title:'Photography', text:'Photography portfolio \u2014 available on the main site.'},
   ],
   DESIGN:[
-    {title:'VAN SOLO', subtitle:'Logo & Font', text:'For Van Solo the task was to create a mark incorporating the idea of a bird with the specific drum kit used in his one man show. He came with some sketches and some ideas, and we landed on this primary logo and minimalist bird face which is also the shape of foot pedal drum set.\n\nThe font was informed by the logo and done by hand giving it an organic feel. In addition we created a support element of the three feathers, symbolism that was meaningful to the client.'},
-    {title:'CONVERGENCE FEST', subtitle:'Branding', text:'This multi-year local festival came to me with a rebrand challenge. The task was to integrate the concept of converging, in a font logo. It came as a delightful undertaking, drawing upon several concept inspirations, coming to spring forth with this pairing of bold distorted main font, and the hand drawn sub-title FESTIVAL, which I then developed into its own unique font set.\n\nThe result is this funky, retro inspired and bold mark to immediately convey the concepts within the title.'},
-    {title:'HAYAN COLLECTION', subtitle:'Apparel Logo', text:'The task to create a brand logo for this eclectic world inspired clothing company was a welcome challenge. The client wanted something that gave a nod to its Somali roots and would work well on clothing tags while feeling international.\n\nThe result we arrived at is this long legged traveller, which has a very boxy profile, ideal for tags.'},
-    {title:'CHASM AUDIO', subtitle:'Identity', text:'The client had a very specific vision of a blend between a clean classical stamp logo and an 80s arcade game, with a timeless feel that you might see in the corner of an amp from the manufacturer.\n\nStarting from a basic serif font and fully reworking it into this upward flowing stamp, with a custom built Audio nestled underneath.'},
-    {title:'GAIA FOODS', subtitle:'Label Design', text:'Before I designed a series of miso labels for this client, I first was invited to make a house call and lunch visit to get let in on the level of artistry that they employ for their products. The Koji for this miso, is hand fermented, making it a one of a kind product.'},
-    {title:'TRUE LOVE PIZZA', subtitle:'Illustration', text:'This client wanted a fun pizza sticker and hat illustration to add to their existing brand. The challenge was to create something that could be embroidered as well as coloured in for a pop-sticker.'},
-    {title:'MORGAN FRY CONST.', subtitle:'Logo', text:'Morgan came to me with the idea that the structures he builds are puzzles. His clients know him to be able to pull off the impossible. He wanted something very structural as well as a letter mark. We played around with many variations of this idea of the M that is also triangles, trusses and beams.\n\nThis impossibly constructed shape contains all the letters of his name, though they are not overly accentuated, and tells the story of what Morgan can do.'},
-    {title:'MICK BROMLEY PTG', subtitle:'Identity', text:'When Mick saw what I had come up with, he was giddy, he loved it because it was what he spent all his working time immersed in; edges and colours and shapes.\n\nI wanted to create something using simple geometry and lots of colour, and landed here with delight.'},
+    {title:'VAN SOLO', subtitle:'Logo & Font', text:'For Van Solo the task was to create a mark incorporating the idea of a bird with the specific drum kit used in his one man show. He came with some sketches and some ideas, and we landed on this primary logo and minimalist bird face which is also the shape of foot pedal drum set.\n\nThe font was informed by the logo and done by hand giving it an organic feel. In addition we created a support element of the three feathers, symbolism that was meaningful to the client.',
+      gallery:[{url:'https://picsum.photos/seed/vs1/800/600',caption:'VAN SOLO 01'},{url:'https://picsum.photos/seed/vs2/800/600',caption:'VAN SOLO 02'},{url:'https://picsum.photos/seed/vs3/800/600',caption:'VAN SOLO 03'}]},
+    {title:'CONVERGENCE FEST', subtitle:'Branding', text:'This multi-year local festival came to me with a rebrand challenge. The task was to integrate the concept of converging, in a font logo. It came as a delightful undertaking, drawing upon several concept inspirations, coming to spring forth with this pairing of bold distorted main font, and the hand drawn sub-title FESTIVAL, which I then developed into its own unique font set.\n\nThe result is this funky, retro inspired and bold mark to immediately convey the concepts within the title.',
+      gallery:[{url:'https://picsum.photos/seed/cf1/800/600',caption:'CONVERGENCE 01'},{url:'https://picsum.photos/seed/cf2/800/600',caption:'CONVERGENCE 02'},{url:'https://picsum.photos/seed/cf3/800/600',caption:'CONVERGENCE 03'},{url:'https://picsum.photos/seed/cf4/800/600',caption:'CONVERGENCE 04'}]},
+    {title:'HAYAN COLLECTION', subtitle:'Apparel Logo', text:'The task to create a brand logo for this eclectic world inspired clothing company was a welcome challenge. The client wanted something that gave a nod to its Somali roots and would work well on clothing tags while feeling international.\n\nThe result we arrived at is this long legged traveller, which has a very boxy profile, ideal for tags.',
+      gallery:[{url:'https://picsum.photos/seed/hc1/800/600',caption:'HAYAN 01'},{url:'https://picsum.photos/seed/hc2/800/600',caption:'HAYAN 02'}]},
+    {title:'CHASM AUDIO', subtitle:'Identity', text:'The client had a very specific vision of a blend between a clean classical stamp logo and an 80s arcade game, with a timeless feel that you might see in the corner of an amp from the manufacturer.\n\nStarting from a basic serif font and fully reworking it into this upward flowing stamp, with a custom built Audio nestled underneath.',
+      gallery:[{url:'https://picsum.photos/seed/ca1/800/600',caption:'CHASM 01'},{url:'https://picsum.photos/seed/ca2/800/600',caption:'CHASM 02'}]},
+    {title:'GAIA FOODS', subtitle:'Label Design', text:'Before I designed a series of miso labels for this client, I first was invited to make a house call and lunch visit to get let in on the level of artistry that they employ for their products. The Koji for this miso, is hand fermented, making it a one of a kind product.',
+      gallery:[{url:'https://picsum.photos/seed/gf1/800/600',caption:'GAIA 01'},{url:'https://picsum.photos/seed/gf2/800/600',caption:'GAIA 02'}]},
+    {title:'TRUE LOVE PIZZA', subtitle:'Illustration', text:'This client wanted a fun pizza sticker and hat illustration to add to their existing brand. The challenge was to create something that could be embroidered as well as coloured in for a pop-sticker.',
+      gallery:[{url:'https://picsum.photos/seed/tp1/800/600',caption:'PIZZA 01'},{url:'https://picsum.photos/seed/tp2/800/600',caption:'PIZZA 02'}]},
+    {title:'MORGAN FRY CONST.', subtitle:'Logo', text:'Morgan came to me with the idea that the structures he builds are puzzles. His clients know him to be able to pull off the impossible. He wanted something very structural as well as a letter mark. We played around with many variations of this idea of the M that is also triangles, trusses and beams.\n\nThis impossibly constructed shape contains all the letters of his name, though they are not overly accentuated, and tells the story of what Morgan can do.',
+      gallery:[{url:'https://picsum.photos/seed/mf1/800/600',caption:'MORGAN 01'},{url:'https://picsum.photos/seed/mf2/800/600',caption:'MORGAN 02'}]},
+    {title:'MICK BROMLEY PTG', subtitle:'Identity', text:'When Mick saw what I had come up with, he was giddy, he loved it because it was what he spent all his working time immersed in; edges and colours and shapes.\n\nI wanted to create something using simple geometry and lots of colour, and landed here with delight.',
+      gallery:[{url:'https://picsum.photos/seed/mb1/800/600',caption:'BROMLEY 01'},{url:'https://picsum.photos/seed/mb2/800/600',caption:'BROMLEY 02'}]},
   ],
 };
+
+// \u2500\u2500 Dynamic content manifest loader (PHOTO + DESIGN from GitHub repos) \u2500\u2500
+(function loadContentManifests(){
+  const PHOTO_MANIFEST = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/manifest.json';
+  const DESIGN_MANIFEST = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/manifest.json';
+  const PHOTO_BASE = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/photos/';
+  const DESIGN_BASE = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/';
+
+  function mapPhoto(item, base){
+    const o = {title:item.title, text:item.text||''};
+    if(item.subtitle) o.subtitle = item.subtitle;
+    if(item.displayTitle) o.displayTitle = item.displayTitle;
+    if(item.type === 'single'){
+      o.isSinglePhoto = true;
+      o.singleUrl = base + item.file;
+    } else {
+      o.gallery = (item.files||[]).map(f => {
+        const g = {url:base+f.file, caption:f.caption||''};
+        if(f.wide) g.wide = true;
+        return g;
+      });
+    }
+    return o;
+  }
+
+  function mapDesign(item, base){
+    const allFiles = item.rows
+      ? item.rows.flat().map(f=>({url:base+f.file, caption:f.caption||''}))
+      : (item.files||[]).map(f=>({url:base+f.file, caption:f.caption||''}));
+    const o = {title:item.title, subtitle:item.subtitle||'', text:item.text||'', gallery:allFiles};
+    if(item.rows){
+      o._rows = item.rows.map(row=>row.map(f=>({url:base+f.file, caption:f.caption||''})));
+    }
+    if(item.heroWidth) o._heroWidth = item.heroWidth;
+    return o;
+  }
+
+  function load(url, zone, fallback, mapper, baseFallback){
+    return fetch(url+'?_t='+Date.now(), {cache:'no-cache'})
+      .then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data=>{
+        if(!data.items||!data.items.length) throw new Error('empty');
+        const base = data.baseUrl || baseFallback;
+        CONTENT_DATA[zone] = data.items.map(it=>mapper(it, base));
+        console.log('[MANIFEST] '+zone+': loaded '+CONTENT_DATA[zone].length+' items');
+      })
+      .catch(err=>{
+        console.warn('[MANIFEST] '+zone+' fetch failed, using fallback:', err);
+        CONTENT_DATA[zone] = fallback;
+      });
+  }
+
+  const _pf = [...CONTENT_DATA.PHOTO];
+  const _df = [...CONTENT_DATA.DESIGN];
+  Promise.all([
+    load(PHOTO_MANIFEST, 'PHOTO', _pf, mapPhoto, PHOTO_BASE),
+    load(DESIGN_MANIFEST, 'DESIGN', _df, mapDesign, DESIGN_BASE)
+  ]).then(()=>console.log('[MANIFEST] All resolved. PHOTO='+CONTENT_DATA.PHOTO.length+', DESIGN='+CONTENT_DATA.DESIGN.length));
+})();
 
 // Normalize: ensure every collidable object has hitboxes[]
 for(const obj of objects){
@@ -354,19 +538,32 @@ window.addEventListener('keydown', e => {
   keys[e.code] = true;
   if(e.code === 'Space'){
     e.preventDefault();
-    if(!editorMode && pilot.nearObj !== null && !popupOpen) openPopup(pilot.nearObj);
+    if(!editorMode && !contentViewOpen && pilot.nearObj !== null && !popupOpen) openPopup(pilot.nearObj);
   }
-  if(e.code === 'Escape'){ closePopup(); if(editorMode) editorDeselect(); }
+  if(e.code === 'ArrowLeft' && document.getElementById('lightbox').classList.contains('open')){ lbNav(-1); e.preventDefault(); }
+  if(e.code === 'ArrowRight' && document.getElementById('lightbox').classList.contains('open')){ lbNav(1); e.preventDefault(); }
+  if(e.code === 'Escape'){
+    if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
+    else if(contentViewOpen){ closeContentView(); }
+    else { closePopup(); }
+    if(editorMode) editorDeselect();
+  }
   if(e.code === 'KeyD' && !popupOpen && !editorMode && !e.repeat) debugHitboxes = !debugHitboxes;
   if(e.code === 'KeyE' && !popupOpen && !e.repeat) toggleEditor();
   if(e.code === 'KeyZ' && (e.metaKey || e.ctrlKey) && editorMode && !e.repeat){ e.preventDefault(); editorUndo(); }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
+let _currentPopupZone = null;
+let lightboxItems = [];
+let lightboxIdx = 0;
+let contentViewOpen = false;
+
 function openPopup(idx){
   const obj = objects[idx];
   const zone = obj.zone;
   const color = obj.zoneColor || '#44ddff';
+  _currentPopupZone = zone;
   const popup = document.getElementById('popup');
   popup.style.borderColor = color;
   popup.style.boxShadow = '0 0 40px ' + color + ', inset 0 0 20px rgba(0,0,0,0.5)';
@@ -381,22 +578,169 @@ function openPopup(idx){
     body.innerHTML = '<span style="color:#666;">No content yet</span>';
   } else {
     let html = '';
-    for(const item of items){
-      html += '<div style="margin-bottom:20px;text-align:left;">';
-      html += '<div style="color:'+color+';font-size:7px;margin-bottom:6px;">'+item.title+'</div>';
+    items.forEach((item, i) => {
+      const hasMedia = item.youtubeId || item.vimeoId || item.gallery || item.isSinglePhoto;
+      const cursor = hasMedia ? 'cursor:pointer;' : '';
+      const hover = hasMedia ? ` onmouseover="this.style.background='${color}11'" onmouseout="this.style.background=''"` : '';
+      const click = hasMedia ? ` onclick="openContentView('${zone}',${i})"` : '';
+      html += '<div style="margin-bottom:2px;text-align:left;padding:10px 12px;border-bottom:1px solid #1a1a1a;'+cursor+'"'+hover+click+'>';
+      html += '<div style="color:'+color+';font-size:7px;margin-bottom:6px;">'+item.title;
+      if(hasMedia) html += ' <span style="font-size:5px;opacity:0.5;">\u25B6</span>';
+      html += '</div>';
       if(item.subtitle) html += '<div style="color:#888;font-size:6px;margin-bottom:4px;">'+item.subtitle+'</div>';
       html += '<div style="color:#aaa;font-size:6px;line-height:2;white-space:pre-wrap;">'+item.text+'</div>';
       html += '</div>';
-    }
+    });
     body.innerHTML = html;
   }
   popup.classList.add('open');
   popupOpen = true;
 }
+
 function closePopup(){
   document.getElementById('popup').classList.remove('open');
+  document.getElementById('content-video').innerHTML = '';
+  document.getElementById('content-video').style.display = 'none';
   popupOpen = false;
+  contentViewOpen = false;
+  _currentPopupZone = null;
 }
+
+function openContentView(zone, itemIdx){
+  const items = CONTENT_DATA[zone] || [];
+  const item = items[itemIdx];
+  if(!item) return;
+
+  const isDesign = zone === 'DESIGN';
+  const box = document.getElementById('content-box');
+  const header = document.getElementById('content-header');
+
+  // Design theme
+  if(isDesign){
+    box.classList.add('design-theme');
+    header.style.background = '#c8a000';
+  } else {
+    box.classList.remove('design-theme');
+    header.style.background = '#ff69b4';
+  }
+
+  document.getElementById('content-title').textContent = item.displayTitle || item.title;
+
+  // Video
+  const vEl = document.getElementById('content-video');
+  if(item.vimeoId){
+    vEl.style.display = 'block';
+    vEl.innerHTML = '<iframe src="https://player.vimeo.com/video/'+item.vimeoId+'?autoplay=1&color=ff69b4&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
+  } else if(item.youtubeId){
+    vEl.style.display = 'block';
+    vEl.innerHTML = '<iframe src="https://www.youtube.com/embed/'+item.youtubeId+'?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture; accelerometer; encrypted-media; gyroscope; web-share" allowfullscreen></iframe>';
+  } else {
+    vEl.style.display = 'none';
+    vEl.innerHTML = '';
+  }
+
+  // Gallery
+  const galGrid = document.getElementById('gallery-grid');
+  const galLabel = document.getElementById('gallery-label');
+  galLabel.textContent = item.subtitle || '';
+
+  if(item.isSinglePhoto && item.singleUrl){
+    lightboxItems = [{url:item.singleUrl, caption:item.title}];
+    galGrid.innerHTML = '<div class="gallery-thumb" onclick="openLightbox(0)" style="flex:0 0 100%;"><img src="'+item.singleUrl+'" loading="lazy"><div class="gallery-thumb-label">CLICK TO EXPAND</div></div>';
+  } else if(item.gallery && item.gallery.length > 0){
+    lightboxItems = item.gallery;
+    if(isDesign && item._rows){
+      let lbIdx = 0;
+      function renderRow(row){
+        return '<div style="display:flex;gap:6px;">'+row.map(img => {
+          const idx = lbIdx++;
+          return '<div class="gallery-thumb design-thumb" onclick="openLightbox('+idx+')" style="flex:1;min-width:0;"><img src="'+img.url+'" alt="'+img.caption+'" loading="lazy" style="background:transparent;"><div class="gallery-thumb-label">'+img.caption+'</div></div>';
+        }).join('')+'</div>';
+      }
+      const heroCount = item._rows[0].length;
+      const hw = item._heroWidth || (heroCount===1?'50%':'100%');
+      const heroRow = '<div style="display:flex;gap:6px;justify-content:center;max-width:'+hw+';margin:0 auto;">'+item._rows[0].map(img => {
+        const idx = lbIdx++;
+        return '<div class="gallery-thumb design-thumb" onclick="openLightbox('+idx+')" style="flex:1;min-width:0;"><img src="'+img.url+'" alt="'+img.caption+'" loading="lazy" style="background:transparent;"><div class="gallery-thumb-label">'+img.caption+'</div></div>';
+      }).join('')+'</div>';
+      const designText = item.text ? '<div style="color:#333;font-size:6px;line-height:2.4;white-space:pre-line;margin:16px 0;font-family:\'Press Start 2P\',monospace;">'+item.text.replace(/</g,'&lt;')+'</div>' : '';
+      const restRows = item._rows.slice(1).map(r=>renderRow(r)).join('');
+      galGrid.style.display = 'flex';
+      galGrid.style.flexDirection = 'column';
+      galGrid.style.gap = '6px';
+      galGrid.innerHTML = heroRow + designText + restRows;
+    } else {
+      const thumbCls = isDesign ? 'gallery-thumb design-thumb' : 'gallery-thumb';
+      galGrid.style.display = 'flex';
+      galGrid.style.flexWrap = 'wrap';
+      galGrid.style.flexDirection = '';
+      galGrid.style.gap = '6px';
+      galGrid.innerHTML = item.gallery.map((img, i) => {
+        return '<div class="'+thumbCls+'" onclick="openLightbox('+i+')"><img src="'+img.url+'" alt="'+img.caption+'" loading="lazy"'+(isDesign?' style="background:transparent;"':'')+'><div class="gallery-thumb-label">'+img.caption+'</div></div>';
+      }).join('');
+    }
+  } else {
+    lightboxItems = [];
+    galGrid.innerHTML = '';
+  }
+
+  // Text (skip if design rows already rendered it inline)
+  const txtEl = document.getElementById('content-text');
+  if(isDesign && item._rows){
+    txtEl.textContent = '';
+    txtEl.style.display = 'none';
+  } else {
+    txtEl.textContent = item.text || '';
+    txtEl.style.display = '';
+  }
+
+  document.getElementById('content-overlay').classList.add('open');
+  contentViewOpen = true;
+}
+
+function closeContentView(){
+  document.getElementById('content-overlay').classList.remove('open');
+  document.getElementById('content-video').innerHTML = '';
+  document.getElementById('content-video').style.display = 'none';
+  contentViewOpen = false;
+}
+
+function openLightbox(idx){
+  if(!lightboxItems.length) return;
+  lightboxIdx = idx;
+  const item = lightboxItems[idx];
+  document.getElementById('lightbox-img').src = item.url;
+  document.getElementById('lightbox-caption').textContent = item.caption || '';
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+}
+
+function lbNav(dir){
+  if(!lightboxItems.length) return;
+  lightboxIdx = (lightboxIdx + dir + lightboxItems.length) % lightboxItems.length;
+  const item = lightboxItems[lightboxIdx];
+  document.getElementById('lightbox-img').src = item.url;
+  document.getElementById('lightbox-caption').textContent = item.caption || '';
+}
+
+// Lightbox swipe (mobile)
+(function(){
+  const lb = document.getElementById('lightbox');
+  let _sx = 0;
+  lb.addEventListener('touchstart', e => { _sx = e.changedTouches[0].clientX; }, {passive:true});
+  lb.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - _sx;
+    if(Math.abs(dx) > 40){ lbNav(dx < 0 ? 1 : -1); }
+  }, {passive:true});
+})();
+
+// Prevent content overlay & lightbox touches from reaching game canvas
+document.getElementById('content-overlay').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
+document.getElementById('lightbox').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
 
 const INTERACT_R = 150;
 const promptEl = document.getElementById('prompt');
@@ -849,8 +1193,10 @@ canvas.addEventListener('touchstart', e => {
         touchJoy = {id:t.identifier, startX:t.clientX, startY:t.clientY, curX:t.clientX, curY:t.clientY};
       }
     } else {
-      // Tap right side — interact if near object, or close popup
-      if(popupOpen){ closePopup(); }
+      // Tap right side — close overlays or interact
+      if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
+      else if(contentViewOpen){ closeContentView(); }
+      else if(popupOpen){ closePopup(); }
       else if(pilot.nearObj !== null){ openPopup(pilot.nearObj); }
     }
   }
@@ -891,7 +1237,7 @@ function loop(time){
   lastTime = time;
   if(dt > 0.1 || dt <= 0) return;
 
-  if(!popupOpen && !edDrag){
+  if(!popupOpen && !edDrag && !contentViewOpen){
     pilot.walking = false;
     // Keyboard
     if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
