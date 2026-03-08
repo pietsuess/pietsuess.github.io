@@ -57,8 +57,8 @@
   }
   #popup-close:hover{background:rgba(68,221,255,0.15);}
   #prompt{
-    position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
-    font-family:'Press Start 2P',monospace;font-size:12px;
+    position:fixed;bottom:25%;left:50%;transform:translateX(-50%);
+    font-family:'Press Start 2P',monospace;font-size:16px;
     color:#ffe000;letter-spacing:3px;
     text-shadow:0 0 14px #ffe000;
     opacity:0;transition:opacity 0.2s;pointer-events:none;
@@ -290,6 +290,10 @@
   <button class="lb-nav" id="lightbox-next" onclick="lbNav(1)">▶</button>
 </div>
 <script>
+// Reload → back to NAVIGATOR title screen
+if(performance.getEntriesByType('navigation')[0]?.type === 'reload'){
+  window.location.replace('navigator.html');
+}
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 const offscreen = document.createElement('canvas');
@@ -2079,6 +2083,59 @@ function loop(time){
     ctx.translate(-camX, -camY);
     renderObjects(drawList, behindCount, drawList.length, mainScale);
     ctx.restore();
+  }
+
+  // Hanger hint arrow + return-to-game trigger
+  if(gameMode !== 'pixel'){
+    const hangerObj = objects.find(o => o.key === 'hanger');
+    const hangerCX = hangerObj.wx + hangerObj.ww / 2; // ~301
+    const hangerCY = hangerObj.wy + hangerObj.wh * 0.45; // vertically centered-ish
+    const dx = pilot.x - hangerCX, dy = pilot.y - hangerCY;
+    const distToHanger = Math.sqrt(dx*dx + dy*dy);
+    const HANGER_HINT_R = 500; // start showing arrow
+    const HANGER_ENTER_R = 180; // halfway into hanger triggers return
+
+    if(distToHanger < HANGER_ENTER_R && pilot.x < 350){
+      // Return to NAVIGATOR
+      window.location.href = 'navigator.html';
+    } else if(distToHanger < HANGER_HINT_R && !popupOpen && !contentViewOpen){
+      // Draw "RETURN TO GAME" text + bouncing arrow pointing toward hanger
+      const ang = Math.atan2(hangerCY - pilot.y, hangerCX - pilot.x);
+      const bounce = Math.sin(Date.now() / 300) * 6;
+
+      ctx.save();
+      ctx.scale(mainScale, mainScale);
+      ctx.translate(-camX, -camY);
+
+      // Text
+      const textDist = 120;
+      const tx = pilot.x + Math.cos(ang) * textDist;
+      const ty = pilot.y - PILOT_H * 0.6 + Math.sin(ang) * textDist * 0.3;
+      const fs = Math.round(10);
+      ctx.font = fs + 'px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 10;
+      ctx.fillText('RETURN TO GAME', tx, ty);
+
+      // Arrow — triangle pointing toward hanger, between text and hanger
+      const arrowDist = 180 + bounce;
+      const ax = pilot.x + Math.cos(ang) * arrowDist;
+      const ay = pilot.y - PILOT_H * 0.3 + Math.sin(ang) * arrowDist * 0.3;
+      ctx.translate(ax, ay);
+      ctx.rotate(ang);
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-14, -14);
+      ctx.lineTo(-14, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
   }
 
   // Debug / Editor overlay
