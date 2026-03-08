@@ -481,7 +481,6 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     color:#00ffcc;
     box-shadow:0 0 30px rgba(0,255,204,0.1), 0 8px 40px rgba(0,0,0,0.9);
     user-select:none;
-    backdrop-filter:blur(12px);
   }
   #dev-panel.collapsed { width:60px !important; overflow:hidden; }
   #dev-panel.collapsed #dev-body { display:none; }
@@ -926,7 +925,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 </div>
 
 <!-- ── DEV PANEL ── -->
-<div id="dev-panel" class="collapsed" style="display:none">
+<div id="dev-panel" class="collapsed" style="display:none"
   <div id="dev-panel-header">
     <span id="dev-panel-title">⚙ DEV MODE</span>
     <div id="dev-panel-btns">
@@ -1936,7 +1935,8 @@ let state = {
   boostPads: [],
   penBarrier: { closed: true, opening: false, openTimer: 0, openDuration: 300, extendDist: 0 },
   meteorShower: { triggered: false, active: false, timer: 0, meteors: [], spawnAccum: 0 },
-  _devGodMode: false
+  _devGodMode: false,
+  _dtScale: 1
 };
 
 const bgCanvas = document.getElementById('bg');
@@ -1949,7 +1949,25 @@ const _ringCtx = _ringCanvas.getContext('2d');
 let _ringLastX = null, _ringLastY = null, _ringW = 0, _ringH = 0;
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
-function resize() { bgCanvas.width=canvas.width=window.innerWidth; bgCanvas.height=canvas.height=window.innerHeight; _ringCanvas.width=window.innerWidth; _ringCanvas.height=window.innerHeight; _ringLastX=null; }
+function resize() { bgCanvas.width=canvas.width=window.innerWidth; bgCanvas.height=canvas.height=window.innerHeight; _ringCanvas.width=window.innerWidth; _ringCanvas.height=window.innerHeight; _ringLastX=null; _curFont=''; }
+
+// ── Font constants — avoid per-frame string parsing ──
+const FONT_5  = '5px "Press Start 2P",monospace';
+const FONT_6  = '6px "Press Start 2P",monospace';
+const FONT_7  = '7px "Press Start 2P",monospace';
+const FONT_8  = '8px "Press Start 2P",monospace';
+const FONT_9  = '9px "Press Start 2P",monospace';
+const FONT_10 = '10px "Press Start 2P",monospace';
+const FONT_11 = '11px "Press Start 2P",monospace';
+const FONT_12 = '12px "Press Start 2P",monospace';
+const FONT_18 = '18px "Press Start 2P",monospace';
+const FONT_19 = '19px "Press Start 2P",monospace';
+const FONT_32 = '32px "Press Start 2P",monospace';
+const FONT_9B  = 'bold 9px "Press Start 2P",monospace';
+const FONT_18B = 'bold 18px "Press Start 2P",monospace';
+const FONT_24B = 'bold 24px "Press Start 2P",monospace';
+let _curFont = '';
+function setFont(f) { if (f !== _curFont) { ctx.font = f; _curFont = f; } }
 
 // Zone HUD icon hover + click (canvas has pointer-events:none, so listen on document)
 var _zoneHUDIcons = [];
@@ -2013,6 +2031,7 @@ if(sessionStorage.getItem('returnFullscreen') === '1'){
     window.removeEventListener('keydown', _restoreFS);
     window.removeEventListener('touchstart', _restoreFS);
   };
+  // Fullscreen requires user gesture — trigger on first interaction
   window.addEventListener('click', _restoreFS, {once:true});
   window.addEventListener('keydown', _restoreFS, {once:true});
   window.addEventListener('touchstart', _restoreFS, {once:true});
@@ -2020,8 +2039,25 @@ if(sessionStorage.getItem('returnFullscreen') === '1'){
 // Suppress input briefly when returning from victory room
 if(sessionStorage.getItem('returnFromVictory')){
   sessionStorage.removeItem('returnFromVictory');
-  window._titleReturnTime = Date.now() + 1500;
+  window._titleReturnTime = Date.now() + 1500; // suppress for ~2s total
 }
+// ── Tab visibility — pause on hide, resume on show ──
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    if (state.started && !state.paused && !state.gameOver) {
+      state.paused = true;
+      state._tabPaused = true;
+      pauseMusic();
+    }
+  } else {
+    if (state._tabPaused) {
+      state._tabPaused = false;
+      state.paused = false;
+      resumeMusic();
+      resetIdleTimer();
+    }
+  }
+});
 // Camera offset — smoothly shifts player off-center near large bodies
 var _camOffX = 0, _camOffY = 0, _camBoostKilled = false;
 const CX = () => canvas.width/2 + _camOffX;
@@ -3125,11 +3161,11 @@ function drawWormholeTransition(){
     ctx.fillStyle=lc; ctx.globalAlpha=pulse*0.35; ctx.fillRect(0,0,W,H);
     // Level name
     ctx.globalAlpha=pulse;
-    ctx.fillStyle=lc; ctx.font='18px "Press Start 2P",monospace';
+    ctx.fillStyle=lc; setFont(FONT_18);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.shadowBlur=30*SB; ctx.shadowColor=lc;
     ctx.fillText(t.isSecret ? '// SECRET //' : ('// '+LEVELS[t.destLevel]+' //'), W/2, H/2);
-    ctx.font='8px "Press Start 2P",monospace';
+    setFont(FONT_8);
     ctx.globalAlpha=pulse*0.7;
     ctx.fillText('ENTERING ZONE', W/2, H/2+40);
   } else {
@@ -3198,6 +3234,7 @@ function _v(freq, start, attack, hold, release, gainPk, type='sine', reverbSend=
   }
   osc.start(start);
   osc.stop(end+0.05);
+  osc._stopTime=end+0.05;
   musicNodes.push(osc);
 }
 
@@ -3925,13 +3962,20 @@ function updateMusicDrawer(){
 function initAudio(){
   if(audioCtx)return;
   audioCtx=new(window.AudioContext||window.webkitAudioContext)();
+  // Safari "interrupted" state (phone call, Siri, etc.)
+  audioCtx.addEventListener('statechange', () => {
+    if (audioCtx.state === 'interrupted') { pauseMusic(); }
+  });
   initAudioGraph();
   updateMusicDrawer();
   if(window._holdMusicForInstructions) return;
   // Play immediately (we're in a user-gesture context)
   playSong(state.songIndex);
   // Fallback: if context was auto-suspended, resume and restart
-  if(audioCtx.state==='suspended') audioCtx.resume().then(()=>{ if(!songTimeout&&!state.musicMuted)playSong(state.songIndex); });
+  if (audioCtx.state === 'suspended') {
+    try { const _sb = audioCtx.createBuffer(1, 1, 22050); const _ss = audioCtx.createBufferSource(); _ss.buffer = _sb; _ss.connect(audioCtx.destination); _ss.start(0); } catch(e) {}
+    audioCtx.resume().then(() => { if (!songTimeout && !state.musicMuted) playSong(state.songIndex); });
+  }
 }
 
 window.addEventListener('keydown',e=>{
@@ -4514,8 +4558,11 @@ function update(){
     audioCtx.resume().then(()=>{ if(!songTimeout&&!state.musicMuted&&!state.musicPaused)playSong(state.songIndex); });
   }
   // Prune expired musicNodes (prevents memory leak + keeps musicNodes.length===0 check valid)
-  if(state.frameCount % 120 === 0 && musicNodes.length > 0){
-    musicNodes = musicNodes.filter(n=>{ try{ return n.playbackState !== 3; }catch(e){ return false; } });
+  if(state.frameCount % 60 === 0 && musicNodes.length > 0){
+    const _now = audioCtx ? audioCtx.currentTime : 0;
+    musicNodes = musicNodes.filter(n => {
+      try { return n._stopTime ? n._stopTime > _now : false; } catch(e) { return false; }
+    });
   }
   // Victory sequence runs even when gameplay is locked
   if(state._victoryPhase) tickVictory();
@@ -6269,7 +6316,7 @@ function drawVictoryText(ctx){
   ctx.textAlign = 'center';
 
   const fontSize = Math.max(10, Math.floor(canvas.width * 0.018));
-  ctx.font = `${fontSize}px 'Press Start 2P', monospace`;
+  ctx.font = `${fontSize}px 'Press Start 2P', monospace`; _curFont='';
   ctx.fillStyle = '#003366';
   ctx.shadowBlur = 0;
   const lh = fontSize * 2.4;
@@ -6738,7 +6785,7 @@ function drawZoneHUD(){
   if(state._hudHoverItem){
     const hi = state._hudHoverItem;
     ctx.save();
-    ctx.font='12px "Press Start 2P",monospace';
+    setFont(FONT_12);
     const tw = ctx.measureText(hi.title).width;
     const tx = hi.x + hi.r + 8;
     const ty = hi.y;
@@ -6767,13 +6814,13 @@ function drawZoneHUD(){
       const hintX = xPos + 28;
       const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.004);
       ctx.globalAlpha = pulse;
-      ctx.font = '32px "Press Start 2P",monospace';
+      setFont(FONT_32);
       ctx.fillStyle = '#00ffcc';
       ctx.shadowColor = '#00ffcc';
       ctx.shadowBlur = 12;
       ctx.textBaseline = 'middle';
       ctx.fillText('◀', hintX, hintY);
-      ctx.font = '18px "Press Start 2P",monospace';
+      setFont(FONT_18);
       ctx.fillText('COLLECTED OBJECTS', hintX + 40, hintY - 14);
       ctx.fillText('POPULATE HERE', hintX + 40, hintY + 14);
       ctx.shadowBlur = 0;
@@ -6819,7 +6866,7 @@ function drawRadarMap(){
     ctx.shadowBlur = 0;
 
     // RADAR label (same curved text)
-    ctx.font = '11px "Press Start 2P",monospace';
+    setFont(FONT_11);
     ctx.fillStyle = 'rgba(160,0,255,0.3)';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     var _rLabel = 'RADAR';
@@ -6933,7 +6980,7 @@ function drawRadarMap(){
   ctx.clip();
 
   // RADAR label curving inside bottom (south) edge
-  ctx.font = '11px "Press Start 2P",monospace';
+  setFont(FONT_11);
   ctx.fillStyle = 'rgba(0,255,204,0.3)';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -6979,7 +7026,7 @@ function drawRadarMap(){
       ctx.globalAlpha = 0.85;
       var midA = (sec.a1 + sec.a2) / 2;
       var midR = (innerR + outerR) / 2;
-      ctx.font = '10px "Press Start 2P",monospace';
+      setFont(FONT_10);
       ctx.fillStyle = sec.col;
       ctx.globalAlpha = 0.5;
       ctx.textAlign = 'center';
@@ -7045,7 +7092,7 @@ function drawRadarMap(){
     var _eLabelDist = Math.sqrt((wox - mapX) * (wox - mapX) + (woy - mapY) * (woy - mapY));
     if(_eLabelDist < mapR){
       var editFs = viewR < 5000 ? 12 : viewR < 15000 ? 10 : 8;
-      ctx.font = editFs + 'px "Press Start 2P",monospace';
+      ctx.font = editFs + 'px "Press Start 2P",monospace'; _curFont='';
       ctx.fillStyle = 'rgba(0,255,204,0.5)';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
@@ -7352,7 +7399,7 @@ function drawGame(){
       if(lpDist < 4000){
         const labelAlpha = Math.max(0, Math.min(1, 1.5 - lpDist/3000));
         ctx.globalAlpha = labelAlpha;
-        ctx.font='6px "Press Start 2P",monospace';
+        setFont(FONT_6);
         ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillStyle='#00ffcc'; ctx.shadowBlur=8*SB; ctx.shadowColor='#00ffcc';
       }
@@ -7458,7 +7505,7 @@ function drawGame(){
     ctx.beginPath(); ctx.arc(0,0,w.size*0.28,0,Math.PI*2);
     ctx.fillStyle='#000'; ctx.shadowBlur=0; ctx.globalAlpha=1; ctx.fill();
     ctx.globalAlpha=0.9; ctx.fillStyle=lc;
-    ctx.font='9px "Press Start 2P",monospace'; ctx.textAlign='center'; ctx.textBaseline='top';
+    setFont(FONT_9); ctx.textAlign='center'; ctx.textBaseline='top';
     ctx.fillText('ZONE WARP', 0, w.size*1.7);
     ctx.fillText(LEVELS[w.destLevel], 0, w.size*1.7 + 16);
     ctx.restore();
@@ -7609,7 +7656,7 @@ function drawGame(){
       // Label below icon
       ctx.fillStyle=ic==='instagram'?'#e1306c':ic==='vimeo'?'#1ab7ea':ic==='linkedin'?'#0077b5':'#ff0000';
       ctx.globalAlpha=pulse*0.85;
-      ctx.font=`${Math.floor(s*0.3)+4}px "Press Start 2P",monospace`;
+      ctx.font=`${Math.floor(s*0.3)+4}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign='center'; ctx.textBaseline='top';
       ctx.fillText(ic.toUpperCase(), 0, s*1.25);
       ctx.restore();
@@ -7625,7 +7672,7 @@ function drawGame(){
       ctx.beginPath(); ctx.moveTo(0,-s); ctx.lineTo(s,0); ctx.lineTo(0,s); ctx.lineTo(-s,0); ctx.closePath(); ctx.stroke();
       ctx.fillStyle='#ffffff'; ctx.globalAlpha=pulse*0.08; ctx.fill();
       ctx.globalAlpha=pulse;
-      ctx.font=`${Math.floor(s*0.28)+4}px "Press Start 2P",monospace`;
+      ctx.font=`${Math.floor(s*0.28)+4}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillStyle='#fff';
       ctx.fillText('BIO', 0, 0);
       ctx.restore();
@@ -7648,7 +7695,7 @@ function drawGame(){
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
       // Centre label
-      ctx.font=`${Math.floor(s*0.25)+4}px "Press Start 2P",monospace`;
+      ctx.font=`${Math.floor(s*0.25)+4}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle='#ffe000'; ctx.shadowBlur=6*SB;
       ctx.fillText('2×', 0, 0);
@@ -8164,7 +8211,7 @@ function drawGame(){
       // Inner dot
       ctx.beginPath(); ctx.arc(_tx, _ty, 7, 0, Math.PI*2);
       ctx.fillStyle='rgba(255,240,0,'+(0.7+_tp*0.3)+')'; ctx.fill();
-      ctx.font='7px "Press Start 2P",monospace'; ctx.textAlign='center';
+      setFont(FONT_7); ctx.textAlign='center';
       ctx.restore();
     }
     // Off-screen arrow
@@ -8339,17 +8386,17 @@ function drawGame(){
       const _hasPre = !!state.zoneCrossFlash.pre;
       const _msgY = _hasPre ? flashY-10 : flashY-18;
       if(_hasPre){
-        ctx.font='18px "Press Start 2P",monospace'; ctx.fillStyle=_flashCol;
+        setFont(FONT_18); ctx.fillStyle=_flashCol;
         ctx.shadowBlur=16; ctx.shadowColor=_flashShadow;
         ctx.fillText(state.zoneCrossFlash.pre, CX(), _msgY-32);
       }
-      ctx.font='bold 24px "Press Start 2P",monospace';
+      setFont(FONT_24B);
       ctx.fillStyle=_flashCol;
       ctx.shadowBlur=32; ctx.shadowColor=_flashShadow;
       ctx.fillText(state.zoneCrossFlash.msg, CX(), _msgY);
       // Sub-text if provided
       if(state.zoneCrossFlash.sub){
-        ctx.font='bold 24px "Press Start 2P",monospace'; ctx.fillStyle='#00ffcc';
+        setFont(FONT_24B); ctx.fillStyle='#00ffcc';
         ctx.shadowColor='#009977'; ctx.shadowBlur=32;
         ctx.fillText(state.zoneCrossFlash.sub, CX(), _msgY+46);
       }
@@ -8357,7 +8404,7 @@ function drawGame(){
     } else if(isBoostFlash){
       ctx.save();
       ctx.globalAlpha=alpha;
-      ctx.font='bold 18px "Press Start 2P",monospace';
+      setFont(FONT_18B);
       ctx.textAlign='center'; ctx.fillStyle='#ffe000';
       ctx.shadowBlur=30; ctx.shadowColor='#ffe000';
       ctx.fillText('BOOST DOUBLED!', CX(), flashY-10);
@@ -8370,13 +8417,13 @@ function drawGame(){
       ctx.save();
       ctx.globalAlpha = alpha;
       const _fontSz = isBarrier ? 18 : 24;
-      ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`;
+      ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign = 'center';
       ctx.fillStyle = col;
       ctx.shadowBlur = 35; ctx.shadowColor = col;
       ctx.fillText(mainText, CX(), flashY - 18);
       if(subText){
-        ctx.font = '9px "Press Start 2P",monospace';
+        setFont(FONT_9);
         ctx.fillStyle = '#fff';
         ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
         ctx.fillText(subText, CX(), flashY + 18);
@@ -8416,7 +8463,7 @@ function drawGame(){
           ctx.fillStyle = '#00ffcc';
           ctx.shadowColor = '#00ffcc';
           ctx.shadowBlur = 10;
-          ctx.font = 'bold 18px "Press Start 2P",monospace';
+          setFont(FONT_18B);
           ctx.fillText('NEXT MISSION', _nmTx, _nmTy);
           ctx.restore();
           // Arrow: well past the text, further toward gap, bouncing
@@ -8462,7 +8509,7 @@ function drawGame(){
         ctx.fillStyle = '#00ffcc';
         ctx.shadowColor = '#00ffcc';
         ctx.shadowBlur = 10;
-        ctx.font = 'bold 18px "Press Start 2P",monospace';
+        setFont(FONT_18B);
         ctx.fillText('NEXT MISSION', _nmTx, _nmTy);
         ctx.restore();
         // Arrow: past the text, further outward, bouncing
@@ -8509,7 +8556,7 @@ function drawGame(){
         ctx.fillStyle = '#00ffcc';
         ctx.shadowColor = '#00ffcc';
         ctx.shadowBlur = 10;
-        ctx.font = 'bold 18px "Press Start 2P",monospace';
+        setFont(FONT_18B);
         ctx.fillText('NEXT MISSION', cx, cy - 200);
         ctx.restore();
         var _bounce3 = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
@@ -8594,7 +8641,7 @@ function drawGame(){
         k===0?ctx.moveTo(Math.cos(a)*r,Math.sin(a)*r):ctx.lineTo(Math.cos(a)*r,Math.sin(a)*r);
       }
       ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.font=`${Math.floor(gS*0.25)}px "Press Start 2P",monospace`;
+      ctx.font=`${Math.floor(gS*0.25)}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle='#ffe000'; ctx.shadowBlur=8;
       ctx.fillText('2×', 0, 0);
@@ -8625,7 +8672,7 @@ function drawGame(){
         ctx.closePath(); ctx.fill(); ctx.stroke();
         // Inner "X2" label — counter-rotate to stay stationary
         ctx.rotate(-state.frameCount * 0.002);
-        ctx.font='bold 9px "Press Start 2P",monospace';
+        setFont(FONT_9B);
         ctx.textAlign='center'; ctx.textBaseline='middle';
         ctx.fillStyle='#ffe000'; ctx.shadowBlur=10;
         ctx.fillText('X2', 0, 0);
@@ -8781,7 +8828,7 @@ function drawGame(){
       const rise=f.age*1.2;
       ctx.save();
       ctx.globalAlpha=alpha;
-      ctx.font=`bold ${Math.floor(10+f.age*0.15)}px "Press Start 2P",monospace`;
+      ctx.font=`bold ${Math.floor(10+f.age*0.15)}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillStyle=`hsl(${f.hue},100%,75%)`;
       ctx.shadowBlur=8*SB; ctx.shadowColor=`hsl(${f.hue},100%,65%)`;
@@ -8860,7 +8907,7 @@ function drawGame(){
       ctx.fillStyle='#cc8800'; ctx.fill();
       // Label
       ctx.globalAlpha=0.5; ctx.fillStyle='#000'; ctx.shadowBlur=0;
-      ctx.font='5px "Press Start 2P",monospace'; ctx.textAlign='center'; ctx.textBaseline='top';
+      setFont(FONT_5); ctx.textAlign='center'; ctx.textBaseline='top';
       ctx.fillText('BUZZ', 0, 22);
       ctx.restore();
 
@@ -10375,7 +10422,16 @@ function startGame(){
   }, 600);
 }
 
-function loop(){
+let _lastFrameTime = 0;
+const _TARGET_DT = 1000 / 60;
+
+function loop(timestamp) {
+  if (!_lastFrameTime) _lastFrameTime = timestamp || performance.now();
+  const _rawDt = Math.max(1, (timestamp || performance.now()) - _lastFrameTime);
+  _lastFrameTime = timestamp || performance.now();
+  const _dt = Math.min(_rawDt, _TARGET_DT * 3);
+  state._dtScale = _dt / _TARGET_DT;
+
   try{tickBossExplosion();}catch(e){console.error('tickBossExplosion error:',e);}
   try{drawBg();}catch(e){console.error('drawBg error:',e);}
   try{update();}catch(e){console.error('update error:',e);}
@@ -11332,7 +11388,7 @@ function drawDockInWorld(ctx, cx, cy){
   ctx.globalAlpha = 1;
 
   // ── "COMMS" label ─────────────────────────────────
-  ctx.fillStyle='#00ffcc'; ctx.font='12px "Press Start 2P",monospace';
+  ctx.fillStyle='#00ffcc'; setFont(FONT_12);
   ctx.textAlign='center'; ctx.textBaseline='middle';
   ctx.shadowBlur=10*SB; ctx.shadowColor='#00ffcc';
   ctx.fillText('COMMS', 0, -4);
@@ -11476,7 +11532,7 @@ function drawDockInWorld(ctx, cx, cy){
   var arrowBlink = Math.floor(t*2.5)%2===0;
   if(arrowBlink){
     ctx.fillStyle='#ffe000'; ctx.shadowBlur=12*SB; ctx.shadowColor='#ffe000';
-    ctx.font='19px "Press Start 2P",monospace';
+    setFont(FONT_19);
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.fillText('▲', 0, rwTop+18);
     ctx.fillText('▲', 0, rwTop+36);
@@ -11666,15 +11722,17 @@ function _dismissTopmostPopup(e){
     const t=e.target;
     if(t.closest('button,a,input,select,textarea,.dev-btn,.lb-btn,.gallery-thumb,.photo-flex-thumb,[onclick]')) return;
   }
+  // Content popups only close via Escape key, backdrop click, or X button — not arbitrary key presses
+  const _escOnly = (e.type==='keydown' && e.code!=='Escape');
   // Victory room zone menu removed — now in NAVIGATOR-VICTORY.html
   const lb=document.getElementById('gallery-lightbox');
   if(lb && lb.classList.contains('open')){ closeLightbox(); return true; }
   const pf=document.getElementById('photo-fullscreen');
-  if(pf && pf.style.display==='flex'){ closePhotoFullscreen(); return true; }
+  if(pf && pf.style.display==='flex'){ if(_escOnly) return false; closePhotoFullscreen(); return true; }
   const co=document.getElementById('content-overlay');
-  if(co && co.classList.contains('open')){ closeContent(); return true; }
+  if(co && co.classList.contains('open')){ if(_escOnly) return false; closeContent(); return true; }
   const sp=document.getElementById('social-popup');
-  if(sp && sp.classList.contains('open')){ closeSocialPopup(); return true; }
+  if(sp && sp.classList.contains('open')){ if(_escOnly) return false; closeSocialPopup(); return true; }
   const bm=document.getElementById('boring-mode-popup');
   if(bm && bm.style.display==='flex'){ closeBoringMode(); return true; }
   const cf=document.getElementById('contact-overlay');
@@ -11759,7 +11817,9 @@ function returnToTitleWithScore(initials, score){
     editMissionComplete: false,
     _interzoneComplete: false, _zoneMissionShown: null, _zoneEntryCount: 0, _beltRocksDestroyed: 0, _trailBoost: null,
     penBarrier: { closed: true, opening: false, openTimer: 0, openDuration: 300, extendDist: 0 },
-    meteorShower: { triggered: false, active: false, timer: 0, meteors: [], spawnAccum: 0 }
+    meteorShower: { triggered: false, active: false, timer: 0, meteors: [], spawnAccum: 0 },
+    _tabPaused: false,
+    _dtScale: 1
   });
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set(); musicBarCount=0;
   populatedCells.clear();
