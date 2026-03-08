@@ -331,8 +331,39 @@ const PILOT_H = 120;
 const PILOT_W = PILOT_H * (300/360);
 const FRAME_W = 300;
 const FRAME_H = 360;
-const TOTAL_FRAMES = 10;
 const ANIM_FPS = 16;
+
+// Original-mode animation definitions: { row, start, count, fps, loop }
+const ORIG_ANIMS = {
+  idle:     { row:0, start:0, count:1,  fps:1,  loop:false },
+  walk:     { row:0, start:0, count:10, fps:16, loop:true },
+  kneel:    { row:1, start:0, count:10, fps:12, loop:false },
+  jump:     { row:2, start:0, count:14, fps:14, loop:false },
+};
+let origAnim = 'idle';
+let origFrame = 0;
+let origAnimTimer = 0;
+
+function setOrigAnim(name){
+  if(origAnim === name) return;
+  origAnim = name;
+  origFrame = 0;
+  origAnimTimer = 0;
+}
+
+function tickOrigAnim(dt){
+  const a = ORIG_ANIMS[origAnim];
+  if(!a) return;
+  origAnimTimer += dt;
+  if(origAnimTimer >= 1/a.fps){
+    origAnimTimer = 0;
+    origFrame++;
+    if(origFrame >= a.count){
+      if(a.loop){ origFrame = 0; }
+      else { origFrame = a.count - 1; }
+    }
+  }
+}
 
 // Pixel art mode sprite (caveman) — 10 cols × 4 rows grid
 const PX_FRAME_W = 61;
@@ -668,7 +699,7 @@ let gameStarted = false;
 // Load images (all modes)
 const imgs = {};
 const bgImg = new Image();
-bgImg.src = 'Victory-Background-01.svg?' + Date.now();
+bgImg.src = 'Victory-Background-01.svg';
 const sprite = new Image();
 sprite.src = 'spritesheet.png';
 const pxSprite = new Image();
@@ -1936,15 +1967,20 @@ function loop(time){
     } else {
       // ===== ORIGINAL: Free roam =====
       pilot.walking = false;
-      if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
-      if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
-      if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
-      if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
-      if(touchJoyDx !== 0 || touchJoyDy !== 0){
-        pilot.x += touchJoyDx * WALK_SPEED;
-        pilot.y += touchJoyDy * WALK_SPEED;
-        pilot.walking = true;
-        if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+      const isKneeling = keys['KeyK'];
+      const isJumping = keys['KeyJ'];
+
+      if(!isKneeling && origAnim !== 'jump'){
+        if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
+        if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
+        if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
+        if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
+        if(touchJoyDx !== 0 || touchJoyDy !== 0){
+          pilot.x += touchJoyDx * WALK_SPEED;
+          pilot.y += touchJoyDy * WALK_SPEED;
+          pilot.walking = true;
+          if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+        }
       }
 
       if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
@@ -1972,10 +2008,23 @@ function loop(time){
         }
       }
 
-      if(pilot.walking){
-        pilot.animTimer += dt;
-        if(pilot.animTimer > 1/ANIM_FPS){ pilot.animTimer=0; pilot.frame++; if(pilot.frame>=TOTAL_FRAMES) pilot.frame=1; }
-      } else { pilot.frame=0; pilot.animTimer=0; }
+      // Animation state machine
+      if(isKneeling){
+        setOrigAnim('kneel');
+      } else if(isJumping && origAnim !== 'jump'){
+        setOrigAnim('jump');
+      } else if(origAnim === 'jump'){
+        // Let jump animation finish, then return to idle
+        if(origFrame >= ORIG_ANIMS.jump.count - 1) setOrigAnim('idle');
+      } else if(origAnim === 'kneel'){
+        // Released kneel key — snap back to idle
+        setOrigAnim('idle');
+      } else if(pilot.walking){
+        setOrigAnim('walk');
+      } else {
+        setOrigAnim('idle');
+      }
+      tickOrigAnim(dt);
     }
   }
 
@@ -2105,11 +2154,14 @@ function loop(time){
     if(pilot.facing<0) ctx.scale(-1,1);
     ctx.drawImage(pxSprite, srcX, srcY, PX_FRAME_W, PX_FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
   } else {
+    const a = ORIG_ANIMS[origAnim];
+    const srcX = (a.start + origFrame) * FRAME_W;
+    const srcY = a.row * FRAME_H;
     const pilotDrawW = PILOT_W * mainScale;
     const pilotDrawH = PILOT_H * mainScale;
     ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH);
     if(pilot.facing<0) ctx.scale(-1,1);
-    ctx.drawImage(sprite, pilot.frame*FRAME_W, 0, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+    ctx.drawImage(sprite, srcX, srcY, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
   }
   ctx.restore();
 
