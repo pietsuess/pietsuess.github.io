@@ -7,7 +7,7 @@
 <style>
   @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
   *{margin:0;padding:0;box-sizing:border-box;}
-  body{background:#000;overflow:hidden;}
+  body{background:#000;overflow:hidden;touch-action:none;}
   canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;}
   #popup{
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
@@ -77,7 +77,7 @@
   <div id="popup-body" style="font-size:7px;color:#aaa;line-height:2.2;min-height:60px;"></div>
   <button id="popup-close" onclick="closePopup()">[ CLOSE ]</button>
 </div>
-<div id="prompt">&#9654; SPACE TO INTERACT</div>
+<div id="prompt">&#9654; <span id="prompt-text">SPACE TO INTERACT</span></div>
 <div id="editor-hint">EDITOR MODE — click hitzones to edit</div>
 <div id="editor-panel">
   <div id="ep-content">Press E to toggle editor<br>Click a hitzone to select</div>
@@ -830,6 +830,59 @@ canvas.addEventListener('mousemove', e => {
   canvas.style.cursor = 'default';
 });
 
+// ===================== TOUCH CONTROLS =====================
+const isMobile = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+if(isMobile) document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
+let touchJoy = null; // {id, startX, startY, curX, curY}
+let touchJoyDx = 0, touchJoyDy = 0;
+const JOY_RADIUS = 50;
+const JOY_DEAD = 8;
+
+canvas.addEventListener('touchstart', e => {
+  if(editorMode) return;
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    // Left half = joystick, right half = interact tap
+    if(t.clientX < W * 0.45){
+      // Joystick
+      if(!touchJoy){
+        touchJoy = {id:t.identifier, startX:t.clientX, startY:t.clientY, curX:t.clientX, curY:t.clientY};
+      }
+    } else {
+      // Tap right side — interact if near object, or close popup
+      if(popupOpen){ closePopup(); }
+      else if(pilot.nearObj !== null){ openPopup(pilot.nearObj); }
+    }
+  }
+}, {passive:false});
+
+canvas.addEventListener('touchmove', e => {
+  if(editorMode) return;
+  e.preventDefault();
+  for(const t of e.changedTouches){
+    if(touchJoy && t.identifier === touchJoy.id){
+      touchJoy.curX = t.clientX;
+      touchJoy.curY = t.clientY;
+      let dx = touchJoy.curX - touchJoy.startX;
+      let dy = touchJoy.curY - touchJoy.startY;
+      const dist = Math.sqrt(dx*dx + dy*dy);
+      if(dist > JOY_RADIUS){ dx = dx/dist*JOY_RADIUS; dy = dy/dist*JOY_RADIUS; }
+      if(dist < JOY_DEAD){ touchJoyDx = 0; touchJoyDy = 0; }
+      else { touchJoyDx = dx / JOY_RADIUS; touchJoyDy = dy / JOY_RADIUS; }
+    }
+  }
+}, {passive:false});
+
+function endJoy(e){
+  for(const t of e.changedTouches){
+    if(touchJoy && t.identifier === touchJoy.id){
+      touchJoy = null; touchJoyDx = 0; touchJoyDy = 0;
+    }
+  }
+}
+canvas.addEventListener('touchend', endJoy);
+canvas.addEventListener('touchcancel', endJoy);
+
 // ===================== GAME LOOP =====================
 let lastTime = 0;
 function loop(time){
@@ -840,10 +893,18 @@ function loop(time){
 
   if(!popupOpen && !edDrag){
     pilot.walking = false;
+    // Keyboard
     if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
     if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
     if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
     if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
+    // Touch joystick
+    if(touchJoyDx !== 0 || touchJoyDy !== 0){
+      pilot.x += touchJoyDx * WALK_SPEED;
+      pilot.y += touchJoyDy * WALK_SPEED;
+      pilot.walking = true;
+      if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+    }
 
     if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
     if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
@@ -1077,6 +1138,40 @@ function loop(time){
       ctx.fillText('pilot.y: ' + Math.round(pilot.y), camX + 10/ds, pilot.y - 6/ds);
     }
 
+    ctx.restore();
+  }
+
+  // Virtual joystick overlay (mobile)
+  if(isMobile && !popupOpen){
+    ctx.save();
+    if(touchJoy){
+      // Base circle
+      ctx.beginPath();
+      ctx.arc(touchJoy.startX, touchJoy.startY, JOY_RADIUS, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.2)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Thumb
+      const thumbX = touchJoy.startX + touchJoyDx * JOY_RADIUS;
+      const thumbY = touchJoy.startY + touchJoyDy * JOY_RADIUS;
+      ctx.beginPath();
+      ctx.arc(thumbX, thumbY, 18, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.25)';
+      ctx.fill();
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.stroke();
+    } else {
+      // Hint: faint circle in bottom-left
+      ctx.beginPath();
+      ctx.arc(80, H - 80, JOY_RADIUS, 0, Math.PI*2);
+      ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.fillStyle = 'rgba(255,255,255,0.08)';
+      ctx.fill();
+    }
     ctx.restore();
   }
 }
