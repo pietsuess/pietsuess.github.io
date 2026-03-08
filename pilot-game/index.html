@@ -41,26 +41,26 @@
     position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
     display:none;z-index:100;
     background:rgba(0,0,20,0.95);
-    border:2px solid #44ddff;
+    border:3px solid #44ddff;
     box-shadow:0 0 40px #44ddff, inset 0 0 20px rgba(0,0,0,0.5);
-    width:520px;max-height:70vh;padding:32px;
+    width:620px;max-width:92vw;max-height:80vh;padding:40px;
     font-family:'Press Start 2P',monospace;
     color:#fff;text-align:center;
     overflow-y:auto;
   }
   #popup.open{display:block;}
-  #popup-title{font-size:10px;color:#44ddff;letter-spacing:3px;margin-bottom:20px;}
+  #popup-title{font-size:13px;color:#44ddff;letter-spacing:3px;margin-bottom:24px;}
   #popup-close{
-    background:none;border:1px solid #44ddff;color:#44ddff;
-    font-family:'Press Start 2P',monospace;font-size:7px;padding:10px 20px;cursor:pointer;
-    letter-spacing:2px;margin-top:20px;
+    background:none;border:2px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:9px;padding:14px 28px;cursor:pointer;
+    letter-spacing:2px;margin-top:24px;
   }
   #popup-close:hover{background:rgba(68,221,255,0.15);}
   #prompt{
     position:fixed;bottom:40px;left:50%;transform:translateX(-50%);
-    font-family:'Press Start 2P',monospace;font-size:8px;
-    color:#ffe000;letter-spacing:2px;
-    text-shadow:0 0 10px #ffe000;
+    font-family:'Press Start 2P',monospace;font-size:12px;
+    color:#ffe000;letter-spacing:3px;
+    text-shadow:0 0 14px #ffe000;
     opacity:0;transition:opacity 0.2s;pointer-events:none;
     white-space:nowrap;
   }
@@ -237,7 +237,7 @@
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
-  <div id="popup-body" style="font-size:7px;color:#aaa;line-height:2.2;min-height:60px;"></div>
+  <div id="popup-body" style="font-size:9px;color:#aaa;line-height:2.2;min-height:60px;"></div>
   <button id="popup-close" onclick="closePopup()">[ CLOSE ]</button>
 </div>
 <div id="prompt">&#9654; <span id="prompt-text">SPACE TO INTERACT</span></div>
@@ -1142,12 +1142,12 @@ function openPopup(idx){
       const cursor = hasMedia ? 'cursor:pointer;' : '';
       const hover = hasMedia ? ` onmouseover="this.style.background='${color}11'" onmouseout="this.style.background=''"` : '';
       const click = hasMedia ? ` onclick="openContentView('${zone}',${i})"` : '';
-      html += '<div style="margin-bottom:2px;text-align:left;padding:10px 12px;border-bottom:1px solid #1a1a1a;'+cursor+'"'+hover+click+'>';
-      html += '<div style="color:'+color+';font-size:7px;margin-bottom:6px;">'+item.title;
-      if(hasMedia) html += ' <span style="font-size:5px;opacity:0.5;">\u25B6</span>';
+      html += '<div style="margin-bottom:2px;text-align:left;padding:12px 18px;border-bottom:1px solid #1a1a1a;border-left:3px solid transparent;'+cursor+'"'+hover+click+'>';
+      html += '<div style="color:'+color+';font-size:9px;margin-bottom:8px;letter-spacing:1px;">'+item.title;
+      if(hasMedia) html += ' <span style="font-size:6px;opacity:0.5;">\u25B6</span>';
       html += '</div>';
-      if(item.subtitle) html += '<div style="color:#888;font-size:6px;margin-bottom:4px;">'+item.subtitle+'</div>';
-      html += '<div style="color:#aaa;font-size:6px;line-height:2;white-space:pre-wrap;">'+item.text+'</div>';
+      if(item.subtitle) html += '<div style="color:#888;font-size:8px;margin-bottom:6px;">'+item.subtitle+'</div>';
+      html += '<div style="color:#aaa;font-size:8px;line-height:2;white-space:pre-wrap;">'+item.text+'</div>';
       html += '</div>';
     });
     body.innerHTML = html;
@@ -2237,6 +2237,133 @@ function loop(time){
     ctx.restore();
   }
 }
+
+// ===================== PROCEDURAL MUSIC — HOME VORTEX =====================
+// Relaxed, post-mission D major. Gentle pulse, warm pads, unhurried melody.
+let audioCtx = null;
+let musicPlaying = false;
+let musicBar = 0;
+let musicTimer = null;
+
+function fr(s){ return Math.pow(2, s/12); }
+const SCALE_DMAJ = [0,2,4,5,7,9,11];
+
+function _voice(hz, t, att, dur, rel, vol, type, detune){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = hz;
+  if(detune) o.detune.value = detune;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + att);
+  g.gain.setValueAtTime(vol, t + dur);
+  g.gain.linearRampToValueAtTime(0, t + dur + rel);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur + rel + 0.1);
+}
+function _pad(hz,t,dur,vol){ _voice(hz,t,0.8,dur,1.5,vol*0.4,'sine',0); _voice(hz*1.002,t,0.9,dur,1.5,vol*0.3,'sine',8); }
+function _mel(hz,t,dur,vol){ _voice(hz,t,0.05,dur,0.4,vol,'triangle',0); }
+function _bass(hz,t,dur,vol){ _voice(hz,t,0.02,dur,0.15,vol*0.7,'sine',0); }
+function _str(hz,t,dur,vol){ _voice(hz,t,0.3,dur,0.6,vol*0.5,'sawtooth',0); const f=audioCtx.createBiquadFilter();f.type='lowpass';f.frequency.value=800; }
+function _plk(hz,t,vol){ _voice(hz,t,0.005,0.08,0.3,vol,'triangle',0); }
+
+function genBar(t0, bar){
+  const B = bar;
+  const root = 146.83; // D3
+  const sc = SCALE_DMAJ;
+  const bl = 60/80; // 80 BPM — relaxed tempo
+  const barLen = 8 * bl;
+  // Gentle 3-phase cycle
+  const phase = B <= 6 ? 'drift' : B <= 18 ? 'warmth' : B <= 30 ? 'glow' : 'drift';
+  const vol = phase === 'drift' ? 0.35 : phase === 'warmth' ? 0.55 : 0.7;
+
+  // Soft kick — every other beat, gentle
+  [0, 4].forEach(i => { _bass(55, t0 + i*bl, bl*0.2, 0.06*vol); });
+
+  // Bass — slow, warm, root-fifth movement
+  const bassP = [[0,7],[7,5],[5,0],[4,7]];
+  const bp = bassP[Math.floor(B/2) % 4];
+  _bass(root/2 * fr(bp[0]), t0, barLen*0.5, 0.06*vol);
+  _bass(root/2 * fr(bp[1]), t0 + 4*bl, barLen*0.4, 0.05*vol);
+
+  // Warm pads — D major: D-Bm-G-A (I-vi-IV-V)
+  if(phase !== 'drift' || B % 2 === 0){
+    const prog = [[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const ch = prog[Math.floor(B/2) % 4];
+    ch.forEach((s, i) => {
+      _pad(root * fr(s), t0 + i*0.3, barLen + 2.0, 0.04*vol * (1 - i*0.1));
+    });
+  }
+
+  // Gentle strings in warmth/glow
+  if(phase === 'warmth' || phase === 'glow'){
+    const prog = [[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const ch = prog[Math.floor(B/2) % 4];
+    ch.slice(0,2).forEach((s,i) => {
+      _str(root * fr(s), t0 + i*0.15, barLen*0.7, 0.025*vol);
+    });
+  }
+
+  // Melody — unhurried, gentle, wide intervals
+  const melNotes = [0,4,7,12,9,7,4,7,5,4,2,0,4,7,9,12];
+  const mi = B % melNotes.length;
+  if(phase !== 'drift'){
+    [0, 3, 5].forEach((beat, i) => {
+      const step = melNotes[(mi + i) % melNotes.length];
+      const noteHz = root * 2 * fr(step <= 12 ? step : step - 12) * (step > 12 ? 2 : 1);
+      _mel(noteHz, t0 + beat*bl, bl*2.5, 0.035*vol);
+    });
+  } else {
+    // Drift: single sparse note
+    if(B % 2 === 0){
+      _mel(root * 2 * fr(melNotes[mi]), t0 + 2*bl, barLen*0.5, 0.025*vol);
+    }
+  }
+
+  // Glow: gentle plucked arpeggios
+  if(phase === 'glow'){
+    const arp = [0, 4, 7, 12, 7, 4];
+    arp.forEach((s, i) => {
+      if(i % 2 === B % 2) _plk(root * 2 * fr(s), t0 + i*bl*1.2, 0.025*vol);
+    });
+  }
+}
+
+function startMusic(){
+  if(musicPlaying) return;
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  musicPlaying = true;
+  musicBar = 0;
+  scheduleBar();
+}
+
+function scheduleBar(){
+  if(!musicPlaying) return;
+  const bl = 60/80;
+  const barLen = 8 * bl;
+  const t0 = audioCtx.currentTime + 0.1;
+  genBar(t0, musicBar);
+  musicBar++;
+  if(musicBar > 36) musicBar = 0; // loop cycle
+  musicTimer = setTimeout(scheduleBar, barLen * 1000 * 0.95);
+}
+
+function stopMusic(){
+  musicPlaying = false;
+  if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
+}
+
+// Start music on first user interaction
+let _musicStarted = false;
+function tryStartMusic(){
+  if(_musicStarted) return;
+  _musicStarted = true;
+  startMusic();
+}
+window.addEventListener('click', tryStartMusic, {once:false});
+window.addEventListener('keydown', tryStartMusic, {once:false});
+window.addEventListener('touchstart', tryStartMusic, {once:false});
 
 let loaded = 0;
 const totalImgs = 2 + Object.keys(imgs).length;
