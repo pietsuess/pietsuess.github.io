@@ -250,6 +250,11 @@
 <div id="tile-hint">TILE EDITOR — click to paint</div>
 <div id="tile-editor">
   <div class="te-title">TILE EDITOR</div>
+  <div style="margin-bottom:8px;">
+    <button class="te-layer-btn" onclick="setLayer(0)">SKY</button>
+    <button class="te-layer-btn" onclick="setLayer(1)">MTN</button>
+    <button class="te-layer-btn" onclick="setLayer(2)" style="border-color:#ffe000;color:#ffe000;">GND</button>
+  </div>
   <div id="pal-wrap"><canvas id="pal-canvas"></canvas></div>
   <div class="te-info">
     <span id="pal-sel">ERASE (empty)</span><br>
@@ -608,125 +613,15 @@ imgs['hanger']    = new Image(); imgs['hanger'].src    = 'Victory-Background_Han
 const tilesetImg = new Image();
 tilesetImg.src = 'tileset.png';
 
-// ===================== PIXEL ART PARALLAX LAYERS =====================
-// Built from tileset on demand when pixel mode is chosen
-const TILE = 24; // base tile size in tileset
-const PX_SCALE = 1; // scale up tiles for world coordinates
-const TS = TILE * PX_SCALE; // 96px per tile in world space
-
-// Parallax layer canvases (built in buildPixelLayers)
-let pxSky = null;    // sky + clouds (slowest)
-let pxMtns = null;   // mountains
-let pxGround = null; // grass + dirt (1:1 with camera)
-
-// Parallax speeds
+// ===================== PIXEL ART CONSTANTS =====================
+const TILE = 24;
+const PX_SCALE = 1;
+const TS = TILE * PX_SCALE;
 const PX_SKY_SPEED = 0.08;
 const PX_MTN_SPEED = 0.3;
-// ground is 1.0 (locked to camera)
 
-function buildPixelLayers(){
-  if(!tilesetImg.complete) return;
-  const ts = tilesetImg;
-
-  // Ground layer: grass top + dirt, tiled across WORLD_W
-  // Grass strip: y=24-48 in tileset (24px tall)
-  // Sub-ground/dirt: y=48-72
-  // We need ground from TARMAC_TOP to WORLD_H
-  const groundH = Math.ceil(WORLD_H - TARMAC_TOP + 200);
-  pxGround = document.createElement('canvas');
-  pxGround.width = Math.ceil(WORLD_W);
-  pxGround.height = groundH;
-  const gc = pxGround.getContext('2d');
-  gc.imageSmoothingEnabled = false;
-
-  // Fill dirt background
-  gc.fillStyle = '#8B6914';
-  gc.fillRect(0, 0, pxGround.width, groundH);
-
-  // Tile grass strip across top (tileset y=24-48, first 192px is the detailed grass)
-  const grassSrcW = 192; // usable grass section width
-  for(let x = 0; x < WORLD_W; x += grassSrcW * PX_SCALE){
-    gc.drawImage(ts, 0, 24, grassSrcW, 24, x, 0, grassSrcW * PX_SCALE, TILE * PX_SCALE);
-  }
-
-  // Tile sub-ground dirt (tileset y=48-72) below grass
-  for(let x = 0; x < WORLD_W; x += grassSrcW * PX_SCALE){
-    for(let y = TS; y < groundH; y += TS){
-      gc.drawImage(ts, 0, 48, grassSrcW, 24, x, y, grassSrcW * PX_SCALE, TS);
-    }
-  }
-
-  // Scatter some trees/bushes from the grass row (tileset y=24-48, individual sprites)
-  // Trees at ~x=96,y=24 (16x24), bush at ~x=144,y=32 (16x16)
-  const treeDefs = [
-    {sx:96, sy:24, sw:24, sh:24},   // big tree
-    {sx:144, sy:28, sw:20, sh:20},   // bush
-    {sx:120, sy:28, sw:16, sh:20},   // small tree
-  ];
-  // Place trees along the ground
-  const rng = (seed) => { let s=seed; return()=>{s=(s*16807)%2147483647;return s/2147483647;}; };
-  const rand = rng(42);
-  for(let x = 200; x < WORLD_W - 200; x += 180 + Math.floor(rand() * 300)){
-    const t = treeDefs[Math.floor(rand() * treeDefs.length)];
-    const scale = PX_SCALE * (0.8 + rand() * 0.6);
-    const dw = t.sw * scale, dh = t.sh * scale;
-    gc.drawImage(ts, t.sx, t.sy, t.sw, t.sh, x, -dh + 20, dw, dh);
-  }
-
-  // Mountain layer: purple mountains tiled (tileset y=0-24)
-  const mtnW = Math.ceil(WORLD_W * 0.6); // shorter since it scrolls slower
-  pxMtns = document.createElement('canvas');
-  pxMtns.width = mtnW;
-  pxMtns.height = TS * 2;
-  const mc = pxMtns.getContext('2d');
-  mc.imageSmoothingEnabled = false;
-  for(let x = 0; x < mtnW; x += 384 * PX_SCALE){
-    mc.drawImage(ts, 0, 0, 384, 24, x, 0, 384 * PX_SCALE, TS);
-    // Double up for taller mountains
-    mc.drawImage(ts, 0, 0, 384, 24, x, TS * 0.5, 384 * PX_SCALE, TS);
-  }
-
-  // Sky layer: light blue with scattered clouds
-  const skyW = Math.ceil(WORLD_W * 0.4);
-  const skyH = Math.ceil(WORLD_H * 0.8);
-  pxSky = document.createElement('canvas');
-  pxSky.width = skyW;
-  pxSky.height = skyH;
-  const sc = pxSky.getContext('2d');
-  sc.imageSmoothingEnabled = false;
-  // Sky gradient
-  const grad = sc.createLinearGradient(0, 0, 0, skyH);
-  grad.addColorStop(0, '#5BA3D9');
-  grad.addColorStop(0.5, '#87CEEB');
-  grad.addColorStop(1, '#C8E6F0');
-  sc.fillStyle = grad;
-  sc.fillRect(0, 0, skyW, skyH);
-
-  // Cloud sprites from tileset (y=72-120 area, various positions)
-  const cloudDefs = [
-    {sx:128, sy:80, sw:48, sh:20},  // big cloud
-    {sx:192, sy:80, sw:36, sh:16},  // medium cloud
-    {sx:240, sy:88, sw:28, sh:12},  // small cloud
-    {sx:288, sy:80, sw:48, sh:20},  // another big
-    {sx:192, sy:100, sw:40, sh:16}, // medium low
-    {sx:128, sy:100, sw:32, sh:14}, // small low
-  ];
-  const rand2 = rng(77);
-  for(let i = 0; i < 30; i++){
-    const cd = cloudDefs[Math.floor(rand2() * cloudDefs.length)];
-    const cx = rand2() * skyW;
-    const cy = rand2() * skyH * 0.7;
-    const cscale = PX_SCALE * (0.6 + rand2() * 1.0);
-    sc.drawImage(ts, cd.sx, cd.sy, cd.sw, cd.sh, cx, cy, cd.sw * cscale, cd.sh * cscale);
-  }
-
-  console.log('[PIXEL] Layers built: sky='+skyW+'x'+skyH+', mtn='+mtnW+'x'+pxMtns.height+', ground='+pxGround.width+'x'+groundH);
-}
-
-// ===================== TILEMAP SIDE-SCROLLER (pixel mode) =====================
-// Tile IDs: 0 = empty, N > 0 = tileset grid cell (1-based)
-// Grid: col = (N-1) % TS_COLS, row = floor((N-1) / TS_COLS)
-let TS_COLS = 16, TS_ROWS = 16; // computed from tileset on load
+// ===================== MULTI-LAYER TILEMAP SYSTEM =====================
+let TS_COLS = 16, TS_ROWS = 16;
 
 function gridId(gc, gr){ return gr * TS_COLS + gc + 1; }
 function tileToSrc(id){
@@ -736,106 +631,144 @@ function tileToSrc(id){
   return [c*TILE, r*TILE, TILE, TILE];
 }
 
-const MAP_COLS = 200;
-const MAP_ROWS = 25;
-const MAP_Y0 = 1080;
+// Layer definitions: sky (slow parallax), mountains (medium), ground (1:1)
+const LAYERS = [
+  { name:'SKY', cols:50, rows:20, y0:0,    speedX:PX_SKY_SPEED, speedY:PX_SKY_SPEED, map:null },
+  { name:'MTN', cols:100, rows:8, y0:1280,  speedX:PX_MTN_SPEED, speedY:1.0,          map:null },
+  { name:'GND', cols:200, rows:25, y0:1080, speedX:1.0,          speedY:1.0,          map:null },
+];
+const LY_SKY=0, LY_MTN=1, LY_GND=2;
+let activeLayer = LY_GND;
+
 const GROUND_ROW = 14;
 const GRAVITY = 1200;
 const JUMP_VEL = -420;
 const PLAT_HW = 10;
-let tileMap = null;
 
+// Collision only checks ground layer
 function tileAt(wx, wy){
+  const L = LAYERS[LY_GND];
   const c = Math.floor(wx / TILE);
-  const r = Math.floor((wy - MAP_Y0) / TILE);
-  if(r<0||r>=MAP_ROWS||c<0||c>=MAP_COLS) return 0;
-  return tileMap[r][c];
+  const r = Math.floor((wy - L.y0) / TILE);
+  if(r<0||r>=L.rows||c<0||c>=L.cols) return 0;
+  return L.map ? L.map[r][c] : 0;
 }
 function tileSolid(wx, wy){ return tileAt(wx, wy) !== 0; }
 
-function buildTileMap(){
-  // Try loading saved map first
+function buildAllLayers(){
+  // Try loading saved data
   const saved = localStorage.getItem('pilotGame_tileMap');
   if(saved){
     try{
-      const parsed = JSON.parse(saved);
-      if(parsed.length === MAP_ROWS && parsed[0].length === MAP_COLS){
-        tileMap = parsed;
-        console.log('[TILEMAP] Loaded from localStorage');
+      const data = JSON.parse(saved);
+      // New format: {sky:[], mtn:[], gnd:[]}
+      if(data.sky && data.mtn && data.gnd){
+        LAYERS[LY_SKY].map = data.sky;
+        LAYERS[LY_MTN].map = data.mtn;
+        LAYERS[LY_GND].map = data.gnd;
+        console.log('[LAYERS] Loaded all from localStorage');
+        return;
+      }
+      // Old format: just ground array
+      if(Array.isArray(data) && data.length === LAYERS[LY_GND].rows){
+        LAYERS[LY_GND].map = data;
+        buildLayerDefaults(LY_SKY);
+        buildLayerDefaults(LY_MTN);
+        console.log('[LAYERS] Loaded ground from old format, built sky/mtn defaults');
         return;
       }
     } catch(e){}
   }
 
-  tileMap = [];
-  for(let r=0; r<MAP_ROWS; r++) tileMap[r] = new Array(MAP_COLS).fill(0);
-
-  const G = gridId(0,1); // grass
-  const D = gridId(0,2); // dirt
-  const P = gridId(1,7); // platform
-
-  // Ground + dirt fill
-  for(let c=0; c<MAP_COLS; c++){
-    tileMap[GROUND_ROW][c] = G;
-    for(let r=GROUND_ROW+1; r<MAP_ROWS; r++) tileMap[r][c] = D;
-  }
-
-  // Gaps
-  const gaps = [[28,32],[55,63],[90,95],[130,135],[165,172]];
-  for(const [a,b] of gaps)
-    for(let c=a;c<b;c++) for(let r=GROUND_ROW;r<MAP_ROWS;r++) tileMap[r][c]=0;
-
-  // Floating platforms
-  const plats = [
-    [25,29,GROUND_ROW-3],[31,35,GROUND_ROW-5],[50,54,GROUND_ROW-4],
-    [57,59,GROUND_ROW-2],[61,63,GROUND_ROW-3],[70,76,GROUND_ROW-6],
-    [80,85,GROUND_ROW-4],[92,94,GROUND_ROW-2],[96,100,GROUND_ROW-5],
-    [110,116,GROUND_ROW-7],[120,125,GROUND_ROW-4],[132,134,GROUND_ROW-2],
-    [140,148,GROUND_ROW-6],[155,160,GROUND_ROW-3],[167,170,GROUND_ROW-2],
-    [175,182,GROUND_ROW-5],
-  ];
-  for(const [a,b,row] of plats)
-    for(let c=a;c<b;c++) tileMap[row][c] = P;
-
-  // Hills
-  for(let c=100;c<110;c++){
-    tileMap[GROUND_ROW][c]=D; tileMap[GROUND_ROW-1][c]=D; tileMap[GROUND_ROW-2][c]=G;
-  }
-  for(let c=150;c<165;c++){
-    tileMap[GROUND_ROW][c]=D; tileMap[GROUND_ROW-1][c]=G;
-  }
-
-  console.log('[TILEMAP] Built default '+MAP_COLS+'x'+MAP_ROWS);
+  // Build all defaults
+  for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
+  console.log('[LAYERS] Built all defaults');
 }
 
-function renderTileMap(){
+function buildLayerDefaults(idx){
+  const L = LAYERS[idx];
+  L.map = [];
+  for(let r=0; r<L.rows; r++) L.map[r] = new Array(L.cols).fill(0);
+
+  if(idx === LY_SKY){
+    // Scatter some cloud tiles from tileset row 3-4
+    const rng = (seed) => { let s=seed; return()=>{s=(s*16807)%2147483647;return s/2147483647;}; };
+    const rand = rng(77);
+    const cloudTiles = [gridId(5,3),gridId(6,3),gridId(8,3),gridId(9,3),gridId(10,3),gridId(5,4),gridId(8,4)];
+    for(let i=0; i<25; i++){
+      const c = Math.floor(rand()*L.cols);
+      const r = Math.floor(rand()*L.rows*0.7);
+      const t = cloudTiles[Math.floor(rand()*cloudTiles.length)];
+      if(c<L.cols && r<L.rows) L.map[r][c] = t;
+    }
+  }
+
+  if(idx === LY_MTN){
+    // Tile mountain sprites (tileset row 0) across bottom rows
+    for(let c=0; c<L.cols; c++){
+      for(let gc=0; gc<TS_COLS; gc++){
+        if(c % TS_COLS === gc){
+          L.map[L.rows-2][c] = gridId(gc, 0);
+          L.map[L.rows-1][c] = gridId(gc, 0);
+        }
+      }
+    }
+  }
+
+  if(idx === LY_GND){
+    const G = gridId(0,1), D = gridId(0,2), P = gridId(1,7);
+    for(let c=0; c<L.cols; c++){
+      L.map[GROUND_ROW][c] = G;
+      for(let r=GROUND_ROW+1; r<L.rows; r++) L.map[r][c] = D;
+    }
+    const gaps = [[28,32],[55,63],[90,95],[130,135],[165,172]];
+    for(const [a,b] of gaps)
+      for(let c=a;c<b;c++) for(let r=GROUND_ROW;r<L.rows;r++) L.map[r][c]=0;
+    const plats = [
+      [25,29,GROUND_ROW-3],[31,35,GROUND_ROW-5],[50,54,GROUND_ROW-4],
+      [57,59,GROUND_ROW-2],[61,63,GROUND_ROW-3],[70,76,GROUND_ROW-6],
+      [80,85,GROUND_ROW-4],[92,94,GROUND_ROW-2],[96,100,GROUND_ROW-5],
+      [110,116,GROUND_ROW-7],[120,125,GROUND_ROW-4],[132,134,GROUND_ROW-2],
+      [140,148,GROUND_ROW-6],[155,160,GROUND_ROW-3],[167,170,GROUND_ROW-2],
+      [175,182,GROUND_ROW-5],
+    ];
+    for(const [a,b,row] of plats)
+      for(let c=a;c<b;c++) L.map[row][c] = P;
+    for(let c=100;c<110;c++){ L.map[GROUND_ROW][c]=D; L.map[GROUND_ROW-1][c]=D; L.map[GROUND_ROW-2][c]=G; }
+    for(let c=150;c<165;c++){ L.map[GROUND_ROW][c]=D; L.map[GROUND_ROW-1][c]=G; }
+  }
+}
+
+function renderLayerTiles(idx, lcx, lcy){
+  const L = LAYERS[idx];
+  if(!L.map) return;
   const ms = getScale();
   const vw = W / ms;
-  const startCol = Math.max(0, Math.floor(camX / TILE));
-  const endCol = Math.min(MAP_COLS, Math.ceil((camX + vw) / TILE) + 1);
-  const startRow = Math.max(0, Math.floor((camY - MAP_Y0) / TILE));
-  const endRow = Math.min(MAP_ROWS, Math.ceil((camY - MAP_Y0 + VISIBLE_H) / TILE) + 1);
+  const startCol = Math.max(0, Math.floor(lcx / TILE));
+  const endCol = Math.min(L.cols, Math.ceil((lcx + vw) / TILE) + 1);
+  const startRow = Math.max(0, Math.floor((lcy - L.y0) / TILE));
+  const endRow = Math.min(L.rows, Math.ceil((lcy - L.y0 + VISIBLE_H) / TILE) + 1);
   const ts = tilesetImg;
   for(let r=startRow; r<endRow; r++){
     for(let c=startCol; c<endCol; c++){
-      const t = tileMap[r][c];
+      const t = L.map[r][c];
       if(t===0) continue;
       const s = tileToSrc(t);
       if(!s) continue;
-      ctx.drawImage(ts, s[0],s[1],s[2],s[3], c*TILE, MAP_Y0+r*TILE, TILE, TILE);
+      ctx.drawImage(ts, s[0],s[1],s[2],s[3], c*TILE, L.y0+r*TILE, TILE, TILE);
     }
   }
-  // Grid overlay in editor mode
-  if(tileEdMode){
+  // Grid overlay for active layer in editor
+  if(tileEdMode && activeLayer === idx){
     ctx.strokeStyle = 'rgba(0,255,136,0.15)';
     ctx.lineWidth = 0.5;
     for(let c=startCol; c<=endCol; c++){
-      ctx.beginPath(); ctx.moveTo(c*TILE, MAP_Y0+startRow*TILE);
-      ctx.lineTo(c*TILE, MAP_Y0+endRow*TILE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(c*TILE, L.y0+startRow*TILE);
+      ctx.lineTo(c*TILE, L.y0+endRow*TILE); ctx.stroke();
     }
     for(let r=startRow; r<=endRow; r++){
-      ctx.beginPath(); ctx.moveTo(startCol*TILE, MAP_Y0+r*TILE);
-      ctx.lineTo(endCol*TILE, MAP_Y0+r*TILE); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(startCol*TILE, L.y0+r*TILE);
+      ctx.lineTo(endCol*TILE, L.y0+r*TILE); ctx.stroke();
     }
   }
 }
@@ -912,11 +845,21 @@ function drawPalette(){
   }
 }
 
+// Layer selector
+function setLayer(idx){
+  activeLayer = idx;
+  document.querySelectorAll('.te-layer-btn').forEach((b,i)=>{
+    b.style.borderColor = i===idx ? '#ffe000' : '#00ff88';
+    b.style.color = i===idx ? '#ffe000' : '#00ff88';
+  });
+  document.getElementById('tile-hint').textContent = 'TILE EDITOR — ' + LAYERS[idx].name + ' layer';
+}
+
 // Paint tiles on game canvas
 let tePainting = false;
 canvas.addEventListener('mousedown', e => {
-  if(!tileEdMode || !tileMap) return;
-  if(e.button === 2){ // right click = erase
+  if(!tileEdMode || !LAYERS[activeLayer].map) return;
+  if(e.button === 2){
     tePaintAt(e.clientX, e.clientY, 0); tePainting = 'erase';
   } else {
     tePaintAt(e.clientX, e.clientY, edTileId); tePainting = 'paint';
@@ -931,18 +874,20 @@ canvas.addEventListener('contextmenu', e => { if(tileEdMode) e.preventDefault();
 
 function tePaintAt(sx, sy, id){
   const s = getScale();
-  const wx = sx / s + camX;
-  const wy = sy / s + camY;
+  const L = LAYERS[activeLayer];
+  const lcx = camX * L.speedX;
+  const lcy = camY * L.speedY;
+  const wx = sx / s + lcx;
+  const wy = sy / s + lcy;
   const c = Math.floor(wx / TILE);
-  const r = Math.floor((wy - MAP_Y0) / TILE);
-  if(r<0||r>=MAP_ROWS||c<0||c>=MAP_COLS) return;
-  tileMap[r][c] = id;
+  const r = Math.floor((wy - L.y0) / TILE);
+  if(r<0||r>=L.rows||c<0||c>=L.cols) return;
+  L.map[r][c] = id;
 }
 
-// Save / Load / Export / Import
 function teSave(){
-  localStorage.setItem('pilotGame_tileMap', JSON.stringify(tileMap));
-  console.log('[TILE-ED] Saved to localStorage');
+  const data = { sky:LAYERS[0].map, mtn:LAYERS[1].map, gnd:LAYERS[2].map };
+  localStorage.setItem('pilotGame_tileMap', JSON.stringify(data));
   document.getElementById('pal-sel').textContent = 'SAVED!';
   setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
 }
@@ -951,16 +896,16 @@ function teLoad(){
   const saved = localStorage.getItem('pilotGame_tileMap');
   if(!saved){ alert('No saved map'); return; }
   try{
-    const parsed = JSON.parse(saved);
-    if(parsed.length===MAP_ROWS && parsed[0].length===MAP_COLS){
-      tileMap = parsed;
-      console.log('[TILE-ED] Loaded from localStorage');
-    }
+    const data = JSON.parse(saved);
+    if(data.sky) LAYERS[0].map = data.sky;
+    if(data.mtn) LAYERS[1].map = data.mtn;
+    if(data.gnd) LAYERS[2].map = data.gnd;
   } catch(e){ alert('Load error'); }
 }
 
 function teExport(){
-  const json = JSON.stringify(tileMap);
+  const data = { sky:LAYERS[0].map, mtn:LAYERS[1].map, gnd:LAYERS[2].map };
+  const json = JSON.stringify(data);
   navigator.clipboard.writeText(json).then(()=>{
     document.getElementById('pal-sel').textContent = 'COPIED!';
     setTimeout(()=>{ document.getElementById('pal-sel').textContent = edTileId?'Tile':'ERASE (empty)'; }, 1000);
@@ -975,18 +920,17 @@ function teImport(){
   const json = prompt('Paste tilemap JSON:');
   if(!json) return;
   try{
-    const parsed = JSON.parse(json);
-    if(parsed.length===MAP_ROWS && parsed[0].length===MAP_COLS){
-      tileMap = parsed;
-    } else { alert('Wrong dimensions'); }
+    const data = JSON.parse(json);
+    if(data.sky) LAYERS[0].map = data.sky;
+    if(data.mtn) LAYERS[1].map = data.mtn;
+    if(data.gnd) LAYERS[2].map = data.gnd;
   } catch(e){ alert('Invalid JSON'); }
 }
 
 function teReset(){
-  if(!confirm('Reset tilemap to default?')) return;
+  if(!confirm('Reset ALL layers to default?')) return;
   localStorage.removeItem('pilotGame_tileMap');
-  tileMap = null;
-  buildTileMap();
+  for(let i=0; i<LAYERS.length; i++) buildLayerDefaults(i);
 }
 
 
@@ -1029,10 +973,9 @@ function startGame(mode){
   gameMode = mode;
   document.getElementById('splash').style.display = 'none';
   if(mode === 'pixel'){
-    buildPixelLayers();
-    buildTileMap();
+    buildAllLayers();
     pilot.x = 100;
-    pilot.y = MAP_Y0 + GROUND_ROW * TILE; // feet on ground
+    pilot.y = LAYERS[LY_GND].y0 + GROUND_ROW * TILE;
     pilot.vy = 0;
     pilot.grounded = true;
   }
@@ -1801,8 +1744,8 @@ function loop(time){
       if(pilot.vy >= 0){
         const footL = pilot.x - PLAT_HW, footR = pilot.x + PLAT_HW;
         if(tileSolid(footL, pilot.y) || tileSolid(footR, pilot.y)){
-          const row = Math.floor((pilot.y - MAP_Y0) / TILE);
-          pilot.y = MAP_Y0 + row * TILE;
+          const row = Math.floor((pilot.y - LAYERS[LY_GND].y0) / TILE);
+          pilot.y = LAYERS[LY_GND].y0 + row * TILE;
           pilot.vy = 0;
           pilot.grounded = true;
         } else {
@@ -1814,23 +1757,23 @@ function loop(time){
       if(pilot.vy < 0){
         const headY = pilot.y - PILOT_H;
         if(tileSolid(pilot.x - PLAT_HW, headY) || tileSolid(pilot.x + PLAT_HW, headY)){
-          const row = Math.floor((headY - MAP_Y0) / TILE);
-          pilot.y = MAP_Y0 + (row + 1) * TILE + PILOT_H;
+          const row = Math.floor((headY - LAYERS[LY_GND].y0) / TILE);
+          pilot.y = LAYERS[LY_GND].y0 + (row + 1) * TILE + PILOT_H;
           pilot.vy = 0;
         }
       }
 
       // Fall off bottom — respawn
-      if(pilot.y > MAP_Y0 + MAP_ROWS * TILE + 200){
+      if(pilot.y > LAYERS[LY_GND].y0 + LAYERS[LY_GND].rows * TILE + 200){
         pilot.x = 100;
-        pilot.y = MAP_Y0 + GROUND_ROW * TILE;
+        pilot.y = LAYERS[LY_GND].y0 + GROUND_ROW * TILE;
         pilot.vy = 0;
         pilot.grounded = true;
       }
 
       // World bounds
       if(pilot.x < PLAT_HW) pilot.x = PLAT_HW;
-      if(pilot.x > MAP_COLS * TILE - PLAT_HW) pilot.x = MAP_COLS * TILE - PLAT_HW;
+      if(pilot.x > LAYERS[LY_GND].cols * TILE - PLAT_HW) pilot.x = LAYERS[LY_GND].cols * TILE - PLAT_HW;
 
       // Walk cycle when moving horizontally, standing when idle/airborne
       pilot.walking = (moveX !== 0 && pilot.grounded);
@@ -1936,43 +1879,41 @@ function loop(time){
   // All rendering direct on main canvas
   // mainScale already computed above with camera
 
-  if(gameMode === 'pixel' && pxSky){
-    // ===== PIXEL ART MODE WITH PARALLAX =====
-
-    // Layer 1: Sky (slowest parallax)
-    ctx.save();
-    ctx.imageSmoothingEnabled = false;
-    ctx.scale(mainScale, mainScale);
+  if(gameMode === 'pixel' && LAYERS[LY_GND].map){
+    // ===== PIXEL ART MODE WITH PARALLAX LAYERS =====
     const skyCamX = camX * PX_SKY_SPEED;
     const skyCamY = camY * PX_SKY_SPEED;
-    ctx.translate(-skyCamX, -skyCamY);
-    // Tile sky if needed
-    const skyDrawX = Math.floor(skyCamX / pxSky.width) * pxSky.width;
-    for(let sx = skyDrawX; sx < skyCamX + vww; sx += pxSky.width){
-      ctx.drawImage(pxSky, sx, 0);
-    }
-    ctx.restore();
+    const mtnCamX = camX * PX_MTN_SPEED;
 
-    // Layer 2: Mountains (medium parallax)
+    // Layer 1: Sky gradient + sky tiles
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.scale(mainScale, mainScale);
-    const mtnCamX = camX * PX_MTN_SPEED;
-    ctx.translate(-mtnCamX, -camY);
-    // Position mountains above the ground
-    const mtnY = TARMAC_TOP - pxMtns.height;
-    const mtnDrawX = Math.floor(mtnCamX / pxMtns.width) * pxMtns.width;
-    for(let mx = mtnDrawX; mx < mtnCamX + vww; mx += pxMtns.width){
-      ctx.drawImage(pxMtns, mx, mtnY);
-    }
+    ctx.translate(-skyCamX, -skyCamY);
+    // Sky gradient behind tiles
+    const grad = ctx.createLinearGradient(0, 0, 0, LAYERS[LY_SKY].rows * TILE);
+    grad.addColorStop(0, '#5BA3D9');
+    grad.addColorStop(0.5, '#87CEEB');
+    grad.addColorStop(1, '#C8E6F0');
+    ctx.fillStyle = grad;
+    ctx.fillRect(skyCamX - 10, skyCamY - 10, vww + 20, VISIBLE_H + 20);
+    renderLayerTiles(LY_SKY, skyCamX, skyCamY);
     ctx.restore();
 
-    // Layer 3: Tilemap (1:1 with camera)
+    // Layer 2: Mountain tiles
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-mtnCamX, -camY);
+    renderLayerTiles(LY_MTN, mtnCamX, camY);
+    ctx.restore();
+
+    // Layer 3: Ground tiles
     ctx.save();
     ctx.imageSmoothingEnabled = false;
     ctx.scale(mainScale, mainScale);
     ctx.translate(-camX, -camY);
-    if(tileMap) renderTileMap();
+    renderLayerTiles(LY_GND, camX, camY);
     ctx.restore();
   } else {
     // ===== ORIGINAL SVG MODE =====
