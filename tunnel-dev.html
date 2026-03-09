@@ -2918,28 +2918,30 @@ window.onload = function() {
 
         // ═══════════════════════════════════════════════════════════════
         // HAZARD GATING PER SECTOR:
-        // S1 (EDIT):    hazards + rings + cores + stars only
-        // S2 (PHOTO):   + gap barriers
-        // S3 (DIRECT):  + ramps + full ring barriers
-        // S4 (ANIMATE): + boost pads
-        // S5 (DESIGN):  everything
+        // S1 (EDIT):    mines + rings only (no cores, no barriers)
+        // S2 (PHOTO):   + gap barriers + ramps + full barriers (ramp before full)
+        // S3 (DIRECT):  + health cores + stars + blocks (harder, needs healing)
+        // S4 (ANIMATE): SPEED RUN — gap barrier slalom, minimal objects, time-gated
+        // S5 (DESIGN):  + boost pads + knots, everything active
         // ═══════════════════════════════════════════════════════════════
 
-        // BARRIER RULE: Every barrier ring MUST be passable.
+        // BARRIER RULE: Every full ring barrier MUST have a ramp before it.
         //   Full ring (no gap) → MUST have a ramp before it
         //   Partial ring (gap) → player steers through
         var barriersEnabled = s >= 2;
-        var rampsEnabled = s >= 3;
-        var boostEnabled = s >= 4;
-        var rampThreshold = !barriersEnabled ? 0 : (s <= 2 ? 0.10 : s <= 3 ? 0.14 : s <= 4 ? 0.18 : 0.22);
+        var rampsEnabled = s >= 2;   // ramps arrive with barriers in S2
+        var boostEnabled = s >= 5;   // boost pads in final zone only
+        var barrierThreshold = !barriersEnabled ? 0 : (s === 2 ? 0.12 : s === 3 ? 0.16 : s === 4 ? 0.35 : 0.22);
+        // S4 speed run: high barrier density (slalom of gap barriers)
         // Scale barrier density with level
-        rampThreshold *= (1 + (lvl - 1) * 0.10);
-        if (barriersEnabled && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
+        barrierThreshold *= (1 + (lvl - 1) * 0.10);
+        if (barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > (s === 4 ? 400 : 800)) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
-            // S2: always gap barrier. S3+: 40% gap, 60% ramp+full barrier
-            if (!rampsEnabled || Math.random() < 0.4) {
-                const gapSize = Math.PI * (0.6 + Math.random() * 0.5);
+            // S4: always gap barriers (slalom). Others: mix of gap and ramp+full
+            if (s === 4 || !rampsEnabled || Math.random() < 0.4) {
+                // Gap barrier — player steers through
+                const gapSize = Math.PI * (s === 4 ? (0.5 + Math.random() * 0.3) : (0.6 + Math.random() * 0.5));
                 const gapAngle = Math.random() * Math.PI * 2;
                 const arcLen = Math.PI * 2 - gapSize;
                 let wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), barrierMat);
@@ -2948,6 +2950,7 @@ window.onload = function() {
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.03, arcLength: arcLen };
                 scene.add(wallMesh); items.push(wallMesh);
             } else {
+                // Full ring barrier — MUST place ramp before it
                 let rampMesh = new THREE.Mesh(rampGeo, rampMat);
                 rampMesh.position.set(Math.cos(angle) * (tubeRadius - 2), Math.sin(angle) * (tubeRadius - 2), zPos);
                 rampMesh.rotation.z = angle;
@@ -2959,33 +2962,45 @@ window.onload = function() {
                 wallMesh.position.set(0, 0, zPos - peakDist);
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 };
                 scene.add(wallMesh); items.push(wallMesh);
+                // Place content object at peak of jump arc for collection during jump
+                var jumpZone = getZoneName(s);
+                var jumpUncollected = (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; });
+                if (jumpUncollected.length > 0 && Math.random() < 0.4) {
+                    var jumpPick = jumpUncollected[Math.floor(Math.random() * jumpUncollected.length)];
+                    contentSpawnedThisRun.push(jumpPick.title);
+                    var jcGeo = getContentGeo(s);
+                    var jcMat = getContentMat(s).clone();
+                    var jcMesh = new THREE.Mesh(jcGeo, jcMat);
+                    // Place at the midpoint of the jump arc, near center of tunnel
+                    jcMesh.position.set(Math.cos(angle) * (tubeRadius - 26), Math.sin(angle) * (tubeRadius - 26), zPos - peakDist);
+                    jcMesh.userData = { type: 'content', hitRadius: 10.0, contentTitle: jumpPick.title, contentZone: jumpZone, rotSpeedX: 0, rotSpeedY: 0.02, rotSpeedZ: 0.01 };
+                    scene.add(jcMesh); items.push(jcMesh);
+                }
             }
-            _rampCountThisSector++;
             return;
         }
 
-        // Re-roll rand past the ramp threshold so item chances are correctly distributed
-        rand = (rand - Math.max(rampThreshold, 0.001)) / (1 - Math.max(rampThreshold, 0.001));
+        // Re-roll rand past the barrier threshold so item chances are correctly distributed
+        rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
         if (rand < 0) rand = Math.random();
 
         // --- Per-sector spawn profile, scaled by level ---
-        // Base hazard density per sector, escalates with level
         var baseHazard, baseRing, baseCore;
-        if (s === 1)      { baseHazard = 0.15; baseRing = 0.75; baseCore = 0.10; }
-        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.45; baseCore = 0.20; }
-        else if (s === 3)  { baseHazard = 0.45; baseRing = 0.35; baseCore = 0.20; }
-        else if (s === 4)  { baseHazard = 0.55; baseRing = 0.27; baseCore = 0.18; }
-        else               { baseHazard = 0.65; baseRing = 0.20; baseCore = 0.15; }
+        if (s === 1)      { baseHazard = 0.20; baseRing = 0.80; baseCore = 0.00; }  // S1: no cores
+        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.60; baseCore = 0.05; }  // S2: minimal cores
+        else if (s === 3)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }  // S3: hard, needs healing
+        else if (s === 4)  { baseHazard = 0.05; baseRing = 0.90; baseCore = 0.05; }  // S4: speed run — mostly rings, few hazards
+        else               { baseHazard = 0.60; baseRing = 0.22; baseCore = 0.18; }  // S5: everything
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
-        var ringChance = remaining * (baseRing / (baseRing + baseCore));
-        var coreChance = remaining * (baseCore / (baseRing + baseCore));
+        var ringChance = remaining * (baseRing / (baseRing + baseCore + 0.001));
+        var coreChance = remaining * (baseCore / (baseRing + baseCore + 0.001));
 
         const zoneIdx = Math.min(s - 1, ZONES.length - 1);
         let mesh, type, hitRadius;
 
-        // Boost pad — S4+ only
+        // Boost pad — S5 only, spawns with ring trail along flip arc
         var boostThreshold = boostEnabled ? 0.04 : 0;
         if (boostThreshold > 0 && rand < boostThreshold) {
             spiralAngle += 1.1;
@@ -2995,10 +3010,26 @@ window.onload = function() {
             bMesh.rotation.z = bAngle;
             bMesh.userData = { type: 'boost_pad', hitRadius: 14.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(bMesh); items.push(bMesh);
+            // Spawn rings along the 360° flip arc — collectible during flip
+            var flipZ = zPos;
+            var flipAheadDist = 38; // ship pushes 38 units forward during flip
+            var ringCount = 5;
+            for (var ri = 1; ri <= ringCount; ri++) {
+                var flipFrac = ri / (ringCount + 1);
+                var flipAngle = bAngle + flipFrac * Math.PI * 2;
+                var rz = flipZ - flipFrac * flipAheadDist;
+                var rMesh = new THREE.Mesh(ringGeo, ringMat);
+                var rHover = tubeRadius - 6;
+                rMesh.position.set(Math.cos(flipAngle) * rHover, Math.sin(flipAngle) * rHover, rz);
+                rMesh.rotation.z = flipAngle;
+                rMesh.userData = { type: 'score', hitRadius: 6.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
+                scene.add(rMesh); items.push(rMesh);
+                sectorCollectiblesSpawned++;
+            }
             return;
         }
-        // Star — force field pickup, S2+ only
-        var starChance = s < 2 ? 0 : (s >= 4 ? 0.03 : s >= 3 ? 0.02 : 0.015) + (lvl - 1) * 0.005;
+        // Star — force field pickup, S3+ only (need it when hazards get serious)
+        var starChance = s < 3 ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.015 : 0.025) + (lvl - 1) * 0.005;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (rand < coreChance) {
@@ -3007,12 +3038,11 @@ window.onload = function() {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
         } else if (rand < coreChance + ringChance + hazardChance) {
             const hRand = Math.random();
-            // Hazard types: S1=blocks only, S2+=mines, S3+=blocks, S4+=knots, S5=all
-            if      (s >= 5  && hRand < 0.35) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
-            else if (s >= 4  && hRand < 0.45) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
-            else if (s >= 3  && hRand < 0.55) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
-            else if (s >= 2  && hRand < 0.65) { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
-            else                               { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
+            // Hazard types gate per sector:
+            // S1: mines only, S2: mines only, S3: mines+blocks, S4: minimal, S5: mines+blocks+knots
+            if      (s >= 5  && hRand < 0.30) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
+            else if (s >= 3  && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
+            else                               { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
         } else {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
@@ -3027,14 +3057,20 @@ window.onload = function() {
         mesh.position.z = zPos;
 
         // Unified rotation: all items face the same way along the spiral
-        // No random spin — rotate each mesh to sit flush on the tube wall
         mesh.rotation.z = angle;  // face outward from tube centre
 
         let rotMult = 1 + zoneIdx * 0.4;
+        // Knots sway back and forth along the tube wall
+        var isKnot = mesh._isKnot;
+        delete mesh._isKnot;
         mesh.userData = { type: type, hitRadius: hitRadius,
             rotSpeedX: 0,
             rotSpeedY: 0,
-            rotSpeedZ: 0.3 * rotMult };  // gentle unified spin on Z only
+            rotSpeedZ: 0.3 * rotMult,
+            isKnot: isKnot || false,
+            knotBaseAngle: isKnot ? angle : 0,
+            knotSwaySpeed: isKnot ? (1.5 + Math.random() * 1.0) : 0,
+            knotSwayRange: isKnot ? (0.4 + Math.random() * 0.3) : 0 };
         if (type === 'score' || type === 'health') sectorCollectiblesSpawned++;
         scene.add(mesh); items.push(mesh);
     }
@@ -3055,11 +3091,11 @@ window.onload = function() {
     }
 
     const ZONE_OBJECTIVES_DEFAULT = [
-        'COLLECT EDITING CONTENT\nDODGE HAZARDS',
-        'COLLECT PHOTO CONTENT\nBARRIERS ONLINE',
-        'COLLECT DIRECT CONTENT\nRAMPS AND WALLS',
-        'COLLECT ANIMATE CONTENT\nBOOST PADS ACTIVE',
-        'COLLECT DESIGN CONTENT\nFULL ARSENAL',
+        'COLLECT EDITING CONTENT',
+        'STEER GAPS & JUMP WALLS',
+        'SURVIVE — GRAB HEALING',
+        'SPEED RUN — BEAT THE CLOCK',
+        'FULL ARSENAL — FINAL ZONE',
     ];
 
     var _objectivesFromConfig = null;
@@ -3338,6 +3374,16 @@ window.onload = function() {
         initializeFlight(true);
     }
 
+    // S4 speed run target time — scales with level
+    function getSpeedRunTarget() {
+        var zone = getLevelScaledZone(4);
+        // Base: sector length / avg speed gives approximate traverse time
+        // Target = 85% of that (must boost to beat it), tighter each level
+        var avgSpeed = (zone.speed + BOOST_SPEED) / 2;
+        var traverseTime = zone.length / avgSpeed;
+        return Math.round(traverseTime * (0.90 - (currentLevel - 1) * 0.03));
+    }
+
     function triggerVictory() {
         gameState = 'victory';
         AudioEngine.playSFX('victory');
@@ -3362,7 +3408,17 @@ window.onload = function() {
         }
 
         var sectorScore = score - sectorStartScore;
-        document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
+        // S4 speed run: show time result instead of just score
+        if (currentSector === 4) {
+            var s4Target = getSpeedRunTarget();
+            var s4Passed = sectorTime <= s4Target;
+            function fmtTimeShort(t) { var mm=Math.floor(t/60),ss=Math.floor(t%60),tt=Math.floor((t%1)*10); return mm+':'+(ss<10?'0':'')+ss+'.'+tt; }
+            var timeColor = s4Passed ? '#00ff88' : '#ff4444';
+            document.getElementById('victory-score').innerHTML = '<span style="color:'+timeColor+'">TIME: ' + fmtTimeShort(sectorTime) + ' / ' + fmtTimeShort(s4Target) + '</span>'
+                + '<br><span style="font-size:0.7em;color:' + (s4Passed ? '#ffe000' : '#ff6666') + ';">' + (s4Passed ? 'SPEED RUN PASSED!' : 'TOO SLOW — TRY AGAIN') + '</span>';
+        } else {
+            document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
+        }
 
         // Score bonus: every 10K sector score unlocks an extra content item
         _bonusUnlockedTitles = [];
@@ -3440,13 +3496,24 @@ window.onload = function() {
         unlockEl.innerHTML = unlockHtml;
         unlockEl.style.display = unlockHtml ? 'block' : 'none';
 
-        document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
+        // S4 speed run: title reflects pass/fail
+        if (currentSector === 4) {
+            var s4T = getSpeedRunTarget();
+            var s4P = sectorTime <= s4T;
+            document.getElementById('victory-screen').querySelector('.screen-title').innerText = s4P ? 'SPEED RUN CLEARED' : 'SECTOR CLEARED';
+        } else {
+            document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
+        }
         if (isZoneComplete(currentSector) && currentSector >= 5 && allZonesComplete()) {
             document.getElementById('next-level-btn').innerText = '[ VIEW FINALE ]';
         } else if (contentZone) {
             var collected = getZoneCollectedCount(currentSector);
             var total = getZoneItemCount(currentSector);
-            if (collected >= total) {
+            // S4: if time not beaten, force replay
+            var s4Failed = (currentSector === 4 && sectorTime > getSpeedRunTarget());
+            if (s4Failed) {
+                document.getElementById('next-level-btn').innerText = '[ RETRY SPEED RUN ]';
+            } else if (collected >= total) {
                 document.getElementById('next-level-btn').innerText = '[ NEXT ZONE > ]';
             } else if (collected > 0) {
                 document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
@@ -3516,9 +3583,9 @@ window.onload = function() {
             return; // baked layout replaces procedural spawn
         }
 
-        // Set ramp limit per sector: S1=0, S2=1, S3+=uncapped
+        // Set ramp limit per sector: S1=0, S2+=uncapped (ramps arrive with barriers in S2)
         _rampCountThisSector = 0;
-        _rampMaxThisSector = currentSector <= 1 ? 0 : currentSector <= 2 ? 1 : 999;
+        _rampMaxThisSector = currentSector <= 1 ? 0 : 999;
 
         // Seed tunnel ahead procedurally — density scales with BOTH sector AND level
         // Base spacing: S1=120, S2=100, S3=80, S4=70, S5=60
@@ -3832,10 +3899,15 @@ window.onload = function() {
             return;
         }
 
-        // ── Collection-gated progression ──
-        // If zone not complete → replay same sector at higher level
-        // If zone complete → advance to next sector (reset level to 1)
-        if (isZoneComplete(currentSector)) {
+        // ── Progression gating ──
+        // S4: must beat speed run target time (content still helps via score bonuses)
+        // Others: zone content must be complete
+        var sectorPassed = isZoneComplete(currentSector);
+        if (currentSector === 4) {
+            var s4Target = getSpeedRunTarget();
+            sectorPassed = sectorPassed && (sectorRunTimes[4] <= s4Target);
+        }
+        if (sectorPassed) {
             // Advance to next sector
             if (currentSector >= 5) {
                 // All 5 zones done → victory!
@@ -3869,22 +3941,26 @@ window.onload = function() {
 
     // Sector intro splash — shows zone name, new items, and hazard previews
     var SECTOR_INTRO_DATA = [
-        { items: ['RINGS', 'MINES', 'HEALTH CORES', 'FORCE FIELD STARS'], desc: 'COLLECT CONTENT & DODGE HAZARDS' },
-        { items: ['+ GAP BARRIERS'], desc: 'STEER THROUGH BARRIER GAPS' },
-        { items: ['+ RAMPS', '+ FULL BARRIERS'], desc: 'HIT RAMPS TO JUMP LASER WALLS' },
-        { items: ['+ BOOST PADS'], desc: 'BOOST PADS LAUNCH 360 FLIPS' },
-        { items: ['ALL HAZARDS ACTIVE'], desc: 'FULL ARSENAL — FINAL ZONE' },
+        { items: ['RINGS', 'MINES'], desc: 'COLLECT CONTENT & DODGE HAZARDS' },
+        { items: ['+ GAP BARRIERS', '+ RAMPS', '+ FULL BARRIERS'], desc: 'STEER GAPS & JUMP LASER WALLS' },
+        { items: ['+ HEALTH CORES', '+ FORCE FIELD', '+ BLOCKS'], desc: 'HARDER HAZARDS — GRAB HEALING' },
+        { items: ['SPEED RUN', 'BARRIER SLALOM'], desc: 'BEAT THE CLOCK — SPEED IS KEY' },
+        { items: ['+ BOOST PADS', '+ KNOTS', 'ALL HAZARDS'], desc: 'EVERYTHING ACTIVE — FINAL ZONE' },
     ];
     var SECTOR_ITEM_SYMBOLS = {
         'RINGS': { shape: 'circle', color: '#00ff88' },
         'MINES': { shape: 'triangle', color: '#ff4444' },
-        'HEALTH CORES': { shape: 'diamond', color: '#44aaff' },
-        'FORCE FIELD STARS': { shape: 'star', color: '#ff88ff' },
+        '+ HEALTH CORES': { shape: 'diamond', color: '#44aaff' },
+        '+ FORCE FIELD': { shape: 'star', color: '#ff88ff' },
         '+ GAP BARRIERS': { shape: 'ring-gap', color: '#ff2266' },
         '+ RAMPS': { shape: 'ramp', color: '#00ffcc' },
         '+ FULL BARRIERS': { shape: 'ring-full', color: '#ff2266' },
+        '+ BLOCKS': { shape: 'square', color: '#ff4444' },
         '+ BOOST PADS': { shape: 'chevron', color: '#00ff66' },
-        'ALL HAZARDS ACTIVE': { shape: 'skull', color: '#ff4444' },
+        '+ KNOTS': { shape: 'circle', color: '#ff4444' },
+        'ALL HAZARDS': { shape: 'skull', color: '#ff4444' },
+        'SPEED RUN': { shape: 'circle', color: '#ffe000' },
+        'BARRIER SLALOM': { shape: 'ring-gap', color: '#ff2266' },
     };
 
     function showSectorIntro(zone, onDone) {
@@ -4571,7 +4647,15 @@ window.onload = function() {
                 sectorTime += delta;
                 const tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
                 const tStr = m+':'+(s<10?'0':'')+s+'.'+t;
-                document.getElementById('hud-timer').innerText = tStr;
+                var timerEl = document.getElementById('hud-timer');
+                timerEl.innerText = tStr;
+                // S4 speed run: show timer in gold/red based on target
+                if (currentSector === 4) {
+                    var s4Target = getSpeedRunTarget();
+                    timerEl.style.color = sectorTime < s4Target * 0.8 ? '#00ff88' : sectorTime < s4Target ? '#ffe000' : '#ff4444';
+                } else {
+                    timerEl.style.color = '';
+                }
             }
             let progressPct = Math.min(100, (distanceTraveled / sectorDistance) * 100);
             document.getElementById('progress-bar').style.width = progressPct + '%';
@@ -4828,6 +4912,14 @@ window.onload = function() {
                     item.scale.setScalar(starPulse);
                     item.material.emissiveIntensity = 1.5 + Math.sin(performance.now() * 0.01) * 0.8;
                 }
+                // Knot hazard sway — oscillate along tunnel wall
+                if (item.userData.isKnot) {
+                    var swayT = performance.now() * 0.001 * item.userData.knotSwaySpeed;
+                    var swayAngle = item.userData.knotBaseAngle + Math.sin(swayT) * item.userData.knotSwayRange;
+                    var knotHover = tubeRadius - 6;
+                    item.position.x = Math.cos(swayAngle) * knotHover;
+                    item.position.y = Math.sin(swayAngle) * knotHover;
+                }
                 // Content object — slow majestic spin + pulsing glow + arrow bob + sparkle orbit
                 if (item.userData.type === 'content') {
                     item.rotation.y += 0.02;
@@ -4883,7 +4975,8 @@ window.onload = function() {
                         var arcLen = item.userData.arcLength || Math.PI * 2;
                         var relAngle = ((shipAngle - item.rotation.z) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
                         if (relAngle < arcLen && currentHover > 22) {
-                            if (shieldsUp) {
+                            if (isFlipping || shieldsUp) {
+                                // Invincible during flip or force field
                                 AudioEngine.playSFX('destroy');
                                 flash('#00ccff');
                                 spawnPointBurst('SMASH!', 'c-cyan');
@@ -4909,8 +5002,8 @@ window.onload = function() {
                                 score += 125;
                             }
                             else if (item.userData.type === 'hazard' && !isJumping) {
-                                if (shieldsUp) {
-                                    // Invincible — smash through, destroy the hazard
+                                if (isFlipping || shieldsUp) {
+                                    // Invincible during flip or force field — smash through
                                     AudioEngine.playSFX('destroy');
                                     flash('#00ccff');
                                     spawnPointBurst('SMASH!', 'c-cyan');
