@@ -1049,6 +1049,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn purple" onclick="devEnterSecret()">ENTER SECRET</button>
           <button class="dev-btn pink" onclick="devPop49()">POP 49 BUBBLES</button>
           <button class="dev-btn purple" onclick="devSpawnBoss()">SPAWN BOSS</button>
+          <button class="dev-btn purple" onclick="devSpawnBossNearBH()">BOSS NEAR BH</button>
           <button class="dev-btn" onclick="if(typeof killSecretBoss==='function')killSecretBoss()">KILL BOSS</button>
           <button class="dev-btn danger" onclick="if(typeof exitSecretLevel==='function')exitSecretLevel()">EXIT SECRET</button>
           <button class="dev-btn gold" id="dab-mainboss" onclick="devToggleMainBoss()">ALIEN → MAIN</button>
@@ -2145,6 +2146,363 @@ function _updatePeanutPopupHighlight(){
     wR.style.borderColor = 'transparent'; wR.style.boxShadow = 'none';
     if(title){ title.textContent = 'STANDARD'; title.style.color = '#ff69b4'; title.style.textShadow = '0 0 24px #ff69b4,0 0 48px #ff69b4'; }
     if(sub){ sub.textContent = 'DELTA WING'; }
+  }
+}
+
+// ── Bubble unlock popup (mirrors peanut popup) ──────────────────────
+let _bubblePopupToggled = false;
+
+function _showBubblePopup(){
+  if(document.getElementById('bubble-popup-overlay')) return;
+  _bubblePopupToggled = false;
+  const ov = document.createElement('div');
+  ov.id = 'bubble-popup-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
+  ov.onclick = function(e){ if(e.target===ov && _bubblePopupToggled) _dismissBubblePopup(); };
+  ov.innerHTML = `<div id="bubble-popup-box" style="position:relative;border:2px solid #00ff88;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 40px rgba(0,255,136,0.3);" onclick="event.stopPropagation()">
+    <div id="bubble-popup-close" onclick="_dismissBubblePopup()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;margin-bottom:16px;line-height:2;text-shadow:0 0 18px #00ff88;">YOU'VE UNLOCKED A<br>NEW SHIP STATE</div>
+    <div id="bubble-popup-title" style="color:#66ddff;font-size:28px;letter-spacing:4px;margin-bottom:8px;text-shadow:0 0 24px #66ddff,0 0 48px #66ddff;">BUBBLE</div>
+    <div id="bubble-popup-sub" style="color:#00ff88;font-size:16px;letter-spacing:3px;margin-bottom:28px;text-shadow:0 0 12px #00ff88;">BOUNCY COATING</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px;">
+      <div style="text-align:center;">
+        <div id="bubble-ship-left-wrap" style="width:80px;height:80px;border-radius:50%;border:3px solid transparent;display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="bubble-ship-left" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+      <div style="color:#00ff88;font-size:24px;text-shadow:0 0 12px #00ff88;">▸</div>
+      <div style="text-align:center;">
+        <div id="bubble-ship-right-wrap" style="width:100px;height:100px;border-radius:50%;border:3px solid #66ddff;box-shadow:0 0 16px rgba(102,221,255,0.5);display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="bubble-ship-right" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;">TOGGLE USING <span style="color:#ffe000;font-size:40px;vertical-align:middle;animation:peanutXFlash 1s steps(1) infinite;">X</span> KEY</div>
+    <div style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:24px;">DURING GAMEPLAY</div>
+  </div>`;
+  document.body.appendChild(ov);
+
+  // Set up ship canvases — fixed 45° NE angle, no rotation
+  const dpr = window.devicePixelRatio || 1;
+  const cSizeL = 75; // CSS px — standard ship
+  const cSizeR = 95; // CSS px — bubble ship (larger to fit bubble sphere)
+  const cL = document.getElementById('bubble-ship-left');
+  const cR = document.getElementById('bubble-ship-right');
+  cL.width = cSizeL * dpr; cL.height = cSizeL * dpr;
+  cL.style.width = cSizeL+'px'; cL.style.height = cSizeL+'px';
+  cR.width = cSizeR * dpr; cR.height = cSizeR * dpr;
+  cR.style.width = cSizeR+'px'; cR.style.height = cSizeR+'px';
+  const ctxL = cL.getContext('2d');
+  const ctxR = cR.getContext('2d');
+  const NE_ANGLE = Math.PI * 0.25;
+
+  function _drawShipOnly(ctx, color, shipSize, glow){
+    const s = shipSize;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3.5;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = glow;
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s*0.6, s*0.7);
+    ctx.lineTo(0, s*0.35);
+    ctx.lineTo(-s*0.6, s*0.7);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(0, 0, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Standard ship (left) — pink, size 30
+  ctxL.save();
+  ctxL.scale(dpr, dpr);
+  ctxL.translate(cSizeL/2, cSizeL/2);
+  ctxL.rotate(NE_ANGLE);
+  _drawShipOnly(ctxL, '#ff69b4', 30, '#ff4500');
+  ctxL.restore();
+
+  // Bubble ship (right) — same pink ship + bubble sphere around it
+  ctxR.save();
+  ctxR.scale(dpr, dpr);
+  ctxR.translate(cSizeR/2, cSizeR/2);
+  ctxR.rotate(NE_ANGLE);
+  _drawShipOnly(ctxR, '#ff69b4', 30, '#ff4500');
+  // Draw bubble sphere around the ship
+  const _bubR = 30 * 1.4375;
+  ctxR.shadowBlur = 22; ctxR.shadowColor = '#aaeeff';
+  ctxR.beginPath(); ctxR.arc(0, 0, _bubR, 0, Math.PI*2);
+  ctxR.strokeStyle = 'hsla(195,100%,80%,0.9)';
+  ctxR.lineWidth = 2.5; ctxR.stroke();
+  ctxR.shadowBlur = 0;
+  ctxR.beginPath(); ctxR.arc(0, 0, _bubR * 0.94, 0, Math.PI*2);
+  ctxR.strokeStyle = 'rgba(255,255,255,0.3)';
+  ctxR.lineWidth = 1.5; ctxR.stroke();
+  // Specular glint
+  ctxR.beginPath(); ctxR.arc(-_bubR*0.30, -_bubR*0.34, _bubR*0.18, 0, Math.PI*2);
+  ctxR.fillStyle = 'rgba(255,255,255,0.5)'; ctxR.fill();
+  ctxR.restore();
+
+  state.paused = true;
+}
+
+function _dismissBubblePopup(){
+  const ov = document.getElementById('bubble-popup-overlay');
+  if(!ov) return false;
+  ov.remove();
+  state.paused = false;
+  state._bubbleToggleTutorialDone = true;
+  return true;
+}
+
+function _updateBubblePopupHighlight(){
+  const bp = document.getElementById('bubble-popup-overlay');
+  if(!bp) return;
+  const isBubble = (state.cheat === 'bubbles');
+  const wL = document.getElementById('bubble-ship-left-wrap');
+  const wR = document.getElementById('bubble-ship-right-wrap');
+  const title = document.getElementById('bubble-popup-title');
+  const sub = document.getElementById('bubble-popup-sub');
+  if(isBubble){
+    wL.style.borderColor = 'transparent'; wL.style.boxShadow = 'none';
+    wR.style.borderColor = '#66ddff'; wR.style.boxShadow = '0 0 16px rgba(102,221,255,0.5)';
+    if(title){ title.textContent = 'BUBBLE'; title.style.color = '#66ddff'; title.style.textShadow = '0 0 24px #66ddff,0 0 48px #66ddff'; }
+    if(sub){ sub.textContent = 'BOUNCY COATING'; }
+  } else {
+    wL.style.borderColor = '#ff69b4'; wL.style.boxShadow = '0 0 16px rgba(255,105,180,0.5)';
+    wR.style.borderColor = 'transparent'; wR.style.boxShadow = 'none';
+    if(title){ title.textContent = 'STANDARD'; title.style.color = '#ff69b4'; title.style.textShadow = '0 0 24px #ff69b4,0 0 48px #ff69b4'; }
+    if(sub){ sub.textContent = 'DELTA WING'; }
+  }
+}
+
+// ── Wave unlock popup (mirrors peanut/bubble popup) ─────────────────
+let _wavePopupToggled = false;
+
+function _showWavePopup(){
+  if(document.getElementById('wave-popup-overlay')) return;
+  _wavePopupToggled = false;
+  const ov = document.createElement('div');
+  ov.id = 'wave-popup-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
+  ov.onclick = function(e){ if(e.target===ov && _wavePopupToggled) _dismissWavePopup(); };
+  ov.innerHTML = `<div id="wave-popup-box" style="position:relative;z-index:1;border:2px solid #00ff88;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 40px rgba(0,255,136,0.3);" onclick="event.stopPropagation()">
+    <div id="wave-popup-close" onclick="_dismissWavePopup()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;margin-bottom:16px;line-height:2;text-shadow:0 0 18px #00ff88;">YOU'VE GAINED A<br>NEW FUNCTION</div>
+    <div id="wave-popup-title" style="color:#aa44ff;font-size:28px;letter-spacing:4px;margin-bottom:8px;text-shadow:0 0 24px #aa44ff,0 0 48px #aa44ff;">WIGGLE WAVE</div>
+    <div id="wave-popup-sub" style="color:#00ff88;font-size:16px;letter-spacing:3px;margin-bottom:28px;text-shadow:0 0 12px #00ff88;">RAINBOW BEAM</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px;">
+      <div style="text-align:center;">
+        <div id="wave-ship-left-wrap" style="width:80px;height:80px;border-radius:50%;border:3px solid transparent;display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="wave-mode-left" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+      <div style="color:#00ff88;font-size:24px;text-shadow:0 0 12px #00ff88;">▸</div>
+      <div style="text-align:center;">
+        <div id="wave-ship-right-wrap" style="width:80px;height:80px;border-radius:50%;border:3px solid #aa44ff;box-shadow:0 0 16px rgba(170,68,255,0.5);display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="wave-mode-right" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;">TOGGLE USING <span style="color:#ffe000;font-size:40px;vertical-align:middle;animation:peanutXFlash 1s steps(1) infinite;">Z</span> KEY</div>
+    <div style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:24px;">DURING GAMEPLAY</div>
+  </div>`;
+  document.body.appendChild(ov);
+
+  // Add beam canvas ON TOP of popup (pointer-events:none so clicks pass through)
+  const beamC = document.createElement('canvas');
+  beamC.id = 'wave-beam-canvas';
+  beamC.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:9810;';
+  document.body.appendChild(beamC);
+
+  const dpr = window.devicePixelRatio || 1;
+  const cSize = 75; // CSS px for ship canvases inside circle wraps
+  const cL = document.getElementById('wave-mode-left');
+  const cR = document.getElementById('wave-mode-right');
+  cL.width = cSize * dpr; cL.height = cSize * dpr;
+  cL.style.width = cSize+'px'; cL.style.height = cSize+'px';
+  cR.width = cSize * dpr; cR.height = cSize * dpr;
+  cR.style.width = cSize+'px'; cR.style.height = cSize+'px';
+  const ctxL = cL.getContext('2d');
+  const ctxR = cR.getContext('2d');
+  const NE_ANGLE = Math.PI * 0.25;
+  const S = 20; // ship size
+
+  // Full-viewport beam canvas
+  beamC.width = window.innerWidth * dpr;
+  beamC.height = window.innerHeight * dpr;
+  const beamCtx = beamC.getContext('2d');
+
+  function _drawShipW(ctx, s, color, glow){
+    ctx.strokeStyle = color || '#ff69b4';
+    ctx.lineWidth = 3.5;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = glow || '#ff4500';
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s*0.6, s*0.7);
+    ctx.lineTo(0, s*0.35);
+    ctx.lineTo(-s*0.6, s*0.7);
+    ctx.closePath();
+    ctx.stroke();
+    ctx.fillStyle = color || '#ff69b4';
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(0, 0, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Beam simulation — exact game physics (updateWaveBeams + rendering)
+  let _beamPoints = [];
+  let _beamHue = 0;
+  let _beamAge = 0;
+  const _BSPEED = 8;         // game: sin(angle)*8
+  const _BMAX_PTS = 28;      // game: BEAM_MAX_POINTS
+  const _BMAX_AGE = 110;     // game: BEAM_MAX_AGE
+  const _BCYCLE = _BMAX_AGE + 30; // total cycle: fire + gap before next
+
+  let _waveFrame = 0;
+  function _animateWavePopup(){
+    _waveFrame++;
+    const fc = _waveFrame;
+
+    // --- LEFT: ship with hyperspace boost flame ---
+    ctxL.clearRect(0, 0, cSize * dpr, cSize * dpr);
+    ctxL.save();
+    ctxL.scale(dpr, dpr);
+    ctxL.translate(cSize/2, cSize/2);
+    ctxL.rotate(NE_ANGLE);
+    _drawShipW(ctxL, S, '#ff69b4', '#ff4500');
+    const fl1 = 16 + Math.sin(fc*0.5)*5 + Math.random()*10;
+    const fl2 = 12 + Math.sin(fc*0.7+1)*4 + Math.random()*8;
+    ctxL.shadowColor = '#ffe000'; ctxL.shadowBlur = 16;
+    ctxL.beginPath();
+    ctxL.moveTo(-3, S*0.5);
+    ctxL.lineTo(0, S*0.5 + fl1);
+    ctxL.lineTo(3, S*0.5);
+    ctxL.strokeStyle = '#ffe000'; ctxL.lineWidth = 2.5; ctxL.stroke();
+    ctxL.beginPath();
+    ctxL.moveTo(-1.5, S*0.5);
+    ctxL.lineTo(0, S*0.5 + fl2);
+    ctxL.lineTo(1.5, S*0.5);
+    ctxL.strokeStyle = '#ffffff'; ctxL.lineWidth = 1.5; ctxL.shadowBlur = 6; ctxL.stroke();
+    ctxL.shadowBlur = 0;
+    ctxL.restore();
+
+    // --- RIGHT: ship only (beam drawn on full-viewport canvas) ---
+    ctxR.clearRect(0, 0, cSize * dpr, cSize * dpr);
+    ctxR.save();
+    ctxR.scale(dpr, dpr);
+    ctxR.translate(cSize/2, cSize/2);
+    ctxR.rotate(NE_ANGLE);
+    _drawShipW(ctxR, S, '#ff69b4', '#ff4500');
+    ctxR.restore();
+
+    // --- BEAM: exact game wave beam on full-viewport canvas ---
+    beamCtx.clearRect(0, 0, beamC.width, beamC.height);
+
+    // Get right ship tip position in viewport coords
+    const rect = cR.getBoundingClientRect();
+    const shipCX = rect.left + rect.width/2;
+    const shipCY = rect.top + rect.height/2;
+    // Ship tip is at local (0,-S) rotated by NE_ANGLE → screen offset (S*sin(a), -S*cos(a))
+    const tipX = shipCX + S * Math.sin(NE_ANGLE);
+    const tipY = shipCY - S * Math.cos(NE_ANGLE);
+
+    // Advance beam simulation (exact game: updateWaveBeams)
+    _beamAge++;
+    const localAge = _beamAge % _BCYCLE;
+    if(localAge === 0){ _beamPoints = []; _beamHue = (fc * 3) % 360; }
+
+    if(localAge < _BMAX_AGE){
+      _beamHue = (_beamHue + 4) % 360; // game: b.hue=(b.hue+4)%360
+      // game: b.wx += sin(angle)*8, b.wy -= cos(angle)*8
+      const fwd = localAge * _BSPEED;
+      // game: wiggle = sin(b.age*0.45)*11, perpendicular offset
+      const wiggle = Math.sin(localAge * 0.45) * 11;
+      _beamPoints.push({ fwd: fwd, wig: wiggle });
+      if(_beamPoints.length > _BMAX_PTS) _beamPoints.shift();
+    }
+
+    // Render beam (exact game rendering: state.waveBeams.forEach)
+    if(_beamPoints.length >= 2){
+      const fwdX = Math.sin(NE_ANGLE);
+      const fwdY = -Math.cos(NE_ANGLE);
+      const perpX = Math.cos(NE_ANGLE);
+      const perpY = Math.sin(NE_ANGLE);
+
+      beamCtx.save();
+      beamCtx.scale(dpr, dpr);
+      // Draw segments — game: hsl((b.hue+i*8)%360, 100%, 65%), lineWidth 3
+      for(let i = 1; i < _beamPoints.length; i++){
+        const p0 = _beamPoints[i-1], p1 = _beamPoints[i];
+        const sx0 = tipX + fwdX * p0.fwd + perpX * p0.wig;
+        const sy0 = tipY + fwdY * p0.fwd + perpY * p0.wig;
+        const sx1 = tipX + fwdX * p1.fwd + perpX * p1.wig;
+        const sy1 = tipY + fwdY * p1.fwd + perpY * p1.wig;
+        const hue = (_beamHue + i * 8) % 360;
+        beamCtx.beginPath();
+        beamCtx.moveTo(sx0, sy0);
+        beamCtx.lineTo(sx1, sy1);
+        beamCtx.strokeStyle = 'hsl('+hue+',100%,65%)';
+        beamCtx.lineWidth = 3;
+        beamCtx.stroke();
+      }
+      // Head glow — game: arc radius 5, hsl(hue,100%,70%)
+      const head = _beamPoints[_beamPoints.length - 1];
+      const hx = tipX + fwdX * head.fwd + perpX * head.wig;
+      const hy = tipY + fwdY * head.fwd + perpY * head.wig;
+      const headHue = (_beamHue + _beamPoints.length * 8) % 360;
+      beamCtx.beginPath();
+      beamCtx.arc(hx, hy, 5, 0, Math.PI*2);
+      beamCtx.fillStyle = 'hsl('+headHue+',100%,70%)';
+      beamCtx.shadowBlur = 8;
+      beamCtx.shadowColor = beamCtx.fillStyle;
+      beamCtx.fill();
+      beamCtx.shadowBlur = 0;
+      beamCtx.restore();
+    }
+
+    if(document.getElementById('wave-popup-overlay')){
+      ov._waveAnimId = requestAnimationFrame(_animateWavePopup);
+    }
+  }
+  _animateWavePopup();
+  state.paused = true;
+}
+
+function _dismissWavePopup(){
+  const ov = document.getElementById('wave-popup-overlay');
+  if(!ov) return false;
+  if(ov._waveAnimId) cancelAnimationFrame(ov._waveAnimId);
+  ov.remove();
+  const bc = document.getElementById('wave-beam-canvas');
+  if(bc) bc.remove();
+  state.paused = false;
+  state._waveToggleTutorialDone = true;
+  return true;
+}
+
+function _updateWavePopupHighlight(){
+  const wp = document.getElementById('wave-popup-overlay');
+  if(!wp) return;
+  const isWave = (state.fireMode === 'wave');
+  const wL = document.getElementById('wave-ship-left-wrap');
+  const wR = document.getElementById('wave-ship-right-wrap');
+  const title = document.getElementById('wave-popup-title');
+  const sub = document.getElementById('wave-popup-sub');
+  if(isWave){
+    if(wL){ wL.style.borderColor = 'transparent'; wL.style.boxShadow = 'none'; }
+    if(wR){ wR.style.borderColor = '#aa44ff'; wR.style.boxShadow = '0 0 16px rgba(170,68,255,0.5)'; }
+    if(title){ title.textContent = 'WIGGLE WAVE'; title.style.color = '#aa44ff'; title.style.textShadow = '0 0 24px #aa44ff,0 0 48px #aa44ff'; }
+    if(sub){ sub.textContent = 'RAINBOW BEAM'; }
+  } else {
+    if(wL){ wL.style.borderColor = '#ffe000'; wL.style.boxShadow = '0 0 16px rgba(255,224,0,0.5)'; }
+    if(wR){ wR.style.borderColor = 'transparent'; wR.style.boxShadow = 'none'; }
+    if(title){ title.textContent = 'BOOST'; title.style.color = '#ffe000'; title.style.textShadow = '0 0 24px #ffe000,0 0 48px #ffe000'; }
+    if(sub){ sub.textContent = 'HYPER DRIVE'; }
   }
 }
 
@@ -3503,6 +3861,7 @@ function drawWormholeTransition(){
   ctx.restore();
 }
 
+
 //  AUDIO — cinematic procedural engine v2
 let audioCtx=null, musicNodes=[], songTimeout=null;
 let musicBarCount=0;
@@ -4348,12 +4707,12 @@ window.addEventListener('keydown',e=>{
       }
     }
   }
-  if(e.code==='KeyZ'&&state.started&&!state.paused&&!state.gameOver){
+  if(e.code==='KeyZ'&&state.started&&!state.gameOver&&(!state.paused||document.getElementById('wave-popup-overlay'))){
     cycleFireMode();
     var _wh=document.getElementById('wave-unlock-hint');if(_wh)_wh.style.display='none';
     var _xh=document.getElementById('x2-unlock-hint');if(_xh)_xh.style.display='none';
   }
-  if(e.code==='KeyX'&&state.started&&!state.gameOver&&(!state.paused||document.getElementById('peanut-popup-overlay'))){
+  if(e.code==='KeyX'&&state.started&&!state.gameOver&&(!state.paused||document.getElementById('peanut-popup-overlay')||document.getElementById('bubble-popup-overlay'))){
     cycleShipMode();
   }
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -4385,8 +4744,16 @@ function cycleFireMode(){
   const m=getAvailableModes();if(m.length<=1)return;
   state.fireMode=m[(m.indexOf(state.fireMode)+1)%m.length];updateFireModeUI();
   // Fire mode toggle flash text
-  const _fmMsg = state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : null;
-  if(_fmMsg) state.zoneCrossFlash = { lvl:-3, timer:80, msg:_fmMsg, _col:'#00ffcc' };
+  const _fmMsg = state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
+  state.zoneCrossFlash = { lvl:-3, timer:80, msg:_fmMsg, _col:'#00ffcc' };
+  // Handle wave popup toggle interaction
+  const _wp = document.getElementById('wave-popup-overlay');
+  if(_wp){
+    _wavePopupToggled = true;
+    _updateWavePopupHighlight();
+    const closeBtn = document.getElementById('wave-popup-close');
+    if(closeBtn) closeBtn.style.display = '';
+  }
 }
 function updateFireModeUI(){
   const x2=state.boostDoubled,w=state.hasWaveBeam;
@@ -4439,9 +4806,16 @@ function cycleShipMode(){
   if(_pp){
     _peanutPopupToggled = true;
     _updatePeanutPopupHighlight();
-    // Show close button now that they've toggled
     const closeBtn = document.getElementById('peanut-popup-close');
     if(closeBtn) closeBtn.style.display = '';
+  }
+  // Handle bubble popup toggle interaction
+  const _bp = document.getElementById('bubble-popup-overlay');
+  if(_bp){
+    _bubblePopupToggled = true;
+    _updateBubblePopupHighlight();
+    const closeBtn2 = document.getElementById('bubble-popup-close');
+    if(closeBtn2) closeBtn2.style.display = '';
   }
 }
 function updateShipModeUI(){
@@ -4491,18 +4865,11 @@ function unlockWaveBeam(){
   state.hasWaveBeam=true;state.fireMode='wave';updateFireModeUI();addScore(1200);
   state._waveFireCount = 0;
   state._waveHintShown = false;
-  // Show centre text immediately
+  // Show wave unlock popup after SFX plays
   setTimeout(()=>{
-    hideAllUnlockHints();
-    const h=document.getElementById('wave-unlock-hint');
-    if(!h) return;
-    h.style.display='block';
-    const _wut=document.getElementById('wave-unlock-text');
-    if(_wut){ _wut.style.opacity='1'; setTimeout(()=>{ _wut.style.opacity='0'; },3000); }
-    // Arrow hidden until 3 wave fires
-    const arr=document.getElementById('wave-toggle-arrow');
-    if(arr) arr.style.display='none';
-  }, 1500);
+    if(state._waveToggleTutorialDone || state._victoryPhase) return;
+    _showWavePopup();
+  }, 800);
   if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;
     [0,4,7,12,16,19,24,28].forEach((n,i)=>playSFX(noteFreq(330,n),now+i*0.09,0.2,'square',0.08));
     setTimeout(()=>{if(audioCtx&&!state.sfxMuted){const t=audioCtx.currentTime;[0,7,12,19,24].forEach(n=>playSFX(noteFreq(220,n),t,0.6,'sine',0.1));}},800);
@@ -4660,8 +5027,8 @@ function updateWaveBeams(){
         }
       }
     }
-    // Wave pops bubbles
-    if(!hit&&state.inSecretLevel){
+    // Wave pops bubbles (secret level + main world boss bubbles)
+    if(!hit&&state.bubbles&&state.bubbles.length>0){
       for(let bi2=0;bi2<state.bubbles.length;bi2++){
         const bub=state.bubbles[bi2];if(bub.popped)continue;
         if((bub.wx-b.wx)**2+(bub.wy-b.wy)**2<(bub.r+12)**2){
@@ -4906,15 +5273,6 @@ function update(){
 
   // ── Camera offset — shift player off-center near large bodies ──
   {
-    // Freeze camera during black hole capture
-    if(state.bhCapture){
-      _camOffX += (0 - _camOffX) * 0.08;
-      _camOffY += (0 - _camOffY) * 0.08;
-      if(Math.abs(_camOffX) < 0.5) _camOffX = 0;
-      if(Math.abs(_camOffY) < 0.5) _camOffY = 0;
-    }
-    if(state.bhCapture){ /* skip all camera push logic */ }
-    else {
     let targetX = 0, targetY = 0;
     const MAX_SHIFT = canvas.width * 0.35;  // player ends up at ~15% from screen edge
     const LERP = 0.02;      // smooth glide speed
@@ -4935,29 +5293,32 @@ function update(){
       if(bDist < 1400 && bDist > 1) bodies.push({ dx:bDx, dy:bDy, dist:bDist, range:1400, weight:0.8 });
     }
 
-    // Black hole (secret level) — camera push within 1200px (freeze during captures)
-    if(state.secretBlackHole && state.inSecretLevel && !state.bhCapture && !state._bossCaptured){
+    // Black hole (secret level) — push continues during capture (fades via lerp to BH centre)
+    if(state.secretBlackHole && state.inSecretLevel && !state._bossCaptured){
       const bhDx = state.secretBlackHole.wx - state.x, bhDy = state.secretBlackHole.wy - state.y;
       const bhDist = Math.sqrt(bhDx*bhDx + bhDy*bhDy);
-      if(bhDist < 1200 && bhDist > 1) bodies.push({ dx:bhDx, dy:bhDy, dist:bhDist, range:1200, weight:0.9 });
+      if(bhDist < 1400 && bhDist > 1) bodies.push({ dx:bhDx, dy:bhDy, dist:bhDist, range:1400, weight:0.8, isBH:true });
     }
 
     // Moon excluded — too small (80px) and its push fights Earth's
 
     // One-shot auto-kill boosters (per-body thresholds)
     // Earth: 1130px (400px outside outermost debris ring ~730px)
-    // Boss: 800px — only on FIRST approach (not while fighting)
+    // Boss / BH: 800px — only on FIRST approach
     const _nearBoss = _camBoss && !_camBoss.dead && Math.sqrt((_camBoss.wx-state.x)**2+(_camBoss.wy-state.y)**2) < 800;
+    const _nearBH = state.secretBlackHole && state.inSecretLevel && !state.bhCapture &&
+      Math.sqrt((state.secretBlackHole.wx-state.x)**2+(state.secretBlackHole.wy-state.y)**2) < 800;
     if(state.hyperspace && !_camBoostKilled){
-      if(eDist < 1130 || (_nearBoss && !state._bossBoostKillDone)){
+      if(eDist < 1130 || (_nearBoss && !state._bossBoostKillDone) || (_nearBH && !state._bhBoostKillDone)){
         state.hyperspace = false;
         state.hsTail = [];
         _camBoostKilled = true;
-        if(_nearBoss) state._bossBoostKillDone = true; // never kill boost near boss again
+        if(_nearBoss) state._bossBoostKillDone = true;
+        if(_nearBH) state._bhBoostKillDone = true;
       }
     }
-    // Reset one-shot flag when outside all kill zones (Earth only after boss first-approach done)
-    if(eDist >= 1130 && !(_nearBoss && !state._bossBoostKillDone)){
+    // Reset one-shot flag when outside all kill zones
+    if(eDist >= 1130 && !(_nearBoss && !state._bossBoostKillDone) && !(_nearBH && !state._bhBoostKillDone)){
       _camBoostKilled = false;
     }
 
@@ -4978,6 +5339,15 @@ function update(){
           strength = 0.3 + 0.7 * (b.dist / 730);
         }
         strength *= b.weight;
+      } else if(b.isBH){
+        // BH gravity pulls ship much closer than boss combat distance,
+        // so fade push back down inside 500px to prevent extreme offset at capture range (~180px)
+        if(b.dist >= 500){
+          strength = Math.pow(1 - b.dist/b.range, 1.5) * b.weight;  // same as boss on approach
+        } else {
+          const peakStr = Math.pow(1 - 500/b.range, 1.5) * b.weight; // strength at 500px
+          strength = peakStr * (b.dist / 500);  // fade 500→0 maps to peak→0
+        }
       } else {
         strength = Math.pow(1 - b.dist/b.range, 1.5) * b.weight;  // boss: original curve
       }
@@ -5002,7 +5372,6 @@ function update(){
     // Snap to zero when very small
     if(Math.abs(_camOffX) < 0.5 && Math.abs(targetX) === 0) _camOffX = 0;
     if(Math.abs(_camOffY) < 0.5 && Math.abs(targetY) === 0) _camOffY = 0;
-    } // end else (not bhCapture)
   }
 
   const ps=getPlayerStyle();
@@ -6079,6 +6448,57 @@ function update(){
       });
       if(mwb._waveCD>0) mwb._waveCD--;
     }
+    // ── Boss bubble emission — sporadic small bubbles from behind ─────
+    if(!mwb.dead){
+      mwb._bubbleCD = (mwb._bubbleCD||0) - 1;
+      if(mwb._bubbleCD <= 0){
+        mwb._bubbleCD = 40 + Math.floor(Math.random()*80);
+        const backAng = (mwb.facing||0) + Math.PI;
+        const spread = (Math.random()-0.5)*1.2;
+        const emitAng = backAng + spread;
+        const emitDist = mwb.bodyR * (0.6 + Math.random()*0.5);
+        const bx = mwb.wx + Math.cos(emitAng)*emitDist;
+        const by = mwb.wy + Math.sin(emitAng)*emitDist;
+        const br = 8 + Math.random()*16;
+        const driftSpd = 0.3 + Math.random()*0.6;
+        if(!state.bubbles) state.bubbles = [];
+        state.bubbles.push({
+          wx:bx, wy:by, r:br,
+          orbitCx:bx, orbitCy:by,
+          orbitR:20+Math.random()*30, orbitAng:Math.random()*Math.PI*2,
+          orbitSpeed:(0.003+Math.random()*0.005)*(Math.random()<0.5?1:-1),
+          hue:260+Math.floor(Math.random()*60),
+          popped:false, popAge:0,
+          _bossBubble:true,
+          vx:Math.cos(emitAng)*driftSpd, vy:Math.sin(emitAng)*driftSpd
+        });
+      }
+    }
+  }
+
+  // ── Main world boss bubbles — update + render ─────────────────────
+  if(!state.inSecretLevel && state.bubbles && state.bubbles.length > 0){
+    const ps=getPlayerStyle();
+    state.bubbles.forEach(b=>{
+      if(b.popped){ b.popAge++; return; }
+      // Orbit motion
+      if(b.orbitCx!=null){
+        b.orbitAng+=b.orbitSpeed;
+        b.wx=b.orbitCx+Math.cos(b.orbitAng)*b.orbitR;
+        b.wy=b.orbitCy+Math.sin(b.orbitAng)*b.orbitR;
+      }
+      // Ship pops bubble on contact
+      const dx=state.x-b.wx, dy=state.y-b.wy;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist < b.r + ps.size*0.8){
+        b.popped=true; b.popAge=0;
+        triggerBubblePop(b.wx,b.wy,b.hue);
+        const bScore=50+Math.floor(b.r)*3;
+        addScoreSilent(bScore);
+      }
+    });
+    // Cleanup fully animated pops
+    state.bubbles = state.bubbles.filter(b=>!b.popped||b.popAge<25);
   }
 
   // ── PASSAGE HATCH HIT DETECTION (peanut mode only) ──
@@ -6396,12 +6816,14 @@ function requestRefuel(){
 function hardRestart(){
   document.getElementById('gameover').classList.remove('open');
   _dismissPeanutPopup();
+  _dismissBubblePopup();
+  _dismissWavePopup();
   Object.assign(state,{gameOver:false,fuel:1.0,score:0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
     tracers:[],hyperspace:false,cheat:null,hasWaveBeam:false,fireMode:'boost',
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_shortcutWarpsSpawned:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
-    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_radarCX:undefined,_radarCY:undefined,_zoneCompleteHintDelay:undefined,_shipToggleTutorialDone:false,_peanutModeFrames:0,
+    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_radarCX:undefined,_radarCY:undefined,_zoneCompleteHintDelay:undefined,_shipToggleTutorialDone:false,_bubbleToggleTutorialDone:false,_waveToggleTutorialDone:false,_peanutModeFrames:0,
     _peanutUnlocked:false,_bubbleUnlocked:false,
     completedLevel_0:false,completedLevel_1:false,completedLevel_2:false,completedLevel_3:false,completedLevel_4:false,
     editMissionComplete:false});
@@ -7151,9 +7573,9 @@ function drawRadarMap(){
   const mapX = canvas.width - mapR - 200;  // left of zone title + hamburger
   const mapY = mapR + 8;  // flush to top of screen
 
-  // ── SECRET LEVEL RADAR — player-centred, shows boss + black hole ──
+  // ── SECRET LEVEL RADAR — player-centred, matches main radar style ──
   if(state.inSecretLevel){
-    // Determine view radius: encompass boss and BH with margin
+    // Determine view radius: encompass boss and BH with margin, cap so dots stay visible
     var _slMaxDist = 800;
     if(state.secretBlackHole){
       var _bhDx = state.secretBlackHole.wx - state.x, _bhDy = state.secretBlackHole.wy - state.y;
@@ -7163,27 +7585,27 @@ function drawRadarMap(){
       var _boDx = state.secretBoss.wx - state.x, _boDy = state.secretBoss.wy - state.y;
       _slMaxDist = Math.max(_slMaxDist, Math.sqrt(_boDx*_boDx + _boDy*_boDy));
     }
-    var _slViewR = _slMaxDist * 1.25;  // 25% margin so objects aren't at edge
+    var _slViewR = _slMaxDist * 1.25;
     if(state._radarViewR === undefined) state._radarViewR = _slViewR;
     state._radarViewR += (_slViewR - state._radarViewR) * 0.03;
     var _slScale = mapR / state._radarViewR;
 
     ctx.save();
     ctx.globalAlpha = 0.85;
-    // Background
+    // Background — same as main radar
     ctx.beginPath(); ctx.arc(mapX, mapY, mapR + 4, 0, PI2);
     ctx.fillStyle = 'rgba(0,2,8,0.92)'; ctx.fill();
-    ctx.shadowColor = 'rgba(160,0,255,0.2)'; ctx.shadowBlur = 12 * SB;
-    ctx.strokeStyle = 'rgba(160,0,255,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
+    ctx.shadowColor = 'rgba(0,255,204,0.15)'; ctx.shadowBlur = 12 * SB;
+    ctx.strokeStyle = 'rgba(0,255,204,0.35)'; ctx.lineWidth = 1.5; ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // RADAR label (same curved text)
-    setFont(FONT_11);
-    ctx.fillStyle = 'rgba(160,0,255,0.3)';
+    // RADAR label — white, same font/spacing as main radar
+    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     var _rLabel = 'RADAR';
-    var _rLabelR = mapR - 2;
-    var _rCharSpan = 0.09;
+    var _rLabelR = mapR - 10;
+    var _rCharSpan = 0.14;
     var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;
     for(var _ri = 0; _ri < _rLabel.length; _ri++){
       var _rAng = _rStartAng + _ri * _rCharSpan;
@@ -7194,7 +7616,35 @@ function drawRadarMap(){
       ctx.restore();
     }
 
-    // Boss dot — pulsing purple
+    // Clip content to radar circle
+    ctx.beginPath(); ctx.arc(mapX, mapY, mapR, 0, PI2); ctx.clip();
+
+    // Black hole dot — dark purple with glow
+    if(state.secretBlackHole){
+      var _bhRx = (state.secretBlackHole.wx - state.x) * _slScale;
+      var _bhRy = (state.secretBlackHole.wy - state.y) * _slScale;
+      var _bhRd = Math.sqrt(_bhRx*_bhRx + _bhRy*_bhRy);
+      if(_bhRd < mapR - 2){
+        var _bhPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.3;
+        ctx.globalAlpha = _bhPulse;
+        ctx.shadowColor = '#aa00ff'; ctx.shadowBlur = 10 * SB;
+        ctx.beginPath(); ctx.arc(mapX + _bhRx, mapY + _bhRy, 5, 0, PI2);
+        ctx.fillStyle = '#220044'; ctx.fill();
+        ctx.strokeStyle = '#aa00ff'; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.globalAlpha = 0.85;
+      } else {
+        // BH off-radar: clamp to edge as directional indicator
+        var _bhClX = mapX + (_bhRx / _bhRd) * (mapR - 4);
+        var _bhClY = mapY + (_bhRy / _bhRd) * (mapR - 4);
+        ctx.globalAlpha = 0.4 + Math.sin(state.frameCount * 0.06) * 0.2;
+        ctx.beginPath(); ctx.arc(_bhClX, _bhClY, 3, 0, PI2);
+        ctx.fillStyle = '#aa00ff'; ctx.fill();
+        ctx.globalAlpha = 0.85;
+      }
+    }
+
+    // Boss dot — pulsing purple (with edge-clamped indicator if off-radar)
     if(state.secretBoss && !state.secretBoss.dead){
       var _boRx = (state.secretBoss.wx - state.x) * _slScale;
       var _boRy = (state.secretBoss.wy - state.y) * _slScale;
@@ -7208,12 +7658,20 @@ function drawRadarMap(){
         ctx.beginPath(); ctx.arc(mapX + _boRx, mapY + _boRy, 4, 0, PI2); ctx.fill();
         ctx.shadowBlur = 0;
         ctx.globalAlpha = 0.85;
+      } else {
+        // Boss off-radar: clamp to edge
+        var _boClX = mapX + (_boRx / _boRd) * (mapR - 4);
+        var _boClY = mapY + (_boRy / _boRd) * (mapR - 4);
+        ctx.globalAlpha = 0.4 + Math.sin(state.frameCount * 0.08) * 0.2;
+        ctx.beginPath(); ctx.arc(_boClX, _boClY, 3, 0, PI2);
+        ctx.fillStyle = '#cc44ff'; ctx.fill();
+        ctx.globalAlpha = 0.85;
       }
     }
 
-    // Bubble dots — tiny pink (only unpopped)
+    // Bubble dots — tiny coloured (only unpopped)
     if(state.bubbles){
-      ctx.globalAlpha = 0.4;
+      ctx.globalAlpha = 0.5;
       for(var _bi2 = 0; _bi2 < state.bubbles.length; _bi2++){
         var _b = state.bubbles[_bi2];
         if(_b.popped) continue;
@@ -7476,11 +7934,11 @@ function drawRadarMap(){
 }
 
 function drawBubbleHUD(){
-  const total=state._bubbleHUDTotal||0;
-  if(total===0) return;
+  if(!state.bubbles||!state._bubblesReady) return;
   if(wormholeTransition) return;
 
-  const remaining=total-(state._bubbleHUDPopped||0);
+  // Count remaining from actual array (exclude boss bubbles)
+  const remaining=state.bubbles.filter(b=>!b.popped&&!b._bossBubble).length;
   if(remaining<=0) return;
 
   const iconSize=7;
@@ -7518,6 +7976,11 @@ function drawBubbleHUD(){
 function drawGame(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!state.started)return;
+  // Screen shake from BH flash or boss capture
+  const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
+  const _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  const _bhShake = _shakeX || _shakeY;
+  if(_bhShake){ ctx.save(); ctx.translate(_shakeX, _shakeY); }
   const cx=CX(), cy=CY();
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
@@ -8503,6 +8966,23 @@ function drawGame(){
     if(mwb.dead) mwb.deathTimer++;
   }
 
+  // Main world boss bubbles — render
+  if(!state.inSecretLevel && state.bubbles && state.bubbles.length > 0){
+    state.bubbles.forEach(b=>{
+      if(b.popped) return;
+      const sx=b.wx-state.x+cx, sy=b.wy-state.y+cy;
+      if(sx+b.r<-20||sx-b.r>canvas.width+20||sy+b.r<-20||sy-b.r>canvas.height+20) return;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(sx,sy,b.r,0,Math.PI*2);
+      ctx.strokeStyle=`hsl(${b.hue},100%,70%)`; ctx.lineWidth=2;
+      ctx.shadowBlur=10; ctx.shadowColor=`hsl(${b.hue},100%,70%)`;
+      ctx.globalAlpha=0.85; ctx.stroke();
+      ctx.beginPath(); ctx.arc(sx-b.r*0.3,sy-b.r*0.3,b.r*0.25,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.shadowBlur=0; ctx.fill();
+      ctx.restore();
+    });
+  }
+
   // Yellow target hint — only visible outside the barrier, and only until outer fuel collected
   const _outerFuelCollected = !!state._outerLaunchpadRefuelled;
   if(!state.inSecretLevel && state.outsideBarrier && !_outerFuelCollected){
@@ -9039,13 +9519,32 @@ function drawGame(){
   {
     // When fuel empty: ship stays fully visible with slow amber warning pulse (not random flicker)
     const alpha=noFuel?(0.7+Math.sin(state.frameCount*0.08)*0.3):(state.frameCount%30<15)?1:0.65;
-    // Scale ship to zero as it gets captured
-    const _capScale = state.bhCapture ? Math.max(0, 1-state.bhCapture.timer/120) : 1;
+    // Ship visibility during BH capture — shrinkX drives visibility
+    const _bhCap = state.bhCapture;
+    const _capShrink = _bhCap ? (_bhCap._shrinkX||0) : 1;
     // Ship is destroyed — hide it during boss explosion (fire particles ARE the visual)
     if(state.secretBossExploding > 0) { /* ship vaporized */ } else
     if(state._shipDestroyed) { /* hull imploded — ship gone */ } else
-    if(_capScale <= 0.02) { /* captured — skip draw */ } else {
-    ctx.save(); ctx.translate(cx,cy); ctx.scale(_capScale,_capScale); ctx.rotate(state.angle);
+    if(_capShrink <= 0.02) { /* captured — skip draw */ } else {
+    const _bhOfsX = _bhCap ? (_bhCap._ofsX||0) : 0;
+    const _bhOfsY = _bhCap ? (_bhCap._ofsY||0) : 0;
+    ctx.save(); ctx.translate(cx+_bhOfsX,cy+_bhOfsY);
+    // Pre-capture stretch: ship elongates toward BH while in gravity well
+    const _preBH = !_bhCap && state.secretBlackHole && state.inSecretLevel;
+    const _preStrY = _preBH ? (state.secretBlackHole._preStretchY||1) : 1;
+    const _preShrX = _preBH ? (state.secretBlackHole._preShrinkX||1) : 1;
+    const _preAng  = _preBH ? state.secretBlackHole._preAngle : null;
+    if(_bhCap && _bhCap.timer <= 150){
+      // Spaghettification during capture
+      ctx.rotate(state.angle);
+      ctx.scale(_bhCap._shrinkX, _bhCap._stretchY);
+    } else if(_preAng !== null && _preStrY > 1.01){
+      // Pre-capture: rotate to face BH, apply mild stretch
+      ctx.rotate(_preAng);
+      ctx.scale(_preShrX, _preStrY);
+    } else {
+      ctx.rotate(state.angle);
+    }
     ctx.globalAlpha=alpha;
     ctx.shadowBlur=noFuel?10:20;
     ctx.shadowColor=noFuel?'#ff6600':ps.glow;
@@ -9438,6 +9937,8 @@ function drawGame(){
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.restore();
   }
+  // Close screen shake transform
+  if(_bhShake){ ctx.restore(); }
 }
 
 //  DRAW BUBBLE — with lasting collision deformations
@@ -12049,6 +12550,12 @@ function _dismissTopmostPopup(e){
   // Peanut unlock popup — only dismissible after player has toggled once
   const pp=document.getElementById('peanut-popup-overlay');
   if(pp){ if(!_peanutPopupToggled) return false; if(_escOnly) return false; _dismissPeanutPopup(); return true; }
+  // Bubble unlock popup — only dismissible after player has toggled once
+  const bp=document.getElementById('bubble-popup-overlay');
+  if(bp){ if(!_bubblePopupToggled) return false; if(_escOnly) return false; _dismissBubblePopup(); return true; }
+  // Wave unlock popup — only dismissible after player has toggled once
+  const wp=document.getElementById('wave-popup-overlay');
+  if(wp){ if(!_wavePopupToggled) return false; if(_escOnly) return false; _dismissWavePopup(); return true; }
   // Victory room zone menu removed — now in NAVIGATOR-VICTORY.html
   const lb=document.getElementById('gallery-lightbox');
   if(lb && lb.classList.contains('open')){ closeLightbox(); return true; }
@@ -12290,6 +12797,7 @@ function initSecretLevel(){
     state._bubbleHUDPopped = 0;
     state._bubbleHUDHues = [];
     selectTrack(3); // Boss music — VORTEX at peak intensity
+    setTimeout(()=>{ if(state.inSecretLevel) _spawnSecretBoss(); }, 100); // after black hole created
     if(!state.hasWaveBeam) setTimeout(()=>{ if(state.inSecretLevel && !state.secretBossDefeated) spawnSecretWaveOrb(); }, 600);
   } else {
     state._waveOrbSpawned = false;
@@ -12321,32 +12829,32 @@ function initSecretLevel(){
     r: 165,
     pulse: 0
   };
-  // Alien boss — only spawn if not already defeated this session
-  if(!state.secretBossDefeated){
-    const bossAng=Math.atan2(state.secretBlackHole.wy-state.y,state.secretBlackHole.wx-state.x)+Math.PI;
-    const bossDist=bhDist*2.5;
-    const N_TENT=8;
-    state.secretBoss={wx:state.x+Math.cos(bossAng)*bossDist,wy:state.y+Math.sin(bossAng)*bossDist,
-      bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:60,dead:false,deathTimer:0,flashTimer:0,
-      phase:0,pulsePhase:0,facing:bossAng,
-      // Per-tentacle HOME angles (fixed, evenly spaced — they WAVE from home, not orbit)
-      homeAngles:Array.from({length:N_TENT},(_,i)=>(Math.PI*2/N_TENT)*i),
-      // Independent swing oscillators for each arm
-      swingPhases:Array.from({length:N_TENT},()=>Math.random()*Math.PI*2),
-      swingSpeeds:Array.from({length:N_TENT},()=>0.022+Math.random()*0.028),
-      swingAmps:Array.from({length:N_TENT},()=>0.38+Math.random()*0.32),
-      // Wave/curl along each arm
-      tentaclePhases:Array.from({length:N_TENT},()=>Math.random()*Math.PI*2),
-      tentacleSpeeds:Array.from({length:N_TENT},()=>0.025+Math.random()*0.035),
-      tentacleAmps:Array.from({length:N_TENT},()=>40+Math.random()*40),
-      tentacleLens:Array.from({length:N_TENT},()=>318+Math.random()*153),
-      tentacleWidths:Array.from({length:N_TENT},()=>20+Math.random()*20),
-      mouthPhase:0,eyeGlow:0};
-    state.secretBossHits=0;state.secretBossExploding=0;
-  } else {
-    state.secretBoss=null;state.secretBossHits=0;state.secretBossExploding=0;
-  }
+  // Alien boss — deferred until all bubbles popped (spawned in _spawnSecretBoss)
+  state.secretBoss=null;state.secretBossHits=0;state.secretBossExploding=0;
   updateFireModeUI();
+}
+
+function _spawnSecretBoss(){
+  if(state.secretBossDefeated || state.secretBoss) return;
+  const bh = state.secretBlackHole;
+  if(!bh) return;
+  const bossAng = Math.atan2(bh.wy-state.y, bh.wx-state.x)+Math.PI;
+  const bossDist = Math.sqrt((bh.wx-state.x)**2+(bh.wy-state.y)**2)*2.5;
+  const N_TENT=8;
+  state.secretBoss={wx:state.x+Math.cos(bossAng)*bossDist,wy:state.y+Math.sin(bossAng)*bossDist,
+    bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:60,dead:false,deathTimer:0,flashTimer:0,
+    phase:0,pulsePhase:0,facing:bossAng,
+    homeAngles:Array.from({length:N_TENT},(_,i)=>(Math.PI*2/N_TENT)*i),
+    swingPhases:Array.from({length:N_TENT},()=>Math.random()*Math.PI*2),
+    swingSpeeds:Array.from({length:N_TENT},()=>0.022+Math.random()*0.028),
+    swingAmps:Array.from({length:N_TENT},()=>0.38+Math.random()*0.32),
+    tentaclePhases:Array.from({length:N_TENT},()=>Math.random()*Math.PI*2),
+    tentacleSpeeds:Array.from({length:N_TENT},()=>0.025+Math.random()*0.035),
+    tentacleAmps:Array.from({length:N_TENT},()=>40+Math.random()*40),
+    tentacleLens:Array.from({length:N_TENT},()=>318+Math.random()*153),
+    tentacleWidths:Array.from({length:N_TENT},()=>20+Math.random()*20),
+    mouthPhase:0,eyeGlow:0};
+  state.secretBossHits=0;state.secretBossExploding=0;
 }
 
 function updateSecretLevel(){
@@ -12387,6 +12895,7 @@ function updateSecretLevel(){
           addScoreSilent(5000);
           state.zoneCrossFlash={lvl:-3,timer:220,maxT:220,msg:'ALL BUBBLES POPPED! +5,000',_col:'#ff69b4'};
           selectTrack(3); // Boss music — VORTEX at peak intensity
+          _spawnSecretBoss(); // Boss appears after all bubbles cleared
           if(!state.hasWaveBeam) setTimeout(spawnSecretWaveOrb, 600);
         }
       }
@@ -12544,37 +13053,152 @@ function updateSecretLevel(){
       if(_bdist < 225){
         state._bossCaptured = true;
         state._bossCaptureTimer = 0;
-        state._bossCaptureHits = boss.hits; // preserve damage
+        state._bossCaptureHits = boss.hits;
         state._bossCaptureStartR = _bdist;
-      }
-    }
-    // ── Boss capture spiral animation ─────────────────────────────────
-    if(state._bossCaptured && state.secretBlackHole){
-      const _bh2=state.secretBlackHole;
-      state._bossCaptureTimer++;
-      const _ct=state._bossCaptureTimer/180; // 180 frames = ~3 seconds
-      const _spiralA=(boss.facing||0)+_ct*Math.PI*6;
-      const _spiralR2=Math.max(0,(1-_ct)*state._bossCaptureStartR);
-      boss.wx=_bh2.wx+Math.cos(_spiralA)*_spiralR2;
-      boss.wy=_bh2.wy+Math.sin(_spiralA)*_spiralR2;
-      boss._captureScale=Math.max(0,1-_ct);
-      boss.facing=_spiralA+Math.PI*0.5;
-      if(state._bossCaptureTimer>=180){
-        state._bossInMainWorld=true;
-        state.secretBossDefeated=true; // allows exit
-        boss.dead=true; boss.deathTimer=0;
-        addScore(13750);
-        state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,pre:'SUCCESS!',msg:'YOU LURED THE OCTOALIEN INTO THE BLACK HOLE',_col:'#aa00ff'};
-        if(!state.scoreFlashes) state.scoreFlashes=[];
-        state.scoreFlashes.push({wx:boss.wx,wy:boss.wy,score:13750,age:0,hue:280});
+        state._bossCaptureAngle = Math.atan2(_bh.wy-boss.wy, _bh.wx-boss.wx);
+        state._bossCapX = boss.wx; state._bossCapY = boss.wy;
+        state._bossShockwaves = [];
+        // Big whooshing crescendo for boss suck-in
         if(audioCtx&&!state.sfxMuted){
           const now=audioCtx.currentTime;
-          [0,-3,-6,-9,-12,-15,-18].forEach((n,i)=>
-            playBeep(noteFreq(110,n),now+i*0.12,0.3,'sine',0.12));
-          playBeep(25,now+0.5,2.0,'sine',0.2);
+          const _wo1=audioCtx.createOscillator(), _wg1=audioCtx.createGain();
+          _wo1.connect(_wg1); _wg1.connect(sfxGainNode||audioCtx.destination);
+          _wo1.type='sawtooth';
+          _wo1.frequency.setValueAtTime(30,now);
+          _wo1.frequency.exponentialRampToValueAtTime(350,now+2.2);
+          _wg1.gain.setValueAtTime(0.03,now);
+          _wg1.gain.linearRampToValueAtTime(0.4,now+2.0);
+          _wg1.gain.exponentialRampToValueAtTime(0.001,now+2.3);
+          _wo1.start(now); _wo1.stop(now+2.3);
+          const _wo2=audioCtx.createOscillator(), _wg2=audioCtx.createGain();
+          _wo2.connect(_wg2); _wg2.connect(sfxGainNode||audioCtx.destination);
+          _wo2.type='triangle';
+          _wo2.frequency.setValueAtTime(60,now);
+          _wo2.frequency.exponentialRampToValueAtTime(700,now+2.2);
+          _wg2.gain.setValueAtTime(0.015,now);
+          _wg2.gain.linearRampToValueAtTime(0.2,now+2.0);
+          _wg2.gain.exponentialRampToValueAtTime(0.001,now+2.3);
+          _wo2.start(now); _wo2.stop(now+2.3);
+          // Deep sub-bass rumble
+          const _wo3=audioCtx.createOscillator(), _wg3=audioCtx.createGain();
+          _wo3.connect(_wg3); _wg3.connect(sfxGainNode||audioCtx.destination);
+          _wo3.type='sine';
+          _wo3.frequency.setValueAtTime(20,now);
+          _wg3.gain.setValueAtTime(0.04,now);
+          _wg3.gain.linearRampToValueAtTime(0.35,now+2.0);
+          _wg3.gain.exponentialRampToValueAtTime(0.001,now+2.4);
+          _wo3.start(now); _wo3.stop(now+2.4);
         }
-        setTimeout(()=>{ if(state.inSecretLevel) selectTrack(7); },2000);
       }
+    }
+  }
+  // ── Boss capture spaghettification (runs even after boss.dead=true) ──────
+  if(state._bossCaptured && state.secretBlackHole && state.secretBoss){
+    const _bh2=state.secretBlackHole, _capBoss=state.secretBoss;
+    state._bossCaptureTimer++;
+    const _ct=state._bossCaptureTimer/180; // 180 frames = ~3 seconds
+    const ease=_ct*_ct; // accelerating pull
+    // Pull boss toward BH centre
+    _capBoss.wx=state._bossCapX+(_bh2.wx-state._bossCapX)*ease;
+    _capBoss.wy=state._bossCapY+(_bh2.wy-state._bossCapY)*ease;
+    // Spaghettification: directly modify tentacle lengths so BH-facing arms go in first
+    // Each tentacle's stretch depends on how much it faces the BH
+    const _bhAng2 = state._bossCaptureAngle || 0;
+    if(!_capBoss._origTentacleLens) _capBoss._origTentacleLens = (_capBoss.tentacleLens||Array(_capBoss.tentacles).fill(_capBoss.tentacleLen)).slice();
+    const _stretch = Math.pow(Math.min(_ct,1), 0.8) * 3.0; // how much to stretch BH-facing arms
+    const _shrink = Math.pow(Math.min(_ct,1), 1.5);         // how much to shrink opposite arms
+    for(let _ti=0; _ti<_capBoss.tentacles; _ti++){
+      const homeA = _capBoss.homeAngles ? _capBoss.homeAngles[_ti] : (Math.PI*2/_capBoss.tentacles)*_ti;
+      // How much this tentacle faces BH (1 = directly toward, -1 = away, 0 = perpendicular)
+      const dotBH = Math.cos(homeA); // boss.facing = _bhAng2, so homeAngle 0 = toward BH
+      const origLen = _capBoss._origTentacleLens[_ti];
+      if(dotBH > 0){
+        // Facing BH: stretch longer (tentacles reach into the hole)
+        _capBoss.tentacleLens[_ti] = origLen * (1 + dotBH * _stretch);
+      } else {
+        // Facing away: shrink (get pulled toward body, then body toward BH)
+        _capBoss.tentacleLens[_ti] = origLen * Math.max(0.1, 1 + dotBH * _shrink);
+      }
+    }
+    // Body shrinks as it gets sucked in
+    const _bodyShrink = Math.max(0.05, 1 - Math.pow(Math.min(_ct,1),1.8)*0.95);
+    _capBoss.bodyR = 132 * _bodyShrink;
+    // Also narrow perpendicular via canvas transform for the thin-strand look
+    _capBoss._captureScalePerp = Math.max(0.05, 1 - Math.pow(Math.min(_ct,1),1.2)*0.9);
+    _capBoss._captureScaleAlong = 1; // no along-axis canvas transform — tentacle lengths handle it
+    _capBoss._captureScale = _capBoss._captureScalePerp;
+    // Face toward BH
+    _capBoss.facing=state._bossCaptureAngle;
+    // 4 purple shockwaves — spaced 12 frames apart, starting as boss vanishes
+    if(!state._bossShockwaves) state._bossShockwaves = [];
+    if(state._bossCaptureTimer===130) state._bossShockwaves.push({start:130});
+    if(state._bossCaptureTimer===142) state._bossShockwaves.push({start:142});
+    if(state._bossCaptureTimer===154) state._bossShockwaves.push({start:154});
+    if(state._bossCaptureTimer===166) state._bossShockwaves.push({start:166});
+    // Screen shake during shockwaves
+    if(state._bossCaptureTimer>=130 && state._bossCaptureTimer<=220){
+      const _bsT = (state._bossCaptureTimer-130)/90;
+      const _bsI = _bsT < 0.15 ? _bsT/0.15 : Math.max(0, 1-(_bsT-0.15)/0.85);
+      state._bossShakeX = (Math.random()-0.5) * _bsI * 20;
+      state._bossShakeY = (Math.random()-0.5) * _bsI * 20;
+    } else {
+      state._bossShakeX=0; state._bossShakeY=0;
+    }
+    // Purple boom for each shockwave
+    function _bossBoom(vol){
+      if(!audioCtx||state.sfxMuted) return;
+      const now=audioCtx.currentTime;
+      const _o1=audioCtx.createOscillator(), _g1=audioCtx.createGain();
+      _o1.connect(_g1); _g1.connect(sfxGainNode||audioCtx.destination);
+      _o1.type='sawtooth';
+      _o1.frequency.setValueAtTime(60+Math.random()*30,now);
+      _o1.frequency.exponentialRampToValueAtTime(12,now+0.5);
+      _g1.gain.setValueAtTime(vol*0.7,now); _g1.gain.exponentialRampToValueAtTime(0.001,now+0.55);
+      _o1.start(now); _o1.stop(now+0.55);
+      const _o2=audioCtx.createOscillator(), _g2=audioCtx.createGain();
+      _o2.connect(_g2); _g2.connect(sfxGainNode||audioCtx.destination);
+      _o2.type='square';
+      _o2.frequency.setValueAtTime(250+Math.random()*150,now);
+      _o2.frequency.exponentialRampToValueAtTime(40,now+0.2);
+      _g2.gain.setValueAtTime(vol*0.3,now); _g2.gain.exponentialRampToValueAtTime(0.001,now+0.22);
+      _o2.start(now); _o2.stop(now+0.22);
+      const _o3=audioCtx.createOscillator(), _g3=audioCtx.createGain();
+      _o3.connect(_g3); _g3.connect(sfxGainNode||audioCtx.destination);
+      _o3.type='sawtooth';
+      _o3.frequency.setValueAtTime(900+Math.random()*600,now);
+      _o3.frequency.exponentialRampToValueAtTime(120,now+0.08);
+      _g3.gain.setValueAtTime(vol*0.15,now); _g3.gain.exponentialRampToValueAtTime(0.001,now+0.09);
+      _o3.start(now); _o3.stop(now+0.09);
+    }
+    if(state._bossCaptureTimer===130) _bossBoom(0.5);
+    if(state._bossCaptureTimer===142) _bossBoom(0.7);
+    if(state._bossCaptureTimer===154) _bossBoom(0.9);
+    if(state._bossCaptureTimer===166){
+      _bossBoom(1.0);
+      // Deep rumble on final boom
+      if(audioCtx&&!state.sfxMuted){
+        const now=audioCtx.currentTime;
+        const _o4=audioCtx.createOscillator(), _g4=audioCtx.createGain();
+        _o4.connect(_g4); _g4.connect(sfxGainNode||audioCtx.destination);
+        _o4.type='sine'; _o4.frequency.setValueAtTime(22,now);
+        _g4.gain.setValueAtTime(0.5,now); _g4.gain.exponentialRampToValueAtTime(0.001,now+1.8);
+        _o4.start(now); _o4.stop(now+1.8);
+      }
+    }
+    if(state._bossCaptureTimer===180){
+      state._bossInMainWorld=true;
+      state.secretBossDefeated=true;
+      _capBoss.dead=true; _capBoss.deathTimer=0;
+      addScore(13750);
+      state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,pre:'SUCCESS!',msg:'YOU LURED THE OCTOALIEN INTO THE BLACK HOLE',_col:'#aa00ff'};
+      if(!state.scoreFlashes) state.scoreFlashes=[];
+      state.scoreFlashes.push({wx:_capBoss.wx,wy:_capBoss.wy,score:13750,age:0,hue:280});
+      setTimeout(()=>{ if(state.inSecretLevel) selectTrack(7); },2000);
+    }
+    // Clean up shockwaves and end capture state after they've all aged out
+    if(state._bossCaptureTimer > 250){
+      state._bossShockwaves = []; state._bossCaptured = false;
+      if(_capBoss._origTentacleLens){ _capBoss._origTentacleLens = null; }
     }
   }
   if(state.secretBoss&&state.secretBoss.dead)state.secretBoss.deathTimer++;
@@ -12589,45 +13213,151 @@ function updateSecretLevel(){
       const dx=state.x-bh.wx, dy=state.y-bh.wy;
       const dist=Math.sqrt(dx*dx+dy*dy);
       // Gravity pull — always active (BH is a hazard independent of boss state)
-      // Range 675px, gentle at edge, strong near core. Boost can escape at mid-range.
-      if(dist < 675){
-        const strength = Math.pow(1-Math.min(1,(dist-bh.r)/510), 4)*1.0;
+      // Range 900px, gentle at edge, escapable at mid-range, overwhelming near core.
+      if(dist < 900){
+        const strength = Math.pow(1-Math.min(1,(dist-bh.r)/735), 3)*0.5;
         const nx=-(dx/dist), ny=-(dy/dist);
         state.vx+=nx*strength; state.vy+=ny*strength;
+        // Pre-capture stretch: ship starts elongating toward BH as gravity pulls
+        const stretchAmt = Math.pow(1-Math.min(1,dist/900), 2); // 0 at edge → 1 at centre
+        bh._preStretchY = 1 + stretchAmt * 3;           // up to 4x stretch
+        bh._preShrinkX = Math.max(0.3, 1 - stretchAmt * 0.7); // narrow to 0.3
+        // Only lock facing toward BH when deep in gravity well (stretchAmt > 0.3)
+        // Below that, keep player's real angle visible so they can steer out
+        const bhAng = Math.atan2(bh.wy-state.y, bh.wx-state.x) + Math.PI/2;
+        if(stretchAmt > 0.3){
+          // Blend: 0.3→1.0 maps to 0→1 blend toward BH angle
+          const blend = Math.min(1, (stretchAmt - 0.3) / 0.7);
+          // Shortest-arc lerp between player angle and BH angle
+          let diff = bhAng - state.angle;
+          while(diff > Math.PI) diff -= Math.PI*2;
+          while(diff < -Math.PI) diff += Math.PI*2;
+          bh._preAngle = state.angle + diff * blend;
+        } else {
+          bh._preAngle = null; // keep player's own angle
+        }
+      } else {
+        bh._preStretchY = 1; bh._preShrinkX = 1; bh._preAngle = null;
       }
       // Capture when entering core — not during ship explosion sequence
       if(dist < bh.r+15 && !state.secretBossExploding){
-        state.bhCapture={timer:0, startAngle:state.angle, capX:state.x, capY:state.y};
+        state.bhCapture={timer:0,
+          bhAngle:Math.atan2(bh.wy-state.y, bh.wx-state.x), startRadius:dist,
+          capX:state.x, capY:state.y,
+          _ofsX:0, _ofsY:0, _stretchY:bh._preStretchY||1, _shrinkX:bh._preShrinkX||1};
         state.hyperspace=false;
-        // Play dramatic suck-in sound
+        bh._preStretchY = 1; bh._preShrinkX = 1;
+        // Windy wooshing crescendo building toward shockwave
         if(audioCtx&&!state.sfxMuted){
           const now=audioCtx.currentTime;
-          [0,-2,-4,-6,-8,-10,-12].forEach((n,i)=>
-            playBeep(noteFreq(220,n),now+i*0.08,0.12+(i*0.02),'sawtooth',0.07));
-          playBeep(40,now+0.3,1.5,'sine',0.18);
+          // Low rising whoosh
+          const _wo1=audioCtx.createOscillator(), _wg1=audioCtx.createGain();
+          _wo1.connect(_wg1); _wg1.connect(sfxGainNode||audioCtx.destination);
+          _wo1.type='sawtooth';
+          _wo1.frequency.setValueAtTime(35,now);
+          _wo1.frequency.exponentialRampToValueAtTime(250,now+1.8);
+          _wg1.gain.setValueAtTime(0.02,now);
+          _wg1.gain.linearRampToValueAtTime(0.3,now+1.7);
+          _wg1.gain.exponentialRampToValueAtTime(0.001,now+1.9);
+          _wo1.start(now); _wo1.stop(now+1.9);
+          // Higher breathy layer
+          const _wo2=audioCtx.createOscillator(), _wg2=audioCtx.createGain();
+          _wo2.connect(_wg2); _wg2.connect(sfxGainNode||audioCtx.destination);
+          _wo2.type='triangle';
+          _wo2.frequency.setValueAtTime(70,now);
+          _wo2.frequency.exponentialRampToValueAtTime(500,now+1.8);
+          _wg2.gain.setValueAtTime(0.01,now);
+          _wg2.gain.linearRampToValueAtTime(0.15,now+1.7);
+          _wg2.gain.exponentialRampToValueAtTime(0.001,now+1.9);
+          _wo2.start(now); _wo2.stop(now+1.9);
         }
       }
     } else if(state.bhCapture) {
-      // Capture animation: spiral into black hole over 120 frames, then 2s pause
+      // Capture animation: spaghettification (150f) → white flash (40f) → hold → exit
       const cap=state.bhCapture;
       cap.timer++;
       state.vx=0; state.vy=0;
-      // Lock camera angle on capture start
-      if(!cap._lockedAngle) cap._lockedAngle=state.angle;
-      state.angle=cap._lockedAngle;
-      if(cap.timer<=120){
-        // Spiral: move toward BH with decreasing radius
-        const t=cap.timer/120;
-        const spiralAng=cap.startAngle+t*Math.PI*8;
-        const spiralR=Math.max(0,(1-t)*240);
-        state.x=bh.wx+(Math.cos(spiralAng)*spiralR);
-        state.y=bh.wy+(Math.sin(spiralAng)*spiralR);
+      // Lock ship angle to face BH (ship nose is local -Y, so add PI/2)
+      state.angle=cap.bhAngle+Math.PI/2;
+      // Keep state.x/y frozen at capture position — world stays perfectly still
+      state.x = cap.capX; state.y = cap.capY;
+      if(cap.timer<=150){
+        // Spaghettification: continues from pre-capture stretch, accelerates into BH
+        const t=cap.timer/150;
+        const ease=t*t; // accelerating pull toward BH
+        cap._ofsX=(bh.wx-cap.capX)*ease;
+        cap._ofsY=(bh.wy-cap.capY)*ease;
+        // Start from pre-capture stretch values, ramp up to extreme
+        const startStrY = cap._startStretchY || 1;
+        const startShrX = cap._startShrinkX || 1;
+        if(!cap._startStretchY){ cap._startStretchY=cap._stretchY; cap._startShrinkX=cap._shrinkX; }
+        cap._stretchY=startStrY+ease*(12-startStrY);     // ramp to 12x
+        cap._shrinkX=Math.max(0,startShrX-Math.pow(t,1.5)*(startShrX+0.3)); // → 0
       } else {
-        // Hold at centre of black hole during 2s pause
-        state.x=bh.wx; state.y=bh.wy;
+        // Ship gone — hold at BH centre
+        cap._ofsX=bh.wx-cap.capX;
+        cap._ofsY=bh.wy-cap.capY;
+        cap._stretchY=0; cap._shrinkX=0;
       }
-      // Exit after spiral (120f) + 2s pause (120f) = 240 frames
-      if(cap.timer>=240) exitSecretLevel();
+      // Triple shockwave — fires right as ship vanishes (~frame 108-118)
+      if(!cap._shockwaves) cap._shockwaves = [];
+      if(cap.timer===108) cap._shockwaves.push({start:108});
+      if(cap.timer===113) cap._shockwaves.push({start:113});
+      if(cap.timer===118) cap._shockwaves.push({start:118});
+      // Screen shake from first shockwave through decay
+      if(cap.timer>=108 && cap.timer<=185){
+        const shakeT = (cap.timer-108)/77;
+        const shakeI = shakeT < 0.15 ? shakeT/0.15 : Math.max(0, 1-(shakeT-0.15)/0.85);
+        cap._shakeX = (Math.random()-0.5) * shakeI * 24;
+        cap._shakeY = (Math.random()-0.5) * shakeI * 24;
+      } else {
+        cap._shakeX=0; cap._shakeY=0;
+      }
+      // Sonic boom for each shockwave (fireworks-style: sub thud + mid crunch + high snap)
+      function _bhBoom(vol){
+        if(!audioCtx||state.sfxMuted) return;
+        const now=audioCtx.currentTime;
+        const _o1=audioCtx.createOscillator(), _g1=audioCtx.createGain();
+        _o1.connect(_g1); _g1.connect(sfxGainNode||audioCtx.destination);
+        _o1.type='sawtooth';
+        _o1.frequency.setValueAtTime(80+Math.random()*40,now);
+        _o1.frequency.exponentialRampToValueAtTime(15,now+0.4);
+        _g1.gain.setValueAtTime(vol*0.6,now); _g1.gain.exponentialRampToValueAtTime(0.001,now+0.45);
+        _o1.start(now); _o1.stop(now+0.45);
+        const _o2=audioCtx.createOscillator(), _g2=audioCtx.createGain();
+        _o2.connect(_g2); _g2.connect(sfxGainNode||audioCtx.destination);
+        _o2.type='square';
+        _o2.frequency.setValueAtTime(300+Math.random()*200,now);
+        _o2.frequency.exponentialRampToValueAtTime(60,now+0.15);
+        _g2.gain.setValueAtTime(vol*0.35,now); _g2.gain.exponentialRampToValueAtTime(0.001,now+0.18);
+        _o2.start(now); _o2.stop(now+0.18);
+        const _o3=audioCtx.createOscillator(), _g3=audioCtx.createGain();
+        _o3.connect(_g3); _g3.connect(sfxGainNode||audioCtx.destination);
+        _o3.type='sawtooth';
+        _o3.frequency.setValueAtTime(1200+Math.random()*800,now);
+        _o3.frequency.exponentialRampToValueAtTime(200,now+0.06);
+        _g3.gain.setValueAtTime(vol*0.2,now); _g3.gain.exponentialRampToValueAtTime(0.001,now+0.07);
+        _o3.start(now); _o3.stop(now+0.07);
+      }
+      if(cap.timer===108) _bhBoom(0.6);  // first — lighter
+      if(cap.timer===113) _bhBoom(0.8);  // second — building
+      if(cap.timer===118){               // third — biggest + rumble tail
+        _bhBoom(1.0);
+        if(audioCtx&&!state.sfxMuted){
+          const now=audioCtx.currentTime;
+          const _o4=audioCtx.createOscillator(), _g4=audioCtx.createGain();
+          _o4.connect(_g4); _g4.connect(sfxGainNode||audioCtx.destination);
+          _o4.type='sine'; _o4.frequency.setValueAtTime(25,now);
+          _g4.gain.setValueAtTime(0.45,now); _g4.gain.exponentialRampToValueAtTime(0.001,now+1.5);
+          _o4.start(now); _o4.stop(now+1.5);
+        }
+      }
+      // Show transit text after shockwaves
+      if(cap.timer===140){
+        state.zoneCrossFlash={lvl:-3,timer:200,maxT:200,msg:'TRANSITED THROUGH THE BLACK HOLE',_col:'#aa00ff'};
+      }
+      // Exit after shockwaves + hold = 300 frames
+      if(cap.timer>=300) exitSecretLevel();
     }
   }
 }
@@ -12664,9 +13394,14 @@ function spawnSecretWaveOrb(){
 
 function triggerBubbleCheatUnlock(){
   state._bubbleUnlocked = true;
+  state.cheat = 'bubbles';
   updateFireModeUI();
-  // Activate bubble mode after a short delay
-  setTimeout(()=>{ state.cheat='bubbles'; updateShipModeUI(); }, 2500);
+  updateShipModeUI();
+  // Show bubble unlock popup after fanfare plays
+  setTimeout(()=>{
+    if(state._bubbleToggleTutorialDone || state._victoryPhase) return;
+    _showBubblePopup();
+  }, 800);
   // Victory fanfare — longer, higher
   if(audioCtx && !state.sfxMuted){
     const t = audioCtx.currentTime;
@@ -12860,7 +13595,8 @@ function exitSecretLevel(){
   state.bubbles=[];
   state.secretBlackHole=null;
   state.bhCapture=null;
-  state._bossCaptured=false; state._bossCaptureTimer=0;
+  state._bossCaptured=false; state._bossCaptureTimer=0; state._bossShockwaves=[];
+  state._bossShakeX=0; state._bossShakeY=0;
   state.secretBoss=null;state.secretBossExploding=0;state.secretBossHits=0;
   state.rocksDestroyed=0;
   state.secretUnlocked=false;
@@ -13164,111 +13900,172 @@ function drawSecretLevel(ctx,cx,cy){
     ctx.save();
 
     // ── Outer nebula haze ─────────────────────────────────
-    const outerGlow=ctx.createRadialGradient(sx,sy,R*0.5,sx,sy,R*4);
-    outerGlow.addColorStop(0,'rgba(80,0,180,0.18)');
-    outerGlow.addColorStop(0.3,'rgba(60,0,140,0.10)');
-    outerGlow.addColorStop(0.6,'rgba(30,0,80,0.05)');
+    const outerGlow=ctx.createRadialGradient(sx,sy,R*0.8,sx,sy,R*4.5);
+    outerGlow.addColorStop(0,'rgba(100,20,200,0.14)');
+    outerGlow.addColorStop(0.25,'rgba(70,0,160,0.09)');
+    outerGlow.addColorStop(0.5,'rgba(40,0,100,0.04)');
     outerGlow.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.beginPath(); ctx.arc(sx,sy,R*4,0,Math.PI*2);
+    ctx.beginPath(); ctx.arc(sx,sy,R*4.5,0,Math.PI*2);
     ctx.fillStyle=outerGlow; ctx.fill();
 
-    // ── Outer spiral arms (faint, large) ──────────────────
-    ctx.save(); ctx.translate(sx,sy);
-    for(let arm=0;arm<3;arm++){
-      const armOff=arm*(Math.PI*2/3);
-      ctx.beginPath();
-      for(let t=0;t<=1;t+=0.008){
-        const spiralR=R*1.2+t*R*2.8;
-        const spiralA=ang*0.5+armOff+t*Math.PI*3;
-        const px=Math.cos(spiralA)*spiralR, py=Math.sin(spiralA)*spiralR;
-        t===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
-      }
-      const hue=260+arm*30;
-      ctx.strokeStyle=`hsla(${hue},80%,55%,${0.15-arm*0.03})`;
-      ctx.lineWidth=6-arm*1.5; ctx.shadowBlur=20*SB; ctx.shadowColor=`hsla(${hue},100%,50%,0.3)`;
-      ctx.stroke();
-    }
-    ctx.restore();
+    // ── Accretion glow ring (soft, around event horizon) ──
+    const accGlow=ctx.createRadialGradient(sx,sy,R*0.85,sx,sy,R*1.8);
+    accGlow.addColorStop(0,'rgba(140,60,255,0.25)');
+    accGlow.addColorStop(0.3,'rgba(100,20,220,0.12)');
+    accGlow.addColorStop(0.7,'rgba(60,0,140,0.04)');
+    accGlow.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(sx,sy,R*1.8,0,Math.PI*2);
+    ctx.fillStyle=accGlow; ctx.fill();
 
-    // ── Inner spiral arms (bright, tight) ─────────────────
-    ctx.save(); ctx.translate(sx,sy);
-    for(let arm=0;arm<4;arm++){
-      const armOff=arm*(Math.PI*2/4);
-      ctx.beginPath();
-      for(let t=0;t<=1;t+=0.005){
-        const spiralR=R*0.15+t*R*1.4;
-        const spiralA=ang*0.8+armOff+t*Math.PI*4;
-        const px=Math.cos(spiralA)*spiralR, py=Math.sin(spiralA)*spiralR;
-        t===0?ctx.moveTo(px,py):ctx.lineTo(px,py);
-      }
-      const hue=270+arm*20;
-      ctx.strokeStyle=`hsla(${hue},100%,70%,${0.5-arm*0.08})`;
-      ctx.lineWidth=4-arm*0.5; ctx.shadowBlur=14*SB; ctx.shadowColor=`hsla(${hue},100%,60%,0.6)`;
-      ctx.stroke();
-    }
-    ctx.restore();
+    // ── LAYER 1: Full-size black core (background) ──────────
+    const coreBlur=ctx.createRadialGradient(sx,sy,0,sx,sy,R*1.08);
+    coreBlur.addColorStop(0,'rgba(0,0,0,1)');
+    coreBlur.addColorStop(0.88,'rgba(0,0,0,1)');
+    coreBlur.addColorStop(0.96,'rgba(0,0,0,0.7)');
+    coreBlur.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(sx,sy,R*1.08,0,Math.PI*2);
+    ctx.fillStyle=coreBlur; ctx.shadowBlur=0; ctx.fill();
 
-    // ── Orbiting particles spiraling inward ───────────────
+    // ── LAYER 2: Particles (drawn ON TOP of black core) ─────
+    // Visible crossing over the black sphere, then masked by inner circle
     ctx.save(); ctx.translate(sx,sy);
-    if(!bh._particles){
+    if(!bh._particles || bh._particles.length < 150){
       bh._particles=[];
-      for(let i=0;i<35;i++) bh._particles.push({
-        a:Math.random()*Math.PI*2, r:R*0.6+Math.random()*R*3,
-        speed:0.008+Math.random()*0.015, drift:-0.15-Math.random()*0.3,
-        size:1+Math.random()*2.5, hue:240+Math.random()*80
-      });
+      for(let i=0;i<150;i++){
+        const startR = R*0.5 + Math.random()*R*5.5;
+        const baseSpeed = 0.008 + 0.025 / (1 + startR/(R*1.5));
+        bh._particles.push({
+          a: Math.random()*Math.PI*2,
+          r: startR,
+          speed: baseSpeed * (0.7 + Math.random()*0.6),
+          drift: -0.3 - Math.random()*0.7,
+          size: 0.5 + Math.random()*2.0,
+          hue: 230 + Math.random()*90,
+          alpha0: 0.4 + Math.random()*0.6
+        });
+      }
     }
+    ctx.shadowBlur = 0;
     for(let i=0;i<bh._particles.length;i++){
       const p=bh._particles[i];
-      p.a+=p.speed; p.r+=p.drift;
-      if(p.r<R*0.2){p.r=R*2.5+Math.random()*R*1.5;p.a=Math.random()*Math.PI*2;}
-      const px=Math.cos(p.a)*p.r, py=Math.sin(p.a)*p.r;
-      const alpha=Math.min(1,(p.r-R*0.2)/(R*1.5))*0.7;
-      ctx.beginPath(); ctx.arc(px,py,p.size,0,Math.PI*2);
-      ctx.fillStyle=`hsla(${p.hue},100%,75%,${alpha})`;
-      ctx.shadowBlur=6*SB; ctx.shadowColor=`hsl(${p.hue},100%,60%)`;
+      const keplerBoost = Math.max(1, (R*2.5) / Math.max(p.r, R*0.2));
+      p.a += p.speed * Math.sqrt(keplerBoost);
+      p.r += p.drift;
+      if(p.r < R*2) p.drift -= 0.012;
+      // Respawn when deep enough to be hidden by inner mask
+      if(p.r < R*0.2){
+        p.r = R*3.0 + Math.random()*R*3.5;
+        p.a = Math.random()*Math.PI*2;
+        p.speed = 0.008 + 0.025 / (1 + p.r/(R*1.5));
+        p.speed *= (0.7 + Math.random()*0.6);
+        p.drift = -0.3 - Math.random()*0.7;
+        p.size = 0.5 + Math.random()*2.0;
+        p.hue = 230 + Math.random()*90;
+      }
+      // Gradual fade at outer edge only — no core fade
+      const edgeFade = Math.min(1, (R*6.0 - p.r) / (R*3.0));
+      const alpha = p.alpha0 * edgeFade * 0.85;
+      if(alpha < 0.02) continue;
+      const px = Math.cos(p.a)*p.r, py = Math.sin(p.a)*p.r;
+      ctx.beginPath(); ctx.arc(px, py, p.size, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${p.hue},90%,70%,${alpha})`;
+      ctx.shadowBlur = p.size*2*SB;
+      ctx.shadowColor = `hsla(${p.hue},100%,60%,${alpha})`;
       ctx.fill();
     }
     ctx.restore();
 
-    // ── Accretion rings (concentric, varied rotation) ─────
-    for(let ring=0;ring<5;ring++){
-      const ringR=R*(1.05+ring*0.25);
-      const ringAng=ang*(1.4-ring*0.15);
-      ctx.save(); ctx.translate(sx,sy); ctx.rotate(ringAng);
-      ctx.scale(1,0.22+ring*0.03);
-      ctx.beginPath(); ctx.arc(0,0,ringR,0,Math.PI*2);
-      const hue=255+ring*15;
-      const al=0.35-ring*0.05;
-      ctx.strokeStyle=`hsla(${hue},100%,60%,${al})`;
-      ctx.lineWidth=3-ring*0.4; ctx.shadowBlur=12*SB; ctx.shadowColor=`hsla(${hue},100%,55%,0.4)`;
-      ctx.stroke();
+    // ── LAYER 3: Inner mask (drawn ON TOP of particles) ─────
+    // Smaller black circle that hides particles as they cross into centre
+    const maskR=R*0.65;
+    const maskBlur=ctx.createRadialGradient(sx,sy,0,sx,sy,maskR*1.15);
+    maskBlur.addColorStop(0,'rgba(0,0,0,1)');
+    maskBlur.addColorStop(0.85,'rgba(0,0,0,1)');
+    maskBlur.addColorStop(0.95,'rgba(0,0,0,0.7)');
+    maskBlur.addColorStop(1,'rgba(0,0,0,0)');
+    ctx.beginPath(); ctx.arc(sx,sy,maskR*1.15,0,Math.PI*2);
+    ctx.fillStyle=maskBlur; ctx.shadowBlur=0; ctx.fill();
+
+    ctx.restore();
+
+    // Triple shockwave rings expanding from BH centre on ship capture
+    if(state.bhCapture && state.bhCapture._shockwaves && state.bhCapture._shockwaves.length > 0){
+      const _cap = state.bhCapture;
+      const maxR = Math.max(canvas.width, canvas.height) * 1.0;
+      ctx.save();
+      _cap._shockwaves.forEach(sw => {
+        const age = _cap.timer - sw.start;
+        if(age < 0 || age > 70) return;
+        const ft = age / 70; // 0→1 over ~1.2 seconds
+        const ringR = Math.pow(ft, 0.6) * maxR; // fast burst, decelerates
+        const ringW = Math.max(2, 40 * (1 - ft*ft));
+        const ringAlpha = Math.max(0, 1 - ft*ft);
+        // Outer bright ring
+        ctx.shadowBlur = ringW * 2.5;
+        ctx.shadowColor = `rgba(180,120,255,${ringAlpha})`;
+        ctx.strokeStyle = `rgba(255,255,255,${ringAlpha * 0.9})`;
+        ctx.lineWidth = ringW;
+        ctx.beginPath(); ctx.arc(sx, sy, ringR, 0, Math.PI*2); ctx.stroke();
+        // Inner purple edge
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(200,160,255,${ringAlpha * 0.5})`;
+        ctx.lineWidth = ringW * 0.35;
+        ctx.beginPath(); ctx.arc(sx, sy, Math.max(0, ringR - ringW*0.6), 0, Math.PI*2); ctx.stroke();
+        // Brief bright centre flash on first few frames of each ring
+        if(ft < 0.1){
+          const cAlpha = (1 - ft/0.1) * 0.7;
+          const cR = R * 0.5 + ft * R * 3;
+          const cGrad = ctx.createRadialGradient(sx,sy,0,sx,sy,cR);
+          cGrad.addColorStop(0,`rgba(255,255,255,${cAlpha})`);
+          cGrad.addColorStop(0.5,`rgba(200,180,255,${cAlpha*0.4})`);
+          cGrad.addColorStop(1,'rgba(0,0,0,0)');
+          ctx.beginPath(); ctx.arc(sx,sy,cR,0,Math.PI*2);
+          ctx.fillStyle=cGrad; ctx.fill();
+        }
+      });
       ctx.restore();
     }
 
-    // ── Event horizon — deep black core ───────────────────
-    const coreGrad=ctx.createRadialGradient(sx,sy,0,sx,sy,R);
-    coreGrad.addColorStop(0,'#000000');
-    coreGrad.addColorStop(0.6,'#020008');
-    coreGrad.addColorStop(0.85,'#08001a');
-    coreGrad.addColorStop(1,'rgba(30,0,60,0.7)');
-    ctx.beginPath(); ctx.arc(sx,sy,R,0,Math.PI*2);
-    ctx.fillStyle=coreGrad; ctx.shadowBlur=0; ctx.fill();
-
-    // ── Photon ring — bright inner rim ────────────────────
-    ctx.beginPath(); ctx.arc(sx,sy,R,0,Math.PI*2);
-    ctx.strokeStyle='rgba(160,80,255,0.9)';
-    ctx.lineWidth=4; ctx.shadowBlur=40; ctx.shadowColor='#8800ff'; ctx.stroke();
-
-    // ── Inner glow pulse ──────────────────────────────────
-    const pulsAlpha=0.08+Math.sin(bh.pulse)*0.04;
-    const innerGlow=ctx.createRadialGradient(sx,sy,0,sx,sy,R*0.9);
-    innerGlow.addColorStop(0,`rgba(120,40,255,${pulsAlpha})`);
-    innerGlow.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.beginPath(); ctx.arc(sx,sy,R*0.9,0,Math.PI*2);
-    ctx.fillStyle=innerGlow; ctx.fill();
-
-    ctx.restore();
+    // Boss purple shockwave rings expanding from BH centre
+    if(state._bossShockwaves && state._bossShockwaves.length > 0){
+      // If boss capture ended, discard stale waves immediately
+      if(!state._bossCaptured){ state._bossShockwaves = []; }
+      // Self-clean: remove waves that have fully faded
+      else { state._bossShockwaves = state._bossShockwaves.filter(sw => (state._bossCaptureTimer||0) - sw.start <= 80); }
+      const _bmaxR = Math.max(canvas.width, canvas.height) * 1.0;
+      ctx.save();
+      state._bossShockwaves.forEach(sw => {
+        const age = (state._bossCaptureTimer||0) - sw.start;
+        if(age < 0 || age > 80) return;
+        const ft = age / 80;
+        const ringR = Math.pow(ft, 0.6) * _bmaxR;
+        const ringW = Math.max(2, 45 * (1 - ft*ft));
+        const ringAlpha = Math.max(0, 1 - ft*ft);
+        // Outer purple ring
+        ctx.shadowBlur = ringW * 2.5;
+        ctx.shadowColor = `rgba(160,0,255,${ringAlpha})`;
+        ctx.strokeStyle = `rgba(200,100,255,${ringAlpha * 0.9})`;
+        ctx.lineWidth = ringW;
+        ctx.beginPath(); ctx.arc(sx, sy, ringR, 0, Math.PI*2); ctx.stroke();
+        // Inner bright purple edge
+        ctx.shadowBlur = 0;
+        ctx.strokeStyle = `rgba(255,180,255,${ringAlpha * 0.5})`;
+        ctx.lineWidth = ringW * 0.35;
+        ctx.beginPath(); ctx.arc(sx, sy, Math.max(0, ringR - ringW*0.6), 0, Math.PI*2); ctx.stroke();
+        // Brief bright purple centre flash
+        if(ft < 0.1){
+          const cAlpha = (1 - ft/0.1) * 0.7;
+          const cR = R * 0.5 + ft * R * 3;
+          const cGrad = ctx.createRadialGradient(sx,sy,0,sx,sy,cR);
+          cGrad.addColorStop(0,`rgba(220,140,255,${cAlpha})`);
+          cGrad.addColorStop(0.5,`rgba(160,0,255,${cAlpha*0.4})`);
+          cGrad.addColorStop(1,'rgba(0,0,0,0)');
+          ctx.beginPath(); ctx.arc(sx,sy,cR,0,Math.PI*2);
+          ctx.fillStyle=cGrad; ctx.fill();
+        }
+      });
+      ctx.restore();
+    }
 
     // Off-screen indicator arrow
     const edgeDx=bh.wx-state.x, edgeDy=bh.wy-state.y;
@@ -13302,7 +14099,20 @@ function drawSecretLevel(ctx,cx,cy){
     if(_on&&!(boss.dead&&boss.deathTimer>60)){
       ctx.save();if(boss.dead)ctx.globalAlpha=Math.max(0,1-boss.deathTimer/60);
       if(boss._captureScale!=null&&boss._captureScale<1){
-        ctx.translate(bsx,bsy);ctx.scale(boss._captureScale,boss._captureScale);ctx.translate(-bsx,-bsy);
+        if(boss._captureScaleAlong!=null && state.secretBlackHole){
+          // Spaghettification: narrow perpendicular to BH direction from boss centre
+          // Tentacle lengths modified directly in update — they handle the stretch
+          const _bhAng=state._bossCaptureAngle||0;
+          ctx.translate(bsx, bsy);
+          ctx.rotate(_bhAng);
+          ctx.scale(1, boss._captureScalePerp);
+          ctx.rotate(-_bhAng);
+          ctx.translate(-bsx, -bsy);
+        } else {
+          ctx.translate(bsx,bsy);
+          ctx.scale(boss._captureScale,boss._captureScale);
+          ctx.translate(-bsx,-bsy);
+        }
       }
       drawBossVisual(ctx,boss,bsx,bsy);
       ctx.restore();
@@ -13566,18 +14376,41 @@ function drawSecretLevel(ctx,cx,cy){
   };
   window.devPop49 = function(){
     if(!state.inSecretLevel||!state.bubbles||!state._bubblesReady) return;
-    var alive=state.bubbles.filter(function(b){return !b.popped;});
+    var alive=state.bubbles.filter(function(b){return !b.popped&&!b._bossBubble;});
     var toPop=Math.min(49,alive.length);
     for(var i=0;i<toPop;i++){
       alive[i].popped=true;alive[i].popAge=0;
-      if(typeof state._bubbleHUDPopped==='number') state._bubbleHUDPopped++;
       if(typeof triggerBubblePop==='function') triggerBubblePop(alive[i].wx,alive[i].wy,alive[i].hue);
     }
   };
   window.devSpawnBoss = function(){
     if(!state.inSecretLevel){devEnterSecret();setTimeout(devSpawnBoss,600);return;}
+    _spawnSecretBoss();
     if(typeof spawnSecretWaveOrb==='function') spawnSecretWaveOrb();
     state.rocksDestroyed=99;
+  };
+  window.devSpawnBossNearBH = function(){
+    if(!state.inSecretLevel){devEnterSecret();setTimeout(devSpawnBossNearBH,1200);return;}
+    // Force-reset ALL boss/capture state so spawn always works
+    state.secretBossDefeated = false;
+    state._bossCaptured = false;
+    state._bossCaptureTimer = 0;
+    state._bossShockwaves = [];
+    state._bossShakeX = 0; state._bossShakeY = 0;
+    state.secretBossExploding = 0;
+    if(state.secretBoss) state.secretBoss = null; // clear existing so _spawnSecretBoss creates fresh
+    _spawnSecretBoss();
+    if(typeof spawnSecretWaveOrb==='function') spawnSecretWaveOrb();
+    state._waveOrbSpawned = true; // force this in case orb spawn had a guard
+    state.rocksDestroyed=99;
+    // Move boss just outside BH gravity range (950px from BH centre)
+    const bh=state.secretBlackHole, boss=state.secretBoss;
+    if(bh && boss){
+      const ang = Math.atan2(state.y - bh.wy, state.x - bh.wx);
+      boss.wx = bh.wx + Math.cos(ang) * 950;
+      boss.wy = bh.wy + Math.sin(ang) * 950;
+      boss.facing = Math.atan2(bh.wy-boss.wy, bh.wx-boss.wx);
+    }
   };
   window.devToggleMainBoss = function(){
     // Toggle main world boss at passageway hatch for testing
