@@ -162,6 +162,7 @@
         .c-gold  { color: #ffe000; text-shadow: 0 0 10px rgba(255,224,0,0.8); }
         .c-green { color: #00ff88; text-shadow: 0 0 10px rgba(0,255,136,0.8); }
         .c-red   { color: #ff4444; text-shadow: 0 0 10px rgba(255,68,68,0.8); }
+        .c-magenta { color: #ff44ff; text-shadow: 0 0 10px rgba(255,68,255,0.8); }
 
         /* Overlays */
         .overlay-screen {
@@ -1267,6 +1268,7 @@ window.onload = function() {
     
     // Level Progress
     let currentSector = 1;
+    let currentLevel = 1;      // level within current sector (escalates on replay)
     let distanceTraveled = 0;
     let finishRing = null;        // the end-of-sector finish marker
     let finishRingSpawned = false;
@@ -1279,6 +1281,24 @@ window.onload = function() {
     try { var _bt = localStorage.getItem('trBestTimes'); if (_bt) bestTimes = JSON.parse(_bt); } catch(e) {}
     let sectorCollectiblesSpawned = 0;
     let sectorCollectiblesCollected = 0;
+
+    // ── Content Collection System ──────────────────────────────────────
+    // 5 sectors, each tied to a content zone. Player replays sector at
+    // increasing difficulty until all content objects for that zone are collected.
+    var _bonusUnlockedTitles = []; // set by triggerVictory if score bonus earned
+    const SCORE_BONUS_INCREMENT = 10000; // every 10K sector score = +1 bonus unlock
+    const SECTOR_ZONES = ['EDIT', 'PHOTO', 'DIRECT', 'ANIMATE', 'DESIGN'];
+    const ZONE_SHAPES_3D = ['square', 'pentagon', 'octagon', 'circle', 'triangle'];
+    const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', DESIGN:'#ff8c00' };
+    // Track which content items have been collected per zone (by title)
+    let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
+    // Content objects spawned this run (titles) — to know which were available
+    let contentSpawnedThisRun = [];
+    function getZoneName(sector) { return SECTOR_ZONES[Math.min(sector - 1, SECTOR_ZONES.length - 1)]; }
+    function getZoneItemCount(sector) { var z = getZoneName(sector); return (CONTENT_DATA[z] || []).length; }
+    function getZoneCollectedCount(sector) { var z = getZoneName(sector); return collectedContent[z] ? collectedContent[z].size : 0; }
+    function isZoneComplete(sector) { return getZoneCollectedCount(sector) >= getZoneItemCount(sector); }
+    function allZonesComplete() { for (var i = 1; i <= 5; i++) { if (!isZoneComplete(i)) return false; } return true; }
 
     // Ship system
     const GUNSHIP_ENABLED = false; // feature flag — set true to re-enable gunship
@@ -1309,18 +1329,26 @@ window.onload = function() {
         { color:'#ff8c00', fogColor:0x1a0300 },  // orange
         { color:'#ff4444', fogColor:0x1a0000 },  // red
     ];
+    // 5 base sectors — speed/distance scale with currentLevel within each sector
     var DEFAULT_ZONES = [
-        { name:'ENTRY',   speed:160,  length: Math.round(baseSectorDistance * Math.pow(1.08, 0)) },
-        { name:'ENGAGE',  speed:200,  length: Math.round(baseSectorDistance * Math.pow(1.08, 1)) },
-        { name:'DRIFT',   speed:245,  length: Math.round(baseSectorDistance * Math.pow(1.08, 2)) },
-        { name:'WEAVE',   speed:290,  length: Math.round(baseSectorDistance * Math.pow(1.08, 3)) },
-        { name:'SURGE',   speed:340,  length: Math.round(baseSectorDistance * Math.pow(1.08, 4)) },
-        { name:'STORM',   speed:390,  length: Math.round(baseSectorDistance * Math.pow(1.08, 5)) },
-        { name:'BLITZ',   speed:445,  length: Math.round(baseSectorDistance * Math.pow(1.08, 6)) },
-        { name:'CRUSH',   speed:505,  length: Math.round(baseSectorDistance * Math.pow(1.08, 7)) },
-        { name:'INFERNO', speed:570,  length: Math.round(baseSectorDistance * Math.pow(1.08, 8)) },
-        { name:'APEX',    speed:640,  length: Math.round(baseSectorDistance * Math.pow(1.08, 9)) },
+        { name:'EDITING',  speed:160,  length: Math.round(baseSectorDistance * 1.0) },
+        { name:'PHOTO',    speed:220,  length: Math.round(baseSectorDistance * 1.15) },
+        { name:'DIRECT',   speed:300,  length: Math.round(baseSectorDistance * 1.30) },
+        { name:'ANIMATE',  speed:380,  length: Math.round(baseSectorDistance * 1.45) },
+        { name:'DESIGN',   speed:460,  length: Math.round(baseSectorDistance * 1.60) },
     ];
+    // Level scaling: each replay of a sector increases speed +10%, distance +15%, hazard density +10%
+    function getLevelScaledZone(sector) {
+        var base = getZone(sector);
+        var lvl = currentLevel - 1; // 0-indexed level offset
+        return {
+            name: base.name, color: base.color, fogColor: base.fogColor,
+            wireColor: base.wireColor,
+            speed: Math.round(base.speed * Math.pow(1.10, lvl)),
+            length: Math.round(base.length * Math.pow(1.15, lvl)),
+            label: 'SECTOR ' + sector + ' // ' + base.name + (lvl > 0 ? ' // LEVEL ' + currentLevel : '')
+        };
+    }
     function cssHexToInt(str) {
         if (typeof str === 'number') return str;
         if (typeof str === 'string' && str.charAt(0) === '#') return parseInt(str.slice(1), 16);
@@ -1350,6 +1378,7 @@ window.onload = function() {
     })();
     sectorDistance = ZONES[0].length; // now that ZONES is ready
     function getZone(sector) { return ZONES[Math.min(sector - 1, ZONES.length - 1)]; }
+    // Sector cap is now 5 (not 10)
 
     // ═══════════════════════════════════════════════════════════════════
     // CONTENT DATA (portfolio items shown between sectors)
@@ -1488,22 +1517,8 @@ window.onload = function() {
     // PORTFOLIO CAROUSEL LOGIC
     // ═══════════════════════════════════════════════════════════════════
 
-    var CAROUSEL_SECTOR_MAP = (function() {
-        var map = { 1:'EDIT', 3:'PHOTO', 5:'ANIMATE', 7:'DESIGN', 9:'DIRECT' };
-        try {
-            var cfg = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig'));
-            if (cfg && Array.isArray(cfg)) {
-                map = {};
-                var sectorNum = 0;
-                cfg.forEach(function(c) {
-                    if (c.isTraining) return;
-                    sectorNum++;
-                    if (c.contentZone) map[sectorNum] = c.contentZone;
-                });
-            }
-        } catch(e) {}
-        return map;
-    })();
+    // Every sector has a content zone — direct mapping
+    var CAROUSEL_SECTOR_MAP = { 1:'EDIT', 2:'PHOTO', 3:'DIRECT', 4:'ANIMATE', 5:'DESIGN' };
     var PORTFOLIO_ZONE_COLORS = { DIRECT:'#ff69b4', EDIT:'#00ffcc', ANIMATE:'#00ff88', PHOTO:'#ffe000', DESIGN:'#FAFFA5' };
     var CAROUSEL_ZONE_ORDER = ['EDIT','DIRECT','PHOTO','ANIMATE','DESIGN'];
     var _inventoryCarouselActive = false;
@@ -1581,7 +1596,12 @@ window.onload = function() {
         unlockZone(zone);
 
         // Unlocked + Header
-        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : '★ CONTENT UNLOCKED ★';
+        var bonusText = '';
+        if (!carouselFromPause && _bonusUnlockedTitles.length > 0) {
+            var sectorScore = score - sectorStartScore;
+            bonusText = 'SCORED ' + sectorScore.toLocaleString() + ' — +' + _bonusUnlockedTitles.length + ' BONUS UNLOCK' + (_bonusUnlockedTitles.length > 1 ? 'S' : '') + '!';
+        }
+        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : (bonusText || '★ CONTENT UNLOCKED ★');
         var header = document.getElementById('tr-carousel-header');
         header.innerText = zone + ' PROJECTS';
         header.style.color = zoneColor;
@@ -1593,7 +1613,7 @@ window.onload = function() {
         } else if (carouselFromPause) {
             contBtn.innerText = '[ BACK TO MENU ]';
         } else {
-            contBtn.innerText = currentSector >= 10 ? '[ RETURN TO TITLE ]' : '[ PLAY NEXT SECTOR > ]';
+            contBtn.innerText = allZonesComplete() ? '[ VIEW FINALE ]' : (isZoneComplete(currentSector) ? '[ NEXT ZONE > ]' : '[ NEXT LEVEL > ]');
         }
 
         // Build cards — triple the items for infinite loop
@@ -1616,6 +1636,8 @@ window.onload = function() {
         function buildCard(item) {
             var card = document.createElement('div');
             card.className = 'tr-carousel-card';
+            var isCollected = collectedContent[zone] && collectedContent[zone].has(item.title);
+            var isBonusReveal = (_bonusUnlockedTitles.indexOf(item.title) >= 0);
 
             var thumb = document.createElement('img');
             thumb.className = 'tr-carousel-thumb';
@@ -1625,6 +1647,10 @@ window.onload = function() {
                 thumb.style.background = 'transparent';
             } else if (isGalleryZone) {
                 thumb.style.aspectRatio = '1/1';
+            }
+            if (!isCollected || isBonusReveal) {
+                thumb.style.filter = 'grayscale(1) brightness(0.3)';
+                thumb.style.transition = 'filter 0.8s ease-out';
             }
             thumb.alt = item.title || '';
             thumb.loading = 'lazy';
@@ -1649,39 +1675,87 @@ window.onload = function() {
 
             var name = document.createElement('div');
             name.className = 'tr-carousel-name';
-            name.innerText = item.displayTitle || item.title || '';
+            if (isBonusReveal) {
+                name.innerText = '???';
+                name.style.color = '#555';
+                name.style.transition = 'color 0.8s ease-out';
+            } else if (isCollected) {
+                name.innerText = item.displayTitle || item.title || '';
+            } else {
+                name.innerText = '???';
+                name.style.color = '#555';
+            }
 
             card.appendChild(thumb);
             card.appendChild(name);
 
-            (function(it) {
-                function handleCardTap() {
-                    if (it.youtubeId || it.vimeoId) {
-                        openCarouselVideo(it);
-                    } else if (zone === 'DESIGN') {
-                        trOpenDesignViewer(it);
-                    } else if (isGalleryZone) {
-                        var imgs = it.gallery || [];
-                        if (it.isSinglePhoto && it.singleUrl) {
-                            imgs = [{ url: it.singleUrl, caption: it.title }];
-                        }
-                        if (imgs.length > 0) {
-                            trLbImages = imgs;
-                            trLbIsDesign = false;
-                            trLbParentItem = it;
-                            trOpenLightbox(0);
+            // Bonus reveal animation: start gray, then unveil with burst
+            if (isBonusReveal) {
+                var bonusIdx = _bonusUnlockedTitles.indexOf(item.title);
+                var revealDelay = 1500 + bonusIdx * 1200; // stagger multiple unlocks
+                card.style.opacity = '0.5';
+                card.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+                card.dataset.bonusReveal = 'true';
+                (function(c, t, n, itm, delay) {
+                    setTimeout(function() {
+                        // Burst: scale up then back
+                        c.style.opacity = '1';
+                        c.style.transform = 'scale(2.8)';
+                        t.style.filter = 'brightness(2) saturate(1.5)';
+                        t.style.transition = 'filter 0.6s ease-out';
+                        n.innerText = itm.displayTitle || itm.title || '';
+                        n.style.color = '';
+                        // Glow border
+                        var zc = ZONE_OBJ_COLORS[zone] || '#ffe000';
+                        t.style.boxShadow = '0 0 30px ' + zc + ', 0 0 60px ' + zc;
+                        // "UNLOCKED" label on card
+                        var badge = document.createElement('div');
+                        badge.style.cssText = 'position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:"Press Start 2P",monospace;font-size:8px;color:#ffe000;text-shadow:0 0 10px rgba(255,224,0,0.8);letter-spacing:2px;white-space:nowrap;animation:fadeSlideUp 0.5s ease-out both;';
+                        badge.innerText = 'UNLOCKED';
+                        c.style.position = 'relative';
+                        c.appendChild(badge);
+                        setTimeout(function() {
+                            t.style.filter = '';
+                            t.style.boxShadow = '';
+                        }, 1500);
+                        setTimeout(function() { if (badge.parentNode) badge.remove(); }, 3000);
+                    }, delay);
+                })(card, thumb, name, item, revealDelay);
+            }
+
+            if (isCollected) {
+                (function(it) {
+                    function handleCardTap() {
+                        if (it.youtubeId || it.vimeoId) {
+                            openCarouselVideo(it);
+                        } else if (zone === 'DESIGN') {
+                            trOpenDesignViewer(it);
+                        } else if (isGalleryZone) {
+                            var imgs = it.gallery || [];
+                            if (it.isSinglePhoto && it.singleUrl) {
+                                imgs = [{ url: it.singleUrl, caption: it.title }];
+                            }
+                            if (imgs.length > 0) {
+                                trLbImages = imgs;
+                                trLbIsDesign = false;
+                                trLbParentItem = it;
+                                trOpenLightbox(0);
+                            }
                         }
                     }
-                }
-                card.addEventListener('touchend', function(e) {
-                    var dx = Math.abs(e.changedTouches[0].clientX - carouselScrollStartX);
-                    if (dx < 15) { e.preventDefault(); handleCardTap(); }
-                }, {passive:false});
-                card.addEventListener('click', function(e) {
-                    e.stopPropagation();
-                    handleCardTap();
-                });
-            })(item);
+                    card.addEventListener('touchend', function(e) {
+                        var dx = Math.abs(e.changedTouches[0].clientX - carouselScrollStartX);
+                        if (dx < 15) { e.preventDefault(); handleCardTap(); }
+                    }, {passive:false});
+                    card.addEventListener('click', function(e) {
+                        e.stopPropagation();
+                        handleCardTap();
+                    });
+                })(item);
+            } else {
+                card.style.opacity = '0.5';
+                card.style.pointerEvents = 'none';
+            }
 
             return card;
         }
@@ -1701,10 +1775,25 @@ window.onload = function() {
         overlay.style.display = 'flex';
         document.body.style.touchAction = 'auto';
 
-        // Position at the middle set
+        // Position centered on most recently collected item
         requestAnimationFrame(function() {
             var oneSetWidth = totalItems * cardWidth;
-            strip.scrollLeft = oneSetWidth;
+            var targetIdx = 0;
+            var collected = collectedContent[zone];
+            if (collected && collected.size > 0) {
+                // Set iteration order = insertion order; last added = most recent
+                var lastCollected = null;
+                collected.forEach(function(t) { lastCollected = t; });
+                for (var ci = 0; ci < totalItems; ci++) {
+                    if (items[ci].title === lastCollected) {
+                        targetIdx = ci;
+                        break;
+                    }
+                }
+            }
+            // Center the target card in the visible strip area
+            var stripVisibleWidth = strip.offsetWidth || window.innerWidth;
+            strip.scrollLeft = oneSetWidth + targetIdx * cardWidth - (stripVisibleWidth / 2) + (cardWidth / 2);
             updateCarouselScale();
         });
 
@@ -1795,8 +1884,8 @@ window.onload = function() {
         } else if (carouselFromPause) {
             carouselFromPause = false;
             document.getElementById('pause-screen').style.display = 'flex';
-        } else if (trCarouselSector >= 10) {
-            initializeFlight(true);
+        } else if (allZonesComplete()) {
+            window.location.href = 'navigator-victory.html';
         } else {
             startNextSector();
         }
@@ -2133,14 +2222,20 @@ window.onload = function() {
     engineLight.position.set(0, -0.1, 7.0);
     shipGroup.add(engineLight);
 
-    const shieldLight = new THREE.PointLight(0x00ccff, 0, 30);
+    const shieldLight = new THREE.PointLight(0xff44ff, 0, 30);
     shieldLight.position.set(0, 0, 0);
     shipGroup.add(shieldLight);
+
+    // Force field bubble — visible only when force field is active
+    const forceFieldGeo = new THREE.SphereGeometry(6, 16, 12);
+    const forceFieldMat = new THREE.MeshBasicMaterial({ color: 0xff44ff, transparent: true, opacity: 0, wireframe: true, depthWrite: false });
+    const forceFieldMesh = new THREE.Mesh(forceFieldGeo, forceFieldMat);
+    shipGroup.add(forceFieldMesh);
 
     // ── Exhaust particle trail ────────────────────────────────────────
     const TRAIL_COUNT = 30;
     const trailParticles = [];
-    const trailMat = new THREE.MeshBasicMaterial({ color: 0xff8833, transparent: true, opacity: 0.6, depthWrite: false });
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0x888899, transparent: true, opacity: 0.35, depthWrite: false });
     const trailGeo = new THREE.PlaneGeometry(1, 1);
     for (let ti = 0; ti < TRAIL_COUNT; ti++) {
         const p = new THREE.Mesh(trailGeo, trailMat.clone());
@@ -2425,7 +2520,7 @@ window.onload = function() {
     const knotGeo   = new THREE.TorusKnotGeometry(2.8, 1.0, 64, 8);
 
     const coreGeo  = new THREE.OctahedronGeometry(2.5, 0);
-    const coreMat  = new THREE.MeshStandardMaterial({ color: 0xffeebb, emissive: 0xffaa00, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
+    const coreMat  = new THREE.MeshStandardMaterial({ color: 0x88ccff, emissive: 0x44aaff, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
 
     const ringGeo  = new THREE.TorusGeometry(4.5, 0.7, 8, 28);
     const ringMat  = new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
@@ -2435,7 +2530,32 @@ window.onload = function() {
 
     // Star — temporary invincibility shield (dodecahedron — visually distinct from octahedron core)
     const starGeo = new THREE.DodecahedronGeometry(3.5, 0);
-    const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00ccff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
+    const starMat = new THREE.MeshStandardMaterial({ color: 0xff88ff, emissive: 0xff44ff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
+    // ── Content object geometries (2x size of regular items, zone-shaped) ──
+    const contentGeos = {
+        square:   new THREE.BoxGeometry(12, 12, 4),             // EDIT — cube slab
+        pentagon: new THREE.DodecahedronGeometry(7, 0),          // PHOTO — 12-faced gem
+        octagon:  new THREE.OctahedronGeometry(7, 0),            // DIRECT — 8-faced diamond
+        circle:   new THREE.SphereGeometry(6, 12, 8),            // ANIMATE — sphere
+        triangle: new THREE.ConeGeometry(7, 12, 3),              // DESIGN — pyramid
+    };
+    // Give each zone a distinct emissive material matching Navigator's object colors
+    const contentMats = {
+        EDIT:    new THREE.MeshStandardMaterial({ color: 0xffe800, emissive: 0xffe800, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        PHOTO:   new THREE.MeshStandardMaterial({ color: 0x5533ff, emissive: 0x5533ff, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        DIRECT:  new THREE.MeshStandardMaterial({ color: 0x69ffb4, emissive: 0x69ffb4, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        ANIMATE: new THREE.MeshStandardMaterial({ color: 0xff5577, emissive: 0xff5577, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        DESIGN:  new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0xff8c00, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+    };
+    function getContentGeo(sector) {
+        var shapeKey = ZONE_SHAPES_3D[Math.min(sector - 1, ZONE_SHAPES_3D.length - 1)];
+        return contentGeos[shapeKey];
+    }
+    function getContentMat(sector) {
+        var zone = getZoneName(sector);
+        return contentMats[zone];
+    }
+
     let shieldsUp = false;
     let shieldsUpTimer = 0;
     function getShieldsDuration(sector) {
@@ -2678,22 +2798,74 @@ window.onload = function() {
         let rand = Math.random();
         const s = currentSector;
         var _sCfg = _getSpawnCfg(s);
+        var lvl = currentLevel; // level within this sector
 
         // ═══════════════════════════════════════════════════════════════
-        // BARRIER RULE: Every barrier ring MUST be passable.
-        //   • Full ring (no gap) → MUST have a ramp before it to jump over
-        //   • Partial ring (gap) → player steers through the gap, no ramp needed
-        // This is the ONLY place barriers spawn procedurally.
-        // Baked levels must also follow this rule.
+        // CONTENT OBJECT SPAWNING — zone-shaped collectibles, 2x size
+        // Spawns uncollected content items at regular intervals
         // ═══════════════════════════════════════════════════════════════
-        const rampThreshold = (_sCfg && typeof _sCfg.ramp === 'number') ? _sCfg.ramp : (s <= 2 ? 0.10 : s <= 4 ? 0.14 : s <= 6 ? 0.18 : s <= 8 ? 0.22 : 0.26);
-        if (s >= 2 && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
+        var contentChance = 0.055 + lvl * 0.008; // generous spawn rate — 2-3 per first run, scales with level
+        if (rand < contentChance) {
+            var zone = getZoneName(s);
+            var zoneItems = CONTENT_DATA[zone] || [];
+            // Pick a random uncollected item
+            var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; });
+            if (uncollected.length > 0) {
+                var pick = uncollected[Math.floor(Math.random() * uncollected.length)];
+                contentSpawnedThisRun.push(pick.title);
+                var cGeo = getContentGeo(s);
+                var cMat = getContentMat(s).clone();
+                var cMesh = new THREE.Mesh(cGeo, cMat);
+                spiralAngle += 1.1;
+                var hoverDist = tubeRadius - 6;
+                cMesh.position.set(Math.cos(spiralAngle) * hoverDist, Math.sin(spiralAngle) * hoverDist, zPos);
+                cMesh.rotation.z = spiralAngle;
+                // Arrow indicator pointing at the object
+                var arrowGeo = new THREE.ConeGeometry(1.5, 4, 4);
+                var arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
+                var arrow = new THREE.Mesh(arrowGeo, arrowMat);
+                arrow.rotation.x = Math.PI; // point downward
+                arrow.position.y = 12;
+                cMesh.add(arrow);
+                // Orbiting sparkle particles (4 small spheres)
+                var sparkleGroup = new THREE.Group();
+                for (var sp = 0; sp < 4; sp++) {
+                    var spMat = new THREE.MeshBasicMaterial({ color: new THREE.Color(ZONE_OBJ_COLORS[zone]).getHex(), transparent: true, opacity: 0.9 });
+                    var spMesh = new THREE.Mesh(new THREE.SphereGeometry(0.5, 4, 4), spMat);
+                    spMesh.userData._sparkleIdx = sp;
+                    sparkleGroup.add(spMesh);
+                }
+                cMesh.add(sparkleGroup);
+                cMesh.userData = { type: 'content', hitRadius: 10.0, contentTitle: pick.title, contentZone: zone, rotSpeedX: 0, rotSpeedY: 0.02, rotSpeedZ: 0.01, _arrow: arrow, _sparkles: sparkleGroup };
+                scene.add(cMesh); items.push(cMesh);
+                return;
+            }
+        }
+
+        // ═══════════════════════════════════════════════════════════════
+        // HAZARD GATING PER SECTOR:
+        // S1 (EDIT):    hazards + rings + cores + stars only
+        // S2 (PHOTO):   + gap barriers
+        // S3 (DIRECT):  + ramps + full ring barriers
+        // S4 (ANIMATE): + boost pads
+        // S5 (DESIGN):  everything
+        // ═══════════════════════════════════════════════════════════════
+
+        // BARRIER RULE: Every barrier ring MUST be passable.
+        //   Full ring (no gap) → MUST have a ramp before it
+        //   Partial ring (gap) → player steers through
+        var barriersEnabled = s >= 2;
+        var rampsEnabled = s >= 3;
+        var boostEnabled = s >= 4;
+        var rampThreshold = !barriersEnabled ? 0 : (s <= 2 ? 0.10 : s <= 3 ? 0.14 : s <= 4 ? 0.18 : 0.22);
+        // Scale barrier density with level
+        rampThreshold *= (1 + (lvl - 1) * 0.10);
+        if (barriersEnabled && _rampCountThisSector < _rampMaxThisSector && rand < rampThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
-            // S2: always gap barrier (no ramp needed). S3+: 40% gap, 60% ramp+full barrier
-            if (s <= 2 || Math.random() < 0.4) {
-                // Gap barrier — passable without jumping (BARRIER RULE: has gap)
-                const gapSize = Math.PI * (0.6 + Math.random() * 0.5); // gap of 0.6π to 1.1π
+            // S2: always gap barrier. S3+: 40% gap, 60% ramp+full barrier
+            if (!rampsEnabled || Math.random() < 0.4) {
+                const gapSize = Math.PI * (0.6 + Math.random() * 0.5);
                 const gapAngle = Math.random() * Math.PI * 2;
                 const arcLen = Math.PI * 2 - gapSize;
                 let wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), barrierMat);
@@ -2702,7 +2874,6 @@ window.onload = function() {
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.03, arcLength: arcLen };
                 scene.add(wallMesh); items.push(wallMesh);
             } else {
-                // Full ring + ramp pair (BARRIER RULE: ramp always spawns with full ring)
                 let rampMesh = new THREE.Mesh(rampGeo, rampMat);
                 rampMesh.position.set(Math.cos(angle) * (tubeRadius - 2), Math.sin(angle) * (tubeRadius - 2), zPos);
                 rampMesh.rotation.z = angle;
@@ -2720,40 +2891,28 @@ window.onload = function() {
         }
 
         // Re-roll rand past the ramp threshold so item chances are correctly distributed
-        rand = (rand - rampThreshold) / (1 - rampThreshold);
+        rand = (rand - Math.max(rampThreshold, 0.001)) / (1 - Math.max(rampThreshold, 0.001));
+        if (rand < 0) rand = Math.random();
 
-        // --- Per-sector spawn profile (from config if available, else hardcoded defaults) ---
-        let hazardChance, ringChance, coreChance;
-        if (_sCfg && typeof _sCfg.hazard === 'number') {
-            hazardChance = _sCfg.hazard; ringChance = _sCfg.ring || 0; coreChance = _sCfg.core || 0;
-        } else if (s === 1) {
-            hazardChance = 0.12; ringChance = 0.78; coreChance = 0.10;
-        } else if (s === 2) {
-            hazardChance = 0.70; ringChance = 0;    coreChance = 0.30;
-        } else if (s === 3) {
-            hazardChance = 0.02; ringChance = 0.96; coreChance = 0.02;
-        } else if (s === 4) {
-            hazardChance = 0.50; ringChance = 0.30; coreChance = 0.20;
-        } else if (s === 5) {
-            hazardChance = 0.60; ringChance = 0.22; coreChance = 0.18;
-        } else if (s === 6) {
-            hazardChance = 0.68; ringChance = 0.16; coreChance = 0.16;
-        } else if (s === 7) {
-            hazardChance = 0.72; ringChance = 0.14; coreChance = 0.14;
-        } else if (s === 8) {
-            hazardChance = 0.76; ringChance = 0.12; coreChance = 0.12;
-        } else if (s === 9) {
-            hazardChance = 0.80; ringChance = 0.10; coreChance = 0.10;
-        } else {
-            hazardChance = 0.84; ringChance = 0.08; coreChance = 0.08;
-        }
+        // --- Per-sector spawn profile, scaled by level ---
+        // Base hazard density per sector, escalates with level
+        var baseHazard, baseRing, baseCore;
+        if (s === 1)      { baseHazard = 0.15; baseRing = 0.75; baseCore = 0.10; }
+        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.45; baseCore = 0.20; }
+        else if (s === 3)  { baseHazard = 0.45; baseRing = 0.35; baseCore = 0.20; }
+        else if (s === 4)  { baseHazard = 0.55; baseRing = 0.27; baseCore = 0.18; }
+        else               { baseHazard = 0.65; baseRing = 0.20; baseCore = 0.15; }
+        // Level escalation: +10% hazards per level, rings/cores shrink proportionally
+        var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
+        var remaining = 1 - hazardChance;
+        var ringChance = remaining * (baseRing / (baseRing + baseCore));
+        var coreChance = remaining * (baseCore / (baseRing + baseCore));
 
         const zoneIdx = Math.min(s - 1, ZONES.length - 1);
         let mesh, type, hitRadius;
 
-
-        // Boost pad — rare, sector 3+ (rate configurable via level editor)
-        var boostThreshold = (_sCfg && typeof _sCfg.boost === 'number') ? _sCfg.boost : (s >= 3 ? 0.04 : 0);
+        // Boost pad — S4+ only
+        var boostThreshold = boostEnabled ? 0.04 : 0;
         if (boostThreshold > 0 && rand < boostThreshold) {
             spiralAngle += 1.1;
             const bAngle = spiralAngle;
@@ -2764,8 +2923,8 @@ window.onload = function() {
             scene.add(bMesh); items.push(bMesh);
             return;
         }
-        // Star — rare invincibility pickup, S4+ (rate scales with sector, configurable via editor)
-        var starChance = (_sCfg && typeof _sCfg.star === 'number') ? _sCfg.star : (s >= 10 ? 0.04 : s >= 9 ? 0.04 : s >= 8 ? 0.035 : s >= 7 ? 0.03 : s >= 6 ? 0.025 : s >= 5 ? 0.02 : s >= 4 ? 0.015 : 0);
+        // Star — force field pickup, S2+ only
+        var starChance = s < 2 ? 0 : (s >= 4 ? 0.03 : s >= 3 ? 0.02 : 0.015) + (lvl - 1) * 0.005;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (rand < coreChance) {
@@ -2774,22 +2933,23 @@ window.onload = function() {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
         } else if (rand < coreChance + ringChance + hazardChance) {
             const hRand = Math.random();
-            if      (s >= 9  && hRand < 0.40) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
-            else if (s >= 7  && hRand < 0.45) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
-            else if (s >= 5  && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
+            // Hazard types: S1=blocks only, S2+=mines, S3+=blocks, S4+=knots, S5=all
+            if      (s >= 5  && hRand < 0.35) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
+            else if (s >= 4  && hRand < 0.45) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; }
             else if (s >= 3  && hRand < 0.55) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
-            else                               { mesh = new THREE.Mesh(s <= 1 ? blockGeo : mineGeo, hazardMat); type = 'hazard'; hitRadius = s <= 1 ? 6.0 : 5.5; }
+            else if (s >= 2  && hRand < 0.65) { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
+            else                               { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
         } else {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
 
         // Single deterministic spiral line — bigger step = more twist per item
         spiralAngle += 1.1;
-        const hoverDist = tubeRadius - 6;
+        var hoverDist2 = tubeRadius - 6;
         const angle = spiralAngle;  // everything on the same line, no offsets
 
-        mesh.position.x = Math.cos(angle) * hoverDist;
-        mesh.position.y = Math.sin(angle) * hoverDist;
+        mesh.position.x = Math.cos(angle) * hoverDist2;
+        mesh.position.y = Math.sin(angle) * hoverDist2;
         mesh.position.z = zPos;
 
         // Unified rotation: all items face the same way along the spiral
@@ -2814,23 +2974,18 @@ window.onload = function() {
     function updateShieldBar() {
         const bar = document.getElementById('shield-bar');
         bar.style.height = Math.max(0, health) + '%';
-        if (shieldsUp) { bar.style.background = '#00ccff'; bar.style.boxShadow = '0 0 16px #00ccff, 0 0 30px rgba(0,204,255,0.4)'; }
+        if (shieldsUp) { bar.style.background = '#ff44ff'; bar.style.boxShadow = '0 0 16px #ff44ff, 0 0 30px rgba(255,68,255,0.4)'; }
         else if (health > 50) { bar.style.background = '#00ffff'; bar.style.boxShadow = '0 0 10px #00ffff'; }
         else if (health > 25) { bar.style.background = '#ffcc00'; bar.style.boxShadow = '0 0 10px #ffcc00'; }
         else { bar.style.background = '#ff0055'; bar.style.boxShadow = '0 0 10px #ff0055'; }
     }
 
     const ZONE_OBJECTIVES_DEFAULT = [
-        'FOLLOW THE SPIRAL\nCOLLECT ALL RINGS',
-        'HAZARDS ONLINE\nDODGE AND SURVIVE',
-        'RINGS AND MINES\nBUILD YOUR COMBO',
-        'HIT RAMPS\nCLEAR LASER WALLS',
-        'HEAVY BLOCKS AHEAD\nGOLD CORES RESTORE SHIELD',
-        'STORM INCOMING\nSTAY ON THE LINE',
-        'BLITZ MODE\nKNOTS AND BLOCKS',
-        'MAXIMUM DENSITY\nFULL COMMITMENT',
-        'INFERNO\nALMOST NOTHING SURVIVES',
-        'APEX\nFINAL RUN \u2014 FULL SEND',
+        'COLLECT EDITING CONTENT\nDODGE HAZARDS',
+        'COLLECT PHOTO CONTENT\nBARRIERS ONLINE',
+        'COLLECT DIRECT CONTENT\nRAMPS AND WALLS',
+        'COLLECT ANIMATE CONTENT\nBOOST PADS ACTIVE',
+        'COLLECT DESIGN CONTENT\nFULL ARSENAL',
     ];
 
     var _objectivesFromConfig = null;
@@ -2851,16 +3006,21 @@ window.onload = function() {
     }
 
     function showMissionBanner(zoneIdx) {
-        const zone = ZONES[zoneIdx];
+        var zone = getLevelScaledZone(currentSector);
         const el = document.getElementById('mission-banner');
         const label = document.getElementById('mission-zone-label');
         const obj = document.getElementById('mission-objective');
-        label.innerText = zone.label;
+        var bannerText = zone.name;
+        if (currentLevel > 1) bannerText += ' — LEVEL ' + currentLevel;
+        label.innerText = bannerText;
         label.style.color = zone.color;
         label.style.textShadow = '0 0 20px ' + zone.color;
-        obj.innerHTML = _getObjective(zoneIdx).replace('\n','<br>');
+        var collected = getZoneCollectedCount(currentSector);
+        var total = getZoneItemCount(currentSector);
+        var hint = _getObjective(zoneIdx).split('\n')[0] || 'COLLECT CONTENT';
+        obj.innerHTML = hint + '<br><span style="font-size:0.85em;opacity:0.7;">' + collected + ' / ' + total + ' COLLECTED</span>';
         el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 5500);
+        setTimeout(() => el.classList.remove('show'), 4000);
     }
 
     function spawnPointBurst(text, colorClass) {
@@ -3128,7 +3288,25 @@ window.onload = function() {
             setTimeout(() => pf.remove(), 3000);
         }
 
-        document.getElementById('victory-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
+        var sectorScore = score - sectorStartScore;
+        document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
+
+        // Score bonus: every 10K sector score unlocks an extra content item
+        _bonusUnlockedTitles = [];
+        var bonusZone = getZoneName(currentSector);
+        var bonusCount = Math.floor(sectorScore / SCORE_BONUS_INCREMENT);
+        if (bonusCount > 0 && !isZoneComplete(currentSector)) {
+            for (var bi = 0; bi < bonusCount; bi++) {
+                var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
+                    return !collectedContent[bonusZone].has(it.title);
+                });
+                if (bonusItems.length === 0) break;
+                var bonusPick = bonusItems[Math.floor(Math.random() * bonusItems.length)];
+                _bonusUnlockedTitles.push(bonusPick.title);
+                collectedContent[bonusZone].add(bonusPick.title);
+            }
+            if (_bonusUnlockedTitles.length > 0) updateCollectionHUD();
+        }
 
         // Save sector time
         sectorRunTimes[currentSector] = sectorTime;
@@ -3176,18 +3354,32 @@ window.onload = function() {
         var contentZone = CAROUSEL_SECTOR_MAP[currentSector];
         if (contentZone) {
             var contentLabel = contentZone.toUpperCase();
-            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(18px,5vw,32px);color:#ffe000;text-shadow:0 0 24px rgba(255,224,0,0.6);letter-spacing:4px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">CONTENT UNLOCKED</div>'
-                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(12px,3vw,20px);color:#ffe000;letter-spacing:3px;opacity:0.7;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.4s both;">' + contentLabel + ' PORTFOLIO</div>';
+            var zoneColor = ZONE_OBJ_COLORS[contentZone] || '#ffe000';
+            var collected = getZoneCollectedCount(currentSector);
+            var total = getZoneItemCount(currentSector);
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
+            if (_bonusUnlockedTitles.length > 0) {
+                unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
+                    + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + _bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
+            }
         }
         var unlockEl = document.getElementById('victory-unlocks');
         unlockEl.innerHTML = unlockHtml;
         unlockEl.style.display = unlockHtml ? 'block' : 'none';
 
         document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
-        if (currentSector >= 10) {
+        if (isZoneComplete(currentSector) && currentSector >= 5 && allZonesComplete()) {
             document.getElementById('next-level-btn').innerText = '[ VIEW FINALE ]';
         } else if (contentZone) {
-            document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
+            var collected = getZoneCollectedCount(currentSector);
+            var total = getZoneItemCount(currentSector);
+            if (collected >= total) {
+                document.getElementById('next-level-btn').innerText = '[ NEXT ZONE > ]';
+            } else if (collected > 0) {
+                document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
+            } else {
+                document.getElementById('next-level-btn').innerText = '[ NEXT LEVEL ' + (currentLevel + 1) + ' > ]';
+            }
         } else {
             document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
         }
@@ -3255,11 +3447,11 @@ window.onload = function() {
         _rampCountThisSector = 0;
         _rampMaxThisSector = currentSector <= 1 ? 0 : currentSector <= 2 ? 1 : 999;
 
-        // Seed tunnel ahead procedurally with increasing density per sector
-        // Spacing tightens from 180 (S1) down to 70 (S10) = more objects in later sectors
-        // S3 is a ring bonanza — super tight spacing
-        // Start items close to camera (Z-400) so they appear right after countdown
-        var spacing = currentSector === 3 ? 50 : Math.max(70, 180 - (currentSector - 1) * 12);
+        // Seed tunnel ahead procedurally — density scales with BOTH sector AND level
+        // Base spacing: S1=120, S2=100, S3=80, S4=70, S5=60
+        // Each level tightens spacing by 12% compounding
+        var baseSpacing = Math.max(60, 130 - (currentSector - 1) * 18);
+        var spacing = Math.max(35, Math.round(baseSpacing * Math.pow(0.88, currentLevel - 1)));
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
         var lastItemDist = sectorDistance * 0.77;
@@ -3566,14 +3758,30 @@ window.onload = function() {
             initializeFlight(true);
             return;
         }
-        const prevZoneIdx = Math.min(currentSector-1, ZONES.length-1);
-        currentSector++;
-        const zone = getZone(currentSector);
-        const newZoneIdx = Math.min(currentSector-1, ZONES.length-1);
+
+        // ── Collection-gated progression ──
+        // If zone not complete → replay same sector at higher level
+        // If zone complete → advance to next sector (reset level to 1)
+        if (isZoneComplete(currentSector)) {
+            // Advance to next sector
+            if (currentSector >= 5) {
+                // All 5 zones done → victory!
+                window.location.href = 'navigator-victory.html';
+                return;
+            }
+            currentSector++;
+            currentLevel = 1;
+        } else {
+            // Replay same sector at higher level
+            currentLevel++;
+        }
+
+        contentSpawnedThisRun = [];
+        var zone = getLevelScaledZone(currentSector);
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
         document.getElementById('sector-text').innerText = currentSector.toString().padStart(2,'0');
-        document.getElementById('zone-name').innerText = zone.name;
+        document.getElementById('zone-name').innerText = zone.name + (currentLevel > 1 ? ' LV' + currentLevel : '');
         document.getElementById('zone-name').style.color = zone.color;
         wireMat.color.setHex(zone.wireColor);
         scene.fog.color.setHex(zone.fogColor);
@@ -3582,15 +3790,35 @@ window.onload = function() {
         sectorStartScore = score;
         combo = 0;
         shieldsUp = false; shieldsUpTimer = 0;
+        updateCollectionHUD();
         initializeFlight(false);
     }
 
     function showZoneAnnouncement(zone) {
-        const el = document.createElement('div');
-        el.style.cssText = 'position:fixed;inset:0;z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
-        el.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3vw,22px);color:'+zone.color+';text-shadow:0 0 30px '+zone.color+';letter-spacing:4px;animation:fadeSlideUp 0.5s ease-out both;">'+zone.label+'</div>';
-        document.body.appendChild(el);
-        setTimeout(() => el.remove(), 2200);
+        // Removed — mission banner already shows on sector start
+    }
+
+    // ── Collection HUD — horizontal row of zone-shaped icons above carousel area ──
+    function updateCollectionHUD() {
+        var existing = document.getElementById('collection-hud');
+        if (existing) existing.remove();
+        var zone = getZoneName(currentSector);
+        var items = CONTENT_DATA[zone] || [];
+        if (items.length === 0) return;
+        var collected = collectedContent[zone] || new Set();
+        var color = ZONE_OBJ_COLORS[zone] || '#fff';
+        var hud = document.createElement('div');
+        hud.id = 'collection-hud';
+        hud.style.cssText = 'position:fixed;bottom:12px;left:50%;transform:translateX(-50%);z-index:450;display:flex;gap:6px;pointer-events:none;';
+        items.forEach(function(it) {
+            var dot = document.createElement('div');
+            var isFilled = collected.has(it.title);
+            dot.style.cssText = 'width:12px;height:12px;border:2px solid '+color+';border-radius:'+(zone==='ANIMATE'?'50%':'2px')+';'
+                + (isFilled ? 'background:'+color+';box-shadow:0 0 8px '+color+';' : 'background:transparent;opacity:0.5;');
+            dot.title = it.title;
+            hud.appendChild(dot);
+        });
+        document.body.appendChild(hud);
     }
 
 
@@ -3603,9 +3831,13 @@ window.onload = function() {
         
         if (isFullReset) {
             currentSector = 1;
+            currentLevel = 1;
             introSpawned = false;
-            baseSpeed = ZONES[0].speed;
-            sectorDistance = ZONES[0].length;
+            contentSpawnedThisRun = [];
+            collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
+            var zone0 = getLevelScaledZone(1);
+            baseSpeed = zone0.speed;
+            sectorDistance = zone0.length;
             sectorStartScore = 0;
             combo = 0;
             unlockedZones = {};
@@ -3613,12 +3845,13 @@ window.onload = function() {
             try { localStorage.removeItem('trUnlockedZones'); } catch(e) {}
             rebuildUnlockedMenu();
             throttle = 0; throttleSmooth = 0; shipZOffset = -18;
-            document.getElementById('sector-text').innerText = '01';            document.getElementById('zone-name').innerText = ZONES[0].name;
-            document.getElementById('zone-name').style.color = '#ff69b4';
-            // Reset to DIRECT zone colors
-            wireMat.color.setHex(ZONES[0].wireColor);
-            scene.fog.color.setHex(ZONES[0].fogColor);
-            scene.background.setHex(ZONES[0].fogColor);
+            document.getElementById('sector-text').innerText = '01';
+            document.getElementById('zone-name').innerText = zone0.name;
+            document.getElementById('zone-name').style.color = zone0.color;
+            wireMat.color.setHex(zone0.wireColor);
+            scene.fog.color.setHex(zone0.fogColor);
+            scene.background.setHex(zone0.fogColor);
+            updateCollectionHUD();
         }
         
         health = 100;
@@ -3918,12 +4151,10 @@ window.onload = function() {
     bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('next-level-btn', function() {
         document.getElementById('victory-screen').style.display = 'none';
-        if (CAROUSEL_SECTOR_MAP[currentSector]) {
-            showCarousel(currentSector);
-        } else if (currentSector >= 10) {
-            showFinale();
+        if (allZonesComplete()) {
+            window.location.href = 'navigator-victory.html';
         } else {
-            startNextSector();
+            showCarousel(currentSector);
         }
     });
     bindTap('retry-sector-btn', () => initializeFlight(false));
@@ -4139,9 +4370,15 @@ window.onload = function() {
                 // Pulsing cyan glow on ship, flicker faster in last 2 seconds
                 var shieldFlicker = shieldsUpTimer < 2 ? Math.sin(performance.now() * 0.02) * 0.5 + 0.5 : 1;
                 shieldLight.intensity = 6 * shieldFlicker;
+                forceFieldMat.opacity = 0.25 * shieldFlicker;
+                forceFieldMesh.rotation.x += 0.03;
+                forceFieldMesh.rotation.y += 0.02;
+                var ffScale = 1.0 + 0.1 * Math.sin(performance.now() * 0.005);
+                forceFieldMesh.scale.setScalar(ffScale);
                 updateShieldBar();
             } else {
                 shieldLight.intensity = 0;
+                forceFieldMat.opacity = 0;
             }
             let moveDist = speed * delta;
             distanceTraveled += moveDist;
@@ -4332,8 +4569,8 @@ window.onload = function() {
             matFlameOuter.opacity = 0.4 + bright * 0.2;
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
 
-            // ── Exhaust particle trail ──────────────────────────────
-            if (throttleSmooth > 0.05) {
+            // ── Exhaust particle trail — hyperdrive only ─────────────
+            if (hyperFrac > 0.1) {
                 // Spawn 1-2 particles per frame depending on throttle
                 var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
                 for (var si = 0; si < spawnCount; si++) {
@@ -4348,8 +4585,8 @@ window.onload = function() {
                     tp.userData.vy = (Math.random() - 0.5) * 1.5;
                     tp.userData.life = 0;
                     tp.userData.maxLife = 0.3 + Math.random() * 0.4 + throttleSmooth * 0.3;
-                    tp.scale.setScalar(0.6 + throttleSmooth * 0.8 + Math.random() * 0.3);
-                    tp.material.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
+                    tp.scale.setScalar(0.3 + throttleSmooth * 0.3 + Math.random() * 0.15);
+                    tp.material.color.setRGB(0.45 + Math.random() * 0.1, 0.45 + Math.random() * 0.1, 0.5 + Math.random() * 0.1);
                     tp.material.opacity = 0.5 + throttleSmooth * 0.3;
                     tp.visible = true;
                     // Billboard: face camera
@@ -4416,6 +4653,29 @@ window.onload = function() {
                     var starPulse = 0.8 + 0.5 * Math.sin(performance.now() * 0.008);
                     item.scale.setScalar(starPulse);
                     item.material.emissiveIntensity = 1.5 + Math.sin(performance.now() * 0.01) * 0.8;
+                }
+                // Content object — slow majestic spin + pulsing glow + arrow bob + sparkle orbit
+                if (item.userData.type === 'content') {
+                    item.rotation.y += 0.02;
+                    item.rotation.x += 0.01;
+                    var cPulse = 1.0 + 0.2 * Math.sin(performance.now() * 0.004);
+                    item.scale.setScalar(cPulse);
+                    item.material.emissiveIntensity = 1.5 + Math.sin(performance.now() * 0.006) * 0.5;
+                    // Arrow bob
+                    if (item.userData._arrow) {
+                        item.userData._arrow.position.y = 12 + Math.sin(performance.now() * 0.005) * 2;
+                        item.userData._arrow.material.opacity = 0.5 + 0.4 * Math.sin(performance.now() * 0.004);
+                    }
+                    // Sparkle orbit
+                    if (item.userData._sparkles) {
+                        var t = performance.now() * 0.003;
+                        item.userData._sparkles.children.forEach(function(sp) {
+                            var idx = sp.userData._sparkleIdx;
+                            var a = t + idx * Math.PI * 0.5;
+                            sp.position.set(Math.cos(a) * 10, Math.sin(a) * 10, Math.sin(a * 1.3) * 4);
+                            sp.material.opacity = 0.5 + 0.5 * Math.sin(t * 2 + idx);
+                        });
+                    }
                 }
 
                 // --- Collision Logic ---
@@ -4491,17 +4751,30 @@ window.onload = function() {
                                 shieldsUp = true;
                                 shieldsUpTimer = getShieldsDuration(currentSector);
                                 AudioEngine.playSFX('star');
-                                flash('#00ccff');
-                                spawnPointBurst('SHIELDS UP!', 'c-cyan');
+                                flash('#ff44ff');
+                                spawnPointBurst('FORCE FIELD!', 'c-magenta');
                                 score += 500;
+                            }
+                            else if (item.userData.type === 'content') {
+                                var cZone = item.userData.contentZone;
+                                var cTitle = item.userData.contentTitle;
+                                if (!collectedContent[cZone].has(cTitle)) {
+                                    collectedContent[cZone].add(cTitle);
+                                    AudioEngine.playSFX('core');
+                                    var zColor = ZONE_OBJ_COLORS[cZone] || '#fff';
+                                    flash(zColor);
+                                    spawnPointBurst(cTitle.length > 20 ? cTitle.substring(0, 18) + '..' : cTitle, 'c-gold');
+                                    score += 1000;
+                                    updateCollectionHUD();
+                                }
                             }
                             else if (item.userData.type === 'health') {
                                 sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 15);
                                 score += 250;
                                 AudioEngine.playSFX('core');
-                                flash('#ffaa00');
-                                spawnPointBurst('+15 SHIELD', 'c-gold');
+                                flash('#44aaff');
+                                spawnPointBurst('+15 SHIELD', 'c-cyan');
                                 if (TUT.active) tutHit('health');
                             }
                             else if (item.userData.type === 'score') {
