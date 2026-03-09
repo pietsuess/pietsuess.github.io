@@ -165,6 +165,15 @@
   <button id="popup-close" onclick="closePopup()">[ CLOSE ]</button>
 </div>
 <div id="prompt">&#9654; <span id="prompt-text">SPACE TO INTERACT</span></div>
+  <hr style="border-color:#333;margin:8px 0;">
+  <button id="label-mode-btn" onclick="toggleEditorLabelMode()" style="border-color:#ffe000;color:#ffe000;">LABELS</button>
+  <button id="contour-mode-btn" onclick="toggleEditorContourMode()" style="border-color:#00ff88;color:#00ff88;">CONTOURS</button>
+  <button id="hitpoly-mode-btn" onclick="toggleEditorHitPolyMode()" style="border-color:#ff4444;color:#ff4444;">HIT POLY</button>
+  <button id="depthpoly-mode-btn" onclick="toggleEditorDepthPolyMode()" style="border-color:#ff8800;color:#ff8800;">DEPTH POLY</button>
+  <button onclick="editorUndo()">UNDO (⌘Z)</button>
+  <button class="export" onclick="editorExport()">EXPORT ALL</button>
+  <div id="contour-panel" style="display:none;margin-top:8px;border-top:1px solid #333;padding-top:8px;"></div>
+</div>
 <div id="content-overlay">
   <div id="content-box">
     <div id="content-header">
@@ -340,57 +349,36 @@ function rotBoxCollide(b, pL, pT, pW, pH){
 
 // Objects
 const objects = [
-  {name:'DELTA WING', key:'deltawing', zone:null, zoneColor:null, wx:853.75, wy:1305.21, ww:568.2, wh:199.95, depthY:1505, collide:true, interact:true,
+  {name:'DELTA WING', key:'deltawing', zone:null, zoneColor:null, wx:786.06, wy:1307.74, ww:648, wh:201, depthY:1505, collide:true, interact:true,
+    hitPoly:[{x:1070,y:1469},{x:1105,y:1472},{x:1145,y:1474},{x:1247,y:1469},{x:1284,y:1456},{x:1318,y:1452},{x:1341,y:1474},{x:1357,y:1486},{x:1369,y:1502},{x:1275,y:1510},{x:1237,y:1497},{x:1123,y:1502},{x:1049,y:1504},{x:1048,y:1488}]},
+  {name:'HANGER', key:'hanger', zone:null, zoneColor:null, wx:7.61, wy:1186.5, ww:608, wh:481, depthY:1609, collide:true, interact:false,
     hitboxes:[
-      {x:922, y:1480, w:48, h:25},
-      {x:970, y:1478, w:260, h:27},
-      {x:1230, y:1482, w:11, h:23},
-      {x:963, y:1464, w:71, h:13},
+      {x:7, y:1358, w:705, h:43},
+      {x:629, y:1223, w:100, h:145},
+      {x:698, y:1368, w:30, h:19, rot:-1.133},
+      {x:549, y:1625, w:77, h:10, rot:-1.093},
+      {x:7, y:1594, w:594, h:20},
     ]},
-  {name:'HANGER', key:'hanger', zone:null, zoneColor:null, wx:0, wy:1173, ww:603.43, wh:494.30, depthY:1607, collide:true, interact:false,
+  {name:'SQUARE', key:'square', zone:'EDITING', contentZone:'EDIT', zoneColor:'#00ffff', wx:2546.08, wy:1411.13, ww:227, wh:98, depthY:1464, labelX:2529, labelY:1419, collide:true, interact:true, platform:true,
+    platformPoly:[{x:2576,y:1414},{x:2719,y:1411},{x:2772,y:1458},{x:2608,y:1461}],
+    hitPoly:[{x:2574,y:1461},{x:2720,y:1458},{x:2772,y:1507},{x:2608,y:1509}],
+    depthPoly:[{x:2574,y:1395},{x:2721,y:1403},{x:2802,y:1457},{x:2802,y:1514},{x:2586,y:1478},{x:2538,y:1452}]},
+  {name:'HEXAGRAM', key:'hexagram', zone:'DIRECTION', contentZone:'DIRECT', zoneColor:'#ff69b4', wx:2985.72, wy:1351.93, ww:204, wh:93, depthY:1422, labelX:2956, labelY:1395, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3014,y:1386},{x:3059,y:1353},{x:3149,y:1353},{x:3192,y:1387},{x:3147,y:1421},{x:3059,y:1419}],
+    hitPoly:[{x:3060,y:1372},{x:3148,y:1373},{x:3192,y:1412},{x:3145,y:1445},{x:3054,y:1444},{x:3011,y:1411}]},
+  {name:'TRIANGLE', key:'triangle', zone:'DESIGN', zoneColor:'#ff8c00', wx:3274.91, wy:1449.22, ww:227, wh:164, depthY:1586, labelX:3352, labelY:1461, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3333,y:1607},{x:3394,y:1449},{x:3433,y:1457},{x:3371,y:1613}],
+    hitPoly:[{x:3455,y:1571},{x:3503,y:1581},{x:3372,y:1613},{x:3334,y:1606}],
+    depthPoly:[{x:3360,y:1507},{x:3502,y:1498},{x:3525,y:1578},{x:3353,y:1629},{x:3322,y:1618}]},
+  {name:'PENTAGRAM', key:'pentagram', zone:'PHOTO', zoneColor:'#ffcc00', wx:3634.91, wy:1337.29, ww:224, wh:120, depthY:1438, labelX:3632, labelY:1431, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3666,y:1388},{x:3682,y:1346},{x:3801,y:1338},{x:3858,y:1375},{x:3773,y:1406}],
+    hitPoly:[{x:3798,y:1376},{x:3858,y:1426},{x:3774,y:1459},{x:3665,y:1440},{x:3684,y:1384}]},
+  {name:'SPHERE', key:'sphere', zone:'ANIMATE', zoneColor:'#00ff88', wx:4047.94, wy:1354.01, ww:290, wh:251, depthY:1603, labelX:4038, labelY:1474, collide:true, interact:true, platform:false,
     hitboxes:[
-      {x:-1, y:1356, w:705, h:43},
-      {x:621, y:1221, w:100, h:145},
-      {x:690, y:1366, w:30, h:19, rot:-1.133},
-      {x:541, y:1623, w:77, h:10, rot:-1.093},
-      {x:-1, y:1592, w:594, h:20},
-    ]},
-  {name:'SQUARE', key:'square', zone:'EDITING', contentZone:'EDIT', zoneColor:'#00ffff', wx:2643.5, wy:1489.7, ww:198.92, wh:97.71, depthY:1543, labelX:2668, labelY:1481, collide:true, interact:true,
-    hitboxes:[
-      {x:2676, y:1537, w:165, h:49},
-      {x:2645, y:1537, w:187, h:5},
-      {x:2652, y:1554, w:42, h:20, rot:0.979},
-      {x:2649, y:1543, w:26, h:17, rot:0.965},
-    ]},
-  {name:'HEXAGRAM', key:'hexagram', zone:'DIRECTION', contentZone:'DIRECT', zoneColor:'#ff69b4', wx:3246.6, wy:1345.9, ww:178.67, wh:92.12, depthY:1415, labelX:3207, labelY:1391, collide:true, interact:true,
-    hitboxes:[
-      {x:3288, y:1353, w:95, h:84},
-      {x:3248, y:1385, w:177, h:19},
-      {x:3252, y:1363, w:63, h:33, rot:-0.672},
-      {x:3249, y:1402, w:49, h:20, rot:0.703},
-      {x:3371, y:1403, w:53, h:20, rot:-0.644},
-      {x:3362, y:1365, w:50, h:46, rot:0.688},
-    ]},
-  {name:'TRIANGLE', key:'triangle', zone:'DESIGN', zoneColor:'#ff8c00', wx:3565.8, wy:1493.1, ww:168.31, wh:163.04, depthY:1627, labelX:3581, labelY:1500, collide:true, interact:true,
-    hitboxes:[
-      {x:3571, y:1632, w:35, h:20, rot:0.185},
-      {x:3598, y:1620, w:116, h:23, rot:-0.234},
-      {x:3575, y:1609, w:137, h:27, rot:-0.243},
-      {x:3695, y:1604, w:32, h:16, rot:1.092},
-    ]},
-  {name:'PENTAGRAM', key:'pentagram', zone:'PHOTO', zoneColor:'#ffcc00', wx:3899, wy:1332.8, ww:193.01, wh:118.31, depthY:1432, labelX:3866, labelY:1427, collide:true, interact:true,
-    hitboxes:[
-      {x:3908, y:1349, w:106, h:93, rot:0.164},
-      {x:3990, y:1369, w:92, h:68, rot:-0.356},
-      {x:3919, y:1336, w:117, h:53, rot:-0.073},
-      {x:4018, y:1343, w:48, h:31, rot:0.609},
-    ]},
-  {name:'SPHERE', key:'sphere', zone:'ANIMATE', zoneColor:'#00ff88', wx:4309.7, wy:1298.19, ww:273.57, wh:347.41, depthY:1557, labelX:4273, labelY:1428, collide:true, interact:true,
-    hitboxes:[
-      {cx:4419, cy:1491, r:59},
-      {cx:4466, cy:1496, r:58},
-      {cx:4444, cy:1498, r:59},
-      {cx:4441, cy:1484, r:56},
+      {cx:4184, cy:1537, r:59},
+      {cx:4231, cy:1542, r:58},
+      {cx:4209, cy:1544, r:59},
+      {cx:4206, cy:1530, r:56},
     ]},
 ];
 
@@ -523,24 +511,76 @@ for(const obj of objects){
   }
 }
 
-const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, vy:0, grounded:false, jumpOffY:0 };
+// Platform polygon helpers
+
+// Point-in-polygon (ray casting)
+function pointInPoly(poly, px, py){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+    if((yi > py) !== (yj > py) && px < (xj-xi)*(py-yi)/(yj-yi)+xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Get top surface Y at a given X by finding the topmost (min Y) edge intersection
+// Only considers edges where the Y values span above and could be a "top" surface
+function getPolyTopY(poly, px){
+  if(!poly || poly.length < 3) return null;
+  // Find X bounds
+  let minX = Infinity, maxX = -Infinity;
+  for(const p of poly){ if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x; }
+  if(px < minX || px > maxX) return null;
+  // Cast ray down at px, find topmost (minimum Y) intersection
+  let topY = Infinity;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const x1=poly[j].x, y1=poly[j].y, x2=poly[i].x, y2=poly[i].y;
+    if((x1 <= px && x2 >= px) || (x2 <= px && x1 >= px)){
+      const dx = x2-x1;
+      if(Math.abs(dx) < 0.001) continue;
+      const t = (px-x1)/dx;
+      const iy = y1 + t*(y2-y1);
+      if(iy < topY) topY = iy;
+    }
+  }
+  return topY < Infinity ? topY : null;
+}
+
+// Get slope of the top surface at px (for sliding)
+function getPolySlope(poly, px){
+  if(!poly || poly.length < 3) return 0;
+  // Find the top-edge segment at px
+  let topY = Infinity, topDy = 0, topDx = 1;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const x1=poly[j].x, y1=poly[j].y, x2=poly[i].x, y2=poly[i].y;
+    if((x1 <= px && x2 >= px) || (x2 <= px && x1 >= px)){
+      const dx = x2-x1;
+      if(Math.abs(dx) < 0.001) continue;
+      const t = (px-x1)/dx;
+      const iy = y1 + t*(y2-y1);
+      if(iy < topY){ topY = iy; topDy = y2-y1; topDx = dx; }
+    }
+  }
+  return Math.abs(topDx) > 0.001 ? topDy/topDx : 0;
+}
+
+const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, jumpOffY:0, onPlatform:null };
 const keys = {};
 let popupOpen = false;
-let debugHitboxes = false;
 
 // Load images (all modes)
 const imgs = {};
 const bgImg = new Image();
-bgImg.src = 'pilot-game/Victory-Background-01.svg';
+bgImg.src = 'pilot-game/Victory-Background.png';
 const sprite = new Image();
 sprite.src = 'pilot-game/spritesheet.png';
-imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'pilot-game/Victory-Background_DeltaWing.svg';
-imgs['square']    = new Image(); imgs['square'].src = 'pilot-game/Victory-Background_Square.svg';
-imgs['hexagram']  = new Image(); imgs['hexagram'].src = 'pilot-game/Victory-Background_Hexagram.svg';
-imgs['triangle']  = new Image(); imgs['triangle'].src = 'pilot-game/Victory-Background_Triangle.svg';
-imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'pilot-game/Victory-Background_Pentagram.svg';
-imgs['sphere']    = new Image(); imgs['sphere'].src = 'pilot-game/Victory-Background_Sphere.svg';
-imgs['hanger']    = new Image(); imgs['hanger'].src = 'pilot-game/Victory-Background_Hanger.svg';
+imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'pilot-game/Victory-Background_DeltaWing.png';
+imgs['square']    = new Image(); imgs['square'].src    = 'pilot-game/Victory-Background_Square.png';
+imgs['hexagram']  = new Image(); imgs['hexagram'].src  = 'pilot-game/Victory-Background_Hexagon.png';
+imgs['triangle']  = new Image(); imgs['triangle'].src  = 'pilot-game/Victory-Background_Triangle.png';
+imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'pilot-game/Victory-Background_Pentagon.png';
+imgs['sphere']    = new Image(); imgs['sphere'].src    = 'pilot-game/Victory-Background_Sphere.png';
+imgs['hanger']    = new Image(); imgs['hanger'].src    = 'pilot-game/Victory-Background_Hangar.png';
 
 // Pixel art mode removed — see pilot-game-pixel.html
 
@@ -571,9 +611,15 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     if(!editorMode && !contentViewOpen && !popupOpen && !_kneelPending && !e.repeat){
       if(pilot.nearObj !== null){
-        // Kneel first, then open popup after animation completes
-        _kneelPending = pilot.nearObj;
-        setOrigAnim('kneel');
+        const nObj = objects[pilot.nearObj];
+        if(nObj.platform && nObj.platformPoly && pilot.onPlatform !== pilot.nearObj){
+          // Near a platform object but not on it — jump to get on
+          _jumpPressed = true;
+        } else {
+          // On the platform (or non-platform object) — kneel + popup
+          _kneelPending = pilot.nearObj;
+          setOrigAnim('kneel');
+        }
       } else {
         _jumpPressed = true;
       }
@@ -585,7 +631,6 @@ window.addEventListener('keydown', e => {
     if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
     else if(contentViewOpen){ closeContentView(); }
     else { closePopup(); }
-    if(editorMode) editorDeselect();
   }
 });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
@@ -810,7 +855,7 @@ function renderObjects(list, start, end, scale){
     // Zone label — only show when pilot is close enough (or in editor)
     const LABEL_SHOW_R = 200;
     const objCX = obj.wx + obj.ww/2, objCY = obj.wy + obj.wh/2;
-    const distToPilot = Math.sqrt((pilot.x - objCX)**2 + ((pilot.y + pilot.jumpOffY) - objCY)**2);
+    const distToPilot = Math.sqrt((pilot.x - objCX)**2 + (pilot.y - objCY)**2);
     if(obj.zone && (editorMode || distToPilot < LABEL_SHOW_R)){
       const labelX = (obj.labelX !== undefined) ? obj.labelX : obj.wx + obj.ww / 2;
       const labelY = (obj.labelY !== undefined) ? obj.labelY : obj.wy + obj.wh / 2;
@@ -875,7 +920,12 @@ function distToZone(px, py, b){
 
 // ===================== EDITOR =====================
 let editorMode = false;
-let edLabelMode = false; // true = editing labels, false = editing hitzones
+let edLabelMode = false;
+let edContourMode = false;
+let edHitPolyMode = false;
+let edDepthPolyMode = false;
+let edSelContourObj = null;  // index into objects[]
+let edSelContourPt = null;   // index into platformPoly[]
 let edSelObj = null;
 let edSelBox = null;
 let edDrag = null;
@@ -890,7 +940,10 @@ function snapshotState(){
       depthY: obj.depthY,
       labelX: obj.labelX,
       labelY: obj.labelY,
-      hitboxes: obj.hitboxes ? obj.hitboxes.map(cloneZone) : null
+      hitboxes: obj.hitboxes ? obj.hitboxes.map(cloneZone) : null,
+      platformPoly: obj.platformPoly ? obj.platformPoly.map(p => ({x:p.x, y:p.y})) : null,
+      hitPoly: obj.hitPoly ? obj.hitPoly.map(p => ({x:p.x, y:p.y})) : null,
+      depthPoly: obj.depthPoly ? obj.depthPoly.map(p => ({x:p.x, y:p.y})) : null
     });
   }
   return snap;
@@ -909,6 +962,9 @@ function editorUndo(){
     objects[i].labelX = snap[i].labelX;
     objects[i].labelY = snap[i].labelY;
     if(snap[i].hitboxes) objects[i].hitboxes = snap[i].hitboxes;
+    if(snap[i].platformPoly) objects[i].platformPoly = snap[i].platformPoly;
+    if(snap[i].hitPoly) objects[i].hitPoly = snap[i].hitPoly; else delete objects[i].hitPoly;
+    if(snap[i].depthPoly) objects[i].depthPoly = snap[i].depthPoly; else delete objects[i].depthPoly;
   }
   updateEditorPanel();
 }
@@ -921,23 +977,142 @@ const EDGE_GRAB = 6;
 function toggleEditor(){
   editorMode = !editorMode;
   edLabelMode = false;
+  edContourMode = false;
+  edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
   editorPanelEl.classList.toggle('open', editorMode);
   editorHintEl.classList.toggle('show', editorMode);
-  if(editorMode){ debugHitboxes = true; editorDeselect(); updateEditorHint(); }
-  if(!editorMode) editorHintEl.classList.remove('show');
+  if(editorMode){ debugHitboxes = true; editorDeselect(); updateEditorHint(); updateEditorModeButtons(); }
+  if(!editorMode){ editorHintEl.classList.remove('show'); document.getElementById('contour-panel').style.display = 'none'; }
 }
 
 function toggleEditorLabelMode(){
   edLabelMode = !edLabelMode;
+  edContourMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
   editorDeselect();
   updateEditorHint();
-  const btn = document.getElementById('label-mode-btn');
-  btn.textContent = edLabelMode ? 'HITZONES' : 'LABELS';
-  btn.style.background = edLabelMode ? 'rgba(255,224,0,0.15)' : 'none';
+  updateEditorModeButtons();
+}
+
+function toggleEditorContourMode(){
+  edContourMode = !edContourMode;
+  edLabelMode = false; edHitPolyMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function toggleEditorHitPolyMode(){
+  edHitPolyMode = !edHitPolyMode;
+  edLabelMode = false; edContourMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function toggleEditorDepthPolyMode(){
+  edDepthPolyMode = !edDepthPolyMode;
+  edLabelMode = false; edContourMode = false; edHitPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function updateEditorModeButtons(){
+  const lBtn = document.getElementById('label-mode-btn');
+  const cBtn = document.getElementById('contour-mode-btn');
+  const hBtn = document.getElementById('hitpoly-mode-btn');
+  const dBtn = document.getElementById('depthpoly-mode-btn');
+  lBtn.textContent = edLabelMode ? 'HITZONES' : 'LABELS';
+  lBtn.style.background = edLabelMode ? 'rgba(255,224,0,0.15)' : 'none';
+  cBtn.textContent = edContourMode ? 'HITZONES' : 'CONTOURS';
+  cBtn.style.background = edContourMode ? 'rgba(0,255,136,0.15)' : 'none';
+  hBtn.textContent = edHitPolyMode ? 'HITZONES' : 'HIT POLY';
+  hBtn.style.background = edHitPolyMode ? 'rgba(255,68,68,0.15)' : 'none';
+  dBtn.textContent = edDepthPolyMode ? 'HITZONES' : 'DEPTH POLY';
+  dBtn.style.background = edDepthPolyMode ? 'rgba(255,136,0,0.15)' : 'none';
 }
 
 function updateEditorHint(){
-  editorHintEl.textContent = edLabelMode ? 'LABEL MODE — drag labels to reposition' : 'EDITOR MODE — click hitzones to edit';
+  editorHintEl.textContent = edDepthPolyMode ? 'DEPTH POLY MODE — draw region where pilot is BEHIND object'
+    : edHitPolyMode ? 'HIT POLY MODE — drag points to reshape collision polygons'
+    : edContourMode ? 'CONTOUR MODE — drag points to reshape platforms'
+    : edLabelMode ? 'LABEL MODE — drag labels to reposition'
+    : 'EDITOR MODE — click hitzones to edit';
+}
+
+function _getActivePolyArray(obj){
+  if(edDepthPolyMode) return obj.depthPoly;
+  if(edHitPolyMode) return obj.hitPoly;
+  if(edContourMode) return obj.platformPoly;
+  return null;
+}
+
+function updateContourPanel(){
+  const cpEl = document.getElementById('contour-panel');
+  if(!edContourMode && !edHitPolyMode && !edDepthPolyMode){ cpEl.style.display = 'none'; return; }
+  cpEl.style.display = 'block';
+  const color = edDepthPolyMode ? '#ff8800' : edHitPolyMode ? '#ff4444' : '#00ff88';
+  const modeName = edDepthPolyMode ? 'DEPTH POLY' : edHitPolyMode ? 'HIT POLY' : 'CONTOUR';
+  let html = '';
+  if(edSelContourObj !== null){
+    const obj = objects[edSelContourObj];
+    const poly = _getActivePolyArray(obj);
+    html += '<div class="obj-name" style="color:'+color+';">' + obj.name + '</div>';
+    if(!poly || poly.length === 0){
+      html += '<button style="border-color:'+color+';color:'+color+';" onclick="contourInitPoly()">CREATE '+modeName+'</button>';
+    } else if(edSelContourPt !== null){
+      const pt = poly[edSelContourPt];
+      html += '<span class="label">point ' + edSelContourPt + ':</span> ';
+      html += '<span class="val">' + Math.round(pt.x) + ', ' + Math.round(pt.y) + '</span><br>';
+      html += '<button style="border-color:'+color+';color:'+color+';" onclick="contourAddPoint()">+ POINT</button> ';
+      html += '<button class="warn" onclick="contourDeletePoint()">- POINT</button>';
+    } else {
+      html += '<span class="label">click a point to select</span>';
+    }
+  } else {
+    html += '<span class="label">click a point to select</span>';
+  }
+  cpEl.innerHTML = html;
+}
+
+function contourInitPoly(){
+  if(edSelContourObj === null) return;
+  pushUndo();
+  const obj = objects[edSelContourObj];
+  const cx = obj.wx + obj.ww/2, cy = obj.wy + obj.wh/2;
+  const poly = [{x:cx-40,y:cy-30},{x:cx+40,y:cy-30},{x:cx+40,y:cy+30},{x:cx-40,y:cy+30}];
+  if(edDepthPolyMode) obj.depthPoly = poly;
+  else if(edHitPolyMode) obj.hitPoly = poly;
+  else obj.platformPoly = poly;
+  updateContourPanel();
+}
+
+function contourAddPoint(){
+  if(edSelContourObj === null || edSelContourPt === null) return;
+  pushUndo();
+  const c = _getActivePolyArray(objects[edSelContourObj]);
+  if(!c) return;
+  const i = edSelContourPt;
+  if(i < c.length - 1){
+    c.splice(i+1, 0, {x:(c[i].x+c[i+1].x)/2, y:(c[i].y+c[i+1].y)/2});
+    edSelContourPt = i+1;
+  } else {
+    c.push({x: c[i].x + 30, y: c[i].y});
+    edSelContourPt = c.length - 1;
+  }
+  updateContourPanel();
+}
+
+function contourDeletePoint(){
+  if(edSelContourObj === null || edSelContourPt === null) return;
+  const c = _getActivePolyArray(objects[edSelContourObj]);
+  if(!c || c.length <= 3) return;
+  pushUndo();
+  c.splice(edSelContourPt, 1);
+  edSelContourPt = Math.min(edSelContourPt, c.length - 1);
+  updateContourPanel();
 }
 
 function editorDeselect(){
@@ -954,7 +1129,11 @@ function screenToWorld(sx, sy){
 
 function updateEditorPanel(){
   if(edSelObj === null){
-    epContentEl.innerHTML = '<span class="label">Click a hitzone to select</span>';
+    let html = '<span class="label">Select object:</span><br>';
+    for(let i=0; i<objects.length; i++){
+      html += '<button style="display:block;width:100%;margin:2px 0;font-size:9px;padding:2px 4px;" onclick="edSelObj='+i+';edSelBox=null;updateEditorPanel();">'+objects[i].name+'</button>';
+    }
+    epContentEl.innerHTML = html;
     return;
   }
   const obj = objects[edSelObj];
@@ -1022,10 +1201,12 @@ function editorDeleteZone(){
 function editorExport(){
   let out = '// Exported hitzone + depthY config\n';
   for(const obj of objects){
-    if(!obj.hitboxes) continue;
+    if(!obj.hitboxes && !obj.hitPoly && !obj.depthPoly) continue;
     out += '// ' + obj.name + '\n';
+    out += '//   wx: ' + Math.round(obj.wx*100)/100 + ', wy: ' + Math.round(obj.wy*100)/100 + '\n';
     out += '//   depthY: ' + Math.round(obj.depthY) + '\n';
     if(obj.labelX !== undefined) out += '//   labelX: ' + Math.round(obj.labelX) + ', labelY: ' + Math.round(obj.labelY) + '\n';
+    if(obj.hitboxes){
     out += '//   hitboxes: [\n';
     for(const b of obj.hitboxes){
       if(isCircle(b)){
@@ -1036,7 +1217,24 @@ function editorExport(){
         out += '//     {x:' + Math.round(b.x) + ', y:' + Math.round(b.y) + ', w:' + Math.round(b.w) + ', h:' + Math.round(b.h) + rotStr + '},\n';
       }
     }
-    out += '//   ]\n\n';
+    out += '//   ]\n';
+    } // end if(obj.hitboxes)
+    if(obj.hitPoly){
+      out += '//   hitPoly: [';
+      out += obj.hitPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    if(obj.platformPoly){
+      out += '//   platformPoly: [';
+      out += obj.platformPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    if(obj.depthPoly){
+      out += '//   depthPoly: [';
+      out += obj.depthPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    out += '\n';
   }
   navigator.clipboard.writeText(out).then(() => {
     editorHintEl.textContent = 'COPIED TO CLIPBOARD';
@@ -1090,6 +1288,42 @@ canvas.addEventListener('mousedown', e => {
     return; // label mode ignores hitzones
   }
 
+  // CONTOUR / HIT POLY MODE: drag polygon points
+  if(edContourMode || edHitPolyMode || edDepthPolyMode){
+    const grabR = 8 / getScale();
+    let bestDist = Infinity, bestOi = null, bestPi = null;
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      const poly = _getActivePolyArray(obj);
+      if(!poly) continue;
+      for(let pi=0; pi<poly.length; pi++){
+        const pt = poly[pi];
+        const d = Math.sqrt((w.x-pt.x)**2 + (w.y-pt.y)**2);
+        if(d < grabR && d < bestDist){ bestDist = d; bestOi = oi; bestPi = pi; }
+      }
+    }
+    if(bestOi !== null){
+      pushUndo();
+      edSelContourObj = bestOi;
+      edSelContourPt = bestPi;
+      const poly = _getActivePolyArray(objects[bestOi]);
+      const pt = poly[bestPi];
+      edDrag = {type:'contour', origX:pt.x, origY:pt.y, startMX:e.clientX, startMY:e.clientY};
+    } else {
+      // Clicked empty space — select nearest object for CREATE button
+      let nearOi = null, nearD = Infinity;
+      for(let oi=0; oi<objects.length; oi++){
+        const obj = objects[oi];
+        const cx = obj.wx+obj.ww/2, cy = obj.wy+obj.wh/2;
+        const d = Math.sqrt((w.x-cx)**2+(w.y-cy)**2);
+        if(d < nearD){ nearD = d; nearOi = oi; }
+      }
+      edSelContourObj = nearOi; edSelContourPt = null;
+    }
+    updateContourPanel();
+    return;
+  }
+
   // Check rotation handle on currently selected box
   if(edSelObj !== null && edSelBox !== null){
     const selB = objects[edSelObj].hitboxes[edSelBox];
@@ -1132,10 +1366,54 @@ canvas.addEventListener('mousedown', e => {
     }
   }
 
+  // If no hitbox clicked, check hitPolys
+  if(bestObj === null){
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(obj.hitPoly && obj.hitPoly.length >= 3 && pointInPoly(obj.hitPoly, w.x, w.y)){
+        bestObj = oi; bestBox = null; break;
+      }
+    }
+  }
+  // If still nothing, check image bounds
+  if(bestObj === null){
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(w.x >= obj.wx && w.x <= obj.wx+obj.ww && w.y >= obj.wy && w.y <= obj.wy+obj.wh){
+        bestObj = oi; bestBox = null; break;
+      }
+    }
+  }
+
   if(bestObj !== null){
     edSelObj = bestObj;
     edSelBox = bestBox;
-    const b = objects[edSelObj].hitboxes[edSelBox];
+    const b = (edSelBox !== null && objects[edSelObj].hitboxes) ? objects[edSelObj].hitboxes[edSelBox] : null;
+
+    // ALT+drag: move just the image (wx/wy) without hitboxes
+    if(e.altKey){
+      pushUndo();
+      const obj = objects[edSelObj];
+      edDrag = {type:'moveImage', startMX:e.clientX, startMY:e.clientY, origWX:obj.wx, origWY:obj.wy};
+      updateEditorPanel();
+      return;
+    }
+
+    // SHIFT+drag: move entire object (image, all hitboxes, polygon, depthY, labels)
+    if(e.shiftKey){
+      pushUndo();
+      const obj = objects[edSelObj];
+      edDrag = {type:'moveAll', startMX:e.clientX, startMY:e.clientY,
+        origWX:obj.wx, origWY:obj.wy, origDepthY:obj.depthY,
+        origLabelX: obj.labelX, origLabelY: obj.labelY,
+        origHitboxes: obj.hitboxes ? obj.hitboxes.map(h => isCircle(h) ? {cx:h.cx, cy:h.cy} : {x:h.x, y:h.y}) : [],
+        origPoly: obj.platformPoly ? obj.platformPoly.map(p => ({x:p.x, y:p.y})) : null,
+        origHitPoly: obj.hitPoly ? obj.hitPoly.map(p => ({x:p.x, y:p.y})) : null,
+        origDepthPoly: obj.depthPoly ? obj.depthPoly.map(p => ({x:p.x, y:p.y})) : null
+      };
+      updateEditorPanel();
+      return;
+    }
 
     let type = 'move';
     if(isCircle(b)){
@@ -1185,6 +1463,48 @@ canvas.addEventListener('mousemove', e => {
   const dx = (e.clientX - edDrag.startMX) / s;
   const dy = (e.clientY - edDrag.startMY) / s;
 
+  if(edDrag.type === 'moveImage'){
+    const obj = objects[edSelObj];
+    obj.wx = edDrag.origWX + dx;
+    obj.wy = edDrag.origWY + dy;
+    updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'moveAll'){
+    const obj = objects[edSelObj];
+    obj.wx = edDrag.origWX + dx;
+    obj.wy = edDrag.origWY + dy;
+    obj.depthY = edDrag.origDepthY + dy;
+    if(edDrag.origLabelX !== undefined){ obj.labelX = edDrag.origLabelX + dx; obj.labelY = edDrag.origLabelY + dy; }
+    for(let hi=0; obj.hitboxes && hi<obj.hitboxes.length; hi++){
+      const h = obj.hitboxes[hi];
+      const orig = edDrag.origHitboxes[hi];
+      if(isCircle(h)){ h.cx = orig.cx + dx; h.cy = orig.cy + dy; }
+      else { h.x = orig.x + dx; h.y = orig.y + dy; }
+    }
+    if(obj.platformPoly && edDrag.origPoly){
+      for(let pi=0; pi<obj.platformPoly.length; pi++){
+        obj.platformPoly[pi].x = edDrag.origPoly[pi].x + dx;
+        obj.platformPoly[pi].y = edDrag.origPoly[pi].y + dy;
+      }
+    }
+    if(obj.hitPoly && edDrag.origHitPoly){
+      for(let pi=0; pi<obj.hitPoly.length; pi++){
+        obj.hitPoly[pi].x = edDrag.origHitPoly[pi].x + dx;
+        obj.hitPoly[pi].y = edDrag.origHitPoly[pi].y + dy;
+      }
+    }
+    if(obj.depthPoly && edDrag.origDepthPoly){
+      for(let pi=0; pi<obj.depthPoly.length; pi++){
+        obj.depthPoly[pi].x = edDrag.origDepthPoly[pi].x + dx;
+        obj.depthPoly[pi].y = edDrag.origDepthPoly[pi].y + dy;
+      }
+    }
+    updateEditorPanel();
+    return;
+  }
+
   if(edDrag.type === 'depthY'){
     objects[edSelObj].depthY = edDrag.origDepthY + dy;
     updateEditorPanel();
@@ -1195,6 +1515,19 @@ canvas.addEventListener('mousemove', e => {
     objects[edSelObj].labelX = edDrag.origLX + dx;
     objects[edSelObj].labelY = edDrag.origLY + dy;
     updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'contour'){
+    if(edSelContourObj !== null && edSelContourPt !== null){
+      const poly = _getActivePolyArray(objects[edSelContourObj]);
+      if(poly){
+        const pt = poly[edSelContourPt];
+        pt.x = edDrag.origX + dx;
+        pt.y = edDrag.origY + dy;
+        updateContourPanel();
+      }
+    }
     return;
   }
 
@@ -1363,8 +1696,11 @@ function loop(time){
     {
       // ===== ORIGINAL: Free roam =====
       pilot.walking = false;
-      const isJumping = _jumpPressed && pilot.nearObj === null && !popupOpen;
+      const isJumping = _jumpPressed && !popupOpen;
       _jumpPressed = false;
+
+      // Save position before movement for hitPoly collision rollback
+      const _preMovX = pilot.x, _preMovY = pilot.y;
 
       if(origAnim !== 'kneel'){
         if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
@@ -1374,20 +1710,86 @@ function loop(time){
         if(touchJoyDx !== 0 || touchJoyDy !== 0){
           pilot.x += touchJoyDx * WALK_SPEED;
           pilot.y += touchJoyDy * WALK_SPEED;
-          pilot.walking = true;
+          if(Math.abs(touchJoyDx) > 0.1 || Math.abs(touchJoyDy) > 0.1){
+            pilot.walking = true;
+          }
           if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
         }
       }
 
-      if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
-      if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
-      if(pilot.y < TARMAC_TOP) pilot.y = TARMAC_TOP;
-      if(pilot.y > TARMAC_BOTTOM) pilot.y = TARMAC_BOTTOM;
+      if(pilot.onPlatform === null){
+        if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
+        if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
+        if(pilot.y < TARMAC_TOP) pilot.y = TARMAC_TOP;
+        if(pilot.y > TARMAC_BOTTOM) pilot.y = TARMAC_BOTTOM;
+      }
 
-      // Collision (skip in editor mode)
-      if(!editorMode){
-        for(const obj of objects){
-          if(!obj.collide || !obj.hitboxes) continue;
+      // Collision (skip in editor, skip when on platform, skip when jumping high)
+      if(!editorMode && pilot.onPlatform === null && pilot.jumpOffY > -20){
+        for(let oi2=0; oi2<objects.length; oi2++){
+          const obj = objects[oi2];
+          if(!obj.collide) continue;
+          // hitPoly collision — circle vs polygon with edge sliding
+          // Only collide when pilot is in front of (below) the object's top edge
+          if(obj.hitPoly && obj.hitPoly.length >= 3){
+            const feetOff = pilot.jumpOffY - 18;
+            const feetY = pilot.y + feetOff;
+            const prX = 20, prY = 10; // ellipse radii (wider than tall)
+            const poly = obj.hitPoly;
+            const polyTopY = Math.min(...poly.map(p => p.y));
+            // Skip collision if pilot is behind the object (above the hitPoly top)
+            if(pilot.y < polyTopY - prY){
+              continue;
+            }
+
+            // Ellipse collision: scale Y by prX/prY to work in circle-space
+            const yScale = prX / prY;
+            const sFeetY = feetY * yScale; // scaled feet Y
+            // Scale polygon points
+            const sPoly = poly.map(p => ({x: p.x, y: p.y * yScale}));
+
+            // Find closest point on any scaled polygon edge to scaled circle center
+            let bestDist = Infinity, bestSCX = 0, bestSCY = 0, bestEi = 0, bestEj = 0;
+            for(let i=0,j=sPoly.length-1; i<sPoly.length; j=i++){
+              const ex = sPoly[i].x-sPoly[j].x, ey = sPoly[i].y-sPoly[j].y;
+              const len2 = ex*ex+ey*ey;
+              if(len2 < 0.001) continue;
+              const t = Math.max(0, Math.min(1, ((pilot.x-sPoly[j].x)*ex + (sFeetY-sPoly[j].y)*ey) / len2));
+              const cx = sPoly[j].x + t*ex, cy = sPoly[j].y + t*ey;
+              const dx = pilot.x-cx, dy = sFeetY-cy;
+              const d = dx*dx+dy*dy;
+              if(d < bestDist){ bestDist = d; bestSCX = cx; bestSCY = cy; bestEi = i; bestEj = j; }
+            }
+            bestDist = Math.sqrt(bestDist);
+
+            const inside = pointInPoly(poly, pilot.x, feetY);
+
+            if(inside || bestDist < prX){
+              if(inside && bestDist < 0.001){
+                pilot.x = _preMovX; pilot.y = _preMovY;
+              } else if(inside){
+                // Push along outward edge normal (in scaled space)
+                const ex = sPoly[bestEi].x-sPoly[bestEj].x, ey = sPoly[bestEi].y-sPoly[bestEj].y;
+                const len = Math.sqrt(ex*ex+ey*ey);
+                const n1x = -ey/len, n1y = ex/len;
+                const pcx = sPoly.reduce((s,p)=>s+p.x,0)/sPoly.length;
+                const pcy = sPoly.reduce((s,p)=>s+p.y,0)/sPoly.length;
+                const dot = (bestSCX+n1x-pcx)*n1x + (bestSCY+n1y-pcy)*n1y;
+                const nx = dot > 0 ? n1x : -n1x;
+                const ny = dot > 0 ? n1y : -n1y;
+                // Push in scaled space, then unscale Y
+                pilot.x = bestSCX + nx * (prX + 1);
+                pilot.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+              } else {
+                // Outside but ellipse overlaps — push away from closest point
+                const nx = (pilot.x-bestSCX)/bestDist, ny = (sFeetY-bestSCY)/bestDist;
+                pilot.x = bestSCX + nx * (prX + 1);
+                pilot.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+              }
+            }
+            continue; // skip old hitboxes if hitPoly exists
+          }
+          if(!obj.hitboxes) continue;
           for(const b of obj.hitboxes){
             const feetY = pilot.y + pilot.jumpOffY;
             const pL = pilot.x - PILOT_W*0.15, pR = pilot.x + PILOT_W*0.15;
@@ -1405,16 +1807,54 @@ function loop(time){
         }
       }
 
-      // Jump arc offset — smooth time-based, independent of sprite frames
+      // Jump arc
       const JUMP_HEIGHT = 80;
-      const JUMP_DURATION = 0.5; // seconds for full arc
+      const JUMP_DURATION = 0.5;
       if(origAnim === 'jump'){
         pilot.jumpTime = (pilot.jumpTime || 0) + dt;
         const t = Math.min(pilot.jumpTime / JUMP_DURATION, 1);
         pilot.jumpOffY = -JUMP_HEIGHT * Math.sin(Math.PI * t);
-      } else {
+        if(t >= 1){
+          pilot.jumpOffY = 0;
+          pilot.jumpTime = 0;
+          setOrigAnim('idle');
+        }
+      } else if(pilot.onPlatform === null){
         pilot.jumpTime = 0;
         pilot.jumpOffY = 0;
+      } else {
+        pilot.jumpTime = 0;
+      }
+
+      // Platform zone detection
+      // The polygon = the walkable top face of the object.
+      // Inside polygon: pilot walks freely within it, drawn in front of object.
+      // Outside polygon: back to tarmac.
+      if(pilot.onPlatform !== null){
+        // ON a platform — check if still inside polygon
+        const poly = objects[pilot.onPlatform].platformPoly;
+        if(!pointInPoly(poly, pilot.x, pilot.y)){
+          // Walked off the platform edge — back to tarmac
+          pilot.onPlatform = null;
+        }
+      } else {
+        // NOT on platform — check if jumping feet entered a polygon
+        if(origAnim === 'jump' && pilot.jumpOffY < -10){
+          const jumpFeetY = pilot.y + pilot.jumpOffY;
+          for(let pi=0; pi<objects.length; pi++){
+            const pobj = objects[pi];
+            if(!pobj.platform || !pobj.platformPoly) continue;
+            if(pointInPoly(pobj.platformPoly, pilot.x, jumpFeetY)){
+              // Land on platform — move pilot.y into the polygon
+              pilot.onPlatform = pi;
+              pilot.y = jumpFeetY;
+              pilot.jumpOffY = 0;
+              pilot.jumpTime = 0;
+              setOrigAnim('idle');
+              break;
+            }
+          }
+        }
       }
 
       // Animation state machine
@@ -1431,7 +1871,9 @@ function loop(time){
       } else if(isJumping && origAnim !== 'jump'){
         setOrigAnim('jump');
       } else if(origAnim === 'jump'){
-        if(pilot.jumpTime >= JUMP_DURATION) setOrigAnim('idle');
+        if(pilot.jumpTime >= JUMP_DURATION){
+          setOrigAnim('idle');
+        }
       } else if(pilot.walking){
         setOrigAnim('walk');
       } else {
@@ -1443,12 +1885,13 @@ function loop(time){
 
   // Nearest interactable
   pilot.nearObj = null;
-  const pInteractY = pilot.y + pilot.jumpOffY;
+  const pInteractY = pilot.y;
   if(!editorMode){
     let nd = Infinity;
     for(let i=0; i<objects.length; i++){
       const obj = objects[i];
       if(!obj.interact || !obj.hitboxes) continue;
+      if(pilot.onPlatform === i) continue;
       let d = Infinity;
       for(const b of obj.hitboxes){
         let dd;
@@ -1482,11 +1925,23 @@ function loop(time){
   for(const obj of objects){
     if(objBitmaps[obj.key]) drawList.push(obj);
   }
-  drawList.sort(sortCompare);
+  // Depth sorting — depthPoly defines the "behind" region per object
+  const pilotDepthY = (pilot.onPlatform !== null) ? objects[pilot.onPlatform].depthY + 1 : pilot.y;
+  for(const obj of drawList){
+    if(obj.depthPoly && obj.depthPoly.length >= 3){
+      // Pilot inside depthPoly = behind object (object draws in front)
+      const behind = pointInPoly(obj.depthPoly, pilot.x, pilot.y);
+      obj._effectiveDepthY = behind ? pilotDepthY + 1 : pilotDepthY - 1;
+    } else {
+      obj._effectiveDepthY = obj.depthY;
+    }
+  }
+
+  drawList.sort((a,b) => a._effectiveDepthY - b._effectiveDepthY);
 
   behindCount = 0;
   for(let i=0; i<drawList.length; i++){
-    if(drawList[i].depthY <= pilot.y) behindCount = i+1;
+    if(drawList[i]._effectiveDepthY <= pilotDepthY) behindCount = i+1;
   }
 
   // All rendering direct on main canvas
@@ -1588,123 +2043,6 @@ function loop(time){
   }
 
   // Debug / Editor overlay
-  if(debugHitboxes || editorMode){
-    const ds = mainScale;
-    ctx.save();
-    ctx.scale(ds,ds);
-    ctx.translate(-camX,-camY);
-    ctx.lineWidth = 2/ds;
-
-    for(let oi=0; oi<objects.length; oi++){
-      const obj = objects[oi];
-      if(!obj.hitboxes) continue;
-      for(let bi=0; bi<obj.hitboxes.length; bi++){
-        const b = obj.hitboxes[bi];
-        const selected = editorMode && oi === edSelObj && bi === edSelBox;
-
-        if(selected){
-          ctx.strokeStyle = '#ffe000';
-          ctx.fillStyle = 'rgba(255,224,0,0.25)';
-          ctx.lineWidth = 3/ds;
-        } else {
-          ctx.strokeStyle = 'rgba(255,0,0,0.8)';
-          ctx.fillStyle = 'rgba(255,0,0,0.15)';
-          ctx.lineWidth = 2/ds;
-        }
-
-        if(isCircle(b)){
-          ctx.beginPath();
-          ctx.arc(b.cx, b.cy, b.r, 0, Math.PI*2);
-          ctx.fill();
-          ctx.stroke();
-          // Crosshair at center
-          if(selected){
-            ctx.strokeStyle = 'rgba(255,224,0,0.5)';
-            ctx.lineWidth = 1/ds;
-            const ch = 6/ds;
-            ctx.beginPath();
-            ctx.moveTo(b.cx - ch, b.cy); ctx.lineTo(b.cx + ch, b.cy);
-            ctx.moveTo(b.cx, b.cy - ch); ctx.lineTo(b.cx, b.cy + ch);
-            ctx.stroke();
-            // Radius handle
-            ctx.fillStyle = '#ffe000';
-            const hs = 4/ds;
-            ctx.fillRect(b.cx + b.r - hs/2, b.cy - hs/2, hs, hs);
-          }
-        } else {
-          const bc = boxCenter(b), ba = boxRot(b);
-          ctx.save();
-          ctx.translate(bc.x, bc.y);
-          ctx.rotate(ba);
-          ctx.fillRect(-b.w/2, -b.h/2, b.w, b.h);
-          ctx.strokeRect(-b.w/2, -b.h/2, b.w, b.h);
-          if(selected){
-            ctx.fillStyle = '#ffe000';
-            const hs = 4/ds;
-            // Edge handles
-            ctx.fillRect(-b.w/2 - hs/2, -hs/2, hs, hs);
-            ctx.fillRect(b.w/2 - hs/2, -hs/2, hs, hs);
-            ctx.fillRect(-hs/2, -b.h/2 - hs/2, hs, hs);
-            ctx.fillRect(-hs/2, b.h/2 - hs/2, hs, hs);
-            // Rotation handle — line + circle above top edge
-            const rotHandleDist = 25/ds;
-            ctx.strokeStyle = '#ff88ff';
-            ctx.lineWidth = 2/ds;
-            ctx.beginPath();
-            ctx.moveTo(0, -b.h/2);
-            ctx.lineTo(0, -b.h/2 - rotHandleDist);
-            ctx.stroke();
-            ctx.beginPath();
-            ctx.arc(0, -b.h/2 - rotHandleDist, 5/ds, 0, Math.PI*2);
-            ctx.fillStyle = '#ff88ff';
-            ctx.fill();
-            ctx.stroke();
-          }
-          ctx.restore();
-        }
-      }
-
-      // depthY line for selected object
-      if(editorMode && oi === edSelObj){
-        ctx.strokeStyle = 'rgba(0,255,255,0.7)';
-        ctx.lineWidth = 2/ds;
-        ctx.setLineDash([8/ds, 4/ds]);
-        ctx.beginPath();
-        ctx.moveTo(obj.wx - 50, obj.depthY);
-        ctx.lineTo(obj.wx + obj.ww + 50, obj.depthY);
-        ctx.stroke();
-        ctx.setLineDash([]);
-        ctx.fillStyle = 'rgba(0,255,255,0.9)';
-        ctx.font = (10/ds) + 'px monospace';
-        ctx.fillText('depthY: ' + Math.round(obj.depthY), obj.wx + obj.ww + 55, obj.depthY + 4/ds);
-      }
-    }
-
-    // Pilot feet box
-    const pL2 = pilot.x - PILOT_W*0.15, pT2 = pilot.y - 15;
-    ctx.strokeStyle = 'rgba(0,255,0,0.8)';
-    ctx.fillStyle = 'rgba(0,255,0,0.15)';
-    ctx.lineWidth = 2/ds;
-    ctx.fillRect(pL2, pT2, PILOT_W*0.3, 10);
-    ctx.strokeRect(pL2, pT2, PILOT_W*0.3, 10);
-
-    // Pilot Y reference line in editor
-    if(editorMode){
-      ctx.strokeStyle = 'rgba(0,255,0,0.4)';
-      ctx.lineWidth = 1/ds;
-      ctx.setLineDash([6/ds, 3/ds]);
-      ctx.beginPath();
-      ctx.moveTo(camX, pilot.y);
-      ctx.lineTo(camX + vww, pilot.y);
-      ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.fillStyle = 'rgba(0,255,0,0.7)';
-      ctx.font = (10/ds) + 'px monospace';
-      ctx.fillText('pilot.y: ' + Math.round(pilot.y), camX + 10/ds, pilot.y - 6/ds);
-    }
-
-    ctx.restore();
-  }
 
   // Virtual joystick overlay (mobile)
   if(isMobile && !popupOpen){
@@ -1897,12 +2235,15 @@ const objBitmaps = {};
 function checkStart(){
   loaded++;
   if(loaded >= totalImgs){
-    // Rasterize bg SVG to bitmap canvas at world size
+    // Rasterize bg SVG — offset draw so tarmac region aligns with world canvas
+    // The tarmac/scene sits at SVG coords (834, 2843) within the 6645×7529 background
     bgBitmap = document.createElement('canvas');
     bgBitmap.width = WORLD_W; bgBitmap.height = WORLD_H;
     const bgc = bgBitmap.getContext('2d');
-    bgc.drawImage(bgImg, 0, 0, WORLD_W, WORLD_H);
-    console.log('[BG] rasterized '+WORLD_W+'x'+WORLD_H);
+    // Bottom-align: PNG is 5207×1574, world is 5198×1696
+    const bgNatW = bgImg.naturalWidth, bgNatH = bgImg.naturalHeight;
+    bgc.drawImage(bgImg, 0, WORLD_H - bgNatH, bgNatW, bgNatH);
+    console.log('[BG] rasterized '+bgNatW+'x'+bgNatH+' bottom-aligned in '+WORLD_W+'x'+WORLD_H);
     for(const obj of objects){
       const img = imgs[obj.key];
       if(!img) continue;
