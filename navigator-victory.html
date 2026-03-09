@@ -761,9 +761,13 @@ function openContentView(zone, itemIdx){
   if(item.vimeoId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://player.vimeo.com/video/'+item.vimeoId+'?autoplay=1&color=ff69b4&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
+    // Pause music while video plays
+    stopMusic(); if(audioCtx) audioCtx.suspend();
   } else if(item.youtubeId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://www.youtube.com/embed/'+item.youtubeId+'?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture; accelerometer; encrypted-media; gyroscope; web-share" allowfullscreen></iframe>';
+    // Pause music while video plays
+    stopMusic(); if(audioCtx) audioCtx.suspend();
   } else {
     vEl.style.display = 'none';
     vEl.innerHTML = '';
@@ -833,6 +837,8 @@ function closeContentView(){
   document.getElementById('content-video').innerHTML = '';
   document.getElementById('content-video').style.display = 'none';
   contentViewOpen = false;
+  // Resume music after video closes (if not muted)
+  if(!_musicMuted && audioCtx){ audioCtx.resume(); startMusic(); }
 }
 
 function openLightbox(idx){
@@ -1667,23 +1673,23 @@ let touchJoyDx = 0, touchJoyDy = 0;
 const JOY_RADIUS = 50;
 const JOY_DEAD = 8;
 
+let _tapCandidate = null; // {id, x, y, time} — distinguish tap from drag
 canvas.addEventListener('touchstart', e => {
   tryStartMusic();
   if(editorMode) return;
   e.preventDefault();
   for(const t of e.changedTouches){
-    // Left half = joystick, right half = interact tap
-    if(t.clientX < W * 0.45){
-      // Joystick
-      if(!touchJoy){
-        touchJoy = {id:t.identifier, startX:t.clientX, startY:t.clientY, curX:t.clientX, curY:t.clientY};
+    if(!touchJoy && !popupOpen && !contentViewOpen){
+      // Any touch can become joystick OR tap — decide on move/end
+      if(!_tapCandidate){
+        _tapCandidate = {id:t.identifier, x:t.clientX, y:t.clientY, time:performance.now()};
       }
+      touchJoy = {id:t.identifier, startX:t.clientX, startY:t.clientY, curX:t.clientX, curY:t.clientY};
     } else {
-      // Tap right side — close overlays or interact
+      // Overlays open — tap to close
       if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
       else if(contentViewOpen){ closeContentView(); }
       else if(popupOpen){ closePopup(); }
-      else if(pilot.nearObj !== null && !_kneelPending){ _kneelPending = pilot.nearObj; setOrigAnim('kneel'); }
     }
   }
 }, {passive:false});
@@ -1705,9 +1711,25 @@ canvas.addEventListener('touchmove', e => {
   }
 }, {passive:false});
 
+const TAP_MAX_DIST = 15;
+const TAP_MAX_TIME = 250;
 function endJoy(e){
   for(const t of e.changedTouches){
     if(touchJoy && t.identifier === touchJoy.id){
+      // Check if this was a quick tap (not a drag)
+      if(_tapCandidate && _tapCandidate.id === t.identifier){
+        const dx = t.clientX - _tapCandidate.x, dy = t.clientY - _tapCandidate.y;
+        const dist = Math.sqrt(dx*dx + dy*dy);
+        const elapsed = performance.now() - _tapCandidate.time;
+        if(dist < TAP_MAX_DIST && elapsed < TAP_MAX_TIME){
+          // It was a tap — interact if near object
+          if(pilot.nearObj !== null && !_kneelPending){
+            _kneelPending = pilot.nearObj;
+            setOrigAnim('kneel');
+          }
+        }
+        _tapCandidate = null;
+      }
       touchJoy = null; touchJoyDx = 0; touchJoyDy = 0;
     }
   }
@@ -2488,6 +2510,15 @@ function tryStartMusic(){
 window.addEventListener('click', tryStartMusic, {once:false});
 window.addEventListener('keydown', tryStartMusic, {once:false});
 window.addEventListener('touchstart', tryStartMusic, {once:false});
+
+// Pause/resume music on page visibility change (tab switch, browser close)
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    stopMusic(); if(audioCtx) audioCtx.suspend();
+  } else {
+    if(!_musicMuted && _musicStarted && audioCtx){ audioCtx.resume(); startMusic(); }
+  }
+});
 
 let loaded = 0;
 const totalImgs = 2 + Object.keys(imgs).length;
