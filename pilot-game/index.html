@@ -184,10 +184,23 @@
     display:none;
   }
   #mute-btn.muted::before{display:block;}
+  #joy-base{
+    display:none; position:fixed; bottom:30px; left:30px;
+    width:100px; height:100px; border-radius:50%;
+    border:2px solid rgba(0,255,200,0.5); background:rgba(0,255,200,0.1);
+    z-index:50; pointer-events:none;
+  }
+  #joy-thumb{
+    position:absolute; top:50%; left:50%;
+    width:36px; height:36px; margin:-18px 0 0 -18px;
+    border-radius:50%; background:rgba(0,255,200,0.4);
+    border:2px solid rgba(0,255,200,0.7);
+  }
 </style>
 </head>
 <body>
 <div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
+<div id="joy-base"><div id="joy-thumb"></div></div>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -1667,7 +1680,10 @@ canvas.addEventListener('mousemove', e => {
 
 // ===================== TOUCH CONTROLS =====================
 const isMobile = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
-if(isMobile) document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
+if(isMobile){
+  document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
+  document.getElementById('joy-base').style.display = 'block';
+}
 let touchJoy = null; // {id, startX, startY, curX, curY}
 let touchJoyDx = 0, touchJoyDy = 0;
 const JOY_RADIUS = 50;
@@ -2326,44 +2342,13 @@ function loop(time){
     ctx.restore();
   }
 
-  // Virtual joystick overlay (mobile) — draw in screen space
-  if(isMobile && !popupOpen && !contentViewOpen){
-    ctx.save();
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    if(touchJoy){
-      // Base circle
-      ctx.beginPath();
-      ctx.arc(touchJoy.startX, touchJoy.startY, JOY_RADIUS, 0, Math.PI*2);
-      ctx.fillStyle = 'rgba(0,255,200,0.15)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,255,200,0.5)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      // Thumb
-      const thumbX = touchJoy.startX + touchJoyDx * JOY_RADIUS;
-      const thumbY = touchJoy.startY + touchJoyDy * JOY_RADIUS;
-      ctx.beginPath();
-      ctx.arc(thumbX, thumbY, 18, 0, Math.PI*2);
-      ctx.fillStyle = 'rgba(0,255,200,0.4)';
-      ctx.fill();
-      ctx.strokeStyle = 'rgba(0,255,200,0.7)';
-      ctx.stroke();
-    } else {
-      // Hint: always-visible circle in bottom-left
-      ctx.beginPath();
-      ctx.arc(70, H - 70, JOY_RADIUS, 0, Math.PI*2);
-      ctx.strokeStyle = 'rgba(0,255,200,0.35)';
-      ctx.lineWidth = 2;
-      ctx.stroke();
-      ctx.fillStyle = 'rgba(0,255,200,0.1)';
-      ctx.fill();
-      // Plus sign in center
-      ctx.strokeStyle = 'rgba(0,255,200,0.3)';
-      ctx.lineWidth = 1.5;
-      ctx.beginPath(); ctx.moveTo(70, H-70-12); ctx.lineTo(70, H-70+12); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(70-12, H-70); ctx.lineTo(70+12, H-70); ctx.stroke();
-    }
-    ctx.restore();
+  // Update DOM joystick thumb position (mobile)
+  if(isMobile){
+    const joyEl = document.getElementById('joy-base');
+    const thumbEl = document.getElementById('joy-thumb');
+    joyEl.style.display = (popupOpen || contentViewOpen) ? 'none' : 'block';
+    thumbEl.style.marginLeft = (-18 + touchJoyDx * 32) + 'px';
+    thumbEl.style.marginTop = (-18 + touchJoyDy * 32) + 'px';
   }
 }
 
