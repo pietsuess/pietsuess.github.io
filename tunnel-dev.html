@@ -1285,8 +1285,8 @@ window.onload = function() {
     // ── Content Collection System ──────────────────────────────────────
     // 5 sectors, each tied to a content zone. Player replays sector at
     // increasing difficulty until all content objects for that zone are collected.
-    var _bonusUnlockedTitle = null; // set by triggerVictory if score bonus earned
-    const SCORE_BONUS_THRESHOLD = 5000; // sector score needed for bonus unlock
+    var _bonusUnlockedTitles = []; // set by triggerVictory if score bonus earned
+    const SCORE_BONUS_INCREMENT = 10000; // every 10K sector score = +1 bonus unlock
     const SECTOR_ZONES = ['EDIT', 'PHOTO', 'DIRECT', 'ANIMATE', 'DESIGN'];
     const ZONE_SHAPES_3D = ['square', 'pentagon', 'octagon', 'circle', 'triangle'];
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', DESIGN:'#ff8c00' };
@@ -1596,7 +1596,12 @@ window.onload = function() {
         unlockZone(zone);
 
         // Unlocked + Header
-        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : '★ CONTENT UNLOCKED ★';
+        var bonusText = '';
+        if (!carouselFromPause && _bonusUnlockedTitles.length > 0) {
+            var sectorScore = score - sectorStartScore;
+            bonusText = 'SCORED ' + sectorScore.toLocaleString() + ' — +' + _bonusUnlockedTitles.length + ' BONUS UNLOCK' + (_bonusUnlockedTitles.length > 1 ? 'S' : '') + '!';
+        }
+        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : (bonusText || '★ CONTENT UNLOCKED ★');
         var header = document.getElementById('tr-carousel-header');
         header.innerText = zone + ' PROJECTS';
         header.style.color = zoneColor;
@@ -1632,7 +1637,7 @@ window.onload = function() {
             var card = document.createElement('div');
             card.className = 'tr-carousel-card';
             var isCollected = collectedContent[zone] && collectedContent[zone].has(item.title);
-            var isBonusReveal = (item.title === _bonusUnlockedTitle);
+            var isBonusReveal = (_bonusUnlockedTitles.indexOf(item.title) >= 0);
 
             var thumb = document.createElement('img');
             thumb.className = 'tr-carousel-thumb';
@@ -1684,23 +1689,38 @@ window.onload = function() {
             card.appendChild(thumb);
             card.appendChild(name);
 
-            // Bonus reveal animation: start gray, then unveil after delay
+            // Bonus reveal animation: start gray, then unveil with burst
             if (isBonusReveal) {
+                var bonusIdx = _bonusUnlockedTitles.indexOf(item.title);
+                var revealDelay = 1500 + bonusIdx * 1200; // stagger multiple unlocks
                 card.style.opacity = '0.5';
-                card.style.transition = 'opacity 0.8s ease-out';
-                (function(c, t, n, itm) {
+                card.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+                card.dataset.bonusReveal = 'true';
+                (function(c, t, n, itm, delay) {
                     setTimeout(function() {
-                        // Flash effect
+                        // Burst: scale up then back
                         c.style.opacity = '1';
-                        t.style.filter = 'brightness(1.5)';
+                        c.style.transform = 'scale(2.8)';
+                        t.style.filter = 'brightness(2) saturate(1.5)';
+                        t.style.transition = 'filter 0.6s ease-out';
                         n.innerText = itm.displayTitle || itm.title || '';
                         n.style.color = '';
-                        setTimeout(function() { t.style.filter = ''; }, 400);
-                        // Add glow border
-                        t.style.boxShadow = '0 0 20px ' + (ZONE_OBJ_COLORS[zone] || '#ffe000');
-                        setTimeout(function() { t.style.boxShadow = ''; }, 2000);
-                    }, 1200);
-                })(card, thumb, name, item);
+                        // Glow border
+                        var zc = ZONE_OBJ_COLORS[zone] || '#ffe000';
+                        t.style.boxShadow = '0 0 30px ' + zc + ', 0 0 60px ' + zc;
+                        // "UNLOCKED" label on card
+                        var badge = document.createElement('div');
+                        badge.style.cssText = 'position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:"Press Start 2P",monospace;font-size:8px;color:#ffe000;text-shadow:0 0 10px rgba(255,224,0,0.8);letter-spacing:2px;white-space:nowrap;animation:fadeSlideUp 0.5s ease-out both;';
+                        badge.innerText = 'UNLOCKED';
+                        c.style.position = 'relative';
+                        c.appendChild(badge);
+                        setTimeout(function() {
+                            t.style.filter = '';
+                            t.style.boxShadow = '';
+                        }, 1500);
+                        setTimeout(function() { if (badge.parentNode) badge.remove(); }, 3000);
+                    }, delay);
+                })(card, thumb, name, item, revealDelay);
             }
 
             if (isCollected) {
@@ -3271,19 +3291,21 @@ window.onload = function() {
         var sectorScore = score - sectorStartScore;
         document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
 
-        // Score bonus: high score unlocks one extra content item
-        _bonusUnlockedTitle = null;
+        // Score bonus: every 10K sector score unlocks an extra content item
+        _bonusUnlockedTitles = [];
         var bonusZone = getZoneName(currentSector);
-        if (sectorScore >= SCORE_BONUS_THRESHOLD && !isZoneComplete(currentSector)) {
-            var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
-                return !collectedContent[bonusZone].has(it.title);
-            });
-            if (bonusItems.length > 0) {
+        var bonusCount = Math.floor(sectorScore / SCORE_BONUS_INCREMENT);
+        if (bonusCount > 0 && !isZoneComplete(currentSector)) {
+            for (var bi = 0; bi < bonusCount; bi++) {
+                var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
+                    return !collectedContent[bonusZone].has(it.title);
+                });
+                if (bonusItems.length === 0) break;
                 var bonusPick = bonusItems[Math.floor(Math.random() * bonusItems.length)];
-                _bonusUnlockedTitle = bonusPick.title;
+                _bonusUnlockedTitles.push(bonusPick.title);
                 collectedContent[bonusZone].add(bonusPick.title);
-                updateCollectionHUD();
             }
+            if (_bonusUnlockedTitles.length > 0) updateCollectionHUD();
         }
 
         // Save sector time
@@ -3336,9 +3358,9 @@ window.onload = function() {
             var collected = getZoneCollectedCount(currentSector);
             var total = getZoneItemCount(currentSector);
             unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
-            if (_bonusUnlockedTitle) {
+            if (_bonusUnlockedTitles.length > 0) {
                 unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
-                    + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+1 CONTENT UNLOCKED</div>';
+                    + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + _bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
             }
         }
         var unlockEl = document.getElementById('victory-unlocks');
