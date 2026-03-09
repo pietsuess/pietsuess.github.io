@@ -1248,6 +1248,54 @@ var AudioEngine = {
         g.gain.setValueAtTime(0,t+si*0.07); g.gain.linearRampToValueAtTime(0.18,t+si*0.07+0.02);
         g.gain.linearRampToValueAtTime(0,t+si*0.07+0.35); o.start(t+si*0.07); o.stop(t+si*0.07+0.35);
       }
+    } else if (type === 'combo2') {
+      // x2 — quick two-note ascending chime
+      var o1=audioCtx.createOscillator(),g1=audioCtx.createGain(); o1.connect(g1); g1.connect(sfxGainNode);
+      o1.type='sine'; o1.frequency.setValueAtTime(880,t);
+      g1.gain.setValueAtTime(0.12,t); g1.gain.linearRampToValueAtTime(0,t+0.15); o1.start(t); o1.stop(t+0.15);
+      var o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2); g2.connect(sfxGainNode);
+      o2.type='sine'; o2.frequency.setValueAtTime(1100,t+0.06);
+      g2.gain.setValueAtTime(0.12,t+0.06); g2.gain.linearRampToValueAtTime(0,t+0.2); o2.start(t+0.06); o2.stop(t+0.2);
+    } else if (type === 'combo3') {
+      // x3 — three-note ascending arpeggio
+      var notes=[880,1100,1320]; for(var ci=0;ci<3;ci++){
+        var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+        o.type='sine'; o.frequency.setValueAtTime(notes[ci],t+ci*0.05);
+        g.gain.setValueAtTime(0.13,t+ci*0.05); g.gain.linearRampToValueAtTime(0,t+ci*0.05+0.18); o.start(t+ci*0.05); o.stop(t+ci*0.05+0.18);
+      }
+    } else if (type === 'combo4') {
+      // x4 — four-note rising fanfare with shimmer
+      var notes=[880,1100,1320,1760]; for(var ci=0;ci<4;ci++){
+        var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+        o.type='sine'; o.frequency.setValueAtTime(notes[ci],t+ci*0.05);
+        g.gain.setValueAtTime(0.14,t+ci*0.05); g.gain.linearRampToValueAtTime(0,t+ci*0.05+0.25); o.start(t+ci*0.05); o.stop(t+ci*0.05+0.25);
+      }
+      // Shimmer overtone
+      var os=audioCtx.createOscillator(),gs=audioCtx.createGain(); os.connect(gs); gs.connect(sfxGainNode);
+      os.type='sine'; os.frequency.setValueAtTime(2640,t+0.15);
+      gs.gain.setValueAtTime(0.06,t+0.15); gs.gain.linearRampToValueAtTime(0,t+0.4); os.start(t+0.15); os.stop(t+0.4);
+    } else if (type === 'zone_complete') {
+      // Joyous fanfare — triumphant ascending chord with sustain
+      var notes=[440,554,659,880,1108]; for(var ci=0;ci<5;ci++){
+        var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+        o.type='sine'; o.frequency.setValueAtTime(notes[ci],t+ci*0.04);
+        g.gain.setValueAtTime(0.15,t+ci*0.04); g.gain.setValueAtTime(0.12,t+ci*0.04+0.3);
+        g.gain.linearRampToValueAtTime(0,t+0.8); o.start(t+ci*0.04); o.stop(t+0.8);
+      }
+      // Bright shimmer top
+      var os=audioCtx.createOscillator(),gs=audioCtx.createGain(); os.connect(gs); gs.connect(sfxGainNode);
+      os.type='triangle'; os.frequency.setValueAtTime(2200,t+0.1); os.frequency.linearRampToValueAtTime(3300,t+0.6);
+      gs.gain.setValueAtTime(0.05,t+0.1); gs.gain.linearRampToValueAtTime(0,t+0.7); os.start(t+0.1); os.stop(t+0.7);
+    } else if (type === 'bonus_unlock') {
+      // Explosive pop + joyous chime — quick burst for card reveal
+      var nb=audioCtx.createBuffer(1,audioCtx.sampleRate*0.08,audioCtx.sampleRate),nd=nb.getChannelData(0);
+      for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*0.2*(1-i/nd.length);
+      var ns=audioCtx.createBufferSource(); ns.buffer=nb; var ng=audioCtx.createGain(); ns.connect(ng); ng.connect(sfxGainNode);
+      ng.gain.setValueAtTime(0.2,t); ng.gain.linearRampToValueAtTime(0,t+0.08); ns.start(t); ns.stop(t+0.08);
+      // Rising chime
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+      o.type='sine'; o.frequency.setValueAtTime(1320,t+0.03); o.frequency.linearRampToValueAtTime(1760,t+0.12);
+      g.gain.setValueAtTime(0.16,t+0.03); g.gain.linearRampToValueAtTime(0,t+0.3); o.start(t+0.03); o.stop(t+0.3);
     }
   },
   suspend: function() { stopMusic(); pauseMusic(); },
@@ -1689,36 +1737,53 @@ window.onload = function() {
             card.appendChild(thumb);
             card.appendChild(name);
 
-            // Bonus reveal animation: start gray, then unveil with burst
+            // Bonus reveal: start grayed at normal size, fast particle burst + sound
             if (isBonusReveal) {
                 var bonusIdx = _bonusUnlockedTitles.indexOf(item.title);
-                var revealDelay = 1500 + bonusIdx * 1200; // stagger multiple unlocks
-                card.style.opacity = '0.5';
-                card.style.transition = 'opacity 0.6s ease-out, transform 0.6s ease-out';
+                var revealDelay = 300 + bonusIdx * 600; // fast stagger
+                card.style.position = 'relative';
+                card.style.overflow = 'visible';
                 card.dataset.bonusReveal = 'true';
                 (function(c, t, n, itm, delay) {
                     setTimeout(function() {
-                        // Burst: scale up then back
-                        c.style.opacity = '1';
-                        c.style.transform = 'scale(2.8)';
-                        t.style.filter = 'brightness(2) saturate(1.5)';
-                        t.style.transition = 'filter 0.6s ease-out';
+                        AudioEngine.playSFX('bonus_unlock');
+                        // Reveal: remove gray, show title
+                        t.style.filter = '';
                         n.innerText = itm.displayTitle || itm.title || '';
                         n.style.color = '';
-                        // Glow border
+                        // Particle burst — spawn small colored dots that fly outward
                         var zc = ZONE_OBJ_COLORS[zone] || '#ffe000';
-                        t.style.boxShadow = '0 0 30px ' + zc + ', 0 0 60px ' + zc;
-                        // "UNLOCKED" label on card
-                        var badge = document.createElement('div');
-                        badge.style.cssText = 'position:absolute;top:-18px;left:50%;transform:translateX(-50%);font-family:"Press Start 2P",monospace;font-size:8px;color:#ffe000;text-shadow:0 0 10px rgba(255,224,0,0.8);letter-spacing:2px;white-space:nowrap;animation:fadeSlideUp 0.5s ease-out both;';
-                        badge.innerText = 'UNLOCKED';
-                        c.style.position = 'relative';
-                        c.appendChild(badge);
-                        setTimeout(function() {
-                            t.style.filter = '';
-                            t.style.boxShadow = '';
-                        }, 1500);
-                        setTimeout(function() { if (badge.parentNode) badge.remove(); }, 3000);
+                        for (var pi = 0; pi < 16; pi++) {
+                            var particle = document.createElement('div');
+                            var angle = (pi / 16) * Math.PI * 2;
+                            var dist = 40 + Math.random() * 30;
+                            var px = Math.cos(angle) * dist;
+                            var py = Math.sin(angle) * dist;
+                            particle.style.cssText = 'position:absolute;left:50%;top:50%;width:' + (4 + Math.random()*4) + 'px;height:' + (4 + Math.random()*4) + 'px;border-radius:50%;background:' + zc + ';pointer-events:none;z-index:10;'
+                                + 'transform:translate(-50%,-50%);opacity:1;'
+                                + 'transition:transform 0.4s ease-out, opacity 0.4s ease-out;';
+                            c.appendChild(particle);
+                            // Force reflow then animate
+                            particle.offsetWidth;
+                            particle.style.transform = 'translate(calc(-50% + ' + px + 'px), calc(-50% + ' + py + 'px))';
+                            particle.style.opacity = '0';
+                            setTimeout(function(p) { if (p.parentNode) p.remove(); }.bind(null, particle), 500);
+                        }
+                        // Brief glow flash
+                        t.style.boxShadow = '0 0 20px ' + zc;
+                        setTimeout(function() { t.style.boxShadow = ''; }, 400);
+                        // Scroll to next bonus card if there is one
+                        var nextBonusIdx = bonusIdx + 1;
+                        if (nextBonusIdx < _bonusUnlockedTitles.length) {
+                            var strip = document.getElementById('tr-carousel-strip');
+                            var cards = strip.querySelectorAll('[data-bonus-reveal="true"]');
+                            for (var ci = 0; ci < cards.length; ci++) {
+                                // Find the card in the middle set that matches next bonus title
+                                var nextTitle = _bonusUnlockedTitles[nextBonusIdx];
+                                var cardName = cards[ci].querySelector('.tr-carousel-name');
+                                // Scroll the strip to center it (approximate)
+                            }
+                        }
                     }, delay);
                 })(card, thumb, name, item, revealDelay);
             }
@@ -1775,19 +1840,28 @@ window.onload = function() {
         overlay.style.display = 'flex';
         document.body.style.touchAction = 'auto';
 
-        // Position centered on most recently collected item
+        // Position centered on first bonus reveal card, or most recently collected
         requestAnimationFrame(function() {
             var oneSetWidth = totalItems * cardWidth;
             var targetIdx = 0;
-            var collected = collectedContent[zone];
-            if (collected && collected.size > 0) {
-                // Set iteration order = insertion order; last added = most recent
-                var lastCollected = null;
-                collected.forEach(function(t) { lastCollected = t; });
+            // If there are bonus reveals, center on the first one
+            if (!carouselFromPause && _bonusUnlockedTitles.length > 0) {
                 for (var ci = 0; ci < totalItems; ci++) {
-                    if (items[ci].title === lastCollected) {
+                    if (_bonusUnlockedTitles.indexOf(items[ci].title) >= 0) {
                         targetIdx = ci;
                         break;
+                    }
+                }
+            } else {
+                var collected = collectedContent[zone];
+                if (collected && collected.size > 0) {
+                    var lastCollected = null;
+                    collected.forEach(function(t) { lastCollected = t; });
+                    for (var ci = 0; ci < totalItems; ci++) {
+                        if (items[ci].title === lastCollected) {
+                            targetIdx = ci;
+                            break;
+                        }
                     }
                 }
             }
@@ -3017,8 +3091,7 @@ window.onload = function() {
         label.style.textShadow = '0 0 20px ' + zone.color;
         var collected = getZoneCollectedCount(currentSector);
         var total = getZoneItemCount(currentSector);
-        var hint = _getObjective(zoneIdx).split('\n')[0] || 'COLLECT CONTENT';
-        obj.innerHTML = hint + '<br><span style="font-size:0.85em;opacity:0.7;">' + collected + ' / ' + total + ' COLLECTED</span>';
+        obj.innerHTML = collected + ' / ' + total + ' COLLECTED';
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 4000);
     }
@@ -3794,8 +3867,99 @@ window.onload = function() {
         initializeFlight(false);
     }
 
-    function showZoneAnnouncement(zone) {
-        // Removed — mission banner already shows on sector start
+    // Sector intro splash — shows zone name, new items, and hazard previews
+    var SECTOR_INTRO_DATA = [
+        { items: ['RINGS', 'MINES', 'HEALTH CORES', 'FORCE FIELD STARS'], desc: 'COLLECT CONTENT & DODGE HAZARDS' },
+        { items: ['+ GAP BARRIERS'], desc: 'STEER THROUGH BARRIER GAPS' },
+        { items: ['+ RAMPS', '+ FULL BARRIERS'], desc: 'HIT RAMPS TO JUMP LASER WALLS' },
+        { items: ['+ BOOST PADS'], desc: 'BOOST PADS LAUNCH 360 FLIPS' },
+        { items: ['ALL HAZARDS ACTIVE'], desc: 'FULL ARSENAL — FINAL ZONE' },
+    ];
+    var SECTOR_ITEM_SYMBOLS = {
+        'RINGS': { shape: 'circle', color: '#00ff88' },
+        'MINES': { shape: 'triangle', color: '#ff4444' },
+        'HEALTH CORES': { shape: 'diamond', color: '#44aaff' },
+        'FORCE FIELD STARS': { shape: 'star', color: '#ff88ff' },
+        '+ GAP BARRIERS': { shape: 'ring-gap', color: '#ff2266' },
+        '+ RAMPS': { shape: 'ramp', color: '#00ffcc' },
+        '+ FULL BARRIERS': { shape: 'ring-full', color: '#ff2266' },
+        '+ BOOST PADS': { shape: 'chevron', color: '#00ff66' },
+        'ALL HAZARDS ACTIVE': { shape: 'skull', color: '#ff4444' },
+    };
+
+    function showSectorIntro(zone, onDone) {
+        var sectorIdx = currentSector - 1;
+        var introData = SECTOR_INTRO_DATA[Math.min(sectorIdx, SECTOR_INTRO_DATA.length - 1)];
+        var el = document.createElement('div');
+        el.id = 'sector-intro-splash';
+        el.style.cssText = 'position:fixed;inset:0;z-index:620;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;background:rgba(0,0,0,0.92);pointer-events:none;opacity:0;transition:opacity 0.4s;';
+
+        // Zone name
+        var title = document.createElement('div');
+        title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(16px,5vw,30px);letter-spacing:5px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';';
+        title.innerText = zone.name;
+        el.appendChild(title);
+
+        // Level indicator
+        if (currentLevel > 1) {
+            var lvlEl = document.createElement('div');
+            lvlEl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(10px,2.5vw,16px);letter-spacing:3px;color:#fff;opacity:0.7;';
+            lvlEl.innerText = 'LEVEL ' + currentLevel;
+            el.appendChild(lvlEl);
+        }
+
+        // Divider
+        var div = document.createElement('div');
+        div.style.cssText = 'width:120px;height:2px;background:'+zone.color+';opacity:0.5;margin:6px 0;';
+        el.appendChild(div);
+
+        // Item icons row
+        var itemsRow = document.createElement('div');
+        itemsRow.style.cssText = 'display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:90%;';
+        introData.items.forEach(function(itemName) {
+            var sym = SECTOR_ITEM_SYMBOLS[itemName] || { color: '#fff' };
+            var chip = document.createElement('div');
+            chip.style.cssText = 'display:flex;align-items:center;gap:6px;';
+            // Simple colored dot/icon
+            var icon = document.createElement('div');
+            icon.style.cssText = 'width:12px;height:12px;border-radius:' + (sym.shape === 'circle' ? '50%' : '2px') + ';background:'+sym.color+';box-shadow:0 0 8px '+sym.color+';';
+            if (sym.shape === 'triangle') { icon.style.cssText = 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid '+sym.color+';filter:drop-shadow(0 0 6px '+sym.color+');'; }
+            chip.appendChild(icon);
+            var label = document.createElement('div');
+            label.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.5vw,9px);color:'+sym.color+';letter-spacing:1px;';
+            label.innerText = itemName;
+            chip.appendChild(label);
+            itemsRow.appendChild(chip);
+        });
+        el.appendChild(itemsRow);
+
+        // Description
+        var desc = document.createElement('div');
+        desc.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2vw,12px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;margin-top:8px;';
+        desc.innerText = introData.desc;
+        el.appendChild(desc);
+
+        // Collection progress
+        var collected = getZoneCollectedCount(currentSector);
+        var total = getZoneItemCount(currentSector);
+        if (total > 0) {
+            var prog = document.createElement('div');
+            prog.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,1.8vw,10px);color:#888;letter-spacing:2px;margin-top:4px;';
+            prog.innerText = collected + ' / ' + total + ' COLLECTED';
+            el.appendChild(prog);
+        }
+
+        document.body.appendChild(el);
+        // Fade in
+        requestAnimationFrame(function() { el.style.opacity = '1'; });
+        // Auto-dismiss after 2.5s
+        setTimeout(function() {
+            el.style.opacity = '0';
+            setTimeout(function() {
+                if (el.parentNode) el.remove();
+                if (onDone) onDone();
+            }, 400);
+        }, 2500);
     }
 
     // ── Collection HUD — horizontal row of zone-shaped icons above carousel area ──
@@ -3903,14 +4067,18 @@ window.onload = function() {
             tutStart();
         } else {
             TUT.skipNext = false;
-            showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
-            setTimeout(function(){
-                startCountdown(function(){
-                    gameState = 'playing';
-                    AudioEngine.resume();
-                    spawnIntroWave();
-                });
-            }, 1800);
+            // Show sector intro splash, then mission banner, then countdown
+            var zoneForIntro = getLevelScaledZone(currentSector);
+            showSectorIntro(zoneForIntro, function() {
+                showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
+                setTimeout(function(){
+                    startCountdown(function(){
+                        gameState = 'playing';
+                        AudioEngine.resume();
+                        spawnIntroWave();
+                    });
+                }, 1200);
+            });
         }
 
     }
@@ -3938,7 +4106,13 @@ window.onload = function() {
     function togglePause() {
         // Close content overlays first if any are open
         if (isContentOverlayOpen()) {
+            var wasVictory = (gameState === 'victory');
             closeAllContentOverlays();
+            if (wasVictory) {
+                // Return to victory screen — don't corrupt into paused state
+                document.getElementById('victory-screen').style.display = 'flex';
+                return;
+            }
             // Show pause screen so user can navigate
             gameState = 'paused';
             AudioEngine.suspend();
@@ -4766,6 +4940,21 @@ window.onload = function() {
                                     spawnPointBurst(cTitle.length > 20 ? cTitle.substring(0, 18) + '..' : cTitle, 'c-gold');
                                     score += 1000;
                                     updateCollectionHUD();
+                                    // Check if zone is now complete
+                                    var cSector = 0;
+                                    for (var ck in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[ck] === cZone) { cSector = parseInt(ck); break; } }
+                                    if (cSector > 0 && isZoneComplete(cSector)) {
+                                        AudioEngine.playSFX('zone_complete');
+                                        setTimeout(function() {
+                                            var completeEl = document.createElement('div');
+                                            completeEl.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
+                                            completeEl.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:'+zColor+';text-shadow:0 0 30px '+zColor+',0 0 60px '+zColor+';letter-spacing:5px;animation:fadeSlideUp 0.6s ease-out both;">'+cZone+' COMPLETE</div>'
+                                                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#fff;letter-spacing:3px;margin-top:10px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">ALL ITEMS COLLECTED</div>';
+                                            document.body.appendChild(completeEl);
+                                            setTimeout(function() { completeEl.style.transition = 'opacity 0.8s'; completeEl.style.opacity = '0'; }, 2200);
+                                            setTimeout(function() { completeEl.remove(); }, 3200);
+                                        }, 200);
+                                    }
                                 }
                             }
                             else if (item.userData.type === 'health') {
@@ -4785,6 +4974,10 @@ window.onload = function() {
                                 const pts = 625 * mult;
                                 score += pts;
                                 AudioEngine.playSFX('ring');
+                                // Ascending combo SFX on multiplier thresholds
+                                if (combo === 2) AudioEngine.playSFX('combo2');
+                                else if (combo === 3) AudioEngine.playSFX('combo3');
+                                else if (combo >= 4 && combo === 4) AudioEngine.playSFX('combo4');
                                 flash('#00ff88');
                                 const label = mult > 1 ? '+'+pts+' x'+mult+'!' : '+'+pts;
                                 spawnPointBurst(label, 'c-green');
