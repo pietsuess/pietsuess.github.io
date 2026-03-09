@@ -184,23 +184,35 @@
     display:none;
   }
   #mute-btn.muted::before{display:block;}
-  #joy-base{
-    display:none; position:fixed; bottom:30px; right:30px;
-    width:100px; height:100px; border-radius:50%;
-    border:2px solid rgba(0,255,200,0.5); background:rgba(0,255,200,0.1);
-    z-index:50; pointer-events:none;
+  #dpad{
+    display:none; position:fixed; bottom:20px; right:20px;
+    width:120px; height:120px; z-index:50; pointer-events:none;
   }
-  #joy-thumb{
-    position:absolute; top:50%; left:50%;
-    width:36px; height:36px; margin:-18px 0 0 -18px;
-    border-radius:50%; background:rgba(0,255,200,0.4);
-    border:2px solid rgba(0,255,200,0.7);
+  #dpad .dpad-btn{
+    position:absolute; width:36px; height:36px;
+    background:rgba(0,255,200,0.15); border:2px solid rgba(0,255,200,0.4);
+    border-radius:4px; pointer-events:auto; touch-action:none;
+    display:flex; align-items:center; justify-content:center;
   }
+  #dpad .dpad-btn.active{ background:rgba(0,255,200,0.4); border-color:rgba(0,255,200,0.8); }
+  #dpad .dpad-btn svg{ width:14px; height:14px; fill:rgba(0,255,200,0.6); }
+  #dpad .dpad-btn.active svg{ fill:rgba(0,255,200,1); }
+  #dpad-up{ left:42px; top:0; }
+  #dpad-down{ left:42px; bottom:0; }
+  #dpad-left{ left:0; top:42px; }
+  #dpad-right{ right:0; top:42px; }
+  #dpad-center{ left:42px; top:42px; background:rgba(0,255,200,0.08); border-color:rgba(0,255,200,0.2); pointer-events:auto; }
 </style>
 </head>
 <body>
 <div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
-<div id="joy-base"><div id="joy-thumb"></div></div>
+<div id="dpad">
+  <div class="dpad-btn" id="dpad-up"><svg viewBox="0 0 24 24"><path d="M12 4l-8 8h16z"/></svg></div>
+  <div class="dpad-btn" id="dpad-left"><svg viewBox="0 0 24 24"><path d="M4 12l8-8v16z"/></svg></div>
+  <div class="dpad-btn" id="dpad-center"></div>
+  <div class="dpad-btn" id="dpad-right"><svg viewBox="0 0 24 24"><path d="M20 12l-8-8v16z"/></svg></div>
+  <div class="dpad-btn" id="dpad-down"><svg viewBox="0 0 24 24"><path d="M12 20l8-8H4z"/></svg></div>
+</div>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -1682,87 +1694,67 @@ canvas.addEventListener('mousemove', e => {
 const isMobile = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
 if(isMobile){
   document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
-  document.getElementById('joy-base').style.display = 'block';
+  document.getElementById('dpad').style.display = 'block';
 }
-let touchJoy = null; // {id, startX, startY, curX, curY}
 let touchJoyDx = 0, touchJoyDy = 0;
-const JOY_RADIUS = 50;
-const JOY_DEAD = 8;
 
-let _tapCandidate = null; // {id, x, y, time} — distinguish tap from drag
+// D-pad touch handling — looks like a d-pad, functions like a joystick
+const _dpadState = {up:false, down:false, left:false, right:false};
+const _dpadTouches = {}; // touchId → direction
+function dpadDir(el){
+  if(el.id === 'dpad-up') return 'up';
+  if(el.id === 'dpad-down') return 'down';
+  if(el.id === 'dpad-left') return 'left';
+  if(el.id === 'dpad-right') return 'right';
+  return null;
+}
+function updateDpadOutput(){
+  touchJoyDx = (_dpadState.right ? 1 : 0) - (_dpadState.left ? 1 : 0);
+  touchJoyDy = (_dpadState.down ? 1 : 0) - (_dpadState.up ? 1 : 0);
+  document.getElementById('dpad-up').classList.toggle('active', _dpadState.up);
+  document.getElementById('dpad-down').classList.toggle('active', _dpadState.down);
+  document.getElementById('dpad-left').classList.toggle('active', _dpadState.left);
+  document.getElementById('dpad-right').classList.toggle('active', _dpadState.right);
+}
+['dpad-up','dpad-down','dpad-left','dpad-right'].forEach(id => {
+  const el = document.getElementById(id);
+  el.addEventListener('touchstart', e => {
+    e.preventDefault(); e.stopPropagation(); tryStartMusic();
+    for(const t of e.changedTouches){
+      const dir = dpadDir(el);
+      if(dir){ _dpadTouches[t.identifier] = dir; _dpadState[dir] = true; updateDpadOutput(); }
+    }
+  }, {passive:false});
+  el.addEventListener('touchend', e => {
+    e.preventDefault(); e.stopPropagation();
+    for(const t of e.changedTouches){
+      const dir = _dpadTouches[t.identifier];
+      if(dir){ _dpadState[dir] = false; delete _dpadTouches[t.identifier]; updateDpadOutput(); }
+    }
+  }, {passive:false});
+  el.addEventListener('touchcancel', e => {
+    for(const t of e.changedTouches){
+      const dir = _dpadTouches[t.identifier];
+      if(dir){ _dpadState[dir] = false; delete _dpadTouches[t.identifier]; updateDpadOutput(); }
+    }
+  });
+});
+// Center button = interact
+document.getElementById('dpad-center').addEventListener('touchstart', e => {
+  e.preventDefault(); e.stopPropagation(); tryStartMusic();
+  if(pilot.nearObj !== null && !_kneelPending){ _kneelPending = pilot.nearObj; setOrigAnim('kneel'); }
+}, {passive:false});
+
+// Canvas tap = interact (close overlays or interact with nearest object)
 canvas.addEventListener('touchstart', e => {
   tryStartMusic();
   if(editorMode) return;
   e.preventDefault();
-  for(const t of e.changedTouches){
-    if(!touchJoy && !popupOpen && !contentViewOpen){
-      // Any touch can become joystick OR tap — decide on move/end
-      if(!_tapCandidate){
-        _tapCandidate = {id:t.identifier, x:t.clientX, y:t.clientY, time:performance.now()};
-      }
-      touchJoy = {id:t.identifier, startX:t.clientX, startY:t.clientY, curX:t.clientX, curY:t.clientY};
-      // Move DOM joystick to touch origin
-      const jb = document.getElementById('joy-base');
-      jb.style.left = (t.clientX - 50) + 'px';
-      jb.style.top = (t.clientY - 50) + 'px';
-      jb.style.right = 'auto'; jb.style.bottom = 'auto';
-    } else {
-      // Overlays open — tap to close
-      if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
-      else if(contentViewOpen){ closeContentView(); }
-      else if(popupOpen){ closePopup(); }
-    }
-  }
+  if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
+  else if(contentViewOpen){ closeContentView(); }
+  else if(popupOpen){ closePopup(); }
+  else if(pilot.nearObj !== null && !_kneelPending){ _kneelPending = pilot.nearObj; setOrigAnim('kneel'); }
 }, {passive:false});
-
-canvas.addEventListener('touchmove', e => {
-  if(editorMode) return;
-  e.preventDefault();
-  for(const t of e.changedTouches){
-    if(touchJoy && t.identifier === touchJoy.id){
-      touchJoy.curX = t.clientX;
-      touchJoy.curY = t.clientY;
-      let dx = touchJoy.curX - touchJoy.startX;
-      let dy = touchJoy.curY - touchJoy.startY;
-      const dist = Math.sqrt(dx*dx + dy*dy);
-      if(dist > JOY_RADIUS){ dx = dx/dist*JOY_RADIUS; dy = dy/dist*JOY_RADIUS; }
-      if(dist < JOY_DEAD){ touchJoyDx = 0; touchJoyDy = 0; }
-      else { touchJoyDx = dx / JOY_RADIUS; touchJoyDy = dy / JOY_RADIUS; }
-    }
-  }
-}, {passive:false});
-
-const TAP_MAX_DIST = 15;
-const TAP_MAX_TIME = 250;
-function endJoy(e){
-  for(const t of e.changedTouches){
-    if(touchJoy && t.identifier === touchJoy.id){
-      // Check if this was a quick tap (not a drag)
-      if(_tapCandidate && _tapCandidate.id === t.identifier){
-        const dx = t.clientX - _tapCandidate.x, dy = t.clientY - _tapCandidate.y;
-        const dist = Math.sqrt(dx*dx + dy*dy);
-        const elapsed = performance.now() - _tapCandidate.time;
-        if(dist < TAP_MAX_DIST && elapsed < TAP_MAX_TIME){
-          // It was a tap — interact if near object
-          if(pilot.nearObj !== null && !_kneelPending){
-            _kneelPending = pilot.nearObj;
-            setOrigAnim('kneel');
-          }
-        }
-        _tapCandidate = null;
-      }
-      touchJoy = null; touchJoyDx = 0; touchJoyDy = 0;
-      // Reset DOM joystick to default position
-      const jb = document.getElementById('joy-base');
-      jb.style.left = 'auto'; jb.style.top = 'auto';
-      jb.style.right = '30px'; jb.style.bottom = '30px';
-      document.getElementById('joy-thumb').style.marginLeft = '-18px';
-      document.getElementById('joy-thumb').style.marginTop = '-18px';
-    }
-  }
-}
-canvas.addEventListener('touchend', endJoy);
-canvas.addEventListener('touchcancel', endJoy);
 
 // ===================== GAME LOOP =====================
 let lastTime = 0;
@@ -2353,13 +2345,9 @@ function loop(time){
     ctx.restore();
   }
 
-  // Update DOM joystick thumb position (mobile)
+  // Hide d-pad during overlays (mobile)
   if(isMobile){
-    const joyEl = document.getElementById('joy-base');
-    const thumbEl = document.getElementById('joy-thumb');
-    joyEl.style.display = (popupOpen || contentViewOpen) ? 'none' : 'block';
-    thumbEl.style.marginLeft = (-18 + touchJoyDx * 32) + 'px';
-    thumbEl.style.marginTop = (-18 + touchJoyDy * 32) + 'px';
+    document.getElementById('dpad').style.display = (popupOpen || contentViewOpen) ? 'none' : 'block';
   }
 }
 
