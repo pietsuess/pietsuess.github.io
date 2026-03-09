@@ -1698,46 +1698,59 @@ if(isMobile){
 }
 let touchJoyDx = 0, touchJoyDy = 0;
 
-// D-pad touch handling — looks like a d-pad, functions like a joystick
-const _dpadState = {up:false, down:false, left:false, right:false};
-const _dpadTouches = {}; // touchId → direction
-function dpadDir(el){
-  if(el.id === 'dpad-up') return 'up';
-  if(el.id === 'dpad-down') return 'down';
-  if(el.id === 'dpad-left') return 'left';
-  if(el.id === 'dpad-right') return 'right';
+// D-pad touch handling — drag finger across buttons to change direction
+const _dpadBtns = {up:document.getElementById('dpad-up'), down:document.getElementById('dpad-down'),
+  left:document.getElementById('dpad-left'), right:document.getElementById('dpad-right')};
+let _dpadTouchId = null;
+let _dpadActiveDir = null;
+
+function hitTestDpad(tx, ty){
+  for(const dir in _dpadBtns){
+    const r = _dpadBtns[dir].getBoundingClientRect();
+    if(tx >= r.left && tx <= r.right && ty >= r.top && ty <= r.bottom) return dir;
+  }
   return null;
 }
-function updateDpadOutput(){
-  touchJoyDx = (_dpadState.right ? 1 : 0) - (_dpadState.left ? 1 : 0);
-  touchJoyDy = (_dpadState.down ? 1 : 0) - (_dpadState.up ? 1 : 0);
-  document.getElementById('dpad-up').classList.toggle('active', _dpadState.up);
-  document.getElementById('dpad-down').classList.toggle('active', _dpadState.down);
-  document.getElementById('dpad-left').classList.toggle('active', _dpadState.left);
-  document.getElementById('dpad-right').classList.toggle('active', _dpadState.right);
+function setDpadDir(dir){
+  if(dir === _dpadActiveDir) return;
+  _dpadActiveDir = dir;
+  for(const d in _dpadBtns) _dpadBtns[d].classList.toggle('active', d === dir);
+  touchJoyDx = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
+  touchJoyDy = dir === 'down' ? 1 : dir === 'up' ? -1 : 0;
 }
-['dpad-up','dpad-down','dpad-left','dpad-right'].forEach(id => {
-  const el = document.getElementById(id);
-  el.addEventListener('touchstart', e => {
-    e.preventDefault(); e.stopPropagation(); tryStartMusic();
-    for(const t of e.changedTouches){
-      const dir = dpadDir(el);
-      if(dir){ _dpadTouches[t.identifier] = dir; _dpadState[dir] = true; updateDpadOutput(); }
+function clearDpad(){
+  _dpadTouchId = null; _dpadActiveDir = null;
+  for(const d in _dpadBtns) _dpadBtns[d].classList.remove('active');
+  touchJoyDx = 0; touchJoyDy = 0;
+}
+
+const dpadEl = document.getElementById('dpad');
+dpadEl.style.pointerEvents = 'auto';
+dpadEl.addEventListener('touchstart', e => {
+  e.preventDefault(); e.stopPropagation(); tryStartMusic();
+  const t = e.changedTouches[0];
+  _dpadTouchId = t.identifier;
+  setDpadDir(hitTestDpad(t.clientX, t.clientY));
+}, {passive:false});
+dpadEl.addEventListener('touchmove', e => {
+  e.preventDefault(); e.stopPropagation();
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId){
+      const dir = hitTestDpad(t.clientX, t.clientY);
+      setDpadDir(dir);
     }
-  }, {passive:false});
-  el.addEventListener('touchend', e => {
-    e.preventDefault(); e.stopPropagation();
-    for(const t of e.changedTouches){
-      const dir = _dpadTouches[t.identifier];
-      if(dir){ _dpadState[dir] = false; delete _dpadTouches[t.identifier]; updateDpadOutput(); }
-    }
-  }, {passive:false});
-  el.addEventListener('touchcancel', e => {
-    for(const t of e.changedTouches){
-      const dir = _dpadTouches[t.identifier];
-      if(dir){ _dpadState[dir] = false; delete _dpadTouches[t.identifier]; updateDpadOutput(); }
-    }
-  });
+  }
+}, {passive:false});
+dpadEl.addEventListener('touchend', e => {
+  e.preventDefault(); e.stopPropagation();
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId) clearDpad();
+  }
+}, {passive:false});
+dpadEl.addEventListener('touchcancel', e => {
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId) clearDpad();
+  }
 });
 // Canvas tap = interact (close overlays or kneel+popup)
 canvas.addEventListener('touchstart', e => {
