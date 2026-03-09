@@ -3973,18 +3973,57 @@ window.onload = function() {
         'BARRIER SLALOM': { shape: 'ring-gap', color: '#ff2266' },
     };
 
+    // Creates a small Three.js canvas with a spinning object for the intro screen
+    function createSpinningPreview(geo, mat, size) {
+        var cvs = document.createElement('canvas');
+        cvs.width = size * 2; cvs.height = size * 2;
+        cvs.style.cssText = 'width:'+size+'px;height:'+size+'px;';
+        var r = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
+        r.setSize(size * 2, size * 2);
+        r.setClearColor(0x000000, 0);
+        var s = new THREE.Scene();
+        var c = new THREE.PerspectiveCamera(40, 1, 0.1, 100);
+        c.position.z = 18;
+        var light = new THREE.PointLight(0xffffff, 1.5, 100);
+        light.position.set(5, 5, 15);
+        s.add(light);
+        s.add(new THREE.AmbientLight(0x444444));
+        var mesh = new THREE.Mesh(geo, mat);
+        s.add(mesh);
+        var animId = 0;
+        function spin() {
+            animId = requestAnimationFrame(spin);
+            mesh.rotation.x += 0.015;
+            mesh.rotation.y += 0.025;
+            r.render(s, c);
+        }
+        spin();
+        cvs._stopSpin = function() { cancelAnimationFrame(animId); r.dispose(); };
+        return cvs;
+    }
+
     function showSectorIntro(zone, onDone) {
         var sectorIdx = currentSector - 1;
         var introData = SECTOR_INTRO_DATA[Math.min(sectorIdx, SECTOR_INTRO_DATA.length - 1)];
         var isFirst = (currentSector === 1 && currentLevel === 1);
         var el = document.createElement('div');
         el.id = 'sector-intro-splash';
-        el.style.cssText = 'position:fixed;inset:0;z-index:620;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:'+(isFirst?'28px':'18px')+';background:rgba(0,0,0,0.92);pointer-events:'+(isFirst?'all':'none')+';opacity:0;transition:opacity 0.4s;';
+        el.style.cssText = 'position:fixed;inset:0;z-index:620;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:'+(isFirst?'22px':'18px')+';background:rgba(0,0,0,0.92);pointer-events:'+(isFirst?'all':'none')+';opacity:0;transition:opacity 0.4s;';
+
+        var spinCanvases = [];
+
+        if (isFirst) {
+            // "YOU ARE ENTERING THE"
+            var preTitle = document.createElement('div');
+            preTitle.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(9px,2.5vw,14px);letter-spacing:4px;color:#fff;opacity:0.6;';
+            preTitle.innerText = 'YOU ARE ENTERING THE';
+            el.appendChild(preTitle);
+        }
 
         // Zone name
         var title = document.createElement('div');
-        title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'22px':'16px')+','+(isFirst?'7vw':'5vw')+','+(isFirst?'42px':'30px')+');letter-spacing:5px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';';
-        title.innerText = zone.name;
+        title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'24px':'16px')+','+(isFirst?'8vw':'5vw')+','+(isFirst?'46px':'30px')+');letter-spacing:5px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';';
+        title.innerText = zone.name + ' SECTOR';
         el.appendChild(title);
 
         // Level indicator
@@ -3996,57 +4035,118 @@ window.onload = function() {
         }
 
         // Divider
-        var div = document.createElement('div');
-        div.style.cssText = 'width:'+(isFirst?'180px':'120px')+';height:2px;background:'+zone.color+';opacity:0.5;margin:6px 0;';
-        el.appendChild(div);
+        var divLine = document.createElement('div');
+        divLine.style.cssText = 'width:'+(isFirst?'80%':'120px')+';max-width:320px;height:2px;background:'+zone.color+';opacity:0.5;margin:4px 0;';
+        el.appendChild(divLine);
 
-        // Item icons row
-        var itemsRow = document.createElement('div');
-        itemsRow.style.cssText = 'display:flex;gap:'+(isFirst?'24px':'16px')+';align-items:center;justify-content:center;flex-wrap:wrap;max-width:90%;';
-        introData.items.forEach(function(itemName) {
-            var sym = SECTOR_ITEM_SYMBOLS[itemName] || { color: '#fff' };
-            var chip = document.createElement('div');
-            chip.style.cssText = 'display:flex;align-items:center;gap:'+(isFirst?'10px':'6px')+';';
-            // Simple colored dot/icon
-            var iconSize = isFirst ? 20 : 12;
-            var icon = document.createElement('div');
-            icon.style.cssText = 'width:'+iconSize+'px;height:'+iconSize+'px;border-radius:' + (sym.shape === 'circle' ? '50%' : '2px') + ';background:'+sym.color+';box-shadow:0 0 '+(isFirst?'14px':'8px')+' '+sym.color+';';
-            if (sym.shape === 'triangle') {
-                var triH = isFirst ? 20 : 12; var triW = Math.round(triH * 7/12);
-                icon.style.cssText = 'width:0;height:0;border-left:'+triW+'px solid transparent;border-right:'+triW+'px solid transparent;border-bottom:'+triH+'px solid '+sym.color+';filter:drop-shadow(0 0 6px '+sym.color+');';
+        if (isFirst) {
+            // Spinning 3D object previews — actual game objects
+            var previewSize = Math.min(Math.round(window.innerWidth * 0.22), 110);
+            var objectsRow = document.createElement('div');
+            objectsRow.style.cssText = 'display:flex;gap:20px;align-items:center;justify-content:center;flex-wrap:wrap;margin:8px 0;';
+
+            // Content object (yellow cube for EDIT zone)
+            var contentCol = document.createElement('div');
+            contentCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+            var contentCvs = createSpinningPreview(
+                contentGeos.square,
+                new THREE.MeshStandardMaterial({ color: 0xffe800, emissive: 0xffe800, emissiveIntensity: 1.8, metalness: 0, roughness: 1, transparent: true, opacity: 0.9 }),
+                previewSize
+            );
+            spinCanvases.push(contentCvs);
+            contentCol.appendChild(contentCvs);
+            var contentLabel = document.createElement('div');
+            contentLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,2vw,11px);color:#ffe800;letter-spacing:1px;text-shadow:0 0 8px rgba(255,232,0,0.5);';
+            contentLabel.innerText = 'CONTENT';
+            contentCol.appendChild(contentLabel);
+            objectsRow.appendChild(contentCol);
+
+            // Ring (green torus)
+            var ringCol = document.createElement('div');
+            ringCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+            var ringCvs = createSpinningPreview(
+                new THREE.TorusGeometry(4.5, 0.7, 8, 28),
+                new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0, roughness: 1 }),
+                previewSize
+            );
+            spinCanvases.push(ringCvs);
+            ringCol.appendChild(ringCvs);
+            var ringLabel = document.createElement('div');
+            ringLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,2vw,11px);color:#00ff88;letter-spacing:1px;text-shadow:0 0 8px rgba(0,255,136,0.5);';
+            ringLabel.innerText = 'RING';
+            ringCol.appendChild(ringLabel);
+            objectsRow.appendChild(ringCol);
+
+            // Mine (red tetrahedron)
+            var mineCol = document.createElement('div');
+            mineCol.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:8px;';
+            var mineCvs = createSpinningPreview(
+                new THREE.TetrahedronGeometry(4.5, 0),
+                new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0, roughness: 1 }),
+                previewSize
+            );
+            spinCanvases.push(mineCvs);
+            mineCol.appendChild(mineCvs);
+            var mineLabel = document.createElement('div');
+            mineLabel.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,2vw,11px);color:#ff4444;letter-spacing:1px;text-shadow:0 0 8px rgba(255,68,68,0.5);';
+            mineLabel.innerText = 'MINE';
+            mineCol.appendChild(mineLabel);
+            objectsRow.appendChild(mineCol);
+
+            el.appendChild(objectsRow);
+
+            // Instruction lines
+            var collectLine = document.createElement('div');
+            collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(10px,2.8vw,16px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:3px;text-align:center;';
+            collectLine.innerText = 'COLLECT CONTENT & RINGS';
+            el.appendChild(collectLine);
+
+            var avoidLine = document.createElement('div');
+            avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(10px,2.8vw,16px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:3px;text-align:center;';
+            avoidLine.innerText = 'AVOID HAZARDS';
+            el.appendChild(avoidLine);
+        } else {
+            // Non-first intros: item icons row + description (unchanged)
+            var itemsRow = document.createElement('div');
+            itemsRow.style.cssText = 'display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:90%;';
+            introData.items.forEach(function(itemName) {
+                var sym = SECTOR_ITEM_SYMBOLS[itemName] || { color: '#fff' };
+                var chip = document.createElement('div');
+                chip.style.cssText = 'display:flex;align-items:center;gap:6px;';
+                var icon = document.createElement('div');
+                icon.style.cssText = 'width:12px;height:12px;border-radius:' + (sym.shape === 'circle' ? '50%' : '2px') + ';background:'+sym.color+';box-shadow:0 0 8px '+sym.color+';';
+                if (sym.shape === 'triangle') { icon.style.cssText = 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid '+sym.color+';filter:drop-shadow(0 0 6px '+sym.color+');'; }
+                chip.appendChild(icon);
+                var label = document.createElement('div');
+                label.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.5vw,9px);color:'+sym.color+';letter-spacing:1px;';
+                label.innerText = itemName;
+                chip.appendChild(label);
+                itemsRow.appendChild(chip);
+            });
+            el.appendChild(itemsRow);
+
+            var desc = document.createElement('div');
+            desc.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2vw,12px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;margin-top:8px;';
+            desc.innerText = introData.desc;
+            el.appendChild(desc);
+
+            // Collection progress
+            var collected = getZoneCollectedCount(currentSector);
+            var total = getZoneItemCount(currentSector);
+            if (total > 0) {
+                var prog = document.createElement('div');
+                prog.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,1.8vw,10px);color:#888;letter-spacing:2px;margin-top:4px;';
+                prog.innerText = collected + ' / ' + total + ' COLLECTED';
+                el.appendChild(prog);
             }
-            chip.appendChild(icon);
-            var label = document.createElement('div');
-            label.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'9px':'6px')+','+(isFirst?'2.5vw':'1.5vw')+','+(isFirst?'14px':'9px')+');color:'+sym.color+';letter-spacing:1px;';
-            label.innerText = itemName;
-            chip.appendChild(label);
-            itemsRow.appendChild(chip);
-        });
-        el.appendChild(itemsRow);
-
-        // Description
-        var desc = document.createElement('div');
-        desc.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'11px':'8px')+','+(isFirst?'3vw':'2vw')+','+(isFirst?'18px':'12px')+');color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;margin-top:8px;';
-        desc.innerText = introData.desc;
-        el.appendChild(desc);
-
-        // Collection progress
-        var collected = getZoneCollectedCount(currentSector);
-        var total = getZoneItemCount(currentSector);
-        if (total > 0) {
-            var prog = document.createElement('div');
-            prog.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'10px':'7px')+','+(isFirst?'2.5vw':'1.8vw')+','+(isFirst?'14px':'10px')+');color:#888;letter-spacing:2px;margin-top:4px;';
-            prog.innerText = collected + ' / ' + total + ' COLLECTED';
-            el.appendChild(prog);
         }
 
         // Tap to begin (first intro only)
         if (isFirst) {
             var tap = document.createElement('div');
-            tap.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2vw,12px);color:#fff;opacity:0.5;letter-spacing:3px;margin-top:20px;animation:introTapPulse 1.5s ease-in-out infinite;';
+            tap.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2vw,12px);color:#fff;opacity:0.5;letter-spacing:3px;margin-top:16px;animation:introTapPulse 1.5s ease-in-out infinite;';
             tap.innerText = 'TAP TO BEGIN';
             el.appendChild(tap);
-            // Pulse animation
             if (!document.getElementById('intro-tap-pulse-style')) {
                 var style = document.createElement('style');
                 style.id = 'intro-tap-pulse-style';
@@ -4056,31 +4156,27 @@ window.onload = function() {
         }
 
         document.body.appendChild(el);
-        // Fade in
         requestAnimationFrame(function() { el.style.opacity = '1'; });
 
+        function cleanup() {
+            spinCanvases.forEach(function(c) { if (c._stopSpin) c._stopSpin(); });
+            el.style.opacity = '0';
+            setTimeout(function() {
+                if (el.parentNode) el.remove();
+                if (onDone) onDone();
+            }, 400);
+        }
+
         if (isFirst) {
-            // Wait for tap to dismiss
             function dismissIntro() {
                 el.removeEventListener('touchend', dismissIntro);
                 el.removeEventListener('mouseup', dismissIntro);
-                el.style.opacity = '0';
-                setTimeout(function() {
-                    if (el.parentNode) el.remove();
-                    if (onDone) onDone();
-                }, 400);
+                cleanup();
             }
             el.addEventListener('touchend', dismissIntro, { passive: true });
             el.addEventListener('mouseup', dismissIntro);
         } else {
-            // Auto-dismiss after 2.5s
-            setTimeout(function() {
-                el.style.opacity = '0';
-                setTimeout(function() {
-                    if (el.parentNode) el.remove();
-                    if (onDone) onDone();
-                }, 400);
-            }, 2500);
+            setTimeout(function() { cleanup(); }, 2500);
         }
     }
 
