@@ -1606,7 +1606,7 @@ window.onload = function() {
         } else if (carouselFromPause) {
             contBtn.innerText = '[ BACK TO MENU ]';
         } else {
-            contBtn.innerText = allZonesComplete() ? '[ VIEW FINALE ]' : (isZoneComplete(currentSector) ? '[ NEXT ZONE > ]' : '[ REPLAY SECTOR > ]');
+            contBtn.innerText = allZonesComplete() ? '[ VIEW FINALE ]' : (isZoneComplete(currentSector) ? '[ NEXT ZONE > ]' : '[ NEXT LEVEL > ]');
         }
 
         // Build cards — triple the items for infinite loop
@@ -2163,7 +2163,7 @@ window.onload = function() {
     // ── Exhaust particle trail ────────────────────────────────────────
     const TRAIL_COUNT = 30;
     const trailParticles = [];
-    const trailMat = new THREE.MeshBasicMaterial({ color: 0xff8833, transparent: true, opacity: 0.6, depthWrite: false });
+    const trailMat = new THREE.MeshBasicMaterial({ color: 0x888899, transparent: true, opacity: 0.35, depthWrite: false });
     const trailGeo = new THREE.PlaneGeometry(1, 1);
     for (let ti = 0; ti < TRAIL_COUNT; ti++) {
         const p = new THREE.Mesh(trailGeo, trailMat.clone());
@@ -2461,11 +2461,11 @@ window.onload = function() {
     const starMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0x00ccff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
     // ── Content object geometries (2x size of regular items, zone-shaped) ──
     const contentGeos = {
-        square:   new THREE.BoxGeometry(12, 12, 4),             // EDIT
-        pentagon: (function(){ var g=new THREE.CircleGeometry(7, 5); g.deleteAttribute('uv'); return g; })(), // PHOTO
-        octagon:  (function(){ var g=new THREE.CircleGeometry(7, 8); g.deleteAttribute('uv'); return g; })(), // DIRECT
-        circle:   new THREE.SphereGeometry(6, 12, 8),            // ANIMATE
-        triangle: new THREE.ConeGeometry(7, 12, 3),              // DESIGN
+        square:   new THREE.BoxGeometry(12, 12, 4),             // EDIT — cube slab
+        pentagon: new THREE.DodecahedronGeometry(7, 0),          // PHOTO — 12-faced gem
+        octagon:  new THREE.OctahedronGeometry(7, 0),            // DIRECT — 8-faced diamond
+        circle:   new THREE.SphereGeometry(6, 12, 8),            // ANIMATE — sphere
+        triangle: new THREE.ConeGeometry(7, 12, 3),              // DESIGN — pyramid
     };
     // Give each zone a distinct emissive material matching Navigator's object colors
     const contentMats = {
@@ -2938,16 +2938,17 @@ window.onload = function() {
         const el = document.getElementById('mission-banner');
         const label = document.getElementById('mission-zone-label');
         const obj = document.getElementById('mission-objective');
-        label.innerText = zone.label;
+        // Simplified: just zone name + level if replaying
+        var bannerText = zone.name;
+        if (currentLevel > 1) bannerText += ' — LEVEL ' + currentLevel;
+        label.innerText = bannerText;
         label.style.color = zone.color;
         label.style.textShadow = '0 0 20px ' + zone.color;
         var collected = getZoneCollectedCount(currentSector);
         var total = getZoneItemCount(currentSector);
-        var objectiveText = _getObjective(zoneIdx).replace('\n','<br>');
-        if (total > 0) objectiveText += '<br><span style="font-size:0.8em;color:#ffe800;">' + collected + ' / ' + total + ' COLLECTED</span>';
-        obj.innerHTML = objectiveText;
+        obj.innerHTML = collected + ' / ' + total;
         el.classList.add('show');
-        setTimeout(() => el.classList.remove('show'), 5500);
+        setTimeout(() => el.classList.remove('show'), 3000);
     }
 
     function spawnPointBurst(text, colorClass) {
@@ -3276,7 +3277,7 @@ window.onload = function() {
         } else if (contentZone) {
             var collected = getZoneCollectedCount(currentSector);
             var total = getZoneItemCount(currentSector);
-            document.getElementById('next-level-btn').innerText = collected >= total ? '[ NEXT ZONE > ]' : '[ BROWSE ' + collected + '/' + total + ' > ]';
+            document.getElementById('next-level-btn').innerText = collected >= total ? '[ NEXT ZONE > ]' : '[ NEXT LEVEL ' + (currentLevel + 1) + ' > ]';
         } else {
             document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
         }
@@ -3344,11 +3345,11 @@ window.onload = function() {
         _rampCountThisSector = 0;
         _rampMaxThisSector = currentSector <= 1 ? 0 : currentSector <= 2 ? 1 : 999;
 
-        // Seed tunnel ahead procedurally with increasing density per sector
-        // Spacing tightens from 180 (S1) down to 70 (S10) = more objects in later sectors
-        // S3 is a ring bonanza — super tight spacing
-        // Start items close to camera (Z-400) so they appear right after countdown
-        var spacing = currentSector === 3 ? 50 : Math.max(70, 180 - (currentSector - 1) * 12);
+        // Seed tunnel ahead procedurally — density scales with BOTH sector AND level
+        // Base spacing: S1=120, S2=100, S3=80, S4=70, S5=60
+        // Each level tightens spacing by 12% compounding
+        var baseSpacing = Math.max(60, 130 - (currentSector - 1) * 18);
+        var spacing = Math.max(35, Math.round(baseSpacing * Math.pow(0.88, currentLevel - 1)));
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
         var lastItemDist = sectorDistance * 0.77;
@@ -3692,11 +3693,7 @@ window.onload = function() {
     }
 
     function showZoneAnnouncement(zone) {
-        const el = document.createElement('div');
-        el.style.cssText = 'position:fixed;inset:0;z-index:600;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
-        el.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3vw,22px);color:'+zone.color+';text-shadow:0 0 30px '+zone.color+';letter-spacing:4px;animation:fadeSlideUp 0.5s ease-out both;">'+zone.label+'</div>';
-        document.body.appendChild(el);
-        setTimeout(() => el.remove(), 2200);
+        // Removed — mission banner already shows on sector start
     }
 
     // ── Collection HUD — horizontal row of zone-shaped icons above carousel area ──
@@ -4480,8 +4477,8 @@ window.onload = function() {
                     tp.userData.vy = (Math.random() - 0.5) * 1.5;
                     tp.userData.life = 0;
                     tp.userData.maxLife = 0.3 + Math.random() * 0.4 + throttleSmooth * 0.3;
-                    tp.scale.setScalar(0.6 + throttleSmooth * 0.8 + Math.random() * 0.3);
-                    tp.material.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
+                    tp.scale.setScalar(0.3 + throttleSmooth * 0.3 + Math.random() * 0.15);
+                    tp.material.color.setRGB(0.45 + Math.random() * 0.1, 0.45 + Math.random() * 0.1, 0.5 + Math.random() * 0.1);
                     tp.material.opacity = 0.5 + throttleSmooth * 0.3;
                     tp.visible = true;
                     // Billboard: face camera
