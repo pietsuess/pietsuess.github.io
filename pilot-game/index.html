@@ -1890,19 +1890,30 @@ function loop(time){
     let nd = Infinity;
     for(let i=0; i<objects.length; i++){
       const obj = objects[i];
-      if(!obj.interact || !obj.hitboxes) continue;
-      if(pilot.onPlatform === i) continue;
+      if(!obj.interact) continue;
       let d = Infinity;
-      for(const b of obj.hitboxes){
-        let dd;
-        if(isCircle(b)){
-          dd = Math.sqrt((pilot.x-b.cx)**2 + (pInteractY-b.cy)**2) - b.r;
-        } else {
-          const bc2 = boxCenter(b);
-          dd = Math.sqrt((pilot.x-bc2.x)**2 + (pInteractY-bc2.y)**2);
+      if(obj.hitPoly && obj.hitPoly.length >= 3){
+        // Distance to nearest edge of hitPoly
+        for(let j=0, k=obj.hitPoly.length-1; j<obj.hitPoly.length; k=j++){
+          const ax=obj.hitPoly[k].x, ay=obj.hitPoly[k].y, bx=obj.hitPoly[j].x, by=obj.hitPoly[j].y;
+          const ex=bx-ax, ey=by-ay, len2=ex*ex+ey*ey;
+          const t = len2<0.001 ? 0 : Math.max(0,Math.min(1,((pilot.x-ax)*ex+(pInteractY-ay)*ey)/len2));
+          const cx=ax+t*ex, cy=ay+t*ey;
+          const dd=Math.sqrt((pilot.x-cx)**2+(pInteractY-cy)**2);
+          if(dd<d) d=dd;
         }
-        if(dd < d) d = dd;
-      }
+      } else if(obj.hitboxes){
+        for(const b of obj.hitboxes){
+          let dd;
+          if(isCircle(b)){
+            dd = Math.sqrt((pilot.x-b.cx)**2 + (pInteractY-b.cy)**2) - b.r;
+          } else {
+            const bc2 = boxCenter(b);
+            dd = Math.sqrt((pilot.x-bc2.x)**2 + (pInteractY-bc2.y)**2);
+          }
+          if(dd < d) d = dd;
+        }
+      } else continue;
       if(d<INTERACT_R && d<nd){ nd=d; pilot.nearObj=i; }
     }
   }
