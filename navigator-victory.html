@@ -39,6 +39,36 @@
   }
   #prompt.show{opacity:1;}
 
+  /* Editor panel */
+  #editor-panel{
+    display:none; position:fixed; top:10px; right:10px; z-index:200;
+    background:rgba(0,0,20,0.92); border:2px solid #ffe000;
+    box-shadow:0 0 20px rgba(255,224,0,0.3);
+    padding:14px 16px; min-width:260px;
+    font-family:'Press Start 2P',monospace; font-size:7px; color:#fff;
+    line-height:2.4; user-select:none;
+  }
+  #editor-panel.open{display:block;}
+  #editor-panel .label{color:#888;font-size:6px;}
+  #editor-panel .val{color:#44ddff;}
+  #editor-panel .obj-name{color:#ffe000;font-size:8px;margin-bottom:6px;}
+  #editor-panel button{
+    background:none;border:1px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:6px;
+    padding:5px 8px;cursor:pointer;margin:3px 2px;letter-spacing:1px;
+  }
+  #editor-panel button:hover{background:rgba(68,221,255,0.15);}
+  #editor-panel button.warn{border-color:#ff4444;color:#ff4444;}
+  #editor-panel button.warn:hover{background:rgba(255,68,68,0.15);}
+  #editor-panel button.export{border-color:#00ff88;color:#00ff88;}
+  #editor-panel button.export:hover{background:rgba(0,255,136,0.15);}
+  #editor-hint{
+    position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:200;
+    font-family:'Press Start 2P',monospace;font-size:7px;
+    color:#ffe000;letter-spacing:2px;text-shadow:0 0 10px #ffe000;
+    pointer-events:none;opacity:0;transition:opacity 0.3s;
+  }
+  #editor-hint.show{opacity:1;}
 
   /* Content overlay — full viewer for video/gallery/design */
   #content-overlay{
@@ -165,6 +195,9 @@
   <button id="popup-close" onclick="closePopup()">[ CLOSE ]</button>
 </div>
 <div id="prompt">&#9654; <span id="prompt-text">SPACE TO INTERACT</span></div>
+<div id="editor-hint">EDITOR MODE — click hitzones to edit</div>
+<div id="editor-panel">
+  <div id="ep-content">Press E to toggle editor<br>Click a hitzone to select</div>
   <hr style="border-color:#333;margin:8px 0;">
   <button id="label-mode-btn" onclick="toggleEditorLabelMode()" style="border-color:#ffe000;color:#ffe000;">LABELS</button>
   <button id="contour-mode-btn" onclick="toggleEditorContourMode()" style="border-color:#00ff88;color:#00ff88;">CONTOURS</button>
@@ -574,13 +607,13 @@ const bgImg = new Image();
 bgImg.src = 'pilot-game/Victory-Background.png';
 const sprite = new Image();
 sprite.src = 'pilot-game/spritesheet.png';
-imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'pilot-game/Victory-Background_DeltaWing.png';
-imgs['square']    = new Image(); imgs['square'].src    = 'pilot-game/Victory-Background_Square.png';
-imgs['hexagram']  = new Image(); imgs['hexagram'].src  = 'pilot-game/Victory-Background_Hexagon.png';
-imgs['triangle']  = new Image(); imgs['triangle'].src  = 'pilot-game/Victory-Background_Triangle.png';
-imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'pilot-game/Victory-Background_Pentagon.png';
-imgs['sphere']    = new Image(); imgs['sphere'].src    = 'pilot-game/Victory-Background_Sphere.png';
-imgs['hanger']    = new Image(); imgs['hanger'].src    = 'pilot-game/Victory-Background_Hangar.png';
+imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'Victory-Background_DeltaWing.png';
+imgs['square']    = new Image(); imgs['square'].src    = 'Victory-Background_Square.png';
+imgs['hexagram']  = new Image(); imgs['hexagram'].src  = 'Victory-Background_Hexagon.png';
+imgs['triangle']  = new Image(); imgs['triangle'].src  = 'Victory-Background_Triangle.png';
+imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'Victory-Background_Pentagon.png';
+imgs['sphere']    = new Image(); imgs['sphere'].src    = 'Victory-Background_Sphere.png';
+imgs['hanger']    = new Image(); imgs['hanger'].src    = 'Victory-Background_Hangar.png';
 
 // Pixel art mode removed — see pilot-game-pixel.html
 
@@ -611,15 +644,9 @@ window.addEventListener('keydown', e => {
     e.preventDefault();
     if(!editorMode && !contentViewOpen && !popupOpen && !_kneelPending && !e.repeat){
       if(pilot.nearObj !== null){
-        const nObj = objects[pilot.nearObj];
-        if(nObj.platform && nObj.platformPoly && pilot.onPlatform !== pilot.nearObj){
-          // Near a platform object but not on it — jump to get on
-          _jumpPressed = true;
-        } else {
-          // On the platform (or non-platform object) — kneel + popup
-          _kneelPending = pilot.nearObj;
-          setOrigAnim('kneel');
-        }
+        // Near an interactable object — kneel + popup
+        _kneelPending = pilot.nearObj;
+        setOrigAnim('kneel');
       } else {
         _jumpPressed = true;
       }
@@ -631,8 +658,9 @@ window.addEventListener('keydown', e => {
     if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
     else if(contentViewOpen){ closeContentView(); }
     else { closePopup(); }
+    if(editorMode) editorDeselect();
   }
-});
+      });
 window.addEventListener('keyup', e => { keys[e.code] = false; });
 
 let _currentPopupZone = null;
@@ -2054,6 +2082,224 @@ function loop(time){
   }
 
   // Debug / Editor overlay
+  if(debugHitboxes || editorMode){
+    const ds = mainScale;
+    ctx.save();
+    ctx.scale(ds,ds);
+    ctx.translate(-camX,-camY);
+    ctx.lineWidth = 2/ds;
+
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.hitboxes || edContourMode) continue;
+      for(let bi=0; bi<obj.hitboxes.length; bi++){
+        const b = obj.hitboxes[bi];
+        const selected = editorMode && oi === edSelObj && bi === edSelBox;
+
+        if(selected){
+          ctx.strokeStyle = '#ffe000';
+          ctx.fillStyle = 'rgba(255,224,0,0.25)';
+          ctx.lineWidth = 3/ds;
+        } else {
+          ctx.strokeStyle = 'rgba(255,0,0,0.8)';
+          ctx.fillStyle = 'rgba(255,0,0,0.15)';
+          ctx.lineWidth = 2/ds;
+        }
+
+        if(isCircle(b)){
+          ctx.beginPath();
+          ctx.arc(b.cx, b.cy, b.r, 0, Math.PI*2);
+          ctx.fill();
+          ctx.stroke();
+          // Crosshair at center
+          if(selected){
+            ctx.strokeStyle = 'rgba(255,224,0,0.5)';
+            ctx.lineWidth = 1/ds;
+            const ch = 6/ds;
+            ctx.beginPath();
+            ctx.moveTo(b.cx - ch, b.cy); ctx.lineTo(b.cx + ch, b.cy);
+            ctx.moveTo(b.cx, b.cy - ch); ctx.lineTo(b.cx, b.cy + ch);
+            ctx.stroke();
+            // Radius handle
+            ctx.fillStyle = '#ffe000';
+            const hs = 4/ds;
+            ctx.fillRect(b.cx + b.r - hs/2, b.cy - hs/2, hs, hs);
+          }
+        } else {
+          const bc = boxCenter(b), ba = boxRot(b);
+          ctx.save();
+          ctx.translate(bc.x, bc.y);
+          ctx.rotate(ba);
+          ctx.fillRect(-b.w/2, -b.h/2, b.w, b.h);
+          ctx.strokeRect(-b.w/2, -b.h/2, b.w, b.h);
+          if(selected){
+            ctx.fillStyle = '#ffe000';
+            const hs = 4/ds;
+            // Edge handles
+            ctx.fillRect(-b.w/2 - hs/2, -hs/2, hs, hs);
+            ctx.fillRect(b.w/2 - hs/2, -hs/2, hs, hs);
+            ctx.fillRect(-hs/2, -b.h/2 - hs/2, hs, hs);
+            ctx.fillRect(-hs/2, b.h/2 - hs/2, hs, hs);
+            // Rotation handle — line + circle above top edge
+            const rotHandleDist = 25/ds;
+            ctx.strokeStyle = '#ff88ff';
+            ctx.lineWidth = 2/ds;
+            ctx.beginPath();
+            ctx.moveTo(0, -b.h/2);
+            ctx.lineTo(0, -b.h/2 - rotHandleDist);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, -b.h/2 - rotHandleDist, 5/ds, 0, Math.PI*2);
+            ctx.fillStyle = '#ff88ff';
+            ctx.fill();
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+    }
+
+    // depthY line for selected object (drawn outside hitbox loop so it shows even without hitboxes)
+    if(editorMode && !edContourMode && edSelObj !== null){
+      const dObj = objects[edSelObj];
+      ctx.strokeStyle = 'rgba(0,255,255,0.7)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([8/ds, 4/ds]);
+      ctx.beginPath();
+      ctx.moveTo(dObj.wx - 50, dObj.depthY);
+      ctx.lineTo(dObj.wx + dObj.ww + 50, dObj.depthY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0,255,255,0.9)';
+      ctx.font = (10/ds) + 'px monospace';
+      ctx.fillText('depthY: ' + Math.round(dObj.depthY), dObj.wx + dObj.ww + 55, dObj.depthY + 4/ds);
+    }
+
+    // Hit polygons (red)
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.hitPoly || obj.hitPoly.length < 3) continue;
+      const hp = obj.hitPoly;
+      ctx.fillStyle = 'rgba(255,68,68,0.1)';
+      ctx.strokeStyle = 'rgba(255,68,68,0.8)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(hp[0].x, hp[0].y);
+      for(let i=1; i<hp.length; i++) ctx.lineTo(hp[i].x, hp[i].y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      for(let i=0; i<hp.length; i++){
+        const isSel = edHitPolyMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : '#ff4444';
+        ctx.beginPath();
+        ctx.arc(hp[i].x, hp[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    // Platform polygons
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.platformPoly || obj.platformPoly.length < 3) continue;
+      const c = obj.platformPoly;
+      const isOn = pilot.onPlatform === oi;
+      // Filled polygon
+      ctx.fillStyle = isOn ? 'rgba(0,255,0,0.15)' : 'rgba(0,255,136,0.08)';
+      ctx.strokeStyle = isOn ? '#00ff00' : 'rgba(0,255,136,0.8)';
+      ctx.lineWidth = (isOn ? 3 : 2)/ds;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(c[0].x, c[0].y);
+      for(let i=1; i<c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Vertex points
+      for(let i=0; i<c.length; i++){
+        const isSel = edContourMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : isOn ? '#00ff00' : '#00ff88';
+        ctx.beginPath();
+        ctx.arc(c[i].x, c[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+        if(isSel){
+          ctx.strokeStyle = '#ffe000';
+          ctx.lineWidth = 2/ds;
+          ctx.stroke();
+        }
+      }
+      // Label
+      ctx.fillStyle = isOn ? '#00ff00' : 'rgba(0,255,136,0.7)';
+      ctx.font = (9/ds) + 'px monospace';
+      const minY = Math.min(...c.map(p=>p.y));
+      ctx.fillText(obj.name, c[0].x, minY - 10/ds);
+    }
+
+    // Depth polygons (orange)
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.depthPoly || obj.depthPoly.length < 3) continue;
+      const dp = obj.depthPoly;
+      const pilotInside = pointInPoly(dp, pilot.x, pilot.y);
+      ctx.fillStyle = pilotInside ? 'rgba(255,136,0,0.2)' : 'rgba(255,136,0,0.08)';
+      ctx.strokeStyle = pilotInside ? '#ffaa00' : 'rgba(255,136,0,0.8)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([6/ds, 3/ds]);
+      ctx.beginPath();
+      ctx.moveTo(dp[0].x, dp[0].y);
+      for(let i=1; i<dp.length; i++) ctx.lineTo(dp[i].x, dp[i].y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      for(let i=0; i<dp.length; i++){
+        const isSel = edDepthPolyMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : '#ff8800';
+        ctx.beginPath();
+        ctx.arc(dp[i].x, dp[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+      }
+      // Label
+      ctx.fillStyle = 'rgba(255,136,0,0.7)';
+      ctx.font = (9/ds) + 'px monospace';
+      const minY = Math.min(...dp.map(p=>p.y));
+      ctx.fillText('DEPTH: ' + obj.name, dp[0].x, minY - 10/ds);
+    }
+
+    // Pilot platform state readout
+    ctx.save();
+    ctx.scale(1/ds, 1/ds);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = '11px monospace';
+    const stateText = 'onPlatform: ' + (pilot.onPlatform !== null ? objects[pilot.onPlatform].name : 'null')
+      + '  x: ' + Math.round(pilot.x) + '  y: ' + Math.round(pilot.y);
+    ctx.fillText(stateText, 10, 20);
+    ctx.restore();
+
+    // Pilot feet ellipse
+    const feetCX = pilot.x, feetCY = pilot.y + pilot.jumpOffY - 18;
+    const feetRX = 20, feetRY = 10;
+    ctx.strokeStyle = 'rgba(0,255,0,0.8)';
+    ctx.fillStyle = 'rgba(0,255,0,0.15)';
+    ctx.lineWidth = 2/ds;
+    ctx.beginPath();
+    ctx.ellipse(feetCX, feetCY, feetRX, feetRY, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Pilot Y reference line in editor
+    if(editorMode && !edContourMode){
+      ctx.strokeStyle = 'rgba(0,255,0,0.4)';
+      ctx.lineWidth = 1/ds;
+      ctx.setLineDash([6/ds, 3/ds]);
+      ctx.beginPath();
+      ctx.moveTo(camX, pilot.y);
+      ctx.lineTo(camX + vww, pilot.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0,255,0,0.7)';
+      ctx.font = (10/ds) + 'px monospace';
+      ctx.fillText('pilot.y: ' + Math.round(pilot.y), camX + 10/ds, pilot.y - 6/ds);
+    }
+
+    ctx.restore();
+  }
 
   // Virtual joystick overlay (mobile)
   if(isMobile && !popupOpen){
