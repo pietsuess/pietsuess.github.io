@@ -185,34 +185,15 @@
   }
   #mute-btn.muted::before{display:block;}
   #dpad{
-    display:none; position:fixed; bottom:20px; right:20px;
-    width:140px; height:140px; z-index:50; pointer-events:none;
+    display:none; position:fixed; bottom:16px; right:16px;
+    width:130px; height:130px; z-index:50; touch-action:none;
   }
-  #dpad .dpad-btn{
-    position:absolute; width:36px; height:36px;
-    background:rgba(0,255,200,0.15); border:2px solid rgba(0,255,200,0.4);
-    border-radius:4px; pointer-events:auto; touch-action:none;
-    display:flex; align-items:center; justify-content:center;
-  }
-  #dpad .dpad-btn.active{ background:rgba(0,255,200,0.4); border-color:rgba(0,255,200,0.8); }
-  #dpad .dpad-btn svg{ width:14px; height:14px; fill:rgba(0,255,200,0.6); }
-  #dpad .dpad-btn.active svg{ fill:rgba(0,255,200,1); }
-  #dpad .dpad-btn{ width:44px; height:44px; }
-  #dpad-up{ left:48px; top:0; }
-  #dpad-down{ left:48px; bottom:0; }
-  #dpad-left{ left:0; top:48px; }
-  #dpad-right{ right:0; top:48px; }
+  #dpad canvas{ width:130px; height:130px; }
 </style>
 </head>
 <body>
 <div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
-<div id="dpad">
-  <div class="dpad-btn" id="dpad-up"><svg viewBox="0 0 24 24"><path d="M12 4l-8 8h16z"/></svg></div>
-  <div class="dpad-btn" id="dpad-left"><svg viewBox="0 0 24 24"><path d="M4 12l8-8v16z"/></svg></div>
-
-  <div class="dpad-btn" id="dpad-right"><svg viewBox="0 0 24 24"><path d="M20 12l-8-8v16z"/></svg></div>
-  <div class="dpad-btn" id="dpad-down"><svg viewBox="0 0 24 24"><path d="M12 20l8-8H4z"/></svg></div>
-</div>
+<div id="dpad"><canvas id="dpad-c" width="260" height="260"></canvas></div>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -1698,56 +1679,131 @@ if(isMobile){
 }
 let touchJoyDx = 0, touchJoyDy = 0;
 
-// D-pad touch handling — drag finger across buttons to change direction
-const _dpadBtns = {up:document.getElementById('dpad-up'), down:document.getElementById('dpad-down'),
-  left:document.getElementById('dpad-left'), right:document.getElementById('dpad-right')};
+// Circular D-pad — 8 directions (4 cardinal big arrows, 4 diagonal small arrows)
+// Pie slices at 45° intervals, divider lines converge at center
+const _dpadCanvas = document.getElementById('dpad-c');
+const _dpadCtx = _dpadCanvas.getContext('2d');
+const _dpadEl = document.getElementById('dpad');
+const _dpadR = 130; // canvas pixels (2x CSS for retina)
+const _dpadCx = _dpadR, _dpadCy = _dpadR;
+// 8 directions: index 0=right, going counter-clockwise
+// Angles: each slice is 45°. Slice i covers angle (i*45 - 22.5) to (i*45 + 22.5)
+const _dpadDirs = [
+  {name:'right',    dx:1,    dy:0},     // 0°
+  {name:'downright', dx:0.707, dy:0.707}, // 45°
+  {name:'down',     dx:0,    dy:1},     // 90°
+  {name:'downleft', dx:-0.707,dy:0.707}, // 135°
+  {name:'left',     dx:-1,   dy:0},     // 180°
+  {name:'upleft',   dx:-0.707,dy:-0.707},// 225°
+  {name:'up',       dx:0,    dy:-1},    // 270°
+  {name:'upright',  dx:0.707, dy:-0.707} // 315°
+];
 let _dpadTouchId = null;
-let _dpadActiveDir = null;
+let _dpadActiveIdx = -1;
 
-function hitTestDpad(tx, ty){
-  for(const dir in _dpadBtns){
-    const r = _dpadBtns[dir].getBoundingClientRect();
-    if(tx >= r.left && tx <= r.right && ty >= r.top && ty <= r.bottom) return dir;
+function drawDpad(){
+  const c = _dpadCtx, cx = _dpadCx, cy = _dpadCy, r = _dpadR - 4;
+  c.clearRect(0, 0, _dpadR*2, _dpadR*2);
+  // Outer circle
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
+  c.fillStyle = 'rgba(0,0,0,0.35)';
+  c.fill();
+  c.strokeStyle = 'rgba(0,255,200,0.4)';
+  c.lineWidth = 2;
+  c.stroke();
+  // Divider lines
+  for(let i = 0; i < 8; i++){
+    const a = (i * 45 - 22.5) * Math.PI / 180;
+    c.beginPath();
+    c.moveTo(cx, cy);
+    c.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
+    c.strokeStyle = 'rgba(0,255,200,0.2)';
+    c.lineWidth = 1;
+    c.stroke();
   }
-  return null;
+  // Highlight active slice
+  if(_dpadActiveIdx >= 0){
+    const a1 = (_dpadActiveIdx * 45 - 22.5) * Math.PI / 180;
+    const a2 = (_dpadActiveIdx * 45 + 22.5) * Math.PI / 180;
+    c.beginPath();
+    c.moveTo(cx, cy);
+    c.arc(cx, cy, r, a1, a2);
+    c.closePath();
+    c.fillStyle = 'rgba(0,255,200,0.3)';
+    c.fill();
+  }
+  // Arrows — cardinal (big) and diagonal (small)
+  for(let i = 0; i < 8; i++){
+    const a = i * 45 * Math.PI / 180;
+    const isCardinal = i % 2 === 0;
+    const dist = isCardinal ? r * 0.6 : r * 0.6;
+    const size = isCardinal ? 14 : 9;
+    const ax = cx + Math.cos(a) * dist;
+    const ay = cy + Math.sin(a) * dist;
+    const active = i === _dpadActiveIdx;
+    c.save();
+    c.translate(ax, ay);
+    c.rotate(a + Math.PI/2); // point arrow outward
+    c.beginPath();
+    c.moveTo(0, -size);
+    c.lineTo(-size * 0.7, size * 0.5);
+    c.lineTo(size * 0.7, size * 0.5);
+    c.closePath();
+    c.fillStyle = active ? 'rgba(0,255,200,1)' : 'rgba(0,255,200,0.5)';
+    c.fill();
+    c.restore();
+  }
 }
-function setDpadDir(dir){
-  if(dir === _dpadActiveDir) return;
-  _dpadActiveDir = dir;
-  for(const d in _dpadBtns) _dpadBtns[d].classList.toggle('active', d === dir);
-  touchJoyDx = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
-  touchJoyDy = dir === 'down' ? 1 : dir === 'up' ? -1 : 0;
+drawDpad();
+
+function dpadAngleToIdx(tx, ty){
+  const rect = _dpadCanvas.getBoundingClientRect();
+  const x = tx - rect.left - rect.width/2;
+  const y = ty - rect.top - rect.height/2;
+  const dist = Math.sqrt(x*x + y*y);
+  if(dist < 8) return -1; // dead zone at center
+  let ang = Math.atan2(y, x) * 180 / Math.PI;
+  if(ang < 0) ang += 360;
+  // Each slice is 45° wide, centered on i*45
+  return Math.round(ang / 45) % 8;
+}
+function setDpadIdx(idx){
+  if(idx === _dpadActiveIdx) return;
+  _dpadActiveIdx = idx;
+  if(idx >= 0){
+    touchJoyDx = _dpadDirs[idx].dx;
+    touchJoyDy = _dpadDirs[idx].dy;
+  } else {
+    touchJoyDx = 0; touchJoyDy = 0;
+  }
+  drawDpad();
 }
 function clearDpad(){
-  _dpadTouchId = null; _dpadActiveDir = null;
-  for(const d in _dpadBtns) _dpadBtns[d].classList.remove('active');
-  touchJoyDx = 0; touchJoyDy = 0;
+  _dpadTouchId = null;
+  setDpadIdx(-1);
 }
 
-const dpadEl = document.getElementById('dpad');
-dpadEl.style.pointerEvents = 'auto';
-dpadEl.addEventListener('touchstart', e => {
+_dpadEl.addEventListener('touchstart', e => {
   e.preventDefault(); e.stopPropagation(); tryStartMusic();
   const t = e.changedTouches[0];
   _dpadTouchId = t.identifier;
-  setDpadDir(hitTestDpad(t.clientX, t.clientY));
+  setDpadIdx(dpadAngleToIdx(t.clientX, t.clientY));
 }, {passive:false});
-dpadEl.addEventListener('touchmove', e => {
+_dpadEl.addEventListener('touchmove', e => {
   e.preventDefault(); e.stopPropagation();
   for(const t of e.changedTouches){
     if(t.identifier === _dpadTouchId){
-      const dir = hitTestDpad(t.clientX, t.clientY);
-      setDpadDir(dir);
+      setDpadIdx(dpadAngleToIdx(t.clientX, t.clientY));
     }
   }
 }, {passive:false});
-dpadEl.addEventListener('touchend', e => {
+_dpadEl.addEventListener('touchend', e => {
   e.preventDefault(); e.stopPropagation();
   for(const t of e.changedTouches){
     if(t.identifier === _dpadTouchId) clearDpad();
   }
 }, {passive:false});
-dpadEl.addEventListener('touchcancel', e => {
+_dpadEl.addEventListener('touchcancel', e => {
   for(const t of e.changedTouches){
     if(t.identifier === _dpadTouchId) clearDpad();
   }
