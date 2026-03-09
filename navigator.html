@@ -105,6 +105,11 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     0%,49%{ transform:translateX(-50%) translateY(0); }
     50%,100%{ transform:translateX(-50%) translateY(-8px); }
   }
+  @keyframes peanutXFlash {
+    0%,40%{ opacity:1; text-shadow:0 0 18px #ffe000; }
+    50%,90%{ opacity:0.2; text-shadow:none; }
+    100%{ opacity:1; text-shadow:0 0 18px #ffe000; }
+  }
   @keyframes bounceRight {
     0%,49%{ transform:translateX(0); }
     50%,100%{ transform:translateX(6px); }
@@ -1127,20 +1132,6 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   </div>
 </div>
 
-<!-- Ship toggle tutorial popup — blocks until player toggles once -->
-<div id="toggle-tutorial" style="
-  display:none; position:fixed; top:50%; left:50%; transform:translate(-50%,-50%);
-  background:rgba(0,0,0,0.92); border:2px solid #00ff88;
-  box-shadow:0 0 40px rgba(0,255,136,0.3);
-  padding:48px 56px; z-index:700; text-align:center;
-  font-family:'Press Start 2P',monospace; width:max-content; max-width:92vw;
-">
-  <div style="color:#00ff88;font-size:22px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;">TOGGLE SHIP MODE</div>
-  <div style="color:#00ff88;font-size:22px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;margin-top:28px;">PRESS <span style="color:#ffe000;">X</span> ON KEYBOARD</div>
-  <div style="color:#00ff88;font-size:22px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;margin-top:28px;">TRY NOW TO CONTINUE</div>
-</div>
-
-
 <!-- Fullscreen button -->
 <!-- fullscreen also accessible from HUD top-right on desktop -->
 
@@ -1422,6 +1413,8 @@ const LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','DESIGN'];
 const ZONE_SHAPES = ['octagon','square','circle','pentagon','triangle'];
 
 const LEVEL_COLORS = { DIRECT:'#ff69b4', EDITING:'#00ffff', ANIMATE:'#00ff88', PHOTO:'#ffcc00', DESIGN:'#ff8c00' };
+// Object colors — complementary to zone color, used for HUD icons and fly animations
+const LEVEL_OBJ_COLORS = { DIRECT:'#69ffb4', EDITING:'#ffe800', ANIMATE:'#ff5577', PHOTO:'#5533ff', DESIGN:'#ff8c00' };
 
 // Bio write-ups shown in every level
 const LEVEL_BIOS = {
@@ -1796,11 +1789,11 @@ const SOCIAL_OBJECTS = [
 const SPECTRUM = ['#ff0040','#ff4400','#ff8c00','#ffe000','#88ff00','#00ff88','#00ffcc','#00ccff','#4488ff','#aa44ff','#ff44cc'];
 // Per-zone limited color palettes (2-4 colors each, matching zone theme)
 const ZONE_PALETTE = {
-  EDITING: ['#00ffff','#00ccff','#88ffff'],
-  ANIMATE: ['#00ff88','#00ffcc','#88ffcc'],
-  PHOTO:   ['#ffcc00','#ffe066','#ffaa00'],
+  EDITING: ['#ffe800','#ffee44','#ffd500'],
+  ANIMATE: ['#ff5577','#ff7799','#ff3355'],
+  PHOTO:   ['#5533ff','#7755ff','#4422ee'],
   DESIGN:  ['#ff8c00','#ffaa44','#ff6600'],
-  DIRECT:  ['#ff69b4','#ff88cc','#ff44aa']
+  DIRECT:  ['#69ffb4','#88ffcc','#44ff99']
 };
 
 // Content pop-ups preference — persisted in localStorage
@@ -2034,6 +2027,186 @@ function _dismissFuelPopup(){
   ov.remove();
   state.paused = false;
   return true;
+}
+
+// ── Peanut unlock popup ──────────────────────────────────────────────
+let _peanutPopupToggled = false;
+let _peanutAnimId = null;
+
+function _showPeanutPopup(){
+  if(document.getElementById('peanut-popup-overlay')) return;
+  _peanutPopupToggled = false;
+  const ov = document.createElement('div');
+  ov.id = 'peanut-popup-overlay';
+  ov.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
+  ov.onclick = function(e){ if(e.target===ov && _peanutPopupToggled) _dismissPeanutPopup(); };
+  ov.innerHTML = `<div id="peanut-popup-box" style="position:relative;border:2px solid #00ff88;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 40px rgba(0,255,136,0.3);" onclick="event.stopPropagation()">
+    <div id="peanut-popup-close" onclick="_dismissPeanutPopup()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;margin-bottom:16px;line-height:2;text-shadow:0 0 18px #00ff88;">YOU'VE UNLOCKED A<br>NEW SHIP STATE</div>
+    <div id="peanut-popup-title" style="color:#44ff44;font-size:28px;letter-spacing:4px;margin-bottom:8px;text-shadow:0 0 24px #44ff44,0 0 48px #44ff44;">PEANUT</div>
+    <div id="peanut-popup-sub" style="color:#00ff88;font-size:16px;letter-spacing:3px;margin-bottom:28px;text-shadow:0 0 12px #00ff88;">HARD SHELL</div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:16px;margin-bottom:24px;">
+      <div style="text-align:center;">
+        <div id="peanut-ship-left-wrap" style="width:80px;height:80px;border-radius:50%;border:3px solid transparent;display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="peanut-ship-left" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+      <div style="color:#00ff88;font-size:24px;text-shadow:0 0 12px #00ff88;">▸</div>
+      <div style="text-align:center;">
+        <div id="peanut-ship-right-wrap" style="width:46px;height:46px;border-radius:50%;border:3px solid #44ff44;box-shadow:0 0 16px rgba(68,255,68,0.5);display:flex;align-items:center;justify-content:center;transition:border-color 0.3s,box-shadow 0.3s;">
+          <canvas id="peanut-ship-right" style="display:block;position:static;top:auto;left:auto;pointer-events:auto;"></canvas>
+        </div>
+      </div>
+    </div>
+    <div style="color:#00ff88;font-size:20px;letter-spacing:3px;text-shadow:0 0 18px #00ff88;">TOGGLE USING <span id="peanut-flash-x" style="color:#ffe000;font-size:40px;vertical-align:middle;animation:peanutXFlash 1s steps(1) infinite;">X</span> KEY</div>
+    <div style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:24px;">DURING GAMEPLAY</div>
+  </div>`;
+  document.body.appendChild(ov);
+
+  // Set up ship canvases — fixed 45° NE angle, no rotation
+  const dpr = window.devicePixelRatio || 1;
+  const cSizeL = 75; // CSS px — standard ship canvas
+  const cSizeR = 38; // CSS px — peanut ship canvas (half of standard)
+  const cL = document.getElementById('peanut-ship-left');
+  const cR = document.getElementById('peanut-ship-right');
+  cL.width = cSizeL * dpr; cL.height = cSizeL * dpr;
+  cL.style.width = cSizeL+'px'; cL.style.height = cSizeL+'px';
+  cR.width = cSizeR * dpr; cR.height = cSizeR * dpr;
+  cR.style.width = cSizeR+'px'; cR.style.height = cSizeR+'px';
+  const ctxL = cL.getContext('2d');
+  const ctxR = cR.getContext('2d');
+  const NE_ANGLE = Math.PI * 0.25; // 45° northeast (clockwise from north)
+
+  function _drawShipInCtx(ctx, color, shipSize, glow){
+    const s = shipSize;
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 3.5;
+    ctx.shadowBlur = 16;
+    ctx.shadowColor = glow;
+    ctx.beginPath();
+    ctx.moveTo(0, -s);
+    ctx.lineTo(s*0.6, s*0.7);
+    ctx.lineTo(0, s*0.35);
+    ctx.lineTo(-s*0.6, s*0.7);
+    ctx.closePath();
+    ctx.stroke();
+    // Centre dot
+    ctx.fillStyle = color;
+    ctx.shadowBlur = 0;
+    ctx.beginPath();
+    ctx.arc(0, 0, 2, 0, Math.PI*2);
+    ctx.fill();
+  }
+
+  // Draw once — static ships, no animation loop needed
+  // Standard ship (left) — pink, size 30
+  ctxL.save();
+  ctxL.scale(dpr, dpr);
+  ctxL.translate(cSizeL/2, cSizeL/2);
+  ctxL.rotate(NE_ANGLE);
+  _drawShipInCtx(ctxL, '#ff69b4', 30, '#ff4500');
+  ctxL.restore();
+  // Peanut ship (right) — green, size 15 (half of standard, matching game ratio)
+  ctxR.save();
+  ctxR.scale(dpr, dpr);
+  ctxR.translate(cSizeR/2, cSizeR/2);
+  ctxR.rotate(NE_ANGLE);
+  _drawShipInCtx(ctxR, '#44ff44', 15, '#00cc00');
+  ctxR.restore();
+
+  state.paused = true;
+}
+
+function _dismissPeanutPopup(){
+  const ov = document.getElementById('peanut-popup-overlay');
+  if(!ov) return false;
+  if(_peanutAnimId){ cancelAnimationFrame(_peanutAnimId); _peanutAnimId = null; }
+  ov.remove();
+  state.paused = false;
+  state._shipToggleTutorialDone = true;
+  return true;
+}
+
+function _updatePeanutPopupHighlight(){
+  const pp = document.getElementById('peanut-popup-overlay');
+  if(!pp) return;
+  const isPeanut = (state.cheat === 'peanut');
+  const wL = document.getElementById('peanut-ship-left-wrap');
+  const wR = document.getElementById('peanut-ship-right-wrap');
+  const title = document.getElementById('peanut-popup-title');
+  const sub = document.getElementById('peanut-popup-sub');
+  if(isPeanut){
+    wL.style.borderColor = 'transparent'; wL.style.boxShadow = 'none';
+    wR.style.borderColor = '#44ff44'; wR.style.boxShadow = '0 0 16px rgba(68,255,68,0.5)';
+    if(title){ title.textContent = 'PEANUT'; title.style.color = '#44ff44'; title.style.textShadow = '0 0 24px #44ff44,0 0 48px #44ff44'; }
+    if(sub){ sub.textContent = 'HARD SHELL'; }
+  } else {
+    wL.style.borderColor = '#ff69b4'; wL.style.boxShadow = '0 0 16px rgba(255,105,180,0.5)';
+    wR.style.borderColor = 'transparent'; wR.style.boxShadow = 'none';
+    if(title){ title.textContent = 'STANDARD'; title.style.color = '#ff69b4'; title.style.textShadow = '0 0 24px #ff69b4,0 0 48px #ff69b4'; }
+    if(sub){ sub.textContent = 'DELTA WING'; }
+  }
+}
+
+// ── Fly-to-HUD animation on object collection ───────────────────────
+let _hudFlyAnims = [];
+let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
+let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
+
+function _spawnHudFlyAnim(itemTitle){
+  // Find which zone & index this item belongs to
+  for(let li = 0; li < LEVELS.length; li++){
+    const lvlName = LEVELS[li];
+    const items = CONTENT_DATA[lvlName] || [];
+    const idx = items.findIndex(it => it.title === itemTitle);
+    if(idx < 0) continue;
+    const shape = ZONE_SHAPES[li] || 'triangle';
+    const col = LEVEL_OBJ_COLORS[lvlName] || LEVEL_COLORS[lvlName] || '#fff';
+    const count = items.length;
+    const spacing = Math.min(28, (canvas.height - 140) / count);
+    const totalH = spacing * (count - 1);
+    const targetY = (canvas.height / 2) - (totalH / 2) + idx * spacing;
+    const targetX = 22;
+    _hudFlyingTitles.add(itemTitle);
+    _hudFlyAnims.push({
+      startX: canvas.width / 2,
+      startY: canvas.height / 2,
+      targetX: targetX,
+      targetY: targetY,
+      shape: shape,
+      color: col,
+      title: itemTitle,
+      progress: 0,
+      duration: 45 // ~0.75s at 60fps
+    });
+    return;
+  }
+}
+
+function _drawHudFlyAnims(){
+  if(_hudFlyAnims.length === 0) return;
+  ctx.save();
+  for(let i = _hudFlyAnims.length - 1; i >= 0; i--){
+    const a = _hudFlyAnims[i];
+    a.progress += 1 / a.duration;
+    if(a.progress >= 1){ if(a.title) _hudFlyingTitles.delete(a.title); _hudFlyAnims.splice(i, 1); continue; }
+    const t = a.progress;
+    const ease = t * t * (3 - 2 * t); // smoothstep
+    const x = a.startX + (a.targetX - a.startX) * ease;
+    const y = a.startY + (a.targetY - a.startY) * ease;
+    const scale = 2.5 - 1.5 * ease; // shrink from 2.5x to 1x
+    const sz = 10 * scale;
+    const alpha = 0.4 + 0.6 * (1 - t); // fade slightly as it arrives
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = a.color;
+    ctx.lineWidth = 2.5;
+    ctx.shadowBlur = 14;
+    ctx.shadowColor = a.color;
+    drawHUDShape(ctx, a.shape, x, y, sz);
+    ctx.stroke();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
 }
 
 let state = {
@@ -4180,7 +4353,7 @@ window.addEventListener('keydown',e=>{
     var _wh=document.getElementById('wave-unlock-hint');if(_wh)_wh.style.display='none';
     var _xh=document.getElementById('x2-unlock-hint');if(_xh)_xh.style.display='none';
   }
-  if(e.code==='KeyX'&&state.started&&!state.gameOver&&(!state.paused||document.getElementById('toggle-tutorial').style.display!=='none')){
+  if(e.code==='KeyX'&&state.started&&!state.gameOver&&(!state.paused||document.getElementById('peanut-popup-overlay'))){
     cycleShipMode();
   }
   if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight'].includes(e.code))e.preventDefault();
@@ -4252,7 +4425,7 @@ function cycleShipMode(){
     state.zoneCrossFlash={lvl:-3,timer:160,msg:'BUBBLE POPPED!',sub:'SHIP MODE DEACTIVATED'};
   } else {
     // Ship mode toggle flash text
-    const _modeMsg = next==='peanut' ? 'HARD SHELL' : next==='bubbles' ? 'BOUNCY AND FRAGILE' : 'BASE SHIP CONFIGURATION';
+    const _modeMsg = next==='peanut' ? 'HARD SHELL' : next==='bubbles' ? 'BOUNCY AND FRAGILE' : 'DELTA WING';
     state.zoneCrossFlash = { lvl:-3, timer:80, msg:_modeMsg, _col:'#00ffcc' };
   }
   updateShipModeUI();
@@ -4261,12 +4434,14 @@ function cycleShipMode(){
     const now=audioCtx.currentTime;
     [0,4,7,12,16,12,7,4,0].forEach((n,i)=>playBeep(noteFreq(660,n),now+i*0.06,0.1,'square',0.06));
   }
-  // Dismiss toggle tutorial if showing
-  var _tt=document.getElementById('toggle-tutorial');
-  if(_tt && _tt.style.display!=='none'){
-    _tt.style.display='none';
-    state._shipToggleTutorialDone=true;
-    state.paused=false;
+  // Handle peanut popup toggle interaction
+  const _pp = document.getElementById('peanut-popup-overlay');
+  if(_pp){
+    _peanutPopupToggled = true;
+    _updatePeanutPopupHighlight();
+    // Show close button now that they've toggled
+    const closeBtn = document.getElementById('peanut-popup-close');
+    if(closeBtn) closeBtn.style.display = '';
   }
 }
 function updateShipModeUI(){
@@ -4416,6 +4591,7 @@ function updateWaveBeams(){
           const ci={title:obj.content.title, level:LEVELS[state.currentLevel]||'EDITING'};
           state.collectedItems.push(ci);
           persistCollect(ci);
+          _pendingFlyTitle = obj.content.title;
         }
         openContent(obj.content);
       }
@@ -5985,6 +6161,7 @@ function update(){
           const ct=obj.content&&obj.content.title;
           // Also mark other copies of same item (from other cells)
           if(ct){ state.objects.forEach(o=>{ if(o!==obj&&!o._permanent&&!o._bio&&o.content&&o.content.title===ct) o.collected=true; }); }
+          if(ct && !(state.collectedItems||[]).find(c=>c.title===ct)) _pendingFlyTitle = ct;
         } else {
           // Set cooldown so it won't re-trigger until player moves away and returns
           obj._cooldown = state.frameCount + 180;
@@ -6218,7 +6395,7 @@ function requestRefuel(){
 }
 function hardRestart(){
   document.getElementById('gameover').classList.remove('open');
-  document.getElementById('toggle-tutorial').style.display='none';
+  _dismissPeanutPopup();
   Object.assign(state,{gameOver:false,fuel:1.0,score:0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
     tracers:[],hyperspace:false,cheat:null,hasWaveBeam:false,fireMode:'boost',
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
@@ -6741,8 +6918,6 @@ function triggerPeanutUnlock(){
   state.cheat = 'peanut';
   // Show the ship-toggle in HUD
   updateFireModeUI();
-  // Unlock announcement flash
-  state.zoneCrossFlash = { lvl:-3, timer:300, pre:'SHIP MODE UNLOCKED:', msg:'PEANUT', sub:'HARD SHELL — TIGHT CORNERING', _col:'#00ff88' };
   // Victory SFX — ascending major fanfare
   if(audioCtx && !state.sfxMuted){
     const t = audioCtx.currentTime;
@@ -6756,12 +6931,11 @@ function triggerPeanutUnlock(){
   }
   // +2500 points
   addScore(2500);
-  // Show toggle tutorial ~9s after unlock (one-shot, not a persistent timer)
+  // Show peanut unlock popup after fanfare plays
   setTimeout(()=>{
     if(state._shipToggleTutorialDone || state._victoryPhase) return;
-    const el = document.getElementById('toggle-tutorial');
-    if(el){ el.style.display=''; state.paused=true; }
-  }, 9000);
+    _showPeanutPopup();
+  }, 800);
 }
 
 function triggerRockSplit(wx, wy, sz){
@@ -6881,7 +7055,7 @@ function drawZoneHUD(){
   if(!items||items.length===0) return;
 
   const shape=ZONE_SHAPES[lvl];
-  const col=LEVEL_COLORS[zoneName];
+  const col=LEVEL_OBJ_COLORS[zoneName]||LEVEL_COLORS[zoneName];
   const collectedSet=new Set((state.collectedItems||[]).map(c=>c.title));
   const count=items.length;
 
@@ -6903,7 +7077,7 @@ function drawZoneHUD(){
   ctx.save();
   for(let i=0;i<count;i++){
     const y=startY+i*spacing;
-    const collected=collectedSet.has(items[i].title);
+    const collected=collectedSet.has(items[i].title) && !_hudFlyingTitles.has(items[i].title);
     // Store hit area for click/hover
     _zoneHUDIcons.push({ x:xPos, y:y, r:iconSize+4, item:items[i], collected:collected });
     drawHUDShape(ctx, shape, xPos, y, iconSize);
@@ -6965,31 +7139,6 @@ function drawZoneHUD(){
 
   // (Drawer hint disabled — may revisit later)
 
-  // Left HUD hint — arrow + text next to collected-object icons
-  // Appears after 3 objects collected; killed by: clicking HUD icon, leaving EDIT, or collecting more
-  const _collCount = (state.collectedItems||[]).length;
-  if(state.editMissionComplete || zoneAt(state.x, state.y) !== 1) state._hudHintAt = 0;  // kill once left EDIT
-  if(_collCount >= 3 && state._hudHintAt !== 0){
-    if(state._hudHintAt === undefined) state._hudHintAt = _collCount;
-    if(_collCount <= state._hudHintAt){
-      ctx.save();
-      const hintY = startY + totalH/2;
-      const hintX = xPos + 28;
-      const pulse = 0.6 + 0.4 * Math.sin(Date.now() * 0.004);
-      ctx.globalAlpha = pulse;
-      setFont(FONT_32);
-      ctx.fillStyle = '#00ffcc';
-      ctx.shadowColor = '#00ffcc';
-      ctx.shadowBlur = 12;
-      ctx.textBaseline = 'middle';
-      ctx.fillText('◀', hintX, hintY);
-      setFont(FONT_18);
-      ctx.fillText('COLLECTED OBJECTS', hintX + 40, hintY - 14);
-      ctx.fillText('POPULATE HERE', hintX + 40, hintY + 14);
-      ctx.shadowBlur = 0;
-      ctx.restore();
-    }
-  }
 }
 
 function drawRadarMap(){
@@ -7137,19 +7286,14 @@ function drawRadarMap(){
   ctx.stroke();
   ctx.shadowBlur = 0;
 
-  // Clip content to radar circle so offset elements don't bleed outside
-  ctx.beginPath();
-  ctx.arc(mapX, mapY, mapR, 0, PI2);
-  ctx.clip();
-
-  // RADAR label curving inside bottom (south) edge
-  setFont(FONT_11);
-  ctx.fillStyle = 'rgba(0,255,204,0.3)';
+  // RADAR label curving inside bottom (south) edge — drawn BEFORE clip so letters aren't cut off
+  ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
+  ctx.fillStyle = 'rgba(255,255,255,0.35)';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   var _rLabel = 'RADAR';
-  var _rLabelR = mapR - 2;
-  var _rCharSpan = 0.09;
+  var _rLabelR = mapR - 10;
+  var _rCharSpan = 0.14;
   var _rStartAng = Math.PI / 2 - (_rLabel.length - 1) * _rCharSpan / 2;
   for(var _ri = 0; _ri < _rLabel.length; _ri++){
     var _rAng = _rStartAng + _ri * _rCharSpan;
@@ -7159,6 +7303,11 @@ function drawRadarMap(){
     ctx.fillText(_rLabel[_ri], 0, 0);
     ctx.restore();
   }
+
+  // Clip content to radar circle so offset elements don't bleed outside
+  ctx.beginPath();
+  ctx.arc(mapX, mapY, mapR, 0, PI2);
+  ctx.clip();
 
   // Zone sectors — offset from world origin, clip handles overflow
   const visited = state.visitedLevels || new Set([1]);
@@ -7865,8 +8014,7 @@ function drawGame(){
     } else {
       // Glow halo — pulse via fill alpha, no shadowBlur (Safari perf)
       const glowPulse = Math.sin(state.frameCount*0.08 + obj.pulsePhase)*0.5+0.5;
-      // EDIT squares: yellow fill + cyan border; others: normal zone color
-      ctx.fillStyle = obj.shape==='square' ? '#ffe800' : objColor;
+      ctx.fillStyle = objColor;
       ctx.globalAlpha = pulse * (0.55 + glowPulse*0.45);
       ctx.beginPath();
       if(obj.shape==='hex'||obj.shape==='octagon'||obj.shape==='pentagon'){
@@ -8517,6 +8665,7 @@ function drawGame(){
 
   // ── Zone Object HUD — left-side progress column ──
   drawZoneHUD();
+  _drawHudFlyAnims();
 
   // ── On-screen radar minimap — bottom-right ──
   drawRadarMap();
@@ -9411,7 +9560,7 @@ function updateAllObjectsList(){
   function renderLevel(lvl){
     const _lvlIdx = LEVELS.indexOf(lvl);
     const _shape  = ZONE_SHAPES[_lvlIdx] || 'triangle';
-    const _color  = LEVEL_COLORS[lvl] || '#fff';
+    const _color  = LEVEL_OBJ_COLORS[lvl] || LEVEL_COLORS[lvl] || '#fff';
     const _svgZ   = _menuShapeSVG(_shape, _color, 10);
     const _svgI   = _menuShapeSVG(_shape, _color, 8);
 
@@ -9508,6 +9657,7 @@ function openContent(item, replay=false){
         pop.style.opacity='1'; setTimeout(()=>{ pop.style.opacity='0'; },800); }
       state.collectedItems.push(item);
       persistCollect(item);
+      _spawnHudFlyAnim(item.title);
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
     if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,4,7,12,16].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.07,0.14,'square',0.055));}
@@ -9722,6 +9872,7 @@ function openContent(item, replay=false){
       if(item.duration>0) addScore(item.duration*40);
       state.collectedItems.push(item);
       persistCollect(item);
+      _pendingFlyTitle = item.title; // queue fly-to-HUD animation for closeContent
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
   }
@@ -9829,6 +9980,11 @@ function closeContent(){
   state.contentOpen=false; state.paused=false;
   if(hadVideo) resumeMusic();
   if(!state._victoryPhase) checkLevelComplete();
+  // Fly-to-HUD animation for newly collected item
+  if(_pendingFlyTitle){
+    _spawnHudFlyAnim(_pendingFlyTitle);
+    _pendingFlyTitle = null;
+  }
   // First-popup prompt: show once after the very first content popup is closed (not in boring mode, not in victory room)
   if(!_firstPopupShown && !window._boringModeWasStarted && !state._victoryPhase && document.getElementById('boring-mode-popup').style.display!=='flex'){
     _firstPopupShown=true;
@@ -11890,6 +12046,9 @@ function _dismissTopmostPopup(e){
   // Fuel info popup — Escape/click only, not any key
   const fp=document.getElementById('fuel-popup-overlay');
   if(fp){ if(_escOnly) return false; _dismissFuelPopup(); return true; }
+  // Peanut unlock popup — only dismissible after player has toggled once
+  const pp=document.getElementById('peanut-popup-overlay');
+  if(pp){ if(!_peanutPopupToggled) return false; if(_escOnly) return false; _dismissPeanutPopup(); return true; }
   // Victory room zone menu removed — now in NAVIGATOR-VICTORY.html
   const lb=document.getElementById('gallery-lightbox');
   if(lb && lb.classList.contains('open')){ closeLightbox(); return true; }
