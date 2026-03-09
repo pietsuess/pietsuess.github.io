@@ -2160,6 +2160,12 @@ window.onload = function() {
     shieldLight.position.set(0, 0, 0);
     shipGroup.add(shieldLight);
 
+    // Force field bubble — visible only when force field is active
+    const forceFieldGeo = new THREE.SphereGeometry(6, 16, 12);
+    const forceFieldMat = new THREE.MeshBasicMaterial({ color: 0xff44ff, transparent: true, opacity: 0, wireframe: true, depthWrite: false });
+    const forceFieldMesh = new THREE.Mesh(forceFieldGeo, forceFieldMat);
+    shipGroup.add(forceFieldMesh);
+
     // ── Exhaust particle trail ────────────────────────────────────────
     const TRAIL_COUNT = 30;
     const trailParticles = [];
@@ -2851,9 +2857,9 @@ window.onload = function() {
             scene.add(bMesh); items.push(bMesh);
             return;
         }
-        // Star — shields up, all sectors, scales with sector + level
-        var starChance = (s >= 4 ? 0.03 : s >= 3 ? 0.02 : s >= 2 ? 0.015 : 0.01) + (lvl - 1) * 0.005;
-        if (rand < starChance) {
+        // Star — force field pickup, S2+ only
+        var starChance = s < 2 ? 0 : (s >= 4 ? 0.03 : s >= 3 ? 0.02 : 0.015) + (lvl - 1) * 0.005;
+        if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (rand < coreChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
@@ -4274,9 +4280,15 @@ window.onload = function() {
                 // Pulsing cyan glow on ship, flicker faster in last 2 seconds
                 var shieldFlicker = shieldsUpTimer < 2 ? Math.sin(performance.now() * 0.02) * 0.5 + 0.5 : 1;
                 shieldLight.intensity = 6 * shieldFlicker;
+                forceFieldMat.opacity = 0.25 * shieldFlicker;
+                forceFieldMesh.rotation.x += 0.03;
+                forceFieldMesh.rotation.y += 0.02;
+                var ffScale = 1.0 + 0.1 * Math.sin(performance.now() * 0.005);
+                forceFieldMesh.scale.setScalar(ffScale);
                 updateShieldBar();
             } else {
                 shieldLight.intensity = 0;
+                forceFieldMat.opacity = 0;
             }
             let moveDist = speed * delta;
             distanceTraveled += moveDist;
@@ -4467,8 +4479,8 @@ window.onload = function() {
             matFlameOuter.opacity = 0.4 + bright * 0.2;
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
 
-            // ── Exhaust particle trail ──────────────────────────────
-            if (throttleSmooth > 0.05) {
+            // ── Exhaust particle trail — hyperdrive only ─────────────
+            if (hyperFrac > 0.1) {
                 // Spawn 1-2 particles per frame depending on throttle
                 var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
                 for (var si = 0; si < spawnCount; si++) {
@@ -4650,7 +4662,7 @@ window.onload = function() {
                                 shieldsUpTimer = getShieldsDuration(currentSector);
                                 AudioEngine.playSFX('star');
                                 flash('#ff44ff');
-                                spawnPointBurst('SHIELDS UP!', 'c-magenta');
+                                spawnPointBurst('FORCE FIELD!', 'c-magenta');
                                 score += 500;
                             }
                             else if (item.userData.type === 'content') {
