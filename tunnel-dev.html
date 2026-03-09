@@ -1285,6 +1285,8 @@ window.onload = function() {
     // ── Content Collection System ──────────────────────────────────────
     // 5 sectors, each tied to a content zone. Player replays sector at
     // increasing difficulty until all content objects for that zone are collected.
+    var _bonusUnlockedTitle = null; // set by triggerVictory if score bonus earned
+    const SCORE_BONUS_THRESHOLD = 5000; // sector score needed for bonus unlock
     const SECTOR_ZONES = ['EDIT', 'PHOTO', 'DIRECT', 'ANIMATE', 'DESIGN'];
     const ZONE_SHAPES_3D = ['square', 'pentagon', 'octagon', 'circle', 'triangle'];
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', DESIGN:'#ff8c00' };
@@ -1630,6 +1632,7 @@ window.onload = function() {
             var card = document.createElement('div');
             card.className = 'tr-carousel-card';
             var isCollected = collectedContent[zone] && collectedContent[zone].has(item.title);
+            var isBonusReveal = (item.title === _bonusUnlockedTitle);
 
             var thumb = document.createElement('img');
             thumb.className = 'tr-carousel-thumb';
@@ -1640,8 +1643,9 @@ window.onload = function() {
             } else if (isGalleryZone) {
                 thumb.style.aspectRatio = '1/1';
             }
-            if (!isCollected) {
+            if (!isCollected || isBonusReveal) {
                 thumb.style.filter = 'grayscale(1) brightness(0.3)';
+                thumb.style.transition = 'filter 0.8s ease-out';
             }
             thumb.alt = item.title || '';
             thumb.loading = 'lazy';
@@ -1666,11 +1670,38 @@ window.onload = function() {
 
             var name = document.createElement('div');
             name.className = 'tr-carousel-name';
-            name.innerText = isCollected ? (item.displayTitle || item.title || '') : '???';
-            if (!isCollected) { name.style.color = '#555'; }
+            if (isBonusReveal) {
+                name.innerText = '???';
+                name.style.color = '#555';
+                name.style.transition = 'color 0.8s ease-out';
+            } else if (isCollected) {
+                name.innerText = item.displayTitle || item.title || '';
+            } else {
+                name.innerText = '???';
+                name.style.color = '#555';
+            }
 
             card.appendChild(thumb);
             card.appendChild(name);
+
+            // Bonus reveal animation: start gray, then unveil after delay
+            if (isBonusReveal) {
+                card.style.opacity = '0.5';
+                card.style.transition = 'opacity 0.8s ease-out';
+                (function(c, t, n, itm) {
+                    setTimeout(function() {
+                        // Flash effect
+                        c.style.opacity = '1';
+                        t.style.filter = 'brightness(1.5)';
+                        n.innerText = itm.displayTitle || itm.title || '';
+                        n.style.color = '';
+                        setTimeout(function() { t.style.filter = ''; }, 400);
+                        // Add glow border
+                        t.style.boxShadow = '0 0 20px ' + (ZONE_OBJ_COLORS[zone] || '#ffe000');
+                        setTimeout(function() { t.style.boxShadow = ''; }, 2000);
+                    }, 1200);
+                })(card, thumb, name, item);
+            }
 
             if (isCollected) {
                 (function(it) {
@@ -3237,7 +3268,23 @@ window.onload = function() {
             setTimeout(() => pf.remove(), 3000);
         }
 
-        document.getElementById('victory-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
+        var sectorScore = score - sectorStartScore;
+        document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
+
+        // Score bonus: high score unlocks one extra content item
+        _bonusUnlockedTitle = null;
+        var bonusZone = getZoneName(currentSector);
+        if (sectorScore >= SCORE_BONUS_THRESHOLD && !isZoneComplete(currentSector)) {
+            var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
+                return !collectedContent[bonusZone].has(it.title);
+            });
+            if (bonusItems.length > 0) {
+                var bonusPick = bonusItems[Math.floor(Math.random() * bonusItems.length)];
+                _bonusUnlockedTitle = bonusPick.title;
+                collectedContent[bonusZone].add(bonusPick.title);
+                updateCollectionHUD();
+            }
+        }
 
         // Save sector time
         sectorRunTimes[currentSector] = sectorTime;
@@ -3285,8 +3332,14 @@ window.onload = function() {
         var contentZone = CAROUSEL_SECTOR_MAP[currentSector];
         if (contentZone) {
             var contentLabel = contentZone.toUpperCase();
-            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(18px,5vw,32px);color:#ffe000;text-shadow:0 0 24px rgba(255,224,0,0.6);letter-spacing:4px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">CONTENT UNLOCKED</div>'
-                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(12px,3vw,20px);color:#ffe000;letter-spacing:3px;opacity:0.7;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.4s both;">' + contentLabel + ' PORTFOLIO</div>';
+            var zoneColor = ZONE_OBJ_COLORS[contentZone] || '#ffe000';
+            var collected = getZoneCollectedCount(currentSector);
+            var total = getZoneItemCount(currentSector);
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
+            if (_bonusUnlockedTitle) {
+                unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
+                    + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+1 CONTENT UNLOCKED</div>';
+            }
         }
         var unlockEl = document.getElementById('victory-unlocks');
         unlockEl.innerHTML = unlockHtml;
