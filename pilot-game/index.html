@@ -1704,55 +1704,98 @@ let _dpadActiveIdx = -1;
 function drawDpad(){
   const c = _dpadCtx, cx = _dpadCx, cy = _dpadCy, r = _dpadR - 4;
   c.clearRect(0, 0, _dpadR*2, _dpadR*2);
-  // Outer circle
-  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
-  c.fillStyle = 'rgba(0,0,0,0.35)';
+
+  // Base disc — off-white plastic with bevel
+  // Outer shadow (dark edge bottom-right)
+  c.beginPath(); c.arc(cx+2, cy+2, r, 0, Math.PI*2);
+  c.fillStyle = 'rgba(0,0,0,0.4)';
   c.fill();
-  c.strokeStyle = 'rgba(0,255,200,0.4)';
+  // Main disc
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
+  const discGrad = c.createRadialGradient(cx - r*0.3, cy - r*0.3, 0, cx, cy, r);
+  discGrad.addColorStop(0, '#e8e4dc');
+  discGrad.addColorStop(0.7, '#d4d0c8');
+  discGrad.addColorStop(1, '#b8b4ac');
+  c.fillStyle = discGrad;
+  c.fill();
+  // Top-left highlight rim
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
+  c.strokeStyle = 'rgba(255,255,255,0.5)';
   c.lineWidth = 2;
   c.stroke();
-  // Divider lines
+  // Bottom-right shadow rim
+  c.beginPath(); c.arc(cx, cy, r - 1, Math.PI * 0.15, Math.PI * 0.85);
+  c.strokeStyle = 'rgba(0,0,0,0.15)';
+  c.lineWidth = 3;
+  c.stroke();
+
+  // Divider grooves — subtle engraved lines
   for(let i = 0; i < 8; i++){
     const a = (i * 45 - 22.5) * Math.PI / 180;
+    const innerR = 18;
+    // Shadow line (engraved look)
     c.beginPath();
-    c.moveTo(cx, cy);
-    c.lineTo(cx + Math.cos(a) * r, cy + Math.sin(a) * r);
-    c.strokeStyle = 'rgba(0,255,200,0.2)';
+    c.moveTo(cx + Math.cos(a) * innerR, cy + Math.sin(a) * innerR);
+    c.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6));
+    c.strokeStyle = 'rgba(0,0,0,0.15)';
+    c.lineWidth = 2;
+    c.stroke();
+    // Highlight line (bottom edge of groove)
+    c.beginPath();
+    c.moveTo(cx + Math.cos(a) * innerR + 1, cy + Math.sin(a) * innerR + 1);
+    c.lineTo(cx + Math.cos(a) * (r - 6) + 1, cy + Math.sin(a) * (r - 6) + 1);
+    c.strokeStyle = 'rgba(255,255,255,0.3)';
     c.lineWidth = 1;
     c.stroke();
   }
-  // Highlight active slice
-  if(_dpadActiveIdx >= 0){
-    const a1 = (_dpadActiveIdx * 45 - 22.5) * Math.PI / 180;
-    const a2 = (_dpadActiveIdx * 45 + 22.5) * Math.PI / 180;
-    c.beginPath();
-    c.moveTo(cx, cy);
-    c.arc(cx, cy, r, a1, a2);
-    c.closePath();
-    c.fillStyle = 'rgba(0,255,200,0.3)';
-    c.fill();
-  }
-  // Arrows — cardinal (big) and diagonal (small)
+
+  // Embossed arrows
   for(let i = 0; i < 8; i++){
     const a = i * 45 * Math.PI / 180;
     const isCardinal = i % 2 === 0;
-    const dist = isCardinal ? r * 0.6 : r * 0.6;
-    const size = isCardinal ? 14 : 9;
+    const dist = isCardinal ? r * 0.58 : r * 0.58;
+    const size = isCardinal ? 16 : 10;
     const ax = cx + Math.cos(a) * dist;
     const ay = cy + Math.sin(a) * dist;
     const active = i === _dpadActiveIdx;
-    c.save();
-    c.translate(ax, ay);
-    c.rotate(a + Math.PI/2); // point arrow outward
-    c.beginPath();
-    c.moveTo(0, -size);
-    c.lineTo(-size * 0.7, size * 0.5);
-    c.lineTo(size * 0.7, size * 0.5);
-    c.closePath();
-    c.fillStyle = active ? 'rgba(0,255,200,1)' : 'rgba(0,255,200,0.5)';
-    c.fill();
-    c.restore();
+
+    function drawArrow(ox, oy, fillStyle){
+      c.save();
+      c.translate(ax + ox, ay + oy);
+      c.rotate(a - Math.PI/2); // point arrow outward
+      c.beginPath();
+      c.moveTo(0, -size);
+      c.lineTo(-size * 0.65, size * 0.4);
+      c.lineTo(size * 0.65, size * 0.4);
+      c.closePath();
+      c.fillStyle = fillStyle;
+      c.fill();
+      c.restore();
+    }
+
+    if(active){
+      // Pressed: inset shadow (dark on top, light on bottom)
+      drawArrow(0, -1, 'rgba(0,0,0,0.2)');
+      drawArrow(0, 1.5, 'rgba(255,255,255,0.4)');
+      drawArrow(0, 0, '#6a6860');
+    } else {
+      // Raised: light on top, shadow on bottom (embossed)
+      drawArrow(0, 1.5, 'rgba(0,0,0,0.25)');
+      drawArrow(0, -1, 'rgba(255,255,255,0.6)');
+      drawArrow(0, 0, '#8a8680');
+    }
   }
+
+  // Center dot
+  c.beginPath(); c.arc(cx, cy, 6, 0, Math.PI*2);
+  const dotGrad = c.createRadialGradient(cx-1, cy-1, 0, cx, cy, 6);
+  dotGrad.addColorStop(0, '#d0ccc4');
+  dotGrad.addColorStop(1, '#a8a49c');
+  c.fillStyle = dotGrad;
+  c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.15)';
+  c.lineWidth = 1;
+  c.stroke();
 }
 drawDpad();
 
