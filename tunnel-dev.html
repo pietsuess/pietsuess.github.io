@@ -3669,7 +3669,7 @@ window.onload = function() {
         var baseZ = camera.position.z - 600;
 
         // If this sector has baked layout data, spawn it
-        var maxBakedDist = sectorDistance * 0.65;  // stop spawning well before finish line
+        var maxBakedDist = sectorDistance * 0.76;  // stop spawning before finish line
         if (bakedLevels[currentSector] && bakedLevels[currentSector].length) {
             bakedLevels[currentSector].forEach(function(obj) {
                 // Skip objects beyond the runway zone
@@ -3714,7 +3714,7 @@ window.onload = function() {
         var spacing = Math.max(35, Math.round(baseSpacing * Math.pow(0.88, currentLevel - 1)));
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.65;
+        var lastItemDist = sectorDistance * 0.76;
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
@@ -4109,16 +4109,19 @@ window.onload = function() {
             ctx.lineWidth = 2;
             ctx.fillStyle = color + '33';
             if (shapeType === 'ring') {
-                // Torus as ellipse
+                // Torus — green ring with wobble
+                ctx.strokeStyle = '#00ff88';
+                ctx.shadowColor = '#00ff88';
+                ctx.fillStyle = '#00ff8833';
                 var squash = 0.5 + 0.5 * Math.abs(Math.sin(angle * 0.7));
                 ctx.beginPath();
                 ctx.ellipse(0, 0, sz, sz * squash, 0, 0, Math.PI * 2);
-                ctx.stroke();
+                ctx.fill(); ctx.stroke();
                 ctx.beginPath();
                 ctx.ellipse(0, 0, sz * 0.7, sz * 0.7 * squash, 0, 0, Math.PI * 2);
                 ctx.stroke();
             } else if (shapeType === 'mine') {
-                // Tetrahedron as triangle
+                // Tetrahedron — red triangle
                 ctx.beginPath();
                 for (var i = 0; i < 3; i++) {
                     var a = (Math.PI * 2 / 3) * i - Math.PI / 2;
@@ -4126,20 +4129,58 @@ window.onload = function() {
                 }
                 ctx.closePath();
                 ctx.fill(); ctx.stroke();
-            } else {
-                // Content object — diamond/octahedron shape
+            } else if (shapeType === 'square') {
+                // Box/cube — EDIT zone
                 ctx.beginPath();
-                ctx.moveTo(0, -sz);
-                ctx.lineTo(sz * 0.7, 0);
-                ctx.lineTo(0, sz);
-                ctx.lineTo(-sz * 0.7, 0);
+                ctx.rect(-sz * 0.8, -sz * 0.8, sz * 1.6, sz * 1.6);
+                ctx.fill(); ctx.stroke();
+                // Inner cross for depth illusion
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.8, -sz * 0.8); ctx.lineTo(sz * 0.8, sz * 0.8);
+                ctx.moveTo(sz * 0.8, -sz * 0.8); ctx.lineTo(-sz * 0.8, sz * 0.8);
+                ctx.stroke();
+            } else if (shapeType === 'pentagon') {
+                // Dodecahedron — PHOTO zone (pentagon)
+                ctx.beginPath();
+                for (var i = 0; i < 5; i++) {
+                    var a = (Math.PI * 2 / 5) * i - Math.PI / 2;
+                    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * sz, Math.sin(a) * sz);
+                }
                 ctx.closePath();
                 ctx.fill(); ctx.stroke();
-                // Cross detail
+            } else if (shapeType === 'octagon') {
+                // Octahedron — DIRECT zone
                 ctx.beginPath();
-                ctx.moveTo(-sz * 0.7, 0); ctx.lineTo(sz * 0.7, 0);
-                ctx.moveTo(0, -sz); ctx.lineTo(0, sz);
+                for (var i = 0; i < 8; i++) {
+                    var a = (Math.PI * 2 / 8) * i - Math.PI / 8;
+                    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * sz, Math.sin(a) * sz);
+                }
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'circle') {
+                // Sphere — ANIMATE zone
+                ctx.beginPath();
+                ctx.arc(0, 0, sz, 0, Math.PI * 2);
+                ctx.fill(); ctx.stroke();
+                // Equator line for depth
+                var eq = 0.3 + 0.7 * Math.abs(Math.sin(angle * 0.5));
+                ctx.beginPath();
+                ctx.ellipse(0, 0, sz, sz * eq * 0.3, 0, 0, Math.PI * 2);
                 ctx.stroke();
+            } else if (shapeType === 'triangle') {
+                // Cone/pyramid — DESIGN zone
+                ctx.beginPath();
+                ctx.moveTo(0, -sz);
+                ctx.lineTo(sz * 0.85, sz * 0.7);
+                ctx.lineTo(-sz * 0.85, sz * 0.7);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else {
+                // Fallback — diamond
+                ctx.beginPath();
+                ctx.moveTo(0, -sz); ctx.lineTo(sz, 0); ctx.lineTo(0, sz); ctx.lineTo(-sz, 0);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
             }
             ctx.restore();
         }
@@ -4183,12 +4224,14 @@ window.onload = function() {
 
         // Spinning 2D previews — no WebGL (avoids context exhaustion on mobile)
         var previewSize = 64;
-        var cColor = ZONE_OBJ_COLORS[getZoneName(currentSector)] || '#ffe800';
+        var zoneName = getZoneName(currentSector);
+        var cColor = ZONE_OBJ_COLORS[zoneName] || '#ffe800';
+        var contentShape = ZONE_SHAPES_3D[Math.min(currentSector - 1, ZONE_SHAPES_3D.length - 1)];
         var objectsRow = document.createElement('div');
         objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
 
         var previewItems = [
-            { label: 'CONTENT', color: cColor, shape: 'content' },
+            { label: 'CONTENT', color: cColor, shape: contentShape },
             { label: 'RING', color: '#00ff88', shape: 'ring' },
             { label: 'MINE', color: '#ff4444', shape: 'mine' },
         ];
@@ -4341,6 +4384,10 @@ window.onload = function() {
 
         shipAngle = 0;
         targetAngle = shipAngle;
+        // Place ship at orbit position so it's visible during intro/countdown
+        shipContainer.position.x = Math.cos(shipAngle) * orbitRadius;
+        shipContainer.position.y = Math.sin(shipAngle) * orbitRadius;
+        shipContainer.position.z = camera.position.z + shipZOffset;
         shipContainer.visible = true;
         setActiveShip(activeShip);
 
@@ -4943,7 +4990,7 @@ window.onload = function() {
                 finishRingSpawned = true;
                 finishRing = new THREE.Mesh(finishRingGeo, finishRingMat.clone());
                 // Items ahead are at lower Z (camera moves in -Z direction)
-                finishRing.position.set(0, 0, camera.position.z - 800);
+                finishRing.position.set(0, 0, camera.position.z - 500);
                 scene.add(finishRing);
             }
 
