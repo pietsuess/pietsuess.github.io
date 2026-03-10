@@ -613,6 +613,7 @@
         <div id="sector-display"><span id="sector-text">01</span></div>
     </div>
 </div>
+<div id="speedrun-clock" style="display:none;position:fixed;top:60px;left:50%;transform:translateX(-50%);z-index:460;font-family:'Press Start 2P',monospace;font-size:clamp(24px,7vw,48px);letter-spacing:4px;text-align:center;pointer-events:none;text-shadow:0 0 20px currentColor,0 0 40px currentColor;"></div>
 <span id="zone-name" style="display:none;">ENTRY</span>
 <div id="boost-wrapper">
     <div id="boost-container"><div id="boost-bar"></div></div>
@@ -3429,6 +3430,7 @@ window.onload = function() {
 
     function triggerGameOver() {
         gameState = 'dead';
+        document.getElementById('speedrun-clock').style.display = 'none';
         // Capture speed-based intensity before resetting
         const deathSpeed = speed;
         const speedFrac = Math.min(1, speed / HYPER_SPEED);
@@ -3540,6 +3542,7 @@ window.onload = function() {
 
     function triggerVictory() {
         gameState = 'victory';
+        document.getElementById('speedrun-clock').style.display = 'none';
         AudioEngine.playSFX('victory');
         flash('#00ffaa');
         var fireBtn = document.getElementById('fire-btn');
@@ -5152,17 +5155,38 @@ window.onload = function() {
             if (!TUT.active) {
                 sectorTime += delta;
                 var timerEl = document.getElementById('hud-timer');
+                var srClock = document.getElementById('speedrun-clock');
                 if (isSpeedRunSector(currentSector, currentLevel)) {
                     // Countdown timer for speed runs
                     var srTarget = getSpeedRunTarget();
                     var remaining = Math.max(0, srTarget - sectorTime);
                     var rm = Math.floor(remaining/60), rs = Math.floor(remaining%60), rt = Math.floor((remaining%1)*10);
-                    timerEl.innerText = rm+':'+(rs<10?'0':'')+rs+'.'+rt;
-                    timerEl.style.color = remaining > srTarget * 0.4 ? '#00ff88' : remaining > 0 ? '#ffe000' : '#ff4444';
+                    var timeStr = rm+':'+(rs<10?'0':'')+rs+'.'+rt;
+                    timerEl.innerText = timeStr;
+                    // Big countdown clock
+                    srClock.style.display = 'block';
+                    srClock.innerText = timeStr;
+                    if (remaining > srTarget * 0.4) {
+                        srClock.style.color = '#00ff88';
+                        timerEl.style.color = '#00ff88';
+                    } else if (remaining > 0) {
+                        srClock.style.color = '#ffe000';
+                        timerEl.style.color = '#ffe000';
+                    } else {
+                        srClock.style.color = '#ff4444';
+                        timerEl.style.color = '#ff4444';
+                    }
                     // Flash when time runs out
-                    if (remaining <= 0) timerEl.style.opacity = Math.sin(Date.now() * 0.01) > 0 ? '1' : '0.3';
-                    else timerEl.style.opacity = '1';
+                    if (remaining <= 0) {
+                        var blink = Math.sin(Date.now() * 0.01) > 0 ? '1' : '0.3';
+                        timerEl.style.opacity = blink;
+                        srClock.style.opacity = blink;
+                    } else {
+                        timerEl.style.opacity = '1';
+                        srClock.style.opacity = '1';
+                    }
                 } else {
+                    srClock.style.display = 'none';
                     var tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
                     timerEl.innerText = m+':'+(s<10?'0':'')+s+'.'+t;
                     timerEl.style.color = '';
