@@ -2737,6 +2737,8 @@ if(sessionStorage.getItem('returnFromVictory')){
 if(sessionStorage.getItem('returnToMoon')){
   sessionStorage.removeItem('returnToMoon');
   window._teleportToMoonOnStart = true;
+  // Auto-start game bypassing title screen
+  window.addEventListener('DOMContentLoaded', () => { setTimeout(() => { if(!state.started && typeof startGame==='function') startGame(); }, 100); });
 }
 // ── Tab visibility — pause on hide, resume on show ──
 document.addEventListener('visibilitychange', () => {
@@ -5061,6 +5063,7 @@ function updateWaveBeams(){
       const boss=state.secretBoss;
       if((boss.wx-b.wx)**2+(boss.wy-b.wy)**2<(boss.bodyR+10)**2){
         boss.hits++;boss.flashTimer=15;b.maxAge=0;hit=true;
+        boss._winceTimer=18; boss._shakeTimer=12;
         if(typeof devSyncBossHP==='function') devSyncBossHP();
         if(!state.scoreFlashes)state.scoreFlashes=[];
         state.scoreFlashes.push({wx:boss.wx,wy:boss.wy,score:-500,age:0,hue:300});
@@ -5070,8 +5073,17 @@ function updateWaveBeams(){
         boss.wx += Math.cos(_kbAng) * _kbForce;
         boss.wy += Math.sin(_kbAng) * _kbForce;
         if(audioCtx&&!state.sfxMuted){const _t=audioCtx.currentTime;
-          playBeep(noteFreq(280,0),_t,0.05,'square',0.18);
-          playBeep(noteFreq(100,0),_t+0.02,0.14,'triangle',0.14);}
+          // Pain squeal: high descending sine + slight detune for soft whimper
+          const _o1=audioCtx.createOscillator(),_g1=audioCtx.createGain();
+          _o1.connect(_g1);_g1.connect(sfxGainNode||audioCtx.destination);
+          _o1.type='sine';_o1.frequency.setValueAtTime(680,_t);_o1.frequency.exponentialRampToValueAtTime(280,_t+0.28);
+          _g1.gain.setValueAtTime(0.0,_t);_g1.gain.linearRampToValueAtTime(0.12,_t+0.03);_g1.gain.exponentialRampToValueAtTime(0.001,_t+0.30);
+          _o1.start(_t);_o1.stop(_t+0.30);
+          const _o2=audioCtx.createOscillator(),_g2=audioCtx.createGain();
+          _o2.connect(_g2);_g2.connect(sfxGainNode||audioCtx.destination);
+          _o2.type='sine';_o2.frequency.setValueAtTime(690,_t);_o2.frequency.exponentialRampToValueAtTime(285,_t+0.28);
+          _g2.gain.setValueAtTime(0.0,_t);_g2.gain.linearRampToValueAtTime(0.07,_t+0.03);_g2.gain.exponentialRampToValueAtTime(0.001,_t+0.30);
+          _o2.start(_t);_o2.stop(_t+0.30);}
         if(boss.hits>=boss.hitsNeeded)killSecretBoss();
       }
     }
@@ -6373,6 +6385,7 @@ function update(){
       if(mwb.swingPhases) mwb.swingPhases[ti]+=mwb.swingSpeeds[ti];
     }
     if(mwb.flashTimer>0) mwb.flashTimer--;
+    if(mwb._winceTimer>0) mwb._winceTimer--;
     if(mwb._shakeTimer>0) mwb._shakeTimer--;
     if(mwb._angerTimer>0) mwb._angerTimer--;
     // Solid body collision — can't fly on top of boss, bounces player off (no damage)
@@ -6524,6 +6537,7 @@ function update(){
         const wbD=Math.sqrt(wbDx*wbDx+wbDy*wbDy);
         if(wbD<mwb.bodyR+30&&(!mwb._waveCD||mwb._waveCD<=0)){
           mwb.hits++; mwb.flashTimer=8; mwb._waveCD=20;
+          mwb._winceTimer=18;
           if(typeof devSyncBossHP==='function') devSyncBossHP();
           if(!state.scoreFlashes)state.scoreFlashes=[];
           state.scoreFlashes.push({wx:mwb.wx,wy:mwb.wy,score:-500,age:0,hue:300});
@@ -6536,8 +6550,17 @@ function update(){
           mwb._shakeTimer = 20;
           mwb._angerTimer = Math.min((mwb._angerTimer || 0) + 40, 180); // builds with each hit
           if(audioCtx&&!state.sfxMuted){const t=audioCtx.currentTime;
-            playBeep(noteFreq(280,0),t,0.05,'square',0.18);
-            playBeep(noteFreq(100,0),t+0.02,0.14,'triangle',0.14);}
+            // Pain squeal: soft descending whimper
+            const _o1=audioCtx.createOscillator(),_g1=audioCtx.createGain();
+            _o1.connect(_g1);_g1.connect(sfxGainNode||audioCtx.destination);
+            _o1.type='sine';_o1.frequency.setValueAtTime(680,t);_o1.frequency.exponentialRampToValueAtTime(280,t+0.28);
+            _g1.gain.setValueAtTime(0.0,t);_g1.gain.linearRampToValueAtTime(0.12,t+0.03);_g1.gain.exponentialRampToValueAtTime(0.001,t+0.30);
+            _o1.start(t);_o1.stop(t+0.30);
+            const _o2=audioCtx.createOscillator(),_g2=audioCtx.createGain();
+            _o2.connect(_g2);_g2.connect(sfxGainNode||audioCtx.destination);
+            _o2.type='sine';_o2.frequency.setValueAtTime(690,t);_o2.frequency.exponentialRampToValueAtTime(285,t+0.28);
+            _g2.gain.setValueAtTime(0.0,t);_g2.gain.linearRampToValueAtTime(0.07,t+0.03);_g2.gain.exponentialRampToValueAtTime(0.001,t+0.30);
+            _o2.start(t);_o2.stop(t+0.30);}
           if(mwb.hits>=mwb.hitsNeeded) killMainWorldBoss();
         }
       });
@@ -11535,14 +11558,25 @@ function startGame(){
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
   state.collectedItems = [];
   state._prevX=0; state._prevY=0;
-  // Teleport to Moon if returning from victory walk
+  // Teleport to Moon if returning from victory walk — restore full post-victory state
   if(window._teleportToMoonOnStart){
     window._teleportToMoonOnStart = false;
+    // Collect all items and mark complete
+    if(typeof LEVELS!=='undefined'&&typeof CONTENT_DATA!=='undefined'){
+      LEVELS.forEach(function(zone){(CONTENT_DATA[zone]||[]).forEach(function(it){if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push(it);});});
+      state.objects.forEach(function(o){if(o.content)o.collected=true;});
+    }
+    // Open pen barrier, set all rings passed
+    if(state.penBarrier){state.penBarrier.closed=false;state.penBarrier.opening=false;}
+    state.editMissionComplete=true;
+    state._izRingMax=99;
+    // Set outside barrier state
+    state.outsideBarrier=true; state._committedInside=false;
+    // Teleport to Moon
     const moonX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
     const moonY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R + 200;
     state.x = moonX; state.y = moonY; state.vx = 0; state.vy = 0;
     state._prevX = moonX; state._prevY = moonY;
-    state.outsideBarrier = true; state._committedInside = false;
   }
   updateLevelDisplay('EDITING');updateFuelBar();updateFireModeUI();
   updateAllObjectsList(); updateMusicDrawer(); _updateMuteUI();
@@ -13257,6 +13291,8 @@ function updateSecretLevel(){
       if(boss.swingPhases) boss.swingPhases[ti]+=boss.swingSpeeds[ti];
     }
     if(boss.flashTimer>0)boss.flashTimer--;
+    if(boss._winceTimer>0)boss._winceTimer--;
+    if(boss._shakeTimer>0)boss._shakeTimer--;
     const dx=state.x-boss.wx,dy=state.y-boss.wy,dist=Math.sqrt(dx*dx+dy*dy),ps2=getPlayerStyle();
     const _bodyEdge=boss.bodyR+ps2.size*0.6;
     // Hard solid body — NEVER let player inside the boss body
@@ -13923,16 +13959,21 @@ function exitSecretLevel(){
     const _sb=state.secretBoss;
     const N_T=_sb.tentacles||8;
     const _bossX=(typeof BELT_OUTER!=='undefined'?BELT_OUTER:27492)-100;
+    // Restore original tentacle lengths — spaghettification modified them for the animation
+    const _origLens = _sb._origTentacleLens
+      ? _sb._origTentacleLens.slice()
+      : Array.from({length:N_T},()=>318+Math.random()*153);
     state.mainWorldBoss={
       wx:_bossX, wy:0,
-      bodyR:_sb.bodyR, tentacles:N_T, tentacleLen:_sb.tentacleLen,
+      bodyR:132, // always full size — spaghettification shrink was visual-only
+      tentacles:N_T, tentacleLen:_sb.tentacleLen,
       hits:state._bossCaptureHits||0, hitsNeeded:_sb.hitsNeeded, dead:false, deathTimer:0, flashTimer:0,
       phase:0, pulsePhase:0, facing:Math.PI, mouthPhase:0, eyeGlow:0,
       homeAngles:_sb.homeAngles.slice(), swingPhases:new Array(N_T).fill(0).map(()=>Math.random()*Math.PI*2),
       swingSpeeds:_sb.swingSpeeds.slice(), swingAmps:_sb.swingAmps.slice(),
       tentaclePhases:new Array(N_T).fill(0).map(()=>Math.random()*Math.PI*2),
       tentacleSpeeds:_sb.tentacleSpeeds.slice(), tentacleAmps:_sb.tentacleAmps.slice(),
-      tentacleLens:_sb.tentacleLens.slice(), tentacleWidths:_sb.tentacleWidths.slice(),
+      tentacleLens:_origLens, tentacleWidths:_sb.tentacleWidths.slice(),
       _guardX:_bossX, _guardY:0,
       _shipCD:0
     };
@@ -14108,13 +14149,13 @@ function drawBossVisual(ctx,boss,bsx,bsy){
   // Outer glow halo
   ctx.save();
   buildBellPath(ctx,bellR*1.18,bellH,bSkirt*0.5);
-  ctx.fillStyle=fl?'rgba(255,220,255,0.4)':(_angry?'rgba(200,0,60,0.28)':'rgba(140,60,255,0.20)');
+  ctx.fillStyle=_angry?'rgba(200,0,60,0.28)':'rgba(140,60,255,0.20)';
   ctx.fill();ctx.restore();
   // Layer 1: opaque dark base — covers tentacle roots
   buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);
-  ctx.fillStyle=fl?'#ddc8ff':(_angry?'#3a0018':'#1e0042');ctx.fill();
+  ctx.fillStyle=_angry?'#3a0018':'#1e0042';ctx.fill();
   // Outline stroke
-  ctx.strokeStyle=fl?'#ffffff':(_angry?'#cc0044':'#5500bb');ctx.lineWidth=2.5;ctx.stroke();
+  ctx.strokeStyle=_angry?'#cc0044':'#5500bb';ctx.lineWidth=2.5;ctx.stroke();
   // Layer 2: translucent jelly
   ctx.save();
   buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);
@@ -14176,17 +14217,37 @@ function drawBossVisual(ctx,boss,bsx,bsy){
       ctx.lineWidth=1+Math.abs(Math.sin(boss.pulsePhase+fi))*1.5;ctx.stroke();
     }
     ctx.restore();}
-  // Eyes — sympathetic: big whites, inward+down pupils, white glint
+  // Eyes — sympathetic: big whites, inward+down pupils, squint eyelid on wince
   if(!boss.dead){ctx.save();
     const _eY=-bellR*bellH*0.38,_eX=bellR*0.30,_eR=bellR*0.16;
+    // Wince: 0 = normal, 1 = fully squinted (eyelid closes over eye)
+    const _winceAmt = Math.pow(Math.min(1,(boss._winceTimer||0)/18),0.6);
     [[_eX,_eY,1],[-_eX,_eY,-1]].forEach(([ex,ey,side])=>{
+      // White sclera
       ctx.beginPath();ctx.arc(ex,ey,_eR,0,Math.PI*2);
       ctx.fillStyle='rgba(255,255,255,0.92)';ctx.fill();
-      const px=ex-side*_eR*0.18,py=ey+_eR*0.14;
+      // Pupil — slides slightly inward and down during wince
+      const px=ex-side*_eR*0.18, py=ey+_eR*(0.14+_winceAmt*0.22);
       ctx.beginPath();ctx.arc(px,py,_eR*0.52,0,Math.PI*2);
       ctx.fillStyle=_angry?'#220000':'#0a0010';ctx.fill();
+      // White glint
       ctx.beginPath();ctx.arc(px-side*_eR*0.16,py-_eR*0.2,_eR*0.15,0,Math.PI*2);
       ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fill();
+      // Eyelid squint — clips to eye circle, fills from top down
+      if(_winceAmt>0){
+        ctx.save();
+        ctx.beginPath();ctx.arc(ex,ey,_eR+0.5,0,Math.PI*2);ctx.clip();
+        const _lidH=_eR*2*_winceAmt*0.88; // how many px of eye to cover from top
+        ctx.fillStyle=_angry?'#3a0018':'#1e0042';
+        ctx.fillRect(ex-_eR-1,ey-_eR-1,_eR*2+2,_lidH+1);
+        // Soft lower edge of eyelid (thin highlight)
+        ctx.beginPath();
+        ctx.moveTo(ex-_eR,ey-_eR-1+_lidH);
+        ctx.quadraticCurveTo(ex,ey-_eR-1+_lidH+_eR*0.12*_winceAmt,ex+_eR,ey-_eR-1+_lidH);
+        ctx.strokeStyle=_angry?'rgba(200,50,80,0.5)':'rgba(130,60,255,0.45)';
+        ctx.lineWidth=1.5;ctx.stroke();
+        ctx.restore();
+      }
     });
     ctx.restore();}
   ctx.restore(); // unrotate/unscale body
