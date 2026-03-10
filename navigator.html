@@ -930,7 +930,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 </div>
 
 <!-- ── DEV PANEL ── -->
-<div id="dev-panel" style="display:none" class="collapsed">
+<div id="dev-panel" class="collapsed">
   <div id="dev-panel-header">
     <span id="dev-panel-title">⚙ DEV MODE</span>
     <div id="dev-panel-btns">
@@ -1798,7 +1798,10 @@ const ZONE_PALETTE = {
 };
 
 // Content pop-ups preference — persisted in localStorage
-let _contentPopupsOn = true;
+let _contentPopupsOn = (() => {
+  try { const v = localStorage.getItem('contentPopupsOn'); return v === null ? true : v === 'true'; }
+  catch(e) { return true; }
+})();
 let _firstPopupShown = false;
 let _firstFuelPopupShown = false;
 let _fuelAnimId = null;
@@ -2591,7 +2594,7 @@ let state = {
   hasWaveBeam:false,
   fireMode:'boost',
   collectedItems:[],
-  musicPaused:false, musicMuted:false, sfxMuted:false, volume:0.82,
+  musicPaused:false, musicMuted:true, sfxMuted:true, volume:0.82,
   bubbleDeforms:[],
   honeyHexCount:1,
   honeySplitTimer:0,
@@ -13955,6 +13958,19 @@ function exitSecretLevel(){
   selectTrack(3);
 }
 
+// ── Bell-body path builder (shared by boss visual) ──
+// Dome at local -Y (apex/head), skirt+belly at local +Y (tentacle side)
+function buildBellPath(ctx,r,bellH,skirt,bellyExt=0){
+  const domeH=r*bellH, skirtW=r*(1+skirt), skirtH=domeH*0.55;
+  const bellyY=skirtH*(1.35+bellyExt*1.4), bellyBulge=skirtW*(0.55-bellyExt*0.12);
+  ctx.beginPath();
+  ctx.ellipse(0,0,r,domeH,0,Math.PI,0,false);
+  ctx.bezierCurveTo(skirtW*1.05,0,skirtW,skirtH*0.55,bellyBulge,skirtH*0.95);
+  ctx.bezierCurveTo(bellyBulge*0.6,bellyY,-bellyBulge*0.6,bellyY,-bellyBulge,skirtH*0.95);
+  ctx.bezierCurveTo(-skirtW,skirtH*0.55,-skirtW*1.05,0,-r,0);
+  ctx.closePath();
+}
+
 // ── Shared boss visual — used by both secret level and main world boss ──
 function drawBossVisual(ctx,boss,bsx,bsy){
   // Ambient purple glow
@@ -14054,78 +14070,102 @@ function drawBossVisual(ctx,boss,bsx,bsy){
   const bP=1+Math.sin(boss.pulsePhase)*0.08,bR=boss.bodyR*bP;
   const fl=boss.flashTimer>0&&boss.flashTimer%4<2;
   const _angry = (boss._angerTimer||0) > 0;
-  ctx.beginPath();ctx.arc(_bx,_by,bR*1.15,0,Math.PI*2);
-  ctx.fillStyle=fl?'rgba(255,200,255,0.3)':(_angry?'rgba(160,0,40,0.25)':'rgba(80,0,120,0.25)');ctx.fill();
-  ctx.beginPath();ctx.arc(_bx,_by,bR,0,Math.PI*2);
-  ctx.fillStyle=fl?'#eeccff':(_angry?'#5a0030':'#3a0060');ctx.fill();
-  ctx.strokeStyle=fl?'#ffffff':(_angry?'#cc0044':'#7700cc');ctx.lineWidth=3;ctx.stroke();
-  // Veins
-  if(!boss.dead){for(let v=0;v<6;v++){const va=boss.pulsePhase*0.3+v*(Math.PI/3);
-    const vr=bR*(0.3+Math.sin(va*2)*0.15);ctx.beginPath();
-    ctx.moveTo(_bx+Math.cos(va)*bR*0.2,_by+Math.sin(va)*bR*0.2);
-    ctx.quadraticCurveTo(_bx+Math.cos(va+0.3)*vr,_by+Math.sin(va+0.3)*vr,
-      _bx+Math.cos(va+0.5)*bR*0.85,_by+Math.sin(va+0.5)*bR*0.85);
-    ctx.strokeStyle=_angry?'rgba(200,0,60,0.45)':'rgba(140,0,220,0.35)';ctx.lineWidth=1.5;ctx.stroke();}}
-  // Mouth — gaping maw with fangs
-  if(!boss.dead){const ea=Math.atan2(state.y-boss.wy,state.x-boss.wx);
-    // Angry = mouth opens wider
-    const mOpen=_angry?(0.45+Math.sin((boss.mouthPhase||0))*0.2):(0.3+Math.sin((boss.mouthPhase||0))*0.15);
-    const mx=_bx+Math.cos(ea)*bR*0.3,my=_by+Math.sin(ea)*bR*0.3;
-    ctx.save();ctx.translate(mx,my);ctx.rotate(ea);
-    ctx.beginPath();ctx.ellipse(0,0,bR*0.35,bR*mOpen,0,0,Math.PI*2);
-    ctx.fillStyle=_angry?'#1a0008':'#0a0015';ctx.fill();
-    for(let fi=-1;fi<=1;fi+=2){ctx.beginPath();ctx.moveTo(bR*0.15*fi,-bR*mOpen*0.8);
-      ctx.lineTo(bR*0.08*fi,bR*mOpen*0.5);ctx.lineTo(bR*0.22*fi,-bR*mOpen*0.3);
-      ctx.closePath();ctx.fillStyle=_angry?'#ff99cc':'#ccaaff';ctx.fill();}
-    const iG=ctx.createRadialGradient(0,0,0,0,0,bR*0.25);
-    iG.addColorStop(0,_angry?'rgba(255,0,80,0.5)':'rgba(200,0,255,0.4)');iG.addColorStop(1,'rgba(0,0,0,0)');
-    ctx.beginPath();ctx.arc(0,0,bR*0.25,0,Math.PI*2);ctx.fillStyle=iG;ctx.fill();
-    ctx.restore();
-    // Eyes — three glowing purple (blink + angry)
-    // Blink: brief eye close every ~3s (180 frames), lasts 6 frames
-    const _blinkCycle = (boss.phase * 55.5) % 180;
-    const _blinking = _blinkCycle < 6;
-    const eyePos=[{off:-0.55,sz:0.3},{off:0,sz:0.35},{off:0.55,sz:0.3}];
-    eyePos.forEach(ep=>{const eA=ea+Math.PI+ep.off;
-      const ex=_bx+Math.cos(eA)*bR*0.55,ey=_by+Math.sin(eA)*bR*0.55,esz=bR*ep.sz;
-      if(_blinking){
-        // Blink: narrow horizontal slit
-        ctx.beginPath();ctx.ellipse(ex,ey,esz,esz*0.15,0,0,Math.PI*2);
-        ctx.fillStyle='#1a0030';ctx.fill();
-      } else {
-        // Sclera
-        ctx.beginPath();ctx.arc(ex,ey,esz,0,Math.PI*2);
-        ctx.fillStyle=_angry?'#2a0010':'#1a0030';ctx.fill();
-        ctx.strokeStyle=_angry?'#aa0033':'#6600aa';ctx.lineWidth=1.5;ctx.stroke();
-        // Angry: draw angular brow ridge over eye
-        if(_angry){
-          ctx.beginPath();
-          const browA = eA - (boss.facing||0);
-          ctx.moveTo(ex-esz*1.1,ey-esz*0.3);
-          ctx.lineTo(ex+esz*0.4,ey-esz*1.0);
-          ctx.strokeStyle='#aa0033';ctx.lineWidth=3;ctx.stroke();
-        }
-        // Iris — red tint when angry
-        ctx.beginPath();ctx.arc(ex,ey,esz*0.7,0,Math.PI*2);
-        ctx.fillStyle=_angry?'#ff2200':'#9900ff';ctx.fill();
-        // Pupil
-        const pX=ex+Math.cos(ea)*esz*0.2,pY=ey+Math.sin(ea)*esz*0.2;
-        ctx.beginPath();ctx.arc(pX,pY,esz*0.35,0,Math.PI*2);
-        ctx.fillStyle=_angry?'#440000':'#220044';ctx.fill();
-        // Highlight
-        ctx.beginPath();ctx.arc(ex-esz*0.15,ey-esz*0.15,esz*0.15,0,Math.PI*2);
-        ctx.fillStyle=_angry?'rgba(255,150,150,0.5)':'rgba(200,150,255,0.5)';ctx.fill();
-      }
-    });
-    // Horns
-    for(let hi=-1;hi<=1;hi+=2){const ha=ea+Math.PI+hi*0.8;
-      const hx1=_bx+Math.cos(ha)*bR*0.8,hy1=_by+Math.sin(ha)*bR*0.8;
-      const hx2=_bx+Math.cos(ha-hi*0.3)*bR*1.4,hy2=_by+Math.sin(ha-hi*0.3)*bR*1.4;
-      ctx.beginPath();ctx.moveTo(hx1,hy1);
-      ctx.quadraticCurveTo(_bx+Math.cos(ha)*bR*1.2,_by+Math.sin(ha)*bR*1.2,hx2,hy2);
-      ctx.strokeStyle='#550088';ctx.lineWidth=4;ctx.lineCap='round';ctx.stroke();
-      ctx.beginPath();ctx.arc(hx2,hy2,3,0,Math.PI*2);ctx.fillStyle='#aa00ff';ctx.fill();}
+  // ── Bell body (jelly alien) — dome faces player, tentacles trail behind ──
+  const ea=Math.atan2(state.y-boss.wy,state.x-boss.wx);
+  ctx.save();
+  ctx.translate(_bx,_by);
+  ctx.rotate(ea+Math.PI/2); // local -Y (dome apex) → player direction
+  const _bvelX=boss._velX||0,_bvelY=boss._velY||0;
+  const _bspd=Math.sqrt(_bvelX*_bvelX+_bvelY*_bvelY);
+  const _bStretch=Math.min(0.15,_bspd*0.012);
+  ctx.scale(1-_bStretch*0.55,1+_bStretch);
+  const bellR=bR*0.55,bellH=2.0,bSkirt=0.6,bAlpha=0.25,bCoreG=0.7;
+  // Outer glow halo
+  ctx.save();
+  buildBellPath(ctx,bellR*1.18,bellH,bSkirt*0.5);
+  ctx.fillStyle=fl?'rgba(255,220,255,0.4)':(_angry?'rgba(200,0,60,0.22)':'rgba(140,60,255,0.14)');
+  ctx.fill();ctx.restore();
+  // Layer 1: dark base
+  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);
+  ctx.fillStyle=fl?'#ddc8ff':(_angry?'#3a0018':'#200040');ctx.fill();
+  // Layer 2: translucent jelly
+  ctx.save();
+  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);
+  const _jG=ctx.createLinearGradient(-bellR,-bellR*bellH,bellR,bellR*0.3);
+  if(_angry){
+    _jG.addColorStop(0,`rgba(180,0,60,${bAlpha*0.85})`);
+    _jG.addColorStop(0.4,`rgba(100,0,30,${bAlpha*0.6})`);
+    _jG.addColorStop(1,`rgba(60,0,20,${bAlpha*0.3})`);
+  } else {
+    _jG.addColorStop(0,`rgba(160,80,255,${bAlpha*0.8})`);
+    _jG.addColorStop(0.4,`rgba(80,0,180,${bAlpha*0.55})`);
+    _jG.addColorStop(1,`rgba(40,0,90,${bAlpha*0.28})`);
   }
+  ctx.fillStyle=_jG;ctx.fill();ctx.restore();
+  // Layer 3: interior core glow
+  ctx.save();
+  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
+  const _cG=ctx.createRadialGradient(0,-bellR*bellH*0.3,0,0,-bellR*bellH*0.3,bellR*0.7);
+  const _cCol=_angry?'255,80,140':'180,100,255';
+  _cG.addColorStop(0,`rgba(${_cCol},${bCoreG})`);
+  _cG.addColorStop(0.5,`rgba(${_cCol},${bCoreG*0.3})`);
+  _cG.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.beginPath();ctx.arc(0,-bellR*bellH*0.3,bellR*0.7,0,Math.PI*2);
+  ctx.fillStyle=_cG;ctx.fill();ctx.restore();
+  // Layer 4: veining
+  ctx.save();
+  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
+  for(let v=0;v<7;v++){
+    const va=boss.pulsePhase*0.25+v*(Math.PI*2/7);
+    const r0=bellR*0.12,r1=bellR*(0.45+Math.sin(va*2+boss.pulsePhase*0.5)*0.15);
+    ctx.beginPath();
+    ctx.moveTo(Math.cos(va)*r0,Math.sin(va)*r0-bellR*0.1);
+    ctx.quadraticCurveTo(Math.cos(va+0.35)*r1*0.8,Math.sin(va+0.35)*r1*0.8-bellR*0.1,
+      Math.cos(va+0.6)*r1,Math.sin(va+0.6)*r1-bellR*0.05);
+    ctx.strokeStyle=_angry?'rgba(220,0,80,0.3)':'rgba(160,60,255,0.25)';
+    ctx.lineWidth=1.5;ctx.stroke();
+  }
+  ctx.restore();
+  // Layer 5: specular dome shine
+  ctx.save();
+  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
+  const _rG=ctx.createRadialGradient(-bellR*0.3,-bellR*bellH*0.6,0,-bellR*0.3,-bellR*bellH*0.6,bellR*0.5);
+  _rG.addColorStop(0,'rgba(255,255,255,0.22)');
+  _rG.addColorStop(0.4,'rgba(255,255,255,0.06)');
+  _rG.addColorStop(1,'rgba(255,255,255,0)');
+  ctx.fillStyle=_rG;
+  ctx.beginPath();ctx.arc(-bellR*0.3,-bellR*bellH*0.6,bellR*0.5,0,Math.PI*2);ctx.fill();
+  ctx.restore();
+  // Belly-hem fringe
+  if(!boss.dead){ctx.save();
+    const _fW=bellR*(1+bSkirt),_fH=bellR*bellH*0.55;
+    const _fBY=_fH*(1.35+_bStretch*1.4),_fBW=_fW*(0.55-_bStretch*0.12);
+    for(let fi=0;fi<=14;fi++){
+      const ft=fi/14-0.5;
+      const fx=ft*_fBW*2;
+      const fy=_fBY-(_fBY-_fH*0.95)*(ft*ft*4);
+      const wl=8+Math.sin(boss.pulsePhase*1.5+fi)*5;
+      const wa=0.14+Math.sin(boss.pulsePhase+fi*0.8)*0.07;
+      ctx.beginPath();ctx.moveTo(fx,fy);
+      ctx.lineTo(fx+Math.sin(boss.pulsePhase+fi*0.5)*2,fy+wl);
+      ctx.strokeStyle=`rgba(180,100,255,${wa})`;
+      ctx.lineWidth=1+Math.abs(Math.sin(boss.pulsePhase+fi))*1.5;ctx.stroke();
+    }
+    ctx.restore();}
+  // Eyes — sympathetic: big whites, inward+down pupils, white glint
+  if(!boss.dead){ctx.save();
+    const _eY=-bellR*bellH*0.38,_eX=bellR*0.30,_eR=bellR*0.16;
+    [[_eX,_eY,1],[-_eX,_eY,-1]].forEach(([ex,ey,side])=>{
+      ctx.beginPath();ctx.arc(ex,ey,_eR,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,255,255,0.92)';ctx.fill();
+      const px=ex-side*_eR*0.18,py=ey+_eR*0.14;
+      ctx.beginPath();ctx.arc(px,py,_eR*0.52,0,Math.PI*2);
+      ctx.fillStyle=_angry?'#220000':'#0a0010';ctx.fill();
+      ctx.beginPath();ctx.arc(px-side*_eR*0.16,py-_eR*0.2,_eR*0.15,0,Math.PI*2);
+      ctx.fillStyle='rgba(255,255,255,0.9)';ctx.fill();
+    });
+    ctx.restore();}
+  ctx.restore(); // unrotate/unscale body
   // Health bar moved to HUD (boss-hp-hud element)
 }
 
