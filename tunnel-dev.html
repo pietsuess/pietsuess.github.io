@@ -4098,25 +4098,21 @@ window.onload = function() {
 
     function showSectorIntro(zone, onDone) {
         var sectorIdx = currentSector - 1;
-        var introData = SECTOR_INTRO_DATA[Math.min(sectorIdx, SECTOR_INTRO_DATA.length - 1)];
-        var isFirst = (currentSector === 1 && currentLevel === 1);
         var el = document.createElement('div');
         el.id = 'sector-intro-splash';
-        el.style.cssText = 'position:fixed;inset:0;z-index:620;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:'+(isFirst?'22px':'18px')+';background:rgba(0,0,0,0.92);pointer-events:'+(isFirst?'all':'none')+';opacity:0;transition:opacity 0.4s;';
+        el.style.cssText = 'position:fixed;inset:0;z-index:620;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:22px;background:rgba(0,0,0,0.92);pointer-events:all;opacity:0;transition:opacity 0.4s;';
 
         var spinCanvases = [];
 
-        if (isFirst) {
-            // "YOU ARE ENTERING THE"
-            var preTitle = document.createElement('div');
-            preTitle.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);letter-spacing:3px;color:#fff;opacity:0.6;text-align:center;width:100%;';
-            preTitle.innerText = 'YOU ARE ENTERING THE';
-            el.appendChild(preTitle);
-        }
+        // "YOU ARE ENTERING THE"
+        var preTitle = document.createElement('div');
+        preTitle.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);letter-spacing:3px;color:#fff;opacity:0.6;text-align:center;width:100%;';
+        preTitle.innerText = 'YOU ARE ENTERING THE';
+        el.appendChild(preTitle);
 
-        // Zone name
+        // Zone name + SECTOR
         var title = document.createElement('div');
-        title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp('+(isFirst?'18px':'16px')+','+(isFirst?'6vw':'5vw')+','+(isFirst?'34px':'30px')+');letter-spacing:'+(isFirst?'2px':'5px')+';color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';text-align:center;width:100%;';
+        title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(18px,6vw,34px);letter-spacing:2px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';text-align:center;width:100%;';
         title.innerText = zone.name + ' SECTOR';
         el.appendChild(title);
 
@@ -4130,96 +4126,71 @@ window.onload = function() {
 
         // Divider
         var divLine = document.createElement('div');
-        divLine.style.cssText = 'width:'+(isFirst?'80%':'120px')+';max-width:320px;height:2px;background:'+zone.color+';opacity:0.5;margin:4px 0;';
+        divLine.style.cssText = 'width:80%;max-width:320px;height:2px;background:'+zone.color+';opacity:0.5;margin:4px 0;';
         el.appendChild(divLine);
 
-        if (isFirst) {
-            // Spinning 3D object previews — side by side, centered
-            var previewSize = 64;
-            var objectsRow = document.createElement('div');
-            objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
+        // Spinning 3D object previews — zone-appropriate content shape + ring + mine
+        var previewSize = 64;
+        var zoneName = getZoneName(currentSector);
+        var cGeo = getContentGeo(currentSector);
+        var cMatSrc = contentMats[zoneName];
+        var cColor = ZONE_OBJ_COLORS[zoneName] || '#ffe800';
+        var objectsRow = document.createElement('div');
+        objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
 
-            var previewItems = [
-                { label: 'CONTENT', color: '#ffe800', geo: contentGeos.square,
-                  mat: new THREE.MeshStandardMaterial({ color: 0xffe800, emissive: 0xffe800, emissiveIntensity: 1.8, metalness: 0, roughness: 1, transparent: true, opacity: 0.9 }) },
-                { label: 'RING', color: '#00ff88', geo: new THREE.TorusGeometry(4.5, 0.7, 8, 28),
-                  mat: new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0, roughness: 1 }) },
-                { label: 'MINE', color: '#ff4444', geo: new THREE.TetrahedronGeometry(4.5, 0),
-                  mat: new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0, roughness: 1 }) },
-            ];
-            previewItems.forEach(function(item) {
-                var col = document.createElement('div');
-                col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;width:'+previewSize+'px;';
-                var cvs = createSpinningPreview(item.geo, item.mat, previewSize);
-                spinCanvases.push(cvs);
-                col.appendChild(cvs);
-                var lbl = document.createElement('div');
-                lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2.2vw,12px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
-                lbl.innerText = item.label;
-                col.appendChild(lbl);
-                objectsRow.appendChild(col);
-            });
+        var previewItems = [
+            { label: 'CONTENT', color: cColor, geo: cGeo,
+              mat: new THREE.MeshStandardMaterial({ color: cMatSrc.color, emissive: cMatSrc.emissive, emissiveIntensity: 1.8, metalness: 0, roughness: 1, transparent: true, opacity: 0.9 }) },
+            { label: 'RING', color: '#00ff88', geo: new THREE.TorusGeometry(4.5, 0.7, 8, 28),
+              mat: new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0, roughness: 1 }) },
+            { label: 'MINE', color: '#ff4444', geo: new THREE.TetrahedronGeometry(4.5, 0),
+              mat: new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0, roughness: 1 }) },
+        ];
+        previewItems.forEach(function(item) {
+            var col = document.createElement('div');
+            col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;width:'+previewSize+'px;';
+            var cvs = createSpinningPreview(item.geo, item.mat, previewSize);
+            spinCanvases.push(cvs);
+            col.appendChild(cvs);
+            var lbl = document.createElement('div');
+            lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2.2vw,12px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
+            lbl.innerText = item.label;
+            col.appendChild(lbl);
+            objectsRow.appendChild(col);
+        });
+        el.appendChild(objectsRow);
 
-            el.appendChild(objectsRow);
+        // Instruction lines
+        var collectLine = document.createElement('div');
+        collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
+        collectLine.innerText = 'COLLECT CONTENT & RINGS';
+        el.appendChild(collectLine);
 
-            // Instruction lines
-            var collectLine = document.createElement('div');
-            collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
-            collectLine.innerText = 'COLLECT CONTENT & RINGS';
-            el.appendChild(collectLine);
+        var avoidLine = document.createElement('div');
+        avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
+        avoidLine.innerText = 'AVOID HAZARDS';
+        el.appendChild(avoidLine);
 
-            var avoidLine = document.createElement('div');
-            avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
-            avoidLine.innerText = 'AVOID HAZARDS';
-            el.appendChild(avoidLine);
-        } else {
-            // Non-first intros: item icons row + description (unchanged)
-            var itemsRow = document.createElement('div');
-            itemsRow.style.cssText = 'display:flex;gap:16px;align-items:center;justify-content:center;flex-wrap:wrap;max-width:90%;';
-            introData.items.forEach(function(itemName) {
-                var sym = SECTOR_ITEM_SYMBOLS[itemName] || { color: '#fff' };
-                var chip = document.createElement('div');
-                chip.style.cssText = 'display:flex;align-items:center;gap:6px;';
-                var icon = document.createElement('div');
-                icon.style.cssText = 'width:12px;height:12px;border-radius:' + (sym.shape === 'circle' ? '50%' : '2px') + ';background:'+sym.color+';box-shadow:0 0 8px '+sym.color+';';
-                if (sym.shape === 'triangle') { icon.style.cssText = 'width:0;height:0;border-left:7px solid transparent;border-right:7px solid transparent;border-bottom:12px solid '+sym.color+';filter:drop-shadow(0 0 6px '+sym.color+');'; }
-                chip.appendChild(icon);
-                var label = document.createElement('div');
-                label.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.5vw,9px);color:'+sym.color+';letter-spacing:1px;';
-                label.innerText = itemName;
-                chip.appendChild(label);
-                itemsRow.appendChild(chip);
-            });
-            el.appendChild(itemsRow);
-
-            var desc = document.createElement('div');
-            desc.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2vw,12px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;margin-top:8px;';
-            desc.innerText = introData.desc;
-            el.appendChild(desc);
-
-            // Collection progress
-            var collected = getZoneCollectedCount(currentSector);
-            var total = getZoneItemCount(currentSector);
-            if (total > 0) {
-                var prog = document.createElement('div');
-                prog.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(7px,1.8vw,10px);color:#888;letter-spacing:2px;margin-top:4px;';
-                prog.innerText = collected + ' / ' + total + ' COLLECTED';
-                el.appendChild(prog);
-            }
+        // Collection progress
+        var collected = getZoneCollectedCount(currentSector);
+        var total = getZoneItemCount(currentSector);
+        if (total > 0) {
+            var prog = document.createElement('div');
+            prog.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(10px,2.5vw,14px);color:#888;letter-spacing:2px;margin-top:2px;text-align:center;width:100%;';
+            prog.innerText = collected + ' / ' + total + ' COLLECTED';
+            el.appendChild(prog);
         }
 
-        // Tap to begin (first intro only)
-        if (isFirst) {
-            var tap = document.createElement('div');
-            tap.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,16px);color:#fff;opacity:0.5;letter-spacing:3px;margin-top:16px;animation:introTapPulse 1.5s ease-in-out infinite;text-align:center;width:100%;';
-            tap.innerText = 'TAP TO BEGIN';
-            el.appendChild(tap);
-            if (!document.getElementById('intro-tap-pulse-style')) {
-                var style = document.createElement('style');
-                style.id = 'intro-tap-pulse-style';
-                style.textContent = '@keyframes introTapPulse{0%,100%{opacity:0.4}50%{opacity:1}}';
-                document.head.appendChild(style);
-            }
+        // Tap to begin
+        var tap = document.createElement('div');
+        tap.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,16px);color:#fff;opacity:0.5;letter-spacing:3px;margin-top:16px;animation:introTapPulse 1.5s ease-in-out infinite;text-align:center;width:100%;';
+        tap.innerText = 'TAP TO BEGIN';
+        el.appendChild(tap);
+        if (!document.getElementById('intro-tap-pulse-style')) {
+            var style = document.createElement('style');
+            style.id = 'intro-tap-pulse-style';
+            style.textContent = '@keyframes introTapPulse{0%,100%{opacity:0.4}50%{opacity:1}}';
+            document.head.appendChild(style);
         }
 
         document.body.appendChild(el);
@@ -4234,17 +4205,13 @@ window.onload = function() {
             }, 400);
         }
 
-        if (isFirst) {
-            function dismissIntro() {
-                el.removeEventListener('touchend', dismissIntro);
-                el.removeEventListener('mouseup', dismissIntro);
-                cleanup();
-            }
-            el.addEventListener('touchend', dismissIntro, { passive: true });
-            el.addEventListener('mouseup', dismissIntro);
-        } else {
-            setTimeout(function() { cleanup(); }, 2500);
+        function dismissIntro() {
+            el.removeEventListener('touchend', dismissIntro);
+            el.removeEventListener('mouseup', dismissIntro);
+            cleanup();
         }
+        el.addEventListener('touchend', dismissIntro, { passive: true });
+        el.addEventListener('mouseup', dismissIntro);
     }
 
     // ── Collection HUD — horizontal row of zone-shaped icons above carousel area ──
