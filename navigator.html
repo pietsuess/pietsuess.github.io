@@ -2613,7 +2613,12 @@ let state = {
   bhCapture:null,
   exitSpin:0,
   x2BoostStar: null, _x2StarSpawned: false,
-  passageHatch: { hits: 0, broken: false, hitCooldown: 0 },
+  passageHatch: { hits: 0, broken: false, hitCooldown: 0, fragments: [
+    {cx:0,cy:-57,w:36,h:16,sx:0,sy:0,r:0},{cx:-9,cy:-33,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:-33,w:18,h:32,sx:0,sy:0,r:0},{cx:-9,cy:-1,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:-1,w:18,h:32,sx:0,sy:0,r:0},{cx:-9,cy:31,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:31,w:18,h:32,sx:0,sy:0,r:0},{cx:0,cy:56,w:36,h:18,sx:0,sy:0,r:0}] },
+  hatchDebris: [],
   launchpadWalls: { closed: true, opening: false, openTimer: 0, openDuration: 60, extendDist: 0 },
   editMissionComplete: false,
   boostPads: [],
@@ -3167,6 +3172,7 @@ function populateCell(gcx, gcy){
       const spd = 0.04 + dhash(gcx,gcy,20000+ri*37+4)*0.4;
       const _br = makeRock(wx, wy, sz, Math.cos(ang)*spd, Math.sin(ang)*spd);
       _br._ambientCellKey = key; // tag so cull evicts cell, allowing respawn on revisit
+      if(state.frameCount > 10) _br._fadeIn = 0; // fade in if game is running (prevent pop-in)
       state.spaceRocks.push(_br);
     }
     return;
@@ -3236,6 +3242,7 @@ function populateCell(gcx, gcy){
     const spd = 0.3 + dhash(gcx,gcy,80000+ar*31+4)*0.7;
     const _ar = makeRock(wx, wy, sz, Math.cos(ang)*spd, Math.sin(ang)*spd);
     _ar._ambientCellKey = key; // track so cull can evict the cell for re-population
+    if(state.frameCount > 10) _ar._fadeIn = 0; // fade in if game is running (prevent pop-in)
     state.spaceRocks.push(_ar);
   }
 
@@ -3683,7 +3690,7 @@ function initBarrierObjects(){
   state.objects=state.objects.filter(function(o){ return !o._barrierBoost; });
   // 2 fuel canisters just outside the barrier gap — clean vertical line ahead of exit
   [-30, 30].forEach(function(yOff){
-    state.fuelObjects.push({wx:BELT_OUTER+80,wy:yOff,size:14,rotation:0,liquidPhase:0,collected:false,_permanent:true,_barrierFuel:true});
+    state.fuelObjects.push({wx:BELT_OUTER+210,wy:yOff,size:14,rotation:0,liquidPhase:0,collected:false,_permanent:true,_barrierFuel:true});
   });
   // NOTE: 2x boost gem is no longer spawned here — it spawns near player when all inner zone objects are collected
   // Outer target fuel canister — far beyond barrier, east
@@ -5471,7 +5478,9 @@ function update(){
     // Outer zones: OUTER BARRIER (outside belt) and HOMEWARD (past launchpad)
     const _inHomeward = state.x > HOMEWARD_THRESHOLD;
     const _inOuterBarrier = state.outsideBarrier && !_inHomeward;
-    const _outerZoneKey = _inHomeward ? 'HOMEWARD' : (_inOuterBarrier ? 'OUTER BARRIER' : null);
+    // Delay outer barrier zone text until player exits the tube passage
+    const _inTubePassage = state.x >= BELT_OUTER && state.x <= BELT_OUTER + 300 && Math.abs(state.y) <= BARRIER_GAP_WIDTH;
+    const _outerZoneKey = _inHomeward ? 'HOMEWARD' : (_inOuterBarrier && !_inTubePassage ? 'OUTER BARRIER' : null);
     const _prevOuterZone = state._outerZoneKey || null;
     state._outerZoneKey = _outerZoneKey;
 
@@ -5535,12 +5544,13 @@ function update(){
             }, 1400);
           }
         }
-      } else if(nowZone === -1 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
-        // Entering asteroid belt — Mission 4: discover the secret level (only if never visited)
+      } else if(nowZone === -1 && !state.outsideBarrier && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
+        // Entering asteroid belt — Mission 4: discover the secret level (only if never visited, not outside barrier)
         state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
         state._beltMissionShown = true;
         setTimeout(function(){
           if(state.mainWorldBoss && !state.mainWorldBoss.dead) return; // suppress if boss appeared
+          if(state.outsideBarrier) return; // suppress outside barrier
           state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
         }, 1400);
       } else {
@@ -6248,7 +6258,14 @@ function update(){
       if(r._interzoneCluster) return true;
       const adx=Math.abs(r.wx-_rx), ady=Math.abs(r.wy-_ry);
       const keep = adx<_rockCullR && ady<_rockCullR;
-      if(!keep && r._ambientCellKey) populatedCells.delete(r._ambientCellKey);
+      if(!keep && r._ambientCellKey){
+        // Only evict cell if the CELL ITSELF is far away — not just because a rock drifted far.
+        // This prevents nearby cells from being evicted and repopulated (causing pop-in).
+        const _ck = r._ambientCellKey.split('|');
+        const _ckDx = Math.abs(Number(_ck[0]) - Math.floor(_rx/CELL_SIZE));
+        const _ckDy = Math.abs(Number(_ck[1]) - Math.floor(_ry/CELL_SIZE));
+        if(_ckDx > CELL_RADIUS+1 || _ckDy > CELL_RADIUS+1) populatedCells.delete(r._ambientCellKey);
+      }
       return keep;
     });
 
@@ -6269,6 +6286,68 @@ function update(){
     e.age++;
   });
   state.explosions=state.explosions.filter(e=>e.isShipExplosion||(e.isBossExplosion&&e.age<280)||(e._implodeBurst&&e.age<120)||(e._hatchBurst&&e.age<90)||e.age<55);
+  // ── Hatch debris physics — floating metal fragments ──
+  if(state.hatchDebris && state.hatchDebris.length > 0){
+    state.hatchDebris.forEach(_d => {
+      _d.wx += _d.vx; _d.wy += _d.vy;
+      _d.rot += _d.rotV;
+      _d.vx *= 0.998; _d.vy *= 0.998;
+      _d.age++;
+      // Bounce off barrier wall — only when moving outward from inside
+      const _dDist = Math.sqrt(_d.wx*_d.wx + _d.wy*_d.wy);
+      if(_dDist > BELT_OUTER - 10 && _dDist < BELT_OUTER){
+        const _dAng = Math.atan2(_d.wy, _d.wx);
+        const _dVrad = _d.vx*Math.cos(_dAng) + _d.vy*Math.sin(_dAng);
+        // Only bounce if moving outward (positive radial velocity)
+        if(_dVrad > 0){
+          const _inGap = Math.abs(_d.wy) < BARRIER_GAP_WIDTH && _d.wx >= BELT_OUTER - 20;
+          if(!_inGap){
+            const _dOver = _dDist - (BELT_OUTER - 10);
+            _d.wx -= Math.cos(_dAng) * (_dOver + 2);
+            _d.wy -= Math.sin(_dAng) * (_dOver + 2);
+            _d.vx -= Math.cos(_dAng)*_dVrad*1.5; _d.vy -= Math.sin(_dAng)*_dVrad*1.5;
+          }
+        }
+      }
+      // Tube wall collision — bounce off tube walls when inside tube
+      if(_d.wx >= BELT_OUTER && _d.wx <= BELT_OUTER + 300){
+        if(_d.wy < -BARRIER_GAP_WIDTH){ _d.wy = -BARRIER_GAP_WIDTH; if(_d.vy < 0) _d.vy *= -0.6; }
+        if(_d.wy > BARRIER_GAP_WIDTH){ _d.wy = BARRIER_GAP_WIDTH; if(_d.vy > 0) _d.vy *= -0.6; }
+      }
+      // Bounce off nearby space rocks
+      for(let _ri=0; _ri<state.spaceRocks.length; _ri++){
+        const _rk = state.spaceRocks[_ri];
+        const _rdx = _d.wx - _rk.x, _rdy = _d.wy - _rk.y;
+        const _rd2 = _rdx*_rdx + _rdy*_rdy;
+        const _rHit = (_rk.size||40) + 15;
+        if(_rd2 < _rHit*_rHit){
+          const _rd = Math.sqrt(_rd2)||1;
+          const _rnx = _rdx/_rd, _rny = _rdy/_rd;
+          _d.wx = _rk.x + _rnx*_rHit; _d.wy = _rk.y + _rny*_rHit;
+          const _rVn = _d.vx*_rnx + _d.vy*_rny;
+          if(_rVn < 0){ _d.vx -= 2*_rnx*_rVn*0.7; _d.vy -= 2*_rny*_rVn*0.7; }
+          break;
+        }
+      }
+      // Bounce off player ship
+      const _pdx = _d.wx - state.x, _pdy = _d.wy - state.y;
+      const _pd2 = _pdx*_pdx + _pdy*_pdy;
+      const _pHit = 20;
+      if(_pd2 < _pHit*_pHit && _pd2 > 0){
+        const _pd = Math.sqrt(_pd2);
+        const _pnx = _pdx/_pd, _pny = _pdy/_pd;
+        _d.wx = state.x + _pnx*_pHit; _d.wy = state.y + _pny*_pHit;
+        // Transfer some ship velocity to debris + bounce
+        const _relVx = _d.vx - state.vx, _relVy = _d.vy - state.vy;
+        const _relVn = _relVx*_pnx + _relVy*_pny;
+        if(_relVn < 0){
+          _d.vx -= 0.6*_pnx*_relVn; _d.vy -= 0.6*_pny*_relVn;
+          _d.rotV += (Math.random()-0.5)*0.04; // gentle spin on hit
+        }
+      }
+    });
+    // Debris persists permanently — no age filter
+  }
   updateSecretLevel();
   // ── MAIN WORLD BOSS UPDATE ─────────────────────────────
   // Boss just covers the hatch — no attacking the player, no chasing.
@@ -6517,34 +6596,61 @@ function update(){
         const _hnx = _hDx/_hDistSq, _hny = _hDy/_hDistSq;
         state.vx = _hnx * 8; state.vy = _hny * 8;
         state.hyperspace = false;
-        if(state.passageHatch.hits >= 3){
+        // Scatter fragments apart on each hit
+        const _hitN = state.passageHatch.hits;
+        const _frags = state.passageHatch.fragments;
+        if(_frags){
+          const _scatter = _hitN === 1 ? 4 : _hitN === 2 ? 10 : 0;
+          const _rotMax = _hitN === 1 ? 0.08 : _hitN === 2 ? 0.2 : 0;
+          _frags.forEach(_fg => {
+            _fg.sx += (Math.random()-0.5) * _scatter * 2;
+            _fg.sy += (Math.random()-0.5) * _scatter * 2;
+            _fg.sx += Math.sign(_fg.cx || (Math.random()-0.5)) * _scatter * 0.6;
+            _fg.sy += Math.sign(_fg.cy) * _scatter * 0.6;
+            _fg.r += (Math.random()-0.5) * _rotMax * 2;
+          });
+        }
+        if(_hitN >= 3){
           state.passageHatch.broken = true;
           addScore(5500);
-          // Explosion at hatch position
+          // Convert fragments to persistent floating debris
+          // 1-2 center pieces fly THROUGH the passage (positive vx)
+          if(_frags){
+            if(!state.hatchDebris) state.hatchDebris = [];
+            const _thruIdxs = [3, 4]; // center-left and center-right pieces go through
+            _frags.forEach((_fg, _fi) => {
+              const _goThru = _thruIdxs.includes(_fi);
+              const _dvx = _goThru
+                ? 1.2 + Math.random()*0.8  // drift through passage (positive = outward)
+                : (Math.random()-0.5)*1.2 - 1.0;  // scatter inward with some spread
+              const _dvy = _goThru
+                ? (Math.random()-0.5)*0.5  // mostly straight through
+                : Math.sign(_fg.cy||((Math.random()-0.5)))*1.5 + (Math.random()-0.5)*1.0;  // fly up/down toward barrier wall
+              state.hatchDebris.push({
+                wx: _hx + _fg.cx + _fg.sx, wy: _hy + _fg.cy + _fg.sy,
+                vx: _dvx, vy: _dvy,
+                w: _fg.w, h: _fg.h,
+                rot: _fg.r, rotV: (Math.random()-0.5)*0.05,
+                age: 0
+              });
+            });
+          }
+          // Spark particles
           const _hpts=[];
-          for(let _hi=0;_hi<60;_hi++){
+          for(let _hi=0;_hi<40;_hi++){
             const _ha=Math.random()*Math.PI*2;
-            const _hs=2+Math.random()*6;
+            const _hs=2+Math.random()*5;
             _hpts.push({wx:_hx,wy:_hy,vx:Math.cos(_ha)*_hs,vy:Math.sin(_ha)*_hs,age:0,col:Math.random()<0.5?'#ff8800':'#ff4400'});
           }
-          // Also add metal shards (grey/silver)
-          for(let _hi=0;_hi<30;_hi++){
-            const _ha=Math.random()*Math.PI*2;
-            const _hs=1+Math.random()*4;
-            _hpts.push({wx:_hx,wy:_hy,vx:Math.cos(_ha)*_hs,vy:Math.sin(_ha)*_hs,age:0,col:Math.random()<0.5?'#aaaaaa':'#888888'});
-          }
           state.explosions.push({particles:_hpts, age:0, isBubble:false, isShipExplosion:false, _hatchBurst:true});
-          // SFX: heavy metallic crash + explosion
+          // SFX: heavy metallic crash
           if(audioCtx&&!state.sfxMuted){
             const _ht=audioCtx.currentTime;
-            // Low boom
             playBeep(noteFreq(60,0),_ht,0.4,'sawtooth',0.25);
             playBeep(noteFreq(55,0),_ht+0.05,0.35,'sawtooth',0.2);
-            // Metallic rattle
             [0,3,6,9].forEach((n,i)=>playBeep(noteFreq(200,n),_ht+i*0.04,0.1,'square',0.08));
           }
-          // Zone cross flash message
-          state.zoneCrossFlash={lvl:-3,timer:200,msg:'PASSAGE HATCH DESTROYED! +5500',_col:'#ff8800'};
+          state.zoneCrossFlash={lvl:-3,timer:260,msg:'PASSAGE HATCH OPENED',_col:'#00ffcc'};
         } else {
           // Hit feedback — metallic clank SFX
           if(audioCtx&&!state.sfxMuted){
@@ -6556,6 +6662,14 @@ function update(){
           state.collisionFlash = 8;
         }
       }
+    }
+  }
+  // ── Tube wall collision — keep player inside tube passageway ──
+  if(!state.inSecretLevel && state.x >= BELT_OUTER && state.x <= BELT_OUTER + 300){
+    const _tubeInner = BARRIER_GAP_WIDTH;
+    if(Math.abs(state.y) <= _tubeInner + 20){
+      if(state.y < -_tubeInner){ state.y = -_tubeInner; if(state.vy < 0) state.vy *= -0.3; }
+      if(state.y > _tubeInner){ state.y = _tubeInner; if(state.vy > 0) state.vy *= -0.3; }
     }
   }
 
@@ -6823,7 +6937,11 @@ function hardRestart(){
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_shortcutWarpsSpawned:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
-    passageHatch:{hits:0,broken:false,hitCooldown:0},bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_radarCX:undefined,_radarCY:undefined,_zoneCompleteHintDelay:undefined,_shipToggleTutorialDone:false,_bubbleToggleTutorialDone:false,_waveToggleTutorialDone:false,_peanutModeFrames:0,
+    passageHatch:{hits:0,broken:false,hitCooldown:0,fragments:[
+    {cx:0,cy:-57,w:36,h:16,sx:0,sy:0,r:0},{cx:-9,cy:-33,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:-33,w:18,h:32,sx:0,sy:0,r:0},{cx:-9,cy:-1,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:-1,w:18,h:32,sx:0,sy:0,r:0},{cx:-9,cy:31,w:18,h:32,sx:0,sy:0,r:0},
+    {cx:9,cy:31,w:18,h:32,sx:0,sy:0,r:0},{cx:0,cy:56,w:36,h:18,sx:0,sy:0,r:0}]},hatchDebris:[],bonanzaMotes:[],_bonanzaEntered:false,_radarViewR:undefined,_radarCX:undefined,_radarCY:undefined,_zoneCompleteHintDelay:undefined,_shipToggleTutorialDone:false,_bubbleToggleTutorialDone:false,_waveToggleTutorialDone:false,_peanutModeFrames:0,
     _peanutUnlocked:false,_bubbleUnlocked:false,
     completedLevel_0:false,completedLevel_1:false,completedLevel_2:false,completedLevel_3:false,completedLevel_4:false,
     editMissionComplete:false});
@@ -8188,6 +8306,11 @@ function drawGame(){
     // No rocks in homeward zone (east of launchpad)
     if(r.wx > OUTER_TARGET_WX) return;
     ctx.save(); ctx.translate(sx,sy); ctx.rotate(r.rot);
+    // Fade-in: newly spawned rocks fade in over ~45 frames to prevent pop-in
+    if(r._fadeIn !== undefined){
+      if(r._fadeIn < 45) ctx.globalAlpha = r._fadeIn / 45;
+      r._fadeIn++;
+    }
     const s=r.size;
 
     // Build the rock path from pre-baked verts (rounder, mild jagged edges)
@@ -8315,6 +8438,7 @@ function drawGame(){
   if(!state.inSecretLevel) state.fuelObjects.forEach(f=>{
     if(f.collected)return;
     if(f._outerLaunchpadFuel)return;
+    if(f._barrierFuel)return; // drawn separately after tube interior
     const sx=f.wx-state.x+cx, sy=f.wy-state.y+cy;
     if(sx<-80||sx>canvas.width+80||sy<-80||sy>canvas.height+80)return;
     drawFuelObject(sx,sy,f);
@@ -8871,64 +8995,111 @@ function drawGame(){
     ctx.restore();
   }
 
+  // ── Metallic tube passageway at barrier gap ──────────────────────
+  // PASS 1: Interior floor — drawn BEFORE player (dark background visible through windows)
+  // PASS 2 (after player draw) handles roof overlay, solid panels, windows, ribs, lips
+  if(!state.inSecretLevel){
+    const _tubeWx = BELT_OUTER;
+    const _tubeSx = _tubeWx - state.x + cx;
+    const _tubeSy = 0 - state.y + cy;
+    if(!(_tubeSx < -500 || _tubeSx > canvas.width+500 || _tubeSy < -200 || _tubeSy > canvas.height+200)){
+      const _tHalf = BARRIER_GAP_WIDTH + 8;
+      const _tLen = 300;
+      const _tLeft = _tubeSx;
+      const _tTop = _tubeSy - _tHalf;
+      const _tBot = _tubeSy + _tHalf;
+      const _tW = _tBot - _tTop;
+
+      ctx.save();
+      ctx.shadowBlur = 0;
+      // Dark interior floor of tube (visible through windows as player passes)
+      const _intGrad = ctx.createLinearGradient(0, _tTop, 0, _tBot);
+      _intGrad.addColorStop(0, '#060608');
+      _intGrad.addColorStop(0.3, '#0a0a12');
+      _intGrad.addColorStop(0.5, '#0c0c16');
+      _intGrad.addColorStop(0.7, '#0a0a12');
+      _intGrad.addColorStop(1, '#060608');
+      ctx.fillStyle = _intGrad;
+      ctx.fillRect(_tLeft, _tTop, _tLen, _tW);
+      ctx.restore();
+      // Draw barrier fuel cells ON TOP of tube interior (visible through windows)
+      state.fuelObjects.forEach(f=>{
+        if(f.collected || !f._barrierFuel) return;
+        const _fsx = f.wx - state.x + cx, _fsy = f.wy - state.y + cy;
+        if(_fsx < -80 || _fsx > canvas.width+80 || _fsy < -80 || _fsy > canvas.height+80) return;
+        drawFuelObject(_fsx, _fsy, f);
+      });
+    }
+  }
+
   if(!state.inSecretLevel && state.passageHatch && !state.passageHatch.broken){
     const _phWx = BELT_OUTER; const _phWy = 0;
     const _phSx = _phWx - state.x + cx;
     const _phSy = _phWy - state.y + cy;
-    // Only draw when in view
-    if(!(_phSx < -200 || _phSx > canvas.width+200 || _phSy < -200 || _phSy > canvas.height+200)){
+    if(!(_phSx < -500 || _phSx > canvas.width+200 || _phSy < -200 || _phSy > canvas.height+200)){
       const _phHits = state.passageHatch.hits;
+      const _phFrags = state.passageHatch.fragments;
       const _phFt = state.frameCount;
-      // Hatch dimensions: covers the gap (100px) with padding
-      const _phW = 32;
-      const _phH = 120;
 
       ctx.save();
       ctx.translate(_phSx, _phSy);
 
-      // Metal body — dark steel
-      const _phGrad = ctx.createLinearGradient(-_phW/2, 0, _phW/2, 0);
-      _phGrad.addColorStop(0,   '#2a2a2a');
+      // Metal gradient for fragments
+      const _phGrad = ctx.createLinearGradient(-16, 0, 16, 0);
+      _phGrad.addColorStop(0, '#2a2a2a');
       _phGrad.addColorStop(0.3, '#4a4a4a');
       _phGrad.addColorStop(0.7, '#3a3a3a');
-      _phGrad.addColorStop(1,   '#1a1a1a');
-      ctx.fillStyle = _phGrad;
-      ctx.shadowBlur = 0;
-      ctx.fillRect(-_phW/2, -_phH/2, _phW, _phH);
+      _phGrad.addColorStop(1, '#1a1a1a');
 
-      // Metal border
-      ctx.strokeStyle = _phHits > 0 ? '#885500' : '#666666';
-      ctx.lineWidth = 2.5;
-      ctx.shadowBlur = _phHits > 0 ? 12 : 6;
-      ctx.shadowColor = _phHits > 0 ? '#ff8800' : '#888888';
-      ctx.strokeRect(-_phW/2, -_phH/2, _phW, _phH);
+      // Draw each fragment individually with separation offsets
+      if(_phFrags) _phFrags.forEach((_fg, _fi) => {
+        ctx.save();
+        ctx.translate(_fg.cx + _fg.sx, _fg.cy + _fg.sy);
+        ctx.rotate(_fg.r);
 
-      // Rivets — 4 corners
-      [[-_phW/2+5,-_phH/2+6],[_phW/2-5,-_phH/2+6],[-_phW/2+5,_phH/2-6],[_phW/2-5,_phH/2-6]].forEach(([rx,ry])=>{
-        ctx.beginPath(); ctx.arc(rx,ry,3,0,Math.PI*2);
-        ctx.fillStyle='#888'; ctx.shadowBlur=2; ctx.fill();
-        ctx.strokeStyle='#555'; ctx.lineWidth=0.5; ctx.stroke();
+        // Fragment body
+        ctx.fillStyle = _phGrad;
+        ctx.shadowBlur = 0;
+        ctx.fillRect(-_fg.w/2, -_fg.h/2, _fg.w, _fg.h);
+
+        // Fragment border — orange glow when damaged
+        ctx.strokeStyle = _phHits > 0 ? '#885500' : '#666666';
+        ctx.lineWidth = 1.5;
+        ctx.shadowBlur = _phHits > 0 ? 10 : 4;
+        ctx.shadowColor = _phHits > 0 ? '#ff8800' : '#888888';
+        ctx.strokeRect(-_fg.w/2, -_fg.h/2, _fg.w, _fg.h);
+
+        // Rivet on each fragment
+        ctx.shadowBlur = 2; ctx.shadowColor = '#666';
+        ctx.beginPath(); ctx.arc(0, 0, 2.5, 0, Math.PI*2);
+        ctx.fillStyle = '#888'; ctx.fill();
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5; ctx.stroke();
+
+        // Damage glow pulse on hit 2+
+        if(_phHits >= 2){
+          ctx.globalAlpha = 0.3 + Math.sin(_phFt*0.15 + _fi)*0.2;
+          ctx.fillStyle = 'rgba(255,80,0,0.3)';
+          ctx.fillRect(-_fg.w/2, -_fg.h/2, _fg.w, _fg.h);
+          ctx.globalAlpha = 1;
+        }
+
+        ctx.restore();
       });
-      // Mid rivets
-      [[-_phW/2+5,0],[_phW/2-5,0]].forEach(([rx,ry])=>{
-        ctx.beginPath(); ctx.arc(rx,ry,3,0,Math.PI*2);
-        ctx.fillStyle='#888'; ctx.fill();
-      });
 
-      // Crack lines based on hit count
-      if(_phHits >= 1){
-        ctx.strokeStyle='rgba(255,180,50,0.85)'; ctx.lineWidth=1.5; ctx.shadowBlur=8; ctx.shadowColor='#ff8800';
-        ctx.beginPath(); ctx.moveTo(2,-30); ctx.lineTo(-6,-8); ctx.lineTo(4,5); ctx.stroke();
-      }
-      if(_phHits >= 2){
-        ctx.strokeStyle='rgba(255,100,0,0.9)'; ctx.lineWidth=2; ctx.shadowBlur=14; ctx.shadowColor='#ff4400';
-        ctx.beginPath(); ctx.moveTo(-8,10); ctx.lineTo(5,28); ctx.lineTo(-3,45); ctx.stroke();
-        ctx.beginPath(); ctx.moveTo(3,-45); ctx.lineTo(-10,-22); ctx.stroke();
-        // Glow pulse on damage
-        ctx.globalAlpha = 0.35 + Math.sin(_phFt*0.15)*0.25;
-        ctx.fillStyle='rgba(255,80,0,0.3)';
-        ctx.fillRect(-_phW/2,-_phH/2,_phW,_phH);
-        ctx.globalAlpha = 1;
+      // Hot crack glow between fragments when damaged
+      if(_phHits >= 1 && _phFrags){
+        ctx.shadowBlur = _phHits >= 2 ? 14 : 8;
+        ctx.shadowColor = _phHits >= 2 ? '#ff4400' : '#ff8800';
+        ctx.strokeStyle = _phHits >= 2 ? 'rgba(255,100,0,0.9)' : 'rgba(255,180,50,0.7)';
+        ctx.lineWidth = _phHits >= 2 ? 2 : 1.5;
+        // Draw crack lines between fragment centers
+        for(let _ci=0; _ci<_phFrags.length-1; _ci++){
+          const _a = _phFrags[_ci], _b = _phFrags[_ci+1];
+          ctx.beginPath();
+          ctx.moveTo(_a.cx + _a.sx, _a.cy + _a.sy);
+          ctx.lineTo(_b.cx + _b.sx, _b.cy + _b.sy);
+          ctx.stroke();
+        }
       }
 
       ctx.restore();
@@ -9005,15 +9176,15 @@ function drawGame(){
       setFont(FONT_7); ctx.textAlign='center';
       ctx.restore();
     }
-    // Off-screen arrow
+    // Off-screen arrow — closer to ship and bigger
     if(_tx > canvas.width+50 || _tx < -50){
       const _ta = Math.atan2(OUTER_TARGET_WY - state.y, OUTER_TARGET_WX - state.x);
-      const _ir = Math.min(canvas.width, canvas.height)*0.42;
+      const _ir = Math.min(canvas.width, canvas.height)*0.28;
       const _ax = cx + Math.cos(_ta)*_ir, _ay = cy + Math.sin(_ta)*_ir;
       ctx.save(); ctx.translate(_ax,_ay); ctx.rotate(_ta);
       ctx.globalAlpha=0.5+0.4*Math.sin(state.frameCount*0.08);
       ctx.fillStyle='#FFD700';
-      ctx.beginPath(); ctx.moveTo(24,0); ctx.lineTo(-12,-10); ctx.lineTo(-12,10); ctx.closePath(); ctx.fill();
+      ctx.beginPath(); ctx.moveTo(32,0); ctx.lineTo(-16,-14); ctx.lineTo(-16,14); ctx.closePath(); ctx.fill();
       ctx.restore();
     }
 
@@ -9143,86 +9314,162 @@ function drawGame(){
   // Victory text — drawn after ship so it's on top
   drawVictoryText(ctx);
 
+  // Hatch debris PASS 1 — only pieces INSIDE the tube (drawn before Pass 2 so they show through windows)
+  if(state.hatchDebris && state.hatchDebris.length > 0){
+    state.hatchDebris.forEach(_d => {
+      const _insideTube = _d.wx >= BELT_OUTER && _d.wx <= BELT_OUTER + 300 && Math.abs(_d.wy) <= BARRIER_GAP_WIDTH;
+      if(!_insideTube) return;
+      const _dsx = _d.wx - state.x + cx, _dsy = _d.wy - state.y + cy;
+      if(_dsx < -100 || _dsx > canvas.width+100 || _dsy < -100 || _dsy > canvas.height+100) return;
+      ctx.save();
+      ctx.translate(_dsx, _dsy);
+      ctx.rotate(_d.rot);
+      const _dGrad = ctx.createLinearGradient(-_d.w/2, 0, _d.w/2, 0);
+      _dGrad.addColorStop(0, '#2a2a2a');
+      _dGrad.addColorStop(0.3, '#4a4a4a');
+      _dGrad.addColorStop(0.7, '#3a3a3a');
+      _dGrad.addColorStop(1, '#1a1a1a');
+      ctx.fillStyle = _dGrad;
+      ctx.fillRect(-_d.w/2, -_d.h/2, _d.w, _d.h);
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+      ctx.strokeRect(-_d.w/2, -_d.h/2, _d.w, _d.h);
+      ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI*2);
+      ctx.fillStyle = '#888'; ctx.fill();
+      ctx.restore();
+    });
+  }
+  // ── Metallic tube passageway — PASS 2: Roof overlay ──────────────
+  // Drawn AFTER player so player is hidden inside tube except through windows
+  if(!state.inSecretLevel){
+    const _t2Sx = BELT_OUTER - state.x + cx;
+    const _t2Sy = 0 - state.y + cy;
+    if(!(_t2Sx < -500 || _t2Sx > canvas.width+500 || _t2Sy < -200 || _t2Sy > canvas.height+200)){
+      const _t2Half = BARRIER_GAP_WIDTH + 8;
+      const _t2Len = 300;
+      const _t2Left = _t2Sx;
+      const _t2Right = _t2Sx + _t2Len;
+      const _t2Top = _t2Sy - _t2Half;
+      const _t2Bot = _t2Sy + _t2Half;
+      const _t2W = _t2Bot - _t2Top;
+      const _wallTh = 8;
+      const _segLen = _t2Len / 5;
+      const _ribW = 5;
+
+      ctx.save();
+      ctx.shadowBlur = 0;
+
+      const _mGrad = ctx.createLinearGradient(0, _t2Top, 0, _t2Bot);
+      _mGrad.addColorStop(0, '#1a1a1a');
+      _mGrad.addColorStop(0.08, '#2a2a2a');
+      _mGrad.addColorStop(0.2, '#3a3a3a');
+      _mGrad.addColorStop(0.5, '#444444');
+      _mGrad.addColorStop(0.8, '#3a3a3a');
+      _mGrad.addColorStop(0.92, '#2a2a2a');
+      _mGrad.addColorStop(1, '#1a1a1a');
+
+      [0, 2, 4].forEach(_si => {
+        ctx.fillStyle = _mGrad;
+        ctx.fillRect(_t2Left + _si * _segLen, _t2Top, _segLen, _t2W);
+      });
+
+      [1, 3].forEach(_si => {
+        const _sx = _t2Left + _si * _segLen;
+        ctx.fillStyle = _mGrad;
+        ctx.fillRect(_sx, _t2Top, _segLen, _wallTh);
+        ctx.fillRect(_sx, _t2Bot - _wallTh, _segLen, _wallTh);
+        const _wL = _sx + 3;
+        const _wT2 = _t2Top + _wallTh;
+        const _wW = _segLen - 6;
+        const _wH = _t2W - _wallTh * 2;
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 1.5;
+        ctx.strokeRect(_wL, _wT2, _wW, _wH);
+        ctx.strokeStyle = 'rgba(0,0,0,0.4)'; ctx.lineWidth = 1;
+        ctx.strokeRect(_wL + 1, _wT2 + 1, _wW - 2, _wH - 2);
+        ctx.save();
+        ctx.beginPath(); ctx.rect(_wL, _wT2, _wW, _wH); ctx.clip();
+        const _rGrad = ctx.createLinearGradient(_wL, _wT2, _wL + _wW, _wT2 + _wH);
+        _rGrad.addColorStop(0, 'rgba(120,140,200,0.0)');
+        _rGrad.addColorStop(0.3, 'rgba(140,160,220,0.05)');
+        _rGrad.addColorStop(0.5, 'rgba(120,140,200,0.02)');
+        _rGrad.addColorStop(1, 'rgba(100,120,180,0.0)');
+        ctx.fillStyle = _rGrad;
+        ctx.fillRect(_wL, _wT2, _wW, _wH);
+        ctx.restore();
+      });
+
+      for(let _ri = 1; _ri < 5; _ri++){
+        const _rx = _t2Left + _ri * _segLen;
+        const _rGrad2 = ctx.createLinearGradient(_rx - _ribW/2, 0, _rx + _ribW/2, 0);
+        _rGrad2.addColorStop(0, '#2a2a2a');
+        _rGrad2.addColorStop(0.5, '#505050');
+        _rGrad2.addColorStop(1, '#2a2a2a');
+        ctx.fillStyle = _rGrad2;
+        ctx.fillRect(_rx - _ribW/2, _t2Top, _ribW, _t2W);
+        ctx.strokeStyle = '#555'; ctx.lineWidth = 0.5;
+        ctx.beginPath(); ctx.moveTo(_rx - _ribW/2, _t2Top); ctx.lineTo(_rx - _ribW/2, _t2Bot); ctx.stroke();
+        ctx.strokeStyle = '#333';
+        ctx.beginPath(); ctx.moveTo(_rx + _ribW/2, _t2Top); ctx.lineTo(_rx + _ribW/2, _t2Bot); ctx.stroke();
+        [_t2Top + 5, _t2Bot - 5].forEach(_rvy => {
+          ctx.beginPath(); ctx.arc(_rx, _rvy, 2.5, 0, Math.PI*2);
+          ctx.fillStyle = '#777'; ctx.fill();
+          ctx.strokeStyle = '#444'; ctx.lineWidth = 0.5; ctx.stroke();
+        });
+      }
+
+      const _lipW = 8;
+      const _lipExt = 12;
+      const _lipGrad = ctx.createLinearGradient(0, _t2Top - _lipExt, 0, _t2Bot + _lipExt);
+      _lipGrad.addColorStop(0, '#333'); _lipGrad.addColorStop(0.5, '#555'); _lipGrad.addColorStop(1, '#333');
+      ctx.fillStyle = _lipGrad;
+      ctx.fillRect(_t2Left - _lipW/2, _t2Top - _lipExt, _lipW, _t2W + _lipExt*2);
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+      ctx.strokeRect(_t2Left - _lipW/2, _t2Top - _lipExt, _lipW, _t2W + _lipExt*2);
+      ctx.fillStyle = _lipGrad;
+      ctx.fillRect(_t2Right - _lipW/2, _t2Top - _lipExt, _lipW, _t2W + _lipExt*2);
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+      ctx.strokeRect(_t2Right - _lipW/2, _t2Top - _lipExt, _lipW, _t2W + _lipExt*2);
+
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 2;
+      ctx.shadowBlur = 5*SB; ctx.shadowColor = '#888';
+      ctx.beginPath(); ctx.moveTo(_t2Left, _t2Top); ctx.lineTo(_t2Right, _t2Top); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(_t2Left, _t2Bot); ctx.lineTo(_t2Right, _t2Bot); ctx.stroke();
+      ctx.shadowBlur = 0;
+
+      ctx.restore();
+    }
+  }
+
+  // Hatch debris PASS 2 — pieces OUTSIDE the tube (drawn after tube roof so they're visible on top of tube)
+  if(state.hatchDebris && state.hatchDebris.length > 0){
+    state.hatchDebris.forEach(_d => {
+      const _insideTube = _d.wx >= BELT_OUTER && _d.wx <= BELT_OUTER + 300 && Math.abs(_d.wy) <= BARRIER_GAP_WIDTH;
+      if(_insideTube) return;
+      const _dsx = _d.wx - state.x + cx, _dsy = _d.wy - state.y + cy;
+      if(_dsx < -100 || _dsx > canvas.width+100 || _dsy < -100 || _dsy > canvas.height+100) return;
+      ctx.save();
+      ctx.translate(_dsx, _dsy);
+      ctx.rotate(_d.rot);
+      const _dGrad = ctx.createLinearGradient(-_d.w/2, 0, _d.w/2, 0);
+      _dGrad.addColorStop(0, '#2a2a2a');
+      _dGrad.addColorStop(0.3, '#4a4a4a');
+      _dGrad.addColorStop(0.7, '#3a3a3a');
+      _dGrad.addColorStop(1, '#1a1a1a');
+      ctx.fillStyle = _dGrad;
+      ctx.fillRect(-_d.w/2, -_d.h/2, _d.w, _d.h);
+      ctx.strokeStyle = '#666'; ctx.lineWidth = 1;
+      ctx.strokeRect(-_d.w/2, -_d.h/2, _d.w, _d.h);
+      ctx.beginPath(); ctx.arc(0, 0, 2, 0, Math.PI*2);
+      ctx.fillStyle = '#888'; ctx.fill();
+      ctx.restore();
+    });
+  }
+
   // ── Zone Object HUD — left-side progress column ──
   drawZoneHUD();
   _drawHudFlyAnims();
 
   // ── On-screen radar minimap — bottom-right ──
   drawRadarMap();
-
-  // ── Zone crossing text — drawn AFTER rocks so it's always on top ──
-  // Positioned at midpoint between screen top and ship (avoids covering ship)
-  if(!state._victoryPhase && state.zoneCrossFlash && state.zoneCrossFlash.timer > 0){
-    const t = state.zoneCrossFlash.timer;
-    const maxT = state.zoneCrossFlash.maxT || (t > 200 ? t : (t === 200 ? 200 : 150));
-    if(!state.zoneCrossFlash.maxT) state.zoneCrossFlash.maxT = maxT;
-    const alpha = t > maxT-20 ? (maxT-t)/20
-                : t < 40      ? t/40
-                : 1.0;
-    const _zfl = state.zoneCrossFlash.lvl;
-    // Position flash text in lower quarter of upper half (closer to ship)
-    const flashY = Math.round(CY() * 0.75);
-    // lvl:-2 = outer barrier hit; lvl:-3 = custom msg; lvl:-4 = welcome back
-    const isBarrier = _zfl === -2;
-    const isCustomMsg = _zfl === -3 && state.zoneCrossFlash.msg && state.zoneCrossFlash.msg !== 'BOOST DOUBLED!';
-    const isBoostFlash = _zfl === -3 && !isCustomMsg;
-    const isWelcomeBack = _zfl === -4;
-    if(isCustomMsg){
-      // General purpose message flash (alien events, zone events)
-      const _flashCol = (state.zoneCrossFlash && state.zoneCrossFlash._col) ? state.zoneCrossFlash._col : '#cc44ff';
-      const _flashShadow = _flashCol;
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      ctx.textAlign='center';
-      // Pre-text (small line above) if provided
-      const _hasPre = !!state.zoneCrossFlash.pre;
-      const _msgY = _hasPre ? flashY-10 : flashY-18;
-      if(_hasPre){
-        setFont(FONT_18); ctx.fillStyle=_flashCol;
-        ctx.shadowBlur=16; ctx.shadowColor=_flashShadow;
-        ctx.fillText(state.zoneCrossFlash.pre, CX(), _msgY-32);
-      }
-      setFont(FONT_24B);
-      ctx.fillStyle=_flashCol;
-      ctx.shadowBlur=32; ctx.shadowColor=_flashShadow;
-      ctx.fillText(state.zoneCrossFlash.msg, CX(), _msgY);
-      // Sub-text if provided
-      if(state.zoneCrossFlash.sub){
-        setFont(FONT_24B); ctx.fillStyle='#00ffcc';
-        ctx.shadowColor='#009977'; ctx.shadowBlur=32;
-        ctx.fillText(state.zoneCrossFlash.sub, CX(), _msgY+46);
-      }
-      ctx.restore();
-    } else if(isBoostFlash){
-      ctx.save();
-      ctx.globalAlpha=alpha;
-      setFont(FONT_18B);
-      ctx.textAlign='center'; ctx.fillStyle='#ffe000';
-      ctx.shadowBlur=30; ctx.shadowColor='#ffe000';
-      ctx.fillText('BOOST DOUBLED!', CX(), flashY-10);
-      ctx.restore();
-    } else {
-      const lvlName = isBarrier ? '' : (_zfl >= 0 ? (LEVELS[_zfl]||'') : 'ASTEROID BELT');
-      const col = isBarrier ? '#cc44ff' : (_zfl >= 0 ? (LEVEL_COLORS[lvlName]||'#00ffcc') : '#ff8800');
-      const mainText = isBarrier ? "YOU'VE HIT THE OUTER REACHES" : 'ZONE: ' + lvlName;
-      const subText  = isBarrier ? '' : 'ENTERING ' + lvlName + ' ZONE';
-      ctx.save();
-      ctx.globalAlpha = alpha;
-      const _fontSz = isBarrier ? 18 : 24;
-      ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`; _curFont='';
-      ctx.textAlign = 'center';
-      ctx.fillStyle = col;
-      ctx.shadowBlur = 35; ctx.shadowColor = col;
-      ctx.fillText(mainText, CX(), flashY - 18);
-      if(subText){
-        setFont(FONT_9);
-        ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
-        ctx.fillText(subText, CX(), flashY + 18);
-      }
-      ctx.restore();
-    }
-  }
 
   // "NEXT MISSION" arrow hint — delayed, only if not heading toward gap
   // Suppress all NEXT MISSION hints while fighting the main world boss
@@ -9630,6 +9877,80 @@ function drawGame(){
     ctx.restore();
     }
   }
+  // ── Zone crossing text — drawn AFTER tube so it's always on top ──
+  // Positioned at midpoint between screen top and ship (avoids covering ship)
+  if(!state._victoryPhase && state.zoneCrossFlash && state.zoneCrossFlash.timer > 0){
+    const t = state.zoneCrossFlash.timer;
+    const maxT = state.zoneCrossFlash.maxT || (t > 200 ? t : (t === 200 ? 200 : 150));
+    if(!state.zoneCrossFlash.maxT) state.zoneCrossFlash.maxT = maxT;
+    const alpha = t > maxT-20 ? (maxT-t)/20
+                : t < 40      ? t/40
+                : 1.0;
+    const _zfl = state.zoneCrossFlash.lvl;
+    // Position flash text in lower quarter of upper half (closer to ship)
+    const flashY = Math.round(CY() * 0.75);
+    // lvl:-2 = outer barrier hit; lvl:-3 = custom msg; lvl:-4 = welcome back
+    const isBarrier = _zfl === -2;
+    const isCustomMsg = _zfl === -3 && state.zoneCrossFlash.msg && state.zoneCrossFlash.msg !== 'BOOST DOUBLED!';
+    const isBoostFlash = _zfl === -3 && !isCustomMsg;
+    const isWelcomeBack = _zfl === -4;
+    if(isCustomMsg){
+      // General purpose message flash (alien events, zone events)
+      const _flashCol = (state.zoneCrossFlash && state.zoneCrossFlash._col) ? state.zoneCrossFlash._col : '#cc44ff';
+      const _flashShadow = _flashCol;
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      ctx.textAlign='center';
+      // Pre-text (small line above) if provided
+      const _hasPre = !!state.zoneCrossFlash.pre;
+      const _msgY = _hasPre ? flashY-10 : flashY-18;
+      if(_hasPre){
+        setFont(FONT_18); ctx.fillStyle=_flashCol;
+        ctx.shadowBlur=16; ctx.shadowColor=_flashShadow;
+        ctx.fillText(state.zoneCrossFlash.pre, CX(), _msgY-32);
+      }
+      setFont(FONT_24B);
+      ctx.fillStyle=_flashCol;
+      ctx.shadowBlur=32; ctx.shadowColor=_flashShadow;
+      ctx.fillText(state.zoneCrossFlash.msg, CX(), _msgY);
+      // Sub-text if provided
+      if(state.zoneCrossFlash.sub){
+        setFont(FONT_24B); ctx.fillStyle='#00ffcc';
+        ctx.shadowColor='#009977'; ctx.shadowBlur=32;
+        ctx.fillText(state.zoneCrossFlash.sub, CX(), _msgY+46);
+      }
+      ctx.restore();
+    } else if(isBoostFlash){
+      ctx.save();
+      ctx.globalAlpha=alpha;
+      setFont(FONT_18B);
+      ctx.textAlign='center'; ctx.fillStyle='#ffe000';
+      ctx.shadowBlur=30; ctx.shadowColor='#ffe000';
+      ctx.fillText('BOOST DOUBLED!', CX(), flashY-10);
+      ctx.restore();
+    } else {
+      const lvlName = isBarrier ? '' : (_zfl >= 0 ? (LEVELS[_zfl]||'') : 'ASTEROID BELT');
+      const col = isBarrier ? '#cc44ff' : (_zfl >= 0 ? (LEVEL_COLORS[lvlName]||'#00ffcc') : '#ff8800');
+      const mainText = isBarrier ? "YOU'VE HIT THE OUTER REACHES" : 'ZONE: ' + lvlName;
+      const subText  = isBarrier ? '' : 'ENTERING ' + lvlName + ' ZONE';
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      const _fontSz = isBarrier ? 18 : 24;
+      ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`; _curFont='';
+      ctx.textAlign = 'center';
+      ctx.fillStyle = col;
+      ctx.shadowBlur = 35; ctx.shadowColor = col;
+      ctx.fillText(mainText, CX(), flashY - 18);
+      if(subText){
+        setFont(FONT_9);
+        ctx.fillStyle = '#fff';
+        ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
+        ctx.fillText(subText, CX(), flashY + 18);
+      }
+      ctx.restore();
+    }
+  }
+
   // Score flashes (secret level bubble pops)
   if(state.scoreFlashes){
     state.scoreFlashes=state.scoreFlashes.filter(f=>f.age<45);
