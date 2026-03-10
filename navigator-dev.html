@@ -2733,6 +2733,11 @@ if(sessionStorage.getItem('returnFromVictory')){
   sessionStorage.removeItem('returnFromVictory');
   window._titleReturnTime = Date.now() + 1500; // suppress for ~2s total
 }
+// Teleport to Moon if returning from victory with that flag
+if(sessionStorage.getItem('returnToMoon')){
+  sessionStorage.removeItem('returnToMoon');
+  window._teleportToMoonOnStart = true;
+}
 // ── Tab visibility — pause on hide, resume on show ──
 document.addEventListener('visibilitychange', () => {
   if (document.hidden) {
@@ -5057,12 +5062,16 @@ function updateWaveBeams(){
       if((boss.wx-b.wx)**2+(boss.wy-b.wy)**2<(boss.bodyR+10)**2){
         boss.hits++;boss.flashTimer=15;b.maxAge=0;hit=true;
         if(typeof devSyncBossHP==='function') devSyncBossHP();
+        if(!state.scoreFlashes)state.scoreFlashes=[];
+        state.scoreFlashes.push({wx:boss.wx,wy:boss.wy,score:-500,age:0,hue:300});
         // Knockback — push boss away from beam direction
         var _kbAng = Math.atan2(boss.wy - b.wy, boss.wx - b.wx);
         var _kbForce = 18;
         boss.wx += Math.cos(_kbAng) * _kbForce;
         boss.wy += Math.sin(_kbAng) * _kbForce;
-        if(audioCtx&&!state.sfxMuted){const _t=audioCtx.currentTime;playSFX(noteFreq(110,-5),_t,0.15,'sawtooth',0.1);}
+        if(audioCtx&&!state.sfxMuted){const _t=audioCtx.currentTime;
+          playBeep(noteFreq(280,0),_t,0.05,'square',0.18);
+          playBeep(noteFreq(100,0),_t+0.02,0.14,'triangle',0.14);}
         if(boss.hits>=boss.hitsNeeded)killSecretBoss();
       }
     }
@@ -6516,6 +6525,8 @@ function update(){
         if(wbD<mwb.bodyR+30&&(!mwb._waveCD||mwb._waveCD<=0)){
           mwb.hits++; mwb.flashTimer=8; mwb._waveCD=20;
           if(typeof devSyncBossHP==='function') devSyncBossHP();
+          if(!state.scoreFlashes)state.scoreFlashes=[];
+          state.scoreFlashes.push({wx:mwb.wx,wy:mwb.wy,score:-500,age:0,hue:300});
           // Knockback — push boss away from beam
           var _kbAng = Math.atan2(mwb.wy - wb.wy, mwb.wx - wb.wx);
           var _kbForce = 18;
@@ -6524,7 +6535,9 @@ function update(){
           // Angry reaction: shimmy shake + rage timer
           mwb._shakeTimer = 20;
           mwb._angerTimer = Math.min((mwb._angerTimer || 0) + 40, 180); // builds with each hit
-          if(audioCtx&&!state.sfxMuted){const t=audioCtx.currentTime;playSFX(noteFreq(400,mwb.hits),t,0.3,'square',0.08);}
+          if(audioCtx&&!state.sfxMuted){const t=audioCtx.currentTime;
+            playBeep(noteFreq(280,0),t,0.05,'square',0.18);
+            playBeep(noteFreq(100,0),t+0.02,0.14,'triangle',0.14);}
           if(mwb.hits>=mwb.hitsNeeded) killMainWorldBoss();
         }
       });
@@ -11522,6 +11535,15 @@ function startGame(){
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
   state.collectedItems = [];
   state._prevX=0; state._prevY=0;
+  // Teleport to Moon if returning from victory walk
+  if(window._teleportToMoonOnStart){
+    window._teleportToMoonOnStart = false;
+    const moonX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+    const moonY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R + 200;
+    state.x = moonX; state.y = moonY; state.vx = 0; state.vy = 0;
+    state._prevX = moonX; state._prevY = moonY;
+    state.outsideBarrier = true; state._committedInside = false;
+  }
   updateLevelDisplay('EDITING');updateFuelBar();updateFireModeUI();
   updateAllObjectsList(); updateMusicDrawer(); _updateMuteUI();
   // Show mission briefing on first launch; open menu drawer
@@ -13163,7 +13185,7 @@ function _spawnSecretBoss(){
   const bh = state.secretBlackHole;
   if(!bh) return;
   const bossAng = Math.atan2(bh.wy-state.y, bh.wx-state.x)+Math.PI;
-  const bossDist = Math.sqrt((bh.wx-state.x)**2+(bh.wy-state.y)**2)*2.5;
+  const bossDist = Math.max(1900, Math.sqrt((bh.wx-state.x)**2+(bh.wy-state.y)**2)*2.5);
   const N_TENT=8;
   state.secretBoss={wx:state.x+Math.cos(bossAng)*bossDist,wy:state.y+Math.sin(bossAng)*bossDist,
     bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:60,dead:false,deathTimer:0,flashTimer:0,
@@ -13377,6 +13399,7 @@ function updateSecretLevel(){
       if(_bdist < 225){
         state._bossCaptured = true;
         state._bossCaptureTimer = 0;
+        state._bossCaptureTriggered = false;
         state._bossCaptureHits = boss.hits;
         state._bossCaptureStartR = _bdist;
         state._bossCaptureAngle = Math.atan2(_bh.wy-boss.wy, _bh.wx-boss.wx);
@@ -13509,7 +13532,8 @@ function updateSecretLevel(){
         _o4.start(now); _o4.stop(now+1.8);
       }
     }
-    if(state._bossCaptureTimer===180){
+    if(state._bossCaptureTimer>=180 && !state._bossCaptureTriggered){
+      state._bossCaptureTriggered=true;
       state._bossInMainWorld=true;
       state.secretBossDefeated=true;
       _capBoss.dead=true; _capBoss.deathTimer=0;
@@ -14105,9 +14129,8 @@ function drawBossVisual(ctx,boss,bsx,bsy){
     _jG.addColorStop(1,`rgba(40,0,90,${bAlpha*0.12})`);
   }
   ctx.fillStyle=_jG;ctx.fill();ctx.restore();
-  // Layer 3: interior core glow
+  // Layer 3: interior core glow (no clip — gradient fades to transparent at edge)
   ctx.save();
-  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
   const _cG=ctx.createRadialGradient(0,-bellR*bellH*0.3,0,0,-bellR*bellH*0.3,bellR*0.7);
   const _cCol=_angry?'255,80,140':'180,100,255';
   _cG.addColorStop(0,`rgba(${_cCol},${bCoreG})`);
@@ -14115,9 +14138,8 @@ function drawBossVisual(ctx,boss,bsx,bsy){
   _cG.addColorStop(1,'rgba(0,0,0,0)');
   ctx.beginPath();ctx.arc(0,-bellR*bellH*0.3,bellR*0.7,0,Math.PI*2);
   ctx.fillStyle=_cG;ctx.fill();ctx.restore();
-  // Layer 4: veining
+  // Layer 4: veining (no clip — subtle strokes, transparent at tips)
   ctx.save();
-  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
   for(let v=0;v<7;v++){
     const va=boss.pulsePhase*0.25+v*(Math.PI*2/7);
     const r0=bellR*0.12,r1=bellR*(0.45+Math.sin(va*2+boss.pulsePhase*0.5)*0.15);
@@ -14129,9 +14151,8 @@ function drawBossVisual(ctx,boss,bsx,bsy){
     ctx.lineWidth=1.5;ctx.stroke();
   }
   ctx.restore();
-  // Layer 5: specular dome shine
+  // Layer 5: specular dome shine (no clip — gradient fades to transparent at edge)
   ctx.save();
-  buildBellPath(ctx,bellR,bellH,bSkirt,_bStretch);ctx.clip();
   const _rG=ctx.createRadialGradient(-bellR*0.3,-bellR*bellH*0.6,0,-bellR*0.3,-bellR*bellH*0.6,bellR*0.5);
   _rG.addColorStop(0,'rgba(255,255,255,0.22)');
   _rG.addColorStop(0.4,'rgba(255,255,255,0.06)');
