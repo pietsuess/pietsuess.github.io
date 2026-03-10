@@ -1414,7 +1414,8 @@ var AudioEngine = {
 window.onload = function() {
     // --- Game Variables ---
     let gameState = 'title';
-    var _prePauseState = null, _prePauseScreen = null; 
+    var _prePauseState = null, _prePauseScreen = null;
+    var _countdownActive = false; // true during 3-2-1, tunnel moves but no items/timer 
     let score = 0;
     let health = 100;
     let baseSpeed = 150;
@@ -3978,11 +3979,14 @@ window.onload = function() {
         speed = baseSpeed = 150;
         showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
         setTimeout(function(){
+            gameState = 'playing';
+            _countdownActive = true;
+            document.getElementById('hamburger-btn').style.display = 'flex';
+            AudioEngine.startEngine();
             startCountdown(function(){
-                gameState = 'playing';
-                document.getElementById('hamburger-btn').style.display = 'flex';
-                AudioEngine.startEngine();
+                _countdownActive = false;
                 spawnIntroWave();
+                sectorTime = 0;
             });
         }, 1800);
     }
@@ -4593,14 +4597,16 @@ window.onload = function() {
         showSectorIntro(zoneForIntro, function() {
             showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
             setTimeout(function(){
-                // Resume audio context before countdown so tick/go sounds play
+                // Start moving tunnel during countdown — no items yet
+                gameState = 'playing';
+                _countdownActive = true;
+                document.getElementById('hamburger-btn').style.display = 'flex';
+                AudioEngine.resume();
+                AudioEngine.startEngine();
                 if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
                 startCountdown(function(){
-                    // Countdown done — spawn items and start gameplay
-                    gameState = 'playing';
-                    document.getElementById('hamburger-btn').style.display = 'flex';
-                    AudioEngine.resume();
-                    AudioEngine.startEngine();
+                    // GO — spawn items and start clock
+                    _countdownActive = false;
                     spawnIntroWave();
                     sectorTime = 0;
                 });
@@ -5156,8 +5162,8 @@ window.onload = function() {
                 forceFieldMat.opacity = 0;
             }
             let moveDist = speed * delta;
-            distanceTraveled += moveDist;
-            if (!TUT.active) {
+            if (!_countdownActive) distanceTraveled += moveDist;
+            if (!TUT.active && !_countdownActive) {
                 sectorTime += delta;
                 var timerEl = document.getElementById('hud-timer');
                 var srClock = document.getElementById('speedrun-clock');
