@@ -1316,15 +1316,22 @@ var AudioEngine = {
       ob.type='sine'; ob.frequency.setValueAtTime(262,t);
       gb.gain.setValueAtTime(0.1,t); gb.gain.linearRampToValueAtTime(0,t+0.5); ob.start(t); ob.stop(t+0.5);
     } else if (type === 'bonus_unlock') {
-      // Explosive pop + joyous chime — quick burst for card reveal
-      var nb=audioCtx.createBuffer(1,audioCtx.sampleRate*0.08,audioCtx.sampleRate),nd=nb.getChannelData(0);
-      for(var i=0;i<nd.length;i++) nd[i]=(Math.random()*2-1)*0.2*(1-i/nd.length);
-      var ns=audioCtx.createBufferSource(); ns.buffer=nb; var ng=audioCtx.createGain(); ns.connect(ng); ng.connect(sfxGainNode);
-      ng.gain.setValueAtTime(0.2,t); ng.gain.linearRampToValueAtTime(0,t+0.08); ns.start(t); ns.stop(t+0.08);
-      // Rising chime
-      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
-      o.type='sine'; o.frequency.setValueAtTime(1320,t+0.03); o.frequency.linearRampToValueAtTime(1760,t+0.12);
-      g.gain.setValueAtTime(0.16,t+0.03); g.gain.linearRampToValueAtTime(0,t+0.3); o.start(t+0.03); o.stop(t+0.3);
+      // Crunchy small explosion — filtered noise burst with low thump
+      var bufLen=Math.floor(audioCtx.sampleRate*0.25);
+      var nb=audioCtx.createBuffer(1,bufLen,audioCtx.sampleRate),nd=nb.getChannelData(0);
+      for(var i=0;i<bufLen;i++){
+        var env=Math.pow(1-i/bufLen,3); // sharp exponential decay
+        nd[i]=(Math.random()*2-1)*env;
+      }
+      var ns=audioCtx.createBufferSource(); ns.buffer=nb;
+      // Bandpass filter for crunchy texture
+      var bp=audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=800; bp.Q.value=1.5;
+      var ng=audioCtx.createGain(); ns.connect(bp); bp.connect(ng); ng.connect(sfxGainNode);
+      ng.gain.setValueAtTime(0.22,t); ng.gain.linearRampToValueAtTime(0,t+0.2); ns.start(t); ns.stop(t+0.25);
+      // Low thump for body
+      var lo=audioCtx.createOscillator(),lg=audioCtx.createGain(); lo.connect(lg); lg.connect(sfxGainNode);
+      lo.type='sine'; lo.frequency.setValueAtTime(80,t); lo.frequency.linearRampToValueAtTime(30,t+0.12);
+      lg.gain.setValueAtTime(0.18,t); lg.gain.linearRampToValueAtTime(0,t+0.15); lo.start(t); lo.stop(t+0.15);
     } else if (type === 'countdown_tick') {
       // Short digital beep for 3-2-1
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
