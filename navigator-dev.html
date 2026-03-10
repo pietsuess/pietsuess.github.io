@@ -6431,53 +6431,40 @@ function update(){
       mwb._fleeWY = Math.sin(_fAng) * _fR;
     }
     if(_mwFleeing && mwb._fleeing){
-      if(mwb._gapPhase && !mwb._exitedGap){
-        if(mwb._gapPhase === 'approach'){
+      if(mwb._gapPhase === 'approach'){
           // ── Approach: beeline to alignment point just inside tube entrance ──
+          // No facing update — boss keeps current orientation (no head spinning)
           const _tgtX = BELT_OUTER - 150, _tgtY = 0;
           const _aDx = _tgtX - mwb.wx, _aDy = _tgtY - mwb.wy;
           const _aDist = Math.sqrt(_aDx*_aDx + _aDy*_aDy);
           if(_aDist > 1){ const _aS = 9 / _aDist; mwb.wx += _aDx*_aS; mwb.wy += _aDy*_aS; mwb._velX = _aDx*_aS; mwb._velY = _aDy*_aS; }
-          var _aFace = Math.atan2(_aDy, _aDx);
-          var _aFD = _aFace - (mwb.facing||0);
-          while(_aFD > Math.PI) _aFD -= Math.PI*2;
-          while(_aFD < -Math.PI) _aFD += Math.PI*2;
-          mwb.facing = (mwb.facing||0) + _aFD * 0.12;
           // Switch to through-tube when aligned and close enough
           if(_aDist < 200 && Math.abs(mwb.wy) < BARRIER_GAP_WIDTH * 0.85){
             mwb._gapPhase = 'through';
             mwb._velX = 0; mwb._velY = 0;
           }
         } else if(mwb._gapPhase === 'through'){
-          // ── Through: transit the tube at steady speed — no special draw, PASS 2 masks naturally ──
+          // ── Through: transit the tube at steady speed — PASS 2 masks boss naturally ──
+          // No facing update — keep orientation frozen (no head spinning in tube)
           mwb.wx += 5;
           mwb.wy *= 0.88; // drift to y=0 centerline
           mwb._velX = 5; mwb._velY = mwb.wy * -0.12;
-          // Snap facing to +X (into tube / toward space)
-          let _tFD = 0 - (mwb.facing||0);
-          while(_tFD > Math.PI) _tFD -= Math.PI*2;
-          while(_tFD < -Math.PI) _tFD += Math.PI*2;
-          mwb.facing = (mwb.facing||0) + _tFD * 0.18;
           // Exited tube — switch to outer-space travel, leave bubble pickup at tube exit
           if(mwb.wx > BELT_OUTER + 310){
             mwb._gapPhase = 'outer';
-            mwb._exitedGap = true;
             state._bossInMainWorld = false;
             state.gapBubble = {wx: BELT_OUTER + 420, wy: 0, r: 32, hue: 190, age: 0, collected: false};
-            // TODO: gap-escape thank-you text — wording TBD
           }
         } else if(mwb._gapPhase === 'outer'){
-          // ── Outer space: boss accelerates away visibly until off-screen, then cleans up ──
+          // ── Outer space: boss travels visibly off-screen — NO belt clamp ──
           mwb.wx += 9;
           mwb._velX = 9; mwb._velY = 0;
-          // Clean up once well off-screen (no fade — it's invisible by then)
+          // Clean up once well off-screen
           if(mwb.wx > BELT_OUTER + 1400){
             mwb.dead = true;
-            mwb.deathTimer = 60; // skip fade, remove immediately
+            mwb.deathTimer = 60; // remove immediately, no fade needed
           }
-        }
-        // No belt clamp during gap escape phases
-      } else {
+        } else {
         const _lastHit = mwb.hits >= mwb.hitsNeeded - 1; // final hit — desperate evasion
         if(_lastHit){
           // ── Desperate mode: repel directly away from player like opposite magnet ──
@@ -9176,6 +9163,14 @@ function drawGame(){
     if(mOn&&!(mwb.dead&&mwb.deathTimer>60)){
       ctx.save();
       if(mwb.dead) ctx.globalAlpha=Math.max(0,1-mwb.deathTimer/60);
+      // During tube transit: squish horizontally so he fits through the tunnel
+      if(mwb._gapPhase === 'through'){
+        const _tp = Math.max(0, Math.min(1, (mwb.wx - (BELT_OUTER - 150)) / 460));
+        const _scaleX = 1 - _tp * 0.6; // narrows to 40% width by exit
+        ctx.translate(mbsx, mbsy);
+        ctx.scale(_scaleX, 1);
+        ctx.translate(-mbsx, -mbsy);
+      }
       drawBossVisual(ctx,mwb,mbsx,mbsy);
       ctx.restore();
     }
