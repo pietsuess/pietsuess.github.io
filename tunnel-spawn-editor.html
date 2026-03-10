@@ -55,9 +55,10 @@
   .computed .crow .cl { color: #666; }
   .computed .crow .cv { color: #8888ff; font-family: 'Press Start 2P', monospace; font-size: 9px; }
 
-  .bar-chart { display: flex; align-items: flex-end; gap: 3px; height: 60px; margin: 10px 0; }
+  .bar-chart { display: flex; align-items: flex-end; gap: 3px; height: 80px; margin: 10px 0; padding-bottom: 50px; }
   .bar-chart .bar { flex: 1; border-radius: 2px 2px 0 0; position: relative; min-width: 8px; }
-  .bar-chart .bar .bar-label { position: absolute; bottom: -14px; left: 50%; transform: translateX(-50%); font-size: 7px; color: #555; white-space: nowrap; }
+  .bar-chart .bar .bar-label { position: absolute; bottom: -48px; left: 50%; transform: translateX(-50%); font-size: 7px; color: #555; white-space: nowrap; text-align: center; line-height: 1.5; }
+  .bar-chart .bar .bar-count { font-family: 'Press Start 2P', monospace; font-size: 7px; color: #888; }
 
   .export-area { margin-top: 20px; }
   .export-btn { font-family: 'Press Start 2P', monospace; font-size: 10px; padding: 12px 24px; background: #1a0030; color: #ff69b4; border: 1px solid #ff69b4; cursor: pointer; margin-right: 8px; margin-bottom: 8px; }
@@ -482,16 +483,20 @@ function buildSpawnChart() {
     { label: 'HAZARD', pct: hazardEff * postRollMult, color: '#ff4444' },
   ];
 
+  // Estimate total spawn points
+  const totalItems = Math.floor((c.levelLength * c.maxSpawnPct - c.startOffset) / c.spacing);
+
   const maxPct = Math.max(...bars.map(b => b.pct), 0.01);
   bars.forEach(b => {
     const bar = document.createElement('div');
     bar.className = 'bar';
-    const h = Math.max(2, (b.pct / maxPct) * 55);
+    const h = Math.max(2, (b.pct / maxPct) * 70);
     bar.style.height = h + 'px';
     bar.style.background = b.color;
     bar.style.opacity = b.pct > 0 ? '0.8' : '0.15';
-    bar.innerHTML = `<div class="bar-label">${b.label}<br>${(b.pct * 100).toFixed(1)}%</div>`;
-    bar.title = b.label + ': ' + (b.pct * 100).toFixed(2) + '%';
+    const count = Math.round(totalItems * b.pct);
+    bar.innerHTML = `<div class="bar-label">${b.label}<br>${(b.pct * 100).toFixed(1)}%<br><span class="bar-count">~${count}</span></div>`;
+    bar.title = b.label + ': ' + (b.pct * 100).toFixed(2) + '% ≈ ' + count + ' objects';
     el.appendChild(bar);
   });
 }
@@ -531,19 +536,36 @@ function buildSliders() {
     document.getElementById(id).innerHTML = '';
   });
 
+  // Compute effective counts for inline display
+  var _totalSpawns = Math.floor((c.levelLength * c.maxSpawnPct - c.startOffset) / c.spacing);
+  var _lvl = activeLevel;
+  var _hazEff = Math.min(0.85, c.baseHazard * (1 + (_lvl - 1) * c.levelEscalation));
+  var _rem = 1 - _hazEff;
+  var _ringEff = _rem * (c.baseRing / (c.baseRing + c.baseCore + 0.001));
+  var _coreEff = _rem * (c.baseCore / (c.baseRing + c.baseCore + 0.001));
+  var _preRoll = c.barrierThreshold + c.boostChance + c.starChance + c.contentChance;
+  var _postMult = Math.max(0, 1 - _preRoll);
+  var _nHaz = Math.round(_totalSpawns * _hazEff * _postMult);
+  var _nRing = Math.round(_totalSpawns * _ringEff * _postMult);
+  var _nCore = Math.round(_totalSpawns * _coreEff * _postMult);
+  var _nBarrier = Math.round(_totalSpawns * c.barrierThreshold);
+  var _nContent = Math.round(_totalSpawns * c.contentChance);
+  var _nBoost = Math.round(_totalSpawns * c.boostChance);
+  var _nStar = Math.round(_totalSpawns * c.starChance);
+
   // Spawn ratios
   slider('spawn-sliders', 'baseHazard', 'Hazard base %', 0, 1, 0.01, '', null,
-    'What fraction of objects are damage obstacles (mines, blocks, knots). At 0.20, roughly 1 in 5 objects will hurt you.');
+    'What fraction of objects are damage obstacles (mines, blocks, knots). At 0.20, roughly 1 in 5 objects will hurt you. <b style="color:#ff4444;">= ~' + _nHaz + ' hazards</b> in this sector.');
   slider('spawn-sliders', 'baseRing', 'Ring base %', 0, 1, 0.01, '', null,
-    'What fraction of objects are score rings. These are the green toruses worth 625 points (×combo multiplier). The bread and butter of scoring.');
+    'What fraction of objects are score rings. Green toruses worth 625 pts (×combo). <b style="color:#00ff88;">= ~' + _nRing + ' rings</b> in this sector.');
   slider('spawn-sliders', 'baseCore', 'Core base %', 0, 1, 0.01, '', null,
-    'What fraction of objects are health pickups. Gold octahedrons that restore 15 shield. More cores = more forgiving sector.');
+    'What fraction of objects are health pickups. Gold octahedrons that restore 15 shield. <b style="color:#ffaa00;">= ~' + _nCore + ' cores</b> in this sector.');
   slider('spawn-sliders', 'levelEscalation', 'Level escalation', 0, 0.5, 0.01, '/lvl', null,
     'How much harder each replay gets. At 0.10, Level 2 has 10% more hazards than Level 1, Level 3 has 20% more, etc. Rings and cores shrink to compensate.');
 
   // Barriers
   slider('barrier-sliders', 'barrierThreshold', 'Barrier spawn %', 0, 0.6, 0.01, '', null,
-    'Chance that any spawn point becomes a barrier instead of a normal object. This is checked first — when a barrier spawns, it replaces whatever else would have appeared. Higher = more laser walls to deal with.');
+    'Chance that any spawn point becomes a barrier instead of a normal object. Checked first — when a barrier triggers, nothing else spawns at that point. <b style="color:#ff2266;">= ~' + _nBarrier + ' barriers</b> in this sector.');
   slider('barrier-sliders', 'normalMinDist', 'Min distance apart', 100, 2000, 50, 'units', null,
     'Minimum gap between barriers along the tunnel. Prevents two barriers from appearing right on top of each other. At 800, you get at least ~1 second of clear tunnel between barriers.');
   slider('barrier-sliders', 'gapChance', 'Gap vs full %', 0, 1, 0.05, '', null,
@@ -579,7 +601,7 @@ function buildSliders() {
 
   // Spacing
   slider('spacing-sliders', 'spacing', 'Item spacing', 20, 200, 5, 'units', null,
-    'Distance between each object along the tunnel. Lower = more stuff packed in = denser, busier gameplay. At 100, objects appear every 100 units. At 50, twice as many objects in the same distance.');
+    'Distance between each object along the tunnel. Lower = more stuff packed in. <b style="color:#00ffcc;">= ~' + _totalSpawns + ' total objects</b> in this sector. At 50, twice as dense as 100.');
   slider('spacing-sliders', 'startOffset', 'Start offset', 100, 1000, 50, 'units', null,
     'Empty buffer zone at the start of each sector. Nothing spawns for this distance, giving you a moment to get oriented before the action starts.');
   slider('spacing-sliders', 'maxSpawnPct', 'Spawn cutoff', 0.50, 0.95, 0.01, '', v => (v*100).toFixed(0)+'%',
@@ -589,11 +611,11 @@ function buildSliders() {
 
   // Special objects
   slider('special-sliders', 'starChance', 'Star chance', 0, 0.10, 0.005, '', null,
-    'Chance per spawn point of getting a force field star. These are rare defensive pickups that absorb one hit. At 0.025 = roughly 1 star per 40 objects.');
+    'Chance per spawn point of getting a force field star. Rare defensive pickups that absorb one hit. <b style="color:#ff44ff;">= ~' + _nStar + ' stars</b> in this sector.');
   slider('special-sliders', 'contentChance', 'Content chance', 0, 0.15, 0.005, '', null,
-    'Chance of spawning a portfolio content collectible — the zone-shaped objects that unlock your creative work. Higher = more chances to grab content per run. Zero in speed run sectors.');
+    'Chance of spawning a portfolio content collectible — the zone-shaped objects that unlock your creative work. Zero in speed run sectors. <b style="color:#fff;">= ~' + _nContent + ' content objects</b> in this sector.');
   slider('special-sliders', 'boostChance', 'Boost pad chance', 0, 0.15, 0.005, '', null,
-    'Chance of a boost pad appearing. Each pad also spawns a trail of bonus rings along the barrel roll path, so they\'re both a score opportunity and a fun moment.');
+    'Chance of a boost pad appearing. Each pad also spawns bonus rings along the flip arc. <b style="color:#00ff66;">= ~' + _nBoost + ' boost pads</b> (+ ~' + (_nBoost * c.boostRingCount) + ' bonus rings) in this sector.');
   slider('special-sliders', 'boostRingCount', 'Rings per boost', 0, 10, 1, '', null,
     'How many bonus rings appear along the 360° flip arc when you hit a boost pad. More rings = more score from each boost.');
 
