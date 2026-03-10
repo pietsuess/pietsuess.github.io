@@ -1316,22 +1316,26 @@ var AudioEngine = {
       ob.type='sine'; ob.frequency.setValueAtTime(262,t);
       gb.gain.setValueAtTime(0.1,t); gb.gain.linearRampToValueAtTime(0,t+0.5); ob.start(t); ob.stop(t+0.5);
     } else if (type === 'bonus_unlock') {
-      // Crunchy small explosion — filtered noise burst with low thump
-      var bufLen=Math.floor(audioCtx.sampleRate*0.25);
+      // Crunchy explosion with ding — longer noise burst, deeper, plus bright chime
+      var bufLen=Math.floor(audioCtx.sampleRate*0.4);
       var nb=audioCtx.createBuffer(1,bufLen,audioCtx.sampleRate),nd=nb.getChannelData(0);
       for(var i=0;i<bufLen;i++){
-        var env=Math.pow(1-i/bufLen,3); // sharp exponential decay
+        var env=Math.pow(1-i/bufLen,2.5); // slower decay for bigger explosion
         nd[i]=(Math.random()*2-1)*env;
       }
       var ns=audioCtx.createBufferSource(); ns.buffer=nb;
-      // Bandpass filter for crunchy texture
-      var bp=audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=800; bp.Q.value=1.5;
+      // Low bandpass for deep crunch
+      var bp=audioCtx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=400; bp.Q.value=0.8;
       var ng=audioCtx.createGain(); ns.connect(bp); bp.connect(ng); ng.connect(sfxGainNode);
-      ng.gain.setValueAtTime(0.22,t); ng.gain.linearRampToValueAtTime(0,t+0.2); ns.start(t); ns.stop(t+0.25);
-      // Low thump for body
+      ng.gain.setValueAtTime(0.3,t); ng.gain.linearRampToValueAtTime(0,t+0.35); ns.start(t); ns.stop(t+0.4);
+      // Deep thump
       var lo=audioCtx.createOscillator(),lg=audioCtx.createGain(); lo.connect(lg); lg.connect(sfxGainNode);
-      lo.type='sine'; lo.frequency.setValueAtTime(80,t); lo.frequency.linearRampToValueAtTime(30,t+0.12);
-      lg.gain.setValueAtTime(0.18,t); lg.gain.linearRampToValueAtTime(0,t+0.15); lo.start(t); lo.stop(t+0.15);
+      lo.type='sine'; lo.frequency.setValueAtTime(55,t); lo.frequency.linearRampToValueAtTime(20,t+0.2);
+      lg.gain.setValueAtTime(0.25,t); lg.gain.linearRampToValueAtTime(0,t+0.25); lo.start(t); lo.stop(t+0.25);
+      // Bright ding on top
+      var dn=audioCtx.createOscillator(),dg=audioCtx.createGain(); dn.connect(dg); dg.connect(sfxGainNode);
+      dn.type='sine'; dn.frequency.setValueAtTime(1480,t+0.05);
+      dg.gain.setValueAtTime(0.12,t+0.05); dg.gain.linearRampToValueAtTime(0,t+0.4); dn.start(t+0.05); dn.stop(t+0.4);
     } else if (type === 'countdown_tick') {
       // Short digital beep for 3-2-1
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
@@ -2999,8 +3003,8 @@ window.onload = function() {
 
     var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
     function spawnItem(zPos) {
-        // Hard stop: never place items beyond 92% of sector distance from spawn origin
-        if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.92) return;
+        // Hard stop: never place items beyond finish ring (80% of sector distance)
+        if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
         let rand = Math.random();
         const s = currentSector;
         var _sCfg = _getSpawnCfg(s);
@@ -3717,7 +3721,7 @@ window.onload = function() {
         var baseZ = camera.position.z - 600;
 
         // If this sector has baked layout data, spawn it
-        var maxBakedDist = sectorDistance * 0.90;  // stop spawning near finish line
+        var maxBakedDist = sectorDistance * 0.78;  // stop spawning before finish ring
         if (bakedLevels[currentSector] && bakedLevels[currentSector].length) {
             bakedLevels[currentSector].forEach(function(obj) {
                 // Skip objects beyond the runway zone
@@ -3769,7 +3773,7 @@ window.onload = function() {
         var startOffset = 400;
         _spawnOriginZ = camera.position.z;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.90;
+        var lastItemDist = sectorDistance * 0.78;
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
