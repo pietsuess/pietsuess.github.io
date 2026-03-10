@@ -4934,32 +4934,45 @@ function showBossEscapeTransmission(){
   ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
   ov.innerHTML=`<div style="position:relative;z-index:1;border:2px solid #aa44ff;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 40px rgba(170,68,255,0.3);" onclick="event.stopPropagation()">
     <div id="boss-escape-close" onclick="document.getElementById('boss-escape-overlay').remove()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
-    <div style="color:#aa44ff;font-size:20px;letter-spacing:3px;margin-bottom:16px;line-height:2;text-shadow:0 0 18px #aa44ff;">INCOMING TRANSMISSION</div>
-    <div style="color:#aa44ff;font-size:28px;letter-spacing:4px;margin-bottom:24px;text-shadow:0 0 24px #aa44ff,0 0 48px #aa44ff;">THE OCTO-ALIEN</div>
-    <div id="boss-tx-terminal" style="background:#0a0a0a;border:1px solid #1a3a1a;padding:20px 24px;text-align:left;margin-bottom:24px;min-height:80px;box-shadow:inset 0 0 20px rgba(0,255,80,0.04);"></div>
+    <div style="color:#aa44ff;font-size:20px;letter-spacing:3px;margin-bottom:24px;line-height:2;text-shadow:0 0 18px #aa44ff;">INCOMING TRANSMISSION</div>
+    <div id="boss-tx-terminal" style="position:relative;overflow:hidden;background:#0a0a0a;border:1px solid #1a3a1a;padding:24px 28px;text-align:left;margin-bottom:24px;min-height:100px;box-shadow:inset 0 0 20px rgba(0,255,80,0.04);"></div>
     <div id="boss-tx-tap" style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:16px;display:none;">TAP TO CLOSE</div>
   </div>`;
   document.body.appendChild(ov);
-  // Terminal typewriter animation
+  // Add scanline overlay to terminal
   const _term = document.getElementById('boss-tx-terminal');
+  const _scan = document.createElement('div');
+  _scan.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(0,0,0,0.15) 2px,rgba(0,0,0,0.15) 4px);z-index:1;';
+  _term.appendChild(_scan);
+  // Terminal typewriter animation
   const _lines = [
+    'OCTO-ALIEN',
+    '',
     '> SIGNAL LOCKED...',
     '',
     'THANK YOU FOR RELEASING ME.',
     '',
     'HERE IS A GIFT FOR YOU.'
   ];
-  let _li = 0, _ci = 0, _lineEls = [];
-  function _addLine(){
+  let _li = 0, _ci = 0, _lineEls = [], _boopCount = 0;
+  function _addLine(isHeader){
     const el = document.createElement('div');
-    el.style.cssText = 'color:#00ff66;font-size:13px;letter-spacing:2px;line-height:2.2;font-family:monospace,monospace;text-shadow:0 0 8px rgba(0,255,102,0.5);min-height:1.4em;';
-    _term.appendChild(el);
+    el.style.cssText = isHeader
+      ? "color:#00ff66;font-size:18px;letter-spacing:4px;line-height:2.4;font-family:'Press Start 2P',monospace;text-shadow:0 0 10px rgba(0,255,102,0.6);min-height:1.4em;position:relative;z-index:2;"
+      : "color:#00ff66;font-size:13px;letter-spacing:2px;line-height:2.2;font-family:'Press Start 2P',monospace;text-shadow:0 0 8px rgba(0,255,102,0.5);min-height:1.4em;position:relative;z-index:2;";
+    _term.insertBefore(el, _scan);
     _lineEls.push(el);
     return el;
   }
+  function _boop(){
+    if(!audioCtx || state.sfxMuted) return;
+    const t = audioCtx.currentTime;
+    const freq = 260 + Math.random() * 80;
+    playSFX(freq, t, 0.10, 'sine', 0.06);
+    playSFX(freq * 1.5, t + 0.02, 0.05, 'sine', 0.04);
+  }
   function _typeNext(){
     if(_li >= _lines.length){
-      // Done typing — show cursor blink + close hint
       const lastEl = _lineEls[_lineEls.length - 1];
       if(lastEl) lastEl.innerHTML += '<span style="animation:pulse 0.7s steps(1) infinite;">_</span>';
       setTimeout(()=>{ const cl=document.getElementById('boss-escape-close'); if(cl) cl.style.display='block'; },500);
@@ -4968,26 +4981,27 @@ function showBossEscapeTransmission(){
     }
     const line = _lines[_li];
     if(line === ''){
-      _addLine();
+      _addLine(false);
       _li++;
       setTimeout(_typeNext, 200);
       return;
     }
-    const el = _addLine();
+    const isHeader = _li === 0;
+    const el = _addLine(isHeader);
     _ci = 0;
+    _boopCount = 0;
     function _typeChar(){
       if(_ci >= line.length){
         _li++;
-        setTimeout(_typeNext, _li <= 1 ? 500 : 350);
+        setTimeout(_typeNext, _li <= 1 ? 600 : 350);
         return;
       }
       el.textContent = line.substring(0, _ci + 1) + '_';
       _ci++;
-      // SFX tick
-      if(audioCtx && !state.sfxMuted && _ci % 2 === 0){
-        playSFX(800 + Math.random()*400, audioCtx.currentTime, 0.04, 'square', 0.01);
-      }
-      setTimeout(_typeChar, 35 + Math.random() * 25);
+      _boopCount++;
+      // Boop every 4th character — deeper, slower
+      if(_boopCount % 4 === 1) _boop();
+      setTimeout(_typeChar, 45 + Math.random() * 30);
     }
     _typeChar();
   }
