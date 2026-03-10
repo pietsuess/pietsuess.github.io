@@ -6485,7 +6485,8 @@ function update(){
               [0,4,7,12,16,19,24,28].forEach((n,i)=>playSFX(noteFreq(220,n),_ot+i*0.07,0.55,'square',0.10));
               setTimeout(()=>{if(audioCtx&&!state.sfxMuted){const _t2=audioCtx.currentTime;[0,7,12,19,24].forEach(n=>playSFX(noteFreq(330,n),_t2,1.0,'sine',0.12));}},550);
             }
-            state.zoneCrossFlash={lvl:-3,timer:260,pre:'THE OCTO-ALIEN HAS ESCAPED!',msg:'COLLECT THE GIFT',_col:'#aa44ff'};
+            showBossEscapeTransmission(); // popup instead of text flash
+            setTimeout(()=>addScore(30000),400); // 30K points right after popup appears
           }
         } else if(mwb._gapPhase === 'outer'){
           // ── Outer space: boss travels visibly off-screen — NO belt clamp ──
@@ -6671,9 +6672,7 @@ function update(){
     const _gbDx = state.x - _gb.wx, _gbDy = state.y - _gb.wy;
     if(Math.sqrt(_gbDx*_gbDx + _gbDy*_gbDy) < _gb.r + (_ps.size||20)){
       _gb.collected = true;
-      addScore(30000); // biggest reward — octo-alien gift
       if(!state._bubbleUnlocked) triggerBubbleCheatUnlock();
-      setTimeout(showBossEscapeTransmission, 900);
     }
   }
 
@@ -14147,8 +14146,8 @@ function drawBossVisual(ctx,boss,bsx,bsy){
       }
       // ── Flee pose: all tentacles stream behind in movement direction ──
       if(boss._fleeing && (boss._velX || boss._velY)){
-        const moveAng = Math.atan2(boss._velY, boss._velX);
-        const behindAng = moveAng + Math.PI;
+        // During gap escape: always trail straight LEFT (locked to match dome facing right)
+        const behindAng = boss._gapPhase ? Math.PI : (Math.atan2(boss._velY, boss._velX) + Math.PI);
         ba = behindAng + (ti - 3.5) * 0.11;
         _waveMul = 0.12;
       }
@@ -14214,11 +14213,9 @@ function drawBossVisual(ctx,boss,bsx,bsy){
   ctx.save();
   ctx.shadowBlur=0;ctx.shadowColor='transparent'; // clear any lingering game shadow
   ctx.translate(_bx,_by);
-  // During gap escape: dome rotation is completely frozen — no head spin at all
-  if(!boss._gapPhase){
-    const ea = Math.atan2(state.y-boss.wy,state.x-boss.wx);
-    ctx.rotate(ea+Math.PI/2); // local -Y (dome apex) → player direction
-  }
+  // During gap escape: dome locked pointing RIGHT (toward tube) — never follows player
+  const ea = boss._gapPhase ? 0 : Math.atan2(state.y-boss.wy,state.x-boss.wx);
+  ctx.rotate(ea+Math.PI/2); // local -Y (dome apex) → facing direction
   const _bvelX=boss._velX||0,_bvelY=boss._velY||0;
   const _bspd=Math.sqrt(_bvelX*_bvelX+_bvelY*_bvelY);
   const _bStretch=Math.min(0.15,_bspd*0.012);
