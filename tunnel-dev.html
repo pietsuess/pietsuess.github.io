@@ -3645,6 +3645,8 @@ window.onload = function() {
             if (_bonusUnlockedTitles.length > 0) {
                 unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
                     + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + _bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
+                // Play unlock sound when bonus content revealed on victory screen
+                setTimeout(function() { AudioEngine.playSFX('bonus_unlock'); }, 600);
             }
         }
         var unlockEl = document.getElementById('victory-unlocks');
@@ -4230,12 +4232,13 @@ window.onload = function() {
                 // Horizontal line for facets
                 ctx.beginPath(); ctx.moveTo(-sz * 0.7, 0); ctx.lineTo(sz * 0.7, 0); ctx.stroke();
             } else if (shapeType === 'knot') {
-                // Knot — torus knot approximation (figure-8 ish)
+                // Knot — trefoil knot
+                ctx.lineWidth = 3;
                 ctx.beginPath();
-                for (var i = 0; i <= 60; i++) {
-                    var t = (i / 60) * Math.PI * 4;
-                    var kx = Math.sin(t) * sz * 0.8;
-                    var ky = Math.sin(t * 0.5) * Math.cos(t * 0.5) * sz * 0.8;
+                for (var i = 0; i <= 90; i++) {
+                    var t = (i / 90) * Math.PI * 2;
+                    var kx = (Math.sin(t) + 2 * Math.sin(2*t)) * sz * 0.3;
+                    var ky = (Math.cos(t) - 2 * Math.cos(2*t)) * sz * 0.3;
                     ctx[i === 0 ? 'moveTo' : 'lineTo'](kx, ky);
                 }
                 ctx.closePath();
@@ -4252,14 +4255,18 @@ window.onload = function() {
                 // Arrow up
                 ctx.beginPath(); ctx.moveTo(0, -sz * 0.1); ctx.lineTo(sz * 0.3, sz * 0.3); ctx.moveTo(0, -sz * 0.1); ctx.lineTo(-sz * 0.3, sz * 0.3); ctx.stroke();
             } else if (shapeType === 'barrier') {
-                // Barrier — arc with gap
+                // Barrier — thick arc ring with gap
+                ctx.lineWidth = 6;
                 ctx.beginPath();
-                ctx.arc(0, 0, sz, 0.4, Math.PI * 2 - 0.4);
+                ctx.arc(0, 0, sz * 0.85, 0.5, Math.PI * 2 - 0.5);
                 ctx.stroke();
-                // Glow dots at gap ends
-                ctx.fillStyle = color;
-                ctx.beginPath(); ctx.arc(Math.cos(0.4) * sz, Math.sin(0.4) * sz, 3, 0, Math.PI * 2); ctx.fill();
-                ctx.beginPath(); ctx.arc(Math.cos(-0.4) * sz, Math.sin(-0.4) * sz, 3, 0, Math.PI * 2); ctx.fill();
+                // Inner arc for depth
+                ctx.lineWidth = 2;
+                ctx.globalAlpha = 0.4;
+                ctx.beginPath();
+                ctx.arc(0, 0, sz * 0.6, 0.5, Math.PI * 2 - 0.5);
+                ctx.stroke();
+                ctx.globalAlpha = 1.0;
             } else if (shapeType === 'star') {
                 // Star — 5-point star
                 ctx.beginPath();
@@ -4332,70 +4339,80 @@ window.onload = function() {
         var cColor = ZONE_OBJ_COLORS[zoneName] || '#ffe800';
         var contentShape = ZONE_SHAPES_3D[Math.min(currentSector - 1, ZONE_SHAPES_3D.length - 1)];
         var objectsRow = document.createElement('div');
-        objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
+        objectsRow.style.cssText = 'display:flex;flex-direction:column;gap:6px;align-items:center;justify-content:center;width:100%;margin:4px 0;';
 
-        // Dynamic preview items based on sector + level
+        // Dynamic preview items based on sector + level — split into COLLECT and AVOID rows
         var _s = currentSector, _l = currentLevel;
         var _sr = isSpeedRunSector(_s, _l);
-        var previewItems = [
+        var collectItems = [
             { label: 'CONTENT', color: cColor, shape: contentShape },
             { label: 'RING', color: '#00ccff', shape: 'ring' },
         ];
-        // Mines: S1 all levels, S2, S4, S5 L2+
-        if (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2)) {
-            previewItems.push({ label: 'MINE', color: '#ff4444', shape: 'mine' });
-        }
-        // Blocks: S1 L2+, S2+, S4, S5
-        if ((_s === 1 && _l >= 2) || _s >= 2) {
-            previewItems.push({ label: 'BLOCK', color: '#ff4444', shape: 'block' });
-        }
-        // Cores: S1 L3+, S2+
+        var avoidItems = [];
+
+        // Cores (collect): S1 L3+, S2+
         if ((_s === 1 && _l >= 3) || _s >= 2) {
-            previewItems.push({ label: 'CORE', color: '#ffaa00', shape: 'core' });
+            collectItems.push({ label: 'CORE', color: '#00ccff', shape: 'core' });
         }
-        // Barriers (gap): S2+
-        if (_s >= 2) {
-            previewItems.push({ label: 'BARRIER', color: '#ff2266', shape: 'barrier' });
-        }
-        // Knots: S2 L3+, S3+
-        if ((_s === 2 && _l >= 3) || _s >= 3) {
-            previewItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
-        }
-        // Stars: S3+
+        // Stars (collect): S3+
         if (_s >= 3) {
-            previewItems.push({ label: 'STAR', color: '#ffff00', shape: 'star' });
+            collectItems.push({ label: 'STAR', color: '#ffff00', shape: 'star' });
         }
-        // Boost pads: S3+
+        // Boost pads (collect): S3+
         if (_s >= 3) {
-            previewItems.push({ label: 'BOOST', color: '#00ff66', shape: 'boost' });
+            collectItems.push({ label: 'BOOST', color: '#00ff66', shape: 'boost' });
         }
-        // Ramps + full barriers: S4+
+        // Ramps (collect): S4+
         if (_s >= 4) {
-            previewItems.push({ label: 'RAMP', color: '#00ffcc', shape: 'ramp' });
+            collectItems.push({ label: 'RAMP', color: '#00ffcc', shape: 'ramp' });
         }
 
-        // Split into rows of 4 max for readability on mobile
-        var previewRows = [];
-        for (var pi = 0; pi < previewItems.length; pi += 4) {
-            previewRows.push(previewItems.slice(pi, pi + 4));
+        // Mines (avoid): S1 all levels, S2, S4, S5 L2+
+        if (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2)) {
+            avoidItems.push({ label: 'MINE', color: '#ff4444', shape: 'mine' });
         }
-        previewRows.forEach(function(rowItems) {
+        // Blocks (avoid): S1 L2+, S2+
+        if ((_s === 1 && _l >= 2) || _s >= 2) {
+            avoidItems.push({ label: 'BLOCK', color: '#ff4444', shape: 'block' });
+        }
+        // Barriers (avoid): S2+
+        if (_s >= 2) {
+            avoidItems.push({ label: 'BARRIER', color: '#ff2266', shape: 'barrier' });
+        }
+        // Knots (avoid): S2 L3+, S3+
+        if ((_s === 2 && _l >= 3) || _s >= 3) {
+            avoidItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
+        }
+
+        // Helper to build a row of preview items
+        function buildPreviewRow(items, container) {
             var row = document.createElement('div');
-            row.style.cssText = 'display:flex;flex-direction:row;gap:20px;align-items:flex-start;justify-content:center;width:100%;margin:2px 0;';
-            rowItems.forEach(function(item) {
+            row.style.cssText = 'display:flex;flex-direction:row;gap:16px;align-items:flex-start;justify-content:center;width:100%;margin:2px 0;flex-wrap:wrap;';
+            items.forEach(function(item) {
                 var col = document.createElement('div');
-                col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:'+previewSize+'px;';
+                col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:3px;width:'+previewSize+'px;';
                 var cvs = createSpinningPreview(item.shape, item.color, previewSize);
                 spinCanvases.push(cvs);
                 col.appendChild(cvs);
                 var lbl = document.createElement('div');
-                lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.8vw,10px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
+                lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.8vw,9px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
                 lbl.innerText = item.label;
                 col.appendChild(lbl);
                 row.appendChild(col);
             });
-            objectsRow.appendChild(row);
-        });
+            container.appendChild(row);
+        }
+
+        // COLLECT row
+        buildPreviewRow(collectItems, objectsRow);
+        // Spacer between rows
+        if (avoidItems.length > 0) {
+            var spacer = document.createElement('div');
+            spacer.style.cssText = 'width:80%;max-width:320px;height:1px;background:#ff444466;margin:6px 0;';
+            objectsRow.appendChild(spacer);
+            // AVOID row
+            buildPreviewRow(avoidItems, objectsRow);
+        }
         el.appendChild(objectsRow);
 
         // Instruction lines
@@ -4571,8 +4588,9 @@ window.onload = function() {
         showSectorIntro(zoneForIntro, function() {
             showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
             setTimeout(function(){
+                // Resume audio before countdown so tick/go sounds play
+                AudioEngine.resume();
                 startCountdown(function(){
-                    AudioEngine.resume();
                     AudioEngine.startEngine();
                     spawnIntroWave();
                 });
