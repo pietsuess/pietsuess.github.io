@@ -970,6 +970,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="if(typeof triggerPeanutUnlock==='function')triggerPeanutUnlock()">UNLOCK PEANUT</button>
           <button class="dev-btn" onclick="devTriggerSecretUnlock()">UNLOCK SECRET</button>
           <button class="dev-btn gold" onclick="if(typeof triggerLaunchpadVictory==='function')triggerLaunchpadVictory()">LAUNCHPAD WIN</button>
+          <button class="dev-btn purple" onclick="state.gapBubble={wx:state.x+320,wy:state.y,r:32,hue:190,age:0,collected:false};state._bossInMainWorld=false;">ALIEN ESCAPED</button>
           <button class="dev-btn gold" onclick="if(typeof enterVictoryRoom==='function')enterVictoryRoom()">VICTORY ROOM</button>
           <button class="dev-btn danger" onclick="devCollectAll();state.outsideBarrier=true;state._committedInside=false;devTeleport(EARTH_WX,EARTH_WY);triggerEarthVictory();">EARTH VICTORY ★</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
@@ -9337,24 +9338,63 @@ function drawGame(){
   if(!state.inSecretLevel && state.gapBubble && !state.gapBubble.collected){
     const _gb = state.gapBubble;
     const _gbSx = _gb.wx - state.x + cx, _gbSy = _gb.wy - state.y + cy;
-    if(_gbSx > -120 && _gbSx < canvas.width+120 && _gbSy > -120 && _gbSy < canvas.height+120){
+    if(_gbSx > -300 && _gbSx < canvas.width+300 && _gbSy > -300 && _gbSy < canvas.height+300){
       const _gbPulse = 1 + Math.sin(_gb.age * 0.07) * 0.15;
       const _gbR = _gb.r * _gbPulse;
+      const _hue = _gb.hue;
       ctx.save();
-      // Outer glow
-      ctx.shadowBlur = 30*SB; ctx.shadowColor = `hsl(${_gb.hue},100%,75%)`;
+
+      // ── Sunray streaks radiating outward ──
+      const _rayCount = 14;
+      const _rayRot = _gb.age * 0.011;
+      for(let _ri = 0; _ri < _rayCount; _ri++){
+        const _ra = (_ri / _rayCount) * Math.PI * 2 + _rayRot;
+        const _outerR = _gbR * (2.4 + Math.sin(_gb.age * 0.055 + _ri * 0.9) * 0.5);
+        const _innerR = _gbR * 1.25;
+        const _alpha = (0.18 + Math.sin(_gb.age * 0.07 + _ri * 0.7) * 0.10);
+        const _rayGrad = ctx.createLinearGradient(
+          _gbSx + Math.cos(_ra) * _innerR, _gbSy + Math.sin(_ra) * _innerR,
+          _gbSx + Math.cos(_ra) * _outerR, _gbSy + Math.sin(_ra) * _outerR
+        );
+        _rayGrad.addColorStop(0, `hsla(${_hue},100%,82%,${_alpha + 0.15})`);
+        _rayGrad.addColorStop(1, `hsla(${_hue},100%,75%,0)`);
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.moveTo(_gbSx + Math.cos(_ra - 0.07) * _innerR, _gbSy + Math.sin(_ra - 0.07) * _innerR);
+        ctx.lineTo(_gbSx + Math.cos(_ra) * _outerR,        _gbSy + Math.sin(_ra) * _outerR);
+        ctx.lineTo(_gbSx + Math.cos(_ra + 0.07) * _innerR, _gbSy + Math.sin(_ra + 0.07) * _innerR);
+        ctx.closePath();
+        ctx.fillStyle = _rayGrad;
+        ctx.fill();
+      }
+
+      // ── Wide outer bloom ──
+      ctx.globalAlpha = 0.85;
+      ctx.shadowBlur = 90*SB; ctx.shadowColor = `hsl(${_hue},100%,65%)`;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 1.6, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${_hue},100%,60%,0.07)`; ctx.fill();
+
+      // ── Mid glow halo ──
+      ctx.shadowBlur = 55*SB; ctx.shadowColor = `hsl(${_hue},100%,78%)`;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 1.2, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${_hue},100%,72%,0.11)`; ctx.fill();
+
+      // ── Main bubble ring ──
+      ctx.shadowBlur = 32*SB; ctx.shadowColor = `hsl(${_hue},100%,85%)`;
       ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR, 0, Math.PI*2);
-      ctx.strokeStyle = `hsl(${_gb.hue},100%,82%)`; ctx.lineWidth = 2.5; ctx.stroke();
-      // Inner shimmer ring
+      ctx.strokeStyle = `hsl(${_hue},100%,88%)`; ctx.lineWidth = 3; ctx.stroke();
+
+      // ── Inner shimmer ring ──
       ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 0.88, 0, Math.PI*2);
       ctx.strokeStyle = `rgba(255,255,255,${0.3 + Math.sin(_gb.age*0.13)*0.1})`; ctx.lineWidth = 1.5; ctx.stroke();
-      // Specular glint top-left
+
+      // ── Specular glints ──
       ctx.beginPath(); ctx.arc(_gbSx - _gbR*0.28, _gbSy - _gbR*0.32, _gbR*0.2, 0, Math.PI*2);
       ctx.fillStyle = `rgba(255,255,255,${0.55 + Math.sin(_gb.age*0.18)*0.15})`; ctx.fill();
-      // Small second glint
       ctx.beginPath(); ctx.arc(_gbSx + _gbR*0.18, _gbSy - _gbR*0.52, _gbR*0.07, 0, Math.PI*2);
       ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+
       ctx.restore();
     }
   }
