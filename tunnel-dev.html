@@ -1413,7 +1413,8 @@ var AudioEngine = {
 
 window.onload = function() {
     // --- Game Variables ---
-    let gameState = 'title'; 
+    let gameState = 'title';
+    var _prePauseState = null, _prePauseScreen = null; 
     let score = 0;
     let health = 100;
     let baseSpeed = 150;
@@ -4484,6 +4485,7 @@ window.onload = function() {
             return;
         }
         if (gameState === 'playing') {
+            _prePauseState = 'playing';
             gameState = 'paused';
             AudioEngine.suspend();
             rebuildUnlockedMenu();
@@ -4491,16 +4493,34 @@ window.onload = function() {
             document.getElementById('pause-screen').style.display = 'flex';
             var fireBtn = document.getElementById('fire-btn');
             if (fireBtn) fireBtn.style.display = 'none';
+        } else if (gameState === 'victory' || gameState === 'dead' || gameState === 'finale') {
+            // Pause from overlay screens — hide current screen, show pause menu
+            _prePauseState = gameState;
+            _prePauseScreen = gameState === 'victory' ? 'victory-screen' : gameState === 'dead' ? 'game-over-screen' : 'finale-screen';
+            document.getElementById(_prePauseScreen).style.display = 'none';
+            gameState = 'paused';
+            AudioEngine.suspend();
+            rebuildUnlockedMenu();
+            rebuildShipSelector();
+            document.getElementById('pause-screen').style.display = 'flex';
         } else if (gameState === 'paused') {
-            gameState = 'playing';
             document.getElementById('pause-screen').style.display = 'none';
-            if (activeShip === 'gunship') {
-                var fireBtn = document.getElementById('fire-btn');
-                if (fireBtn) fireBtn.style.display = 'block';
+            if (_prePauseState === 'victory' || _prePauseState === 'dead' || _prePauseState === 'finale') {
+                // Return to the overlay screen we came from
+                gameState = _prePauseState;
+                document.getElementById(_prePauseScreen).style.display = 'flex';
+            } else {
+                gameState = 'playing';
+                if (activeShip === 'gunship') {
+                    var fireBtn = document.getElementById('fire-btn');
+                    if (fireBtn) fireBtn.style.display = 'block';
+                }
+                AudioEngine.resume();
+                AudioEngine.startEngine();
+                clock.getDelta();
             }
-            AudioEngine.resume();
-            AudioEngine.startEngine();
-            clock.getDelta();
+            _prePauseState = null;
+            _prePauseScreen = null;
         }
     }
 
