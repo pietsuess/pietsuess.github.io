@@ -6473,25 +6473,31 @@ function update(){
             mwb._velX = 0; mwb._velY = 0;
           }
         } else if(mwb._gapPhase === 'through'){
-          // ── Through: squeeze through the tube along +X at constant speed ──
+          // ── Through: transit the tube at steady speed — no special draw, PASS 2 masks naturally ──
           mwb.wx += 5;
           mwb.wy *= 0.88; // drift to y=0 centerline
           mwb._velX = 5; mwb._velY = mwb.wy * -0.12;
-          // Snap facing toward +X (tube direction)
+          // Snap facing to +X (into tube / toward space)
           let _tFD = 0 - (mwb.facing||0);
           while(_tFD > Math.PI) _tFD -= Math.PI*2;
           while(_tFD < -Math.PI) _tFD += Math.PI*2;
           mwb.facing = (mwb.facing||0) + _tFD * 0.18;
-          // Exit: boss has fully passed through — spawn bubble pickup and vanish
-          if(mwb.wx > BELT_OUTER + 320){
-            mwb._gapPhase = 'exited';
+          // Exited tube — switch to outer-space travel, leave bubble pickup at tube exit
+          if(mwb.wx > BELT_OUTER + 310){
+            mwb._gapPhase = 'outer';
             mwb._exitedGap = true;
-            mwb.dead = true;
-            mwb.deathTimer = 0;
             state._bossInMainWorld = false;
-            // Glowing bubble pickup hovers just outside the tube end
-            state.gapBubble = {wx: BELT_OUTER + 450, wy: 0, r: 32, hue: 190, age: 0, collected: false};
+            state.gapBubble = {wx: BELT_OUTER + 420, wy: 0, r: 32, hue: 190, age: 0, collected: false};
             // TODO: gap-escape thank-you text — wording TBD
+          }
+        } else if(mwb._gapPhase === 'outer'){
+          // ── Outer space: boss accelerates away visibly until off-screen, then cleans up ──
+          mwb.wx += 9;
+          mwb._velX = 9; mwb._velY = 0;
+          // Clean up once well off-screen (no fade — it's invisible by then)
+          if(mwb.wx > BELT_OUTER + 1400){
+            mwb.dead = true;
+            mwb.deathTimer = 60; // skip fade, remove immediately
           }
         }
         // No belt clamp during gap escape phases
@@ -9194,21 +9200,7 @@ function drawGame(){
     if(mOn&&!(mwb.dead&&mwb.deathTimer>60)){
       ctx.save();
       if(mwb.dead) ctx.globalAlpha=Math.max(0,1-mwb.deathTimer/60);
-      if(mwb._gapPhase==='through'){
-        // ── Tube squeeze: clip to tube interior and squish to fit ──
-        const _tScrX=BELT_OUTER-state.x+cx, _tScrY=0-state.y+cy;
-        // Clip to tube interior rect so nothing pokes through the walls
-        ctx.beginPath();
-        ctx.rect(_tScrX-30, _tScrY-BARRIER_GAP_WIDTH, 360, BARRIER_GAP_WIDTH*2);
-        ctx.clip();
-        // Squish: compress Y to fit inside tube height, slight X compression too
-        const _sqY = (BARRIER_GAP_WIDTH * 0.92) / mwb.bodyR;
-        ctx.translate(mbsx, mbsy);
-        ctx.scale(0.88, _sqY);
-        drawBossVisual(ctx, mwb, 0, 0);
-      } else {
-        drawBossVisual(ctx,mwb,mbsx,mbsy);
-      }
+      drawBossVisual(ctx,mwb,mbsx,mbsy);
       ctx.restore();
     }
     // Off-screen arrow — bouncing, close to ship
