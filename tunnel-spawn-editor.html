@@ -25,7 +25,9 @@
   .panel { display: none; }
   .panel.active { display: block; }
 
-  .section { background: #111; border: 1px solid #222; border-radius: 4px; padding: 14px; margin-bottom: 12px; }
+  .section { background: #111; border: 1px solid #222; border-radius: 4px; padding: 14px; margin-bottom: 12px; transition: opacity 0.2s; }
+  .section.disabled { opacity: 0.3; pointer-events: none; }
+  .section.disabled .section-title::after { content: ' — OFF'; color: #ff4444; }
   .section-title { font-family: 'Press Start 2P', monospace; font-size: 9px; color: #ff69b4; letter-spacing: 1px; margin-bottom: 6px; }
   .section-desc { color: #666; font-size: 11px; line-height: 1.6; margin-bottom: 14px; border-bottom: 1px solid #1a1a1a; padding-bottom: 10px; }
 
@@ -354,7 +356,7 @@ function buildLevelTabs() {
 function getC() { return config[activeSector][activeLevel]; }
 function getD() { return DEFAULTS[activeSector][activeLevel]; }
 
-function slider(containerId, key, label, min, max, step, unit, fmt, desc) {
+function slider(containerId, key, label, min, max, step, unit, fmt, desc, disabled) {
   const c = getC();
   const d = getD();
   const container = document.getElementById(containerId);
@@ -362,6 +364,7 @@ function slider(containerId, key, label, min, max, step, unit, fmt, desc) {
   group.className = 'slider-group';
   const changed = c[key] !== d[key];
   if (changed) group.classList.add('changed');
+  if (disabled) { group.style.opacity = '0.25'; group.style.pointerEvents = 'none'; }
 
   const val = c[key];
   const display = fmt ? fmt(val) : (step < 1 ? val.toFixed(step < 0.01 ? 3 : 2) : val);
@@ -371,12 +374,12 @@ function slider(containerId, key, label, min, max, step, unit, fmt, desc) {
 
   group.innerHTML = `
     <div class="row">
-      <label>${label}${changed ? ' ●' : ''}</label>
+      <label>${label}${changed ? ' ●' : ''}${disabled ? ' <span style="color:#ff4444;font-size:9px;">OFF</span>' : ''}</label>
       <input type="range" id="${uid}_range" min="${min}" max="${max}" step="${step}" value="${val}"
-             oninput="sliderChanged('${key}', parseFloat(this.value), '${uid}', ${step})">
+             oninput="sliderChanged('${key}', parseFloat(this.value), '${uid}', ${step})"${disabled ? ' disabled' : ''}>
       <input type="text" class="val-input" id="${uid}_num" value="${display}"
              onchange="numChanged('${key}', this.value, ${min}, ${max}, ${step})"
-             onkeydown="if(event.key==='Enter'){this.blur();}">
+             onkeydown="if(event.key==='Enter'){this.blur();}"${disabled ? ' disabled' : ''}>
       <span class="unit">${unit || ''}</span>
     </div>
     ${desc ? '<div class="slider-desc">' + desc + '</div>' : ''}
@@ -553,32 +556,37 @@ function buildSliders() {
   var _nBoost = Math.round(_totalSpawns * c.boostChance);
   var _nStar = Math.round(_totalSpawns * c.starChance);
 
-  // Spawn ratios
+  // Spawn ratios — hazard disabled if no hazard types are on
+  var anyHazardOn = c.mines || c.blocks || c.knots;
   slider('spawn-sliders', 'baseHazard', 'Hazard base %', 0, 1, 0.01, '', null,
-    'What fraction of objects are damage obstacles (mines, blocks, knots). At 0.20, roughly 1 in 5 objects will hurt you. <b style="color:#ff4444;">= ~' + _nHaz + ' hazards</b> in this sector.');
+    'What fraction of objects are damage obstacles (mines, blocks, knots). At 0.20, roughly 1 in 5 objects will hurt you. <b style="color:#ff4444;">= ~' + _nHaz + ' hazards</b> in this sector.', !anyHazardOn);
   slider('spawn-sliders', 'baseRing', 'Ring base %', 0, 1, 0.01, '', null,
     'What fraction of objects are score rings. Green toruses worth 625 pts (×combo). <b style="color:#00ff88;">= ~' + _nRing + ' rings</b> in this sector.');
   slider('spawn-sliders', 'baseCore', 'Core base %', 0, 1, 0.01, '', null,
-    'What fraction of objects are health pickups. Gold octahedrons that restore 15 shield. <b style="color:#ffaa00;">= ~' + _nCore + ' cores</b> in this sector.');
+    'What fraction of objects are health pickups. Gold octahedrons that restore 15 shield. <b style="color:#ffaa00;">= ~' + _nCore + ' cores</b> in this sector.', !c.cores);
   slider('spawn-sliders', 'levelEscalation', 'Level escalation', 0, 0.5, 0.01, '/lvl', null,
     'How much harder each replay gets. At 0.10, Level 2 has 10% more hazards than Level 1, Level 3 has 20% more, etc. Rings and cores shrink to compensate.');
 
-  // Barriers
+  // Barriers — whole section disabled if barriers are off
+  var barrierSection = document.getElementById('barrier-sliders').parentElement;
+  if (!c.barriers) barrierSection.classList.add('disabled'); else barrierSection.classList.remove('disabled');
+
   slider('barrier-sliders', 'barrierThreshold', 'Barrier spawn %', 0, 0.6, 0.01, '', null,
     'Chance that any spawn point becomes a barrier instead of a normal object. Checked first — when a barrier triggers, nothing else spawns at that point. <b style="color:#ff2266;">= ~' + _nBarrier + ' barriers</b> in this sector.');
   slider('barrier-sliders', 'normalMinDist', 'Min distance apart', 100, 2000, 50, 'units', null,
     'Minimum gap between barriers along the tunnel. Prevents two barriers from appearing right on top of each other. At 800, you get at least ~1 second of clear tunnel between barriers.');
   slider('barrier-sliders', 'gapChance', 'Gap vs full %', 0, 1, 0.05, '', null,
-    'What % of barriers have a gap you can fly through. The rest are solid rings that require a ramp jump to clear. At 1.0 = all gaps (no jumping needed). At 0.0 = all full rings (must jump every one).');
+    'What % of barriers have a gap you can fly through. The rest are solid rings that require a ramp jump to clear. At 1.0 = all gaps (no jumping needed). At 0.0 = all full rings (must jump every one).' + (!c.ramps ? ' <b style="color:#ff4444;">Ramps OFF — all barriers forced to gap type.</b>' : ''));
   slider('barrier-sliders', 'gapSizeMin', 'Gap size min', 0.2, 1.5, 0.05, '×π', null,
     'Smallest possible opening in a gap barrier. Measured in radians — 1.0×π means half the tunnel is open. Lower = tighter gaps = harder to thread through.');
   slider('barrier-sliders', 'gapSizeMax', 'Gap size max', 0.3, 2.0, 0.05, '×π', null,
     'Largest possible opening. The actual gap is random between min and max. Wider range = more variety in difficulty.');
 
-  // Speed run section
+  // Speed run section — only visible for speed runs, disabled if barriers off
   const srSection = document.getElementById('speedrun-section');
   if (c.isSpeedRun) {
     srSection.style.display = 'block';
+    if (!c.barriers) srSection.classList.add('disabled'); else srSection.classList.remove('disabled');
     slider('speedrun-sliders', 'srSpacing', 'Barrier spacing', 10, 100, 5, 'units', null,
       'Distance between each barrier in a cluster. Think of it like slalom gates — lower = gates are closer together = less reaction time.');
     slider('speedrun-sliders', 'srCountMin', 'Min per cluster', 1, 8, 1, '', null,
@@ -611,36 +619,40 @@ function buildSliders() {
 
   // Special objects
   slider('special-sliders', 'starChance', 'Star chance', 0, 0.10, 0.005, '', null,
-    'Chance per spawn point of getting a force field star. Rare defensive pickups that absorb one hit. <b style="color:#ff44ff;">= ~' + _nStar + ' stars</b> in this sector.');
+    'Chance per spawn point of getting a force field star. Rare defensive pickups that absorb one hit. <b style="color:#ff44ff;">= ~' + _nStar + ' stars</b> in this sector.', !c.stars);
   slider('special-sliders', 'contentChance', 'Content chance', 0, 0.15, 0.005, '', null,
     'Chance of spawning a portfolio content collectible — the zone-shaped objects that unlock your creative work. Zero in speed run sectors. <b style="color:#fff;">= ~' + _nContent + ' content objects</b> in this sector.');
   slider('special-sliders', 'boostChance', 'Boost pad chance', 0, 0.15, 0.005, '', null,
-    'Chance of a boost pad appearing. Each pad also spawns bonus rings along the flip arc. <b style="color:#00ff66;">= ~' + _nBoost + ' boost pads</b> (+ ~' + (_nBoost * c.boostRingCount) + ' bonus rings) in this sector.');
+    'Chance of a boost pad appearing. Each pad also spawns bonus rings along the flip arc. <b style="color:#00ff66;">= ~' + _nBoost + ' boost pads</b> (+ ~' + (_nBoost * c.boostRingCount) + ' bonus rings) in this sector.', !c.boost);
   slider('special-sliders', 'boostRingCount', 'Rings per boost', 0, 10, 1, '', null,
-    'How many bonus rings appear along the 360° flip arc when you hit a boost pad. More rings = more score from each boost.');
+    'How many bonus rings appear along the 360° flip arc when you hit a boost pad. More rings = more score from each boost.', !c.boost);
 
-  // Hazard mix
+  // Hazard mix — whole section disabled if no hazard types on
+  var hazMixSection = document.getElementById('hazard-mix-sliders').parentElement;
+  if (!anyHazardOn) hazMixSection.classList.add('disabled'); else hazMixSection.classList.remove('disabled');
+
   slider('hazard-mix-sliders', 'knotShare', 'Knot share', 0, 0.8, 0.05, '', v => (v*100).toFixed(0)+'%',
-    'When a hazard object spawns, what % are knots. Knots are the hardest hazard — they sway unpredictably along the wall. Only appears if knots are enabled above.');
+    'When a hazard object spawns, what % are knots. Knots are the hardest hazard — they sway unpredictably along the wall.', !c.knots);
   slider('hazard-mix-sliders', 'blockShare', 'Block share', 0, 0.8, 0.05, '', v => (v*100).toFixed(0)+'%',
-    'What % of hazards are blocks. Blocks are wide boxes that take up more tunnel space than mines. Mines get whatever share is left over.');
+    'What % of hazards are blocks. Blocks are wide boxes that take up more tunnel space than mines. Mines get whatever share is left over.', !c.blocks);
   // Show computed mine share
   const mineShare = Math.max(0, 1 - c.knotShare - c.blockShare);
   const mineRow = document.createElement('div');
   mineRow.className = 'slider-group';
-  mineRow.innerHTML = `<div class="row"><label style="color:#555;">Mine share (remainder)</label><div style="flex:1;"></div><span class="val" style="color:#666;">${(mineShare*100).toFixed(0)}%</span><span class="unit"></span></div>
+  if (!c.mines) { mineRow.style.opacity = '0.25'; mineRow.style.pointerEvents = 'none'; }
+  mineRow.innerHTML = `<div class="row"><label style="color:#555;">Mine share (remainder)${!c.mines ? ' <span style="color:#ff4444;font-size:9px;">OFF</span>' : ''}</label><div style="flex:1;"></div><span class="val-input" style="color:#666;background:none;border:none;">${(mineShare*100).toFixed(0)}%</span><span class="unit"></span></div>
     <div class="slider-desc">Mines are small red pyramids — the most basic hazard. They get whatever % is left after knots and blocks.</div>`;
   document.getElementById('hazard-mix-sliders').appendChild(mineRow);
 
-  // Knot sway
+  // Knot sway — disabled if knots are off
   slider('hazard-mix-sliders', 'knotSwaySpeedMin', 'Sway speed min', 0.5, 4, 0.1, '', null,
-    'How fast knots oscillate side-to-side at minimum. Random between min and max for each knot.');
+    'How fast knots oscillate side-to-side at minimum. Random between min and max for each knot.', !c.knots);
   slider('hazard-mix-sliders', 'knotSwaySpeedMax', 'Sway speed max', 0.5, 5, 0.1, '', null,
-    'Maximum oscillation speed. Higher = some knots swing really fast and are very hard to predict.');
+    'Maximum oscillation speed. Higher = some knots swing really fast and are very hard to predict.', !c.knots);
   slider('hazard-mix-sliders', 'knotSwayRangeMin', 'Sway range min', 0.1, 1.0, 0.05, 'rad', null,
-    'Minimum distance a knot sways from its spawn position (in radians around the tunnel). Small range = barely moves.');
+    'Minimum distance a knot sways from its spawn position (in radians around the tunnel). Small range = barely moves.', !c.knots);
   slider('hazard-mix-sliders', 'knotSwayRangeMax', 'Sway range max', 0.1, 1.5, 0.05, 'rad', null,
-    'Maximum sway distance. At 0.7 rad (~40°), a knot can sweep across a significant chunk of the tunnel wall.');
+    'Maximum sway distance. At 0.7 rad (~40°), a knot can sweep across a significant chunk of the tunnel wall.', !c.knots);
 
   // Physics
   slider('physics-sliders', 'baseSpeed', 'Base speed', 80, 800, 10, '', null,
