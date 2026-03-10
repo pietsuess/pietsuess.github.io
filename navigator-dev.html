@@ -632,6 +632,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   .all-obj-section-title.current-level { color:#ffe000; text-shadow:0 0 8px #ffe000; }
   .all-obj-section-title.warp-level-link { cursor:pointer; color:#aa44ff; text-shadow:0 0 6px #aa44ff; }
   .all-obj-section-title.warp-level-link:hover { color:#ff44ff; text-shadow:0 0 10px #ff44ff; }
+  .all-obj-section-title.locked-level { color:#333; text-shadow:none; cursor:default; }
   .all-obj-item { font-size:8px; padding:3px 0; cursor:default; color:#333; transition:color 0.2s; }
   .all-obj-item.collected { color:#aaa; cursor:pointer; }
   .all-obj-item.collected:hover { color:#00ffcc; }
@@ -10752,17 +10753,19 @@ function updateAllObjectsList(){
   let html='';
   const currentLvlName=LEVELS[state.currentLevel]||'EDITING';
 
-  function renderLevel(lvl){
+  function renderLevel(lvl, visited){
     const _lvlIdx = LEVELS.indexOf(lvl);
     const _shape  = ZONE_SHAPES[_lvlIdx] || 'triangle';
     const _color  = LEVEL_OBJ_COLORS[lvl] || LEVEL_COLORS[lvl] || '#fff';
-    const _svgZ   = _menuShapeSVG(_shape, _color, 10);
-    const _svgI   = _menuShapeSVG(_shape, _color, 8);
+    const _svgZ   = _menuShapeSVG(_shape, visited ? _color : '#333', 10);
+    const _svgI   = _menuShapeSVG(_shape, visited ? _color : '#222', 8);
 
     const isCurrent = (lvl===currentLvlName);
-    const _clickAttr = !isCurrent ? `onclick="warpToLevelFromMenu(${_lvlIdx})"` : '';
-    html += `<div class="all-obj-section-title ${isCurrent?'current-level':'warp-level-link'}" ${_clickAttr}
-      style="display:flex;align-items:center;gap:5px;">${_svgZ}${isCurrent?`// ${lvl} ◄`:`⇒ ${lvl}`}</div>`;
+    const headerClass = isCurrent ? 'current-level' : (visited ? 'warp-level-link' : 'locked-level');
+    const _clickAttr = (!isCurrent && visited) ? `onclick="warpToLevelFromMenu(${_lvlIdx})"` : '';
+    const headerLabel = isCurrent ? `// ${lvl} ◄` : (visited ? `⇒ ${lvl}` : lvl);
+    html += `<div class="all-obj-section-title ${headerClass}" ${_clickAttr}
+      style="display:flex;align-items:center;gap:5px;">${_svgZ}${headerLabel}</div>`;
 
     const items = CONTENT_DATA[lvl] || [];
     const bioTitle = lvl + ' // ABOUT';
@@ -10778,9 +10781,10 @@ function updateAllObjectsList(){
     });
   }
 
- renderLevel(currentLvlName);
-  // Only show visited zones — discovery-gated
-  LEVELS.forEach((lvl, idx)=>{ if(lvl!==currentLvlName && state.visitedLevels && state.visitedLevels.has(idx)) renderLevel(lvl); });
+  // Show ALL zones — current first, then rest in order. Unvisited zones shown but not clickable.
+  const _visited = state.visitedLevels || new Set([1]);
+  renderLevel(currentLvlName, true);
+  LEVELS.forEach((lvl, idx)=>{ if(lvl!==currentLvlName) renderLevel(lvl, _visited.has(idx)); });
 
   // (Social links and Zone warps are in the Zones & Social tab, not here)
   el.innerHTML=html;
