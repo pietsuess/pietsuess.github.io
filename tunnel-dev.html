@@ -2985,7 +2985,10 @@ window.onload = function() {
     var _rampCountThisSector = 0;
     var _rampMaxThisSector = 999;
 
+    var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
     function spawnItem(zPos) {
+        // Hard stop: never place items beyond 75% of sector distance from spawn origin
+        if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.75) return;
         let rand = Math.random();
         const s = currentSector;
         var _sCfg = _getSpawnCfg(s);
@@ -3273,7 +3276,13 @@ window.onload = function() {
         label.style.textShadow = '0 0 20px ' + zone.color;
         var collected = getZoneCollectedCount(currentSector);
         var total = getZoneItemCount(currentSector);
-        obj.innerHTML = collected + ' / ' + total + ' COLLECTED';
+        if (isSpeedRunSector(currentSector, currentLevel)) {
+            var srTarget = getSpeedRunTarget();
+            var tm = Math.floor(srTarget/60), ts = Math.floor(srTarget%60);
+            obj.innerHTML = '<span style="animation:blink 0.6s step-end infinite;color:#ffe000;">SPEEDRUN</span><br><span style="font-size:0.8em;">BEAT ' + tm + ':' + (ts<10?'0':'') + ts + '</span>';
+        } else {
+            obj.innerHTML = collected + ' / ' + total + ' COLLECTED';
+        }
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 4000);
     }
@@ -3521,14 +3530,12 @@ window.onload = function() {
         initializeFlight(true);
     }
 
-    // Speed run target time — works for S3 and S5 L1
+    // Speed run target time — based on half hyper boost speed for the full sector
     function getSpeedRunTarget() {
         var zone = getLevelScaledZone(currentSector);
-        // Base: sector length / avg speed gives approximate traverse time
-        // Target = 90% of that (must boost to beat it), tighter each level
-        var avgSpeed = (zone.speed + BOOST_SPEED) / 2;
-        var traverseTime = zone.length / avgSpeed;
-        return Math.round(traverseTime * (0.90 - (currentLevel - 1) * 0.03));
+        var halfHyper = HYPER_SPEED / 2; // 1375
+        var targetTime = zone.length / halfHyper;
+        return Math.round(targetTime);
     }
 
     function triggerVictory() {
@@ -3749,6 +3756,7 @@ window.onload = function() {
         var sTable = SPACING_TABLE[currentSector] || [80];
         var spacing = sTable[Math.min(currentLevel - 1, sTable.length - 1)];
         var startOffset = 400;
+        _spawnOriginZ = camera.position.z;
         var seedZ = camera.position.z - startOffset;
         var lastItemDist = sectorDistance * 0.72;
         for (var n = 0; n < 600; n++) {
@@ -4580,9 +4588,10 @@ window.onload = function() {
         showSectorIntro(zoneForIntro, function() {
             showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
             setTimeout(function(){
-                // Resume audio before countdown so tick/go sounds play
-                AudioEngine.resume();
+                // Resume audio context (not music) before countdown so tick/go sounds play
+                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
                 startCountdown(function(){
+                    AudioEngine.resume();
                     AudioEngine.startEngine();
                     spawnIntroWave();
                 });
@@ -5140,16 +5149,22 @@ window.onload = function() {
             distanceTraveled += moveDist;
             if (!TUT.active) {
                 sectorTime += delta;
-                const tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
-                const tStr = m+':'+(s<10?'0':'')+s+'.'+t;
                 var timerEl = document.getElementById('hud-timer');
-                timerEl.innerText = tStr;
-                // Speed run: show timer in gold/red based on target
                 if (isSpeedRunSector(currentSector, currentLevel)) {
-                    var s4Target = getSpeedRunTarget();
-                    timerEl.style.color = sectorTime < s4Target * 0.8 ? '#00ff88' : sectorTime < s4Target ? '#ffe000' : '#ff4444';
+                    // Countdown timer for speed runs
+                    var srTarget = getSpeedRunTarget();
+                    var remaining = Math.max(0, srTarget - sectorTime);
+                    var rm = Math.floor(remaining/60), rs = Math.floor(remaining%60), rt = Math.floor((remaining%1)*10);
+                    timerEl.innerText = rm+':'+(rs<10?'0':'')+rs+'.'+rt;
+                    timerEl.style.color = remaining > srTarget * 0.4 ? '#00ff88' : remaining > 0 ? '#ffe000' : '#ff4444';
+                    // Flash when time runs out
+                    if (remaining <= 0) timerEl.style.opacity = Math.sin(Date.now() * 0.01) > 0 ? '1' : '0.3';
+                    else timerEl.style.opacity = '1';
                 } else {
+                    var tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
+                    timerEl.innerText = m+':'+(s<10?'0':'')+s+'.'+t;
                     timerEl.style.color = '';
+                    timerEl.style.opacity = '1';
                 }
             }
             let progressPct = Math.min(100, (distanceTraveled / sectorDistance) * 100);
