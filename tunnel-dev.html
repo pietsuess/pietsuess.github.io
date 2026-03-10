@@ -1511,11 +1511,14 @@ window.onload = function() {
     function getLevelScaledZone(sector) {
         var base = getZone(sector);
         var lvl = currentLevel - 1; // 0-indexed level offset
+        var _t = _getTuning(sector, currentLevel);
+        var baseSpd = _t.speed !== undefined ? _t.speed : base.speed;
+        var baseLen = _t.length !== undefined ? _t.length : base.length;
         return {
             name: base.name, color: base.color, fogColor: base.fogColor,
             wireColor: base.wireColor,
-            speed: Math.round(base.speed * Math.pow(1.10, lvl)),
-            length: Math.round(base.length * Math.pow(1.15, lvl)),
+            speed: Math.round(baseSpd * Math.pow(1.10, lvl)),
+            length: Math.round(baseLen * Math.pow(1.15, lvl)),
             label: 'SECTOR ' + sector + ' // ' + base.name + (lvl > 0 ? ' // LEVEL ' + currentLevel : '')
         };
     }
@@ -3003,6 +3006,23 @@ window.onload = function() {
     var _rampCountThisSector = 0;
     var _rampMaxThisSector = 999;
 
+    // ═══════════════════════════════════════════════════════════════
+    // SPAWN TUNING — per-sector-per-level overrides from spawn editor
+    // Keys: "S{sector}L{level}" → override values. Missing = use default.
+    // ═══════════════════════════════════════════════════════════════
+    var SPAWN_TUNING = {
+        'S1L1': {
+            baseHazard: 0.10, baseRing: 0.95,
+            spacing: 75, maxSpawnPct: 0.80,
+            contentChance: 0.07,
+            speed: 200, length: 11000,
+            spiralStep: 0.5, rotMult: 0.7
+        }
+    };
+    function _getTuning(sector, level) {
+        return SPAWN_TUNING['S' + sector + 'L' + level] || {};
+    }
+
     var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
     function spawnItem(zPos) {
         // Hard stop: never place items beyond finish ring (80% of sector distance)
@@ -3018,7 +3038,8 @@ window.onload = function() {
         // Spawns uncollected content items at regular intervals
         // Speed run sectors: no content objects — beat the clock to unlock
         // ═══════════════════════════════════════════════════════════════
-        var contentChance = isSpeedRun ? 0 : 0.055 + lvl * 0.008;
+        var _t = _getTuning(s, lvl);
+        var contentChance = isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008);
         if (rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
@@ -3154,13 +3175,18 @@ window.onload = function() {
         rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
         if (rand < 0) rand = Math.random();
 
-        // --- Per-sector spawn profile ---
+        // --- Per-sector spawn profile (check SPAWN_TUNING overrides) ---
         var baseHazard, baseRing, baseCore;
         if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+
         else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
         else if (s === 3)  { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }  // speed run — no hazards, only gap barriers
         else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
         else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
+        // Apply SPAWN_TUNING overrides
+        if (_t.baseHazard !== undefined) baseHazard = _t.baseHazard;
+        if (_t.baseRing !== undefined) baseRing = _t.baseRing;
+        if (_t.baseCore !== undefined) baseCore = _t.baseCore;
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
@@ -3223,7 +3249,7 @@ window.onload = function() {
         }
 
         // Single deterministic spiral line — bigger step = more twist per item
-        spiralAngle += 1.1;
+        spiralAngle += (_t.spiralStep !== undefined ? _t.spiralStep : 1.1);
         var hoverDist2 = tubeRadius - 6;
         const angle = spiralAngle;  // everything on the same line, no offsets
 
@@ -3234,7 +3260,7 @@ window.onload = function() {
         // Unified rotation: all items face the same way along the spiral
         mesh.rotation.z = angle;  // face outward from tube centre
 
-        let rotMult = 1 + zoneIdx * 0.4;
+        let rotMult = _t.rotMult !== undefined ? _t.rotMult : (1 + zoneIdx * 0.4);
         // Knots sway back and forth along the tube wall
         var isKnot = mesh._isKnot;
         delete mesh._isKnot;
@@ -3806,7 +3832,7 @@ window.onload = function() {
         // Seed tunnel ahead procedurally — spacing set per sector+level
         // Per-sector-per-level spacing table
         var SPACING_TABLE = {
-            1: [100, 90, 80, 70],
+            1: [75, 90, 80, 70],
             2: [90, 80, 70, 65],
             3: [90, 80, 70],
             4: [80, 70, 60],
@@ -3817,7 +3843,8 @@ window.onload = function() {
         var startOffset = 400;
         _spawnOriginZ = camera.position.z;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.78;
+        var _tSpawn = _getTuning(currentSector, currentLevel);
+        var lastItemDist = sectorDistance * (_tSpawn.maxSpawnPct || 0.78);
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
