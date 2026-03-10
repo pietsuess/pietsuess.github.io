@@ -6437,16 +6437,14 @@ function update(){
       }
     }
     if(state._mwTentCD>0) state._mwTentCD--;
-    // ── Gap escape trigger: hatch breaks → boss immediately flees through gap ──
-    if(state.passageHatch && state.passageHatch.broken && !mwb._fleeToGap && !mwb._exitedGap){
-      mwb._fleeToGap = true;
+    // ── Gap escape trigger: hatch breaks → boss begins multi-phase tube escape ──
+    if(state.passageHatch && state.passageHatch.broken && !mwb._gapPhase && !mwb._exitedGap){
+      mwb._gapPhase = 'approach';
       mwb._fleeing = true;
       mwb._guarding = false;
-      mwb._fleeWX = BELT_OUTER + 600;
-      mwb._fleeWY = 0;
     }
     // ── Flee state: when HP drops below 50%, OR gap escape triggered ──
-    const _mwFleeing = mwb.hits >= mwb.hitsNeeded * 0.5 || mwb._fleeToGap;
+    const _mwFleeing = mwb.hits >= mwb.hitsNeeded * 0.5 || !!mwb._gapPhase;
     if(_mwFleeing && !mwb._fleeing){
       mwb._fleeing = true;
       mwb._guarding = false;
@@ -6457,29 +6455,46 @@ function update(){
       mwb._fleeWY = Math.sin(_fAng) * _fR;
     }
     if(_mwFleeing && mwb._fleeing){
-      if(mwb._fleeToGap && !mwb._exitedGap){
-        // ── Gap escape: bee-line through the passageway at full speed ──
-        const _gapDx = (BELT_OUTER + 600) - mwb.wx, _gapDy = 0 - mwb.wy;
-        const _gapDist = Math.sqrt(_gapDx*_gapDx + _gapDy*_gapDy);
-        if(_gapDist > 1){
-          const _gfvx = (_gapDx/_gapDist)*11, _gfvy = (_gapDy/_gapDist)*11;
-          mwb.wx += _gfvx; mwb.wy += _gfvy;
-          mwb._velX = _gfvx; mwb._velY = _gfvy;
+      if(mwb._gapPhase && !mwb._exitedGap){
+        if(mwb._gapPhase === 'approach'){
+          // ── Approach: beeline to alignment point just inside tube entrance ──
+          const _tgtX = BELT_OUTER - 150, _tgtY = 0;
+          const _aDx = _tgtX - mwb.wx, _aDy = _tgtY - mwb.wy;
+          const _aDist = Math.sqrt(_aDx*_aDx + _aDy*_aDy);
+          if(_aDist > 1){ const _aS = 9 / _aDist; mwb.wx += _aDx*_aS; mwb.wy += _aDy*_aS; mwb._velX = _aDx*_aS; mwb._velY = _aDy*_aS; }
+          var _aFace = Math.atan2(_aDy, _aDx);
+          var _aFD = _aFace - (mwb.facing||0);
+          while(_aFD > Math.PI) _aFD -= Math.PI*2;
+          while(_aFD < -Math.PI) _aFD += Math.PI*2;
+          mwb.facing = (mwb.facing||0) + _aFD * 0.12;
+          // Switch to through-tube when aligned and close enough
+          if(_aDist < 200 && Math.abs(mwb.wy) < BARRIER_GAP_WIDTH * 0.85){
+            mwb._gapPhase = 'through';
+            mwb._velX = 0; mwb._velY = 0;
+          }
+        } else if(mwb._gapPhase === 'through'){
+          // ── Through: squeeze through the tube along +X at constant speed ──
+          mwb.wx += 5;
+          mwb.wy *= 0.88; // drift to y=0 centerline
+          mwb._velX = 5; mwb._velY = mwb.wy * -0.12;
+          // Snap facing toward +X (tube direction)
+          let _tFD = 0 - (mwb.facing||0);
+          while(_tFD > Math.PI) _tFD -= Math.PI*2;
+          while(_tFD < -Math.PI) _tFD += Math.PI*2;
+          mwb.facing = (mwb.facing||0) + _tFD * 0.18;
+          // Exit: boss has fully passed through — spawn bubble pickup and vanish
+          if(mwb.wx > BELT_OUTER + 320){
+            mwb._gapPhase = 'exited';
+            mwb._exitedGap = true;
+            mwb.dead = true;
+            mwb.deathTimer = 0;
+            state._bossInMainWorld = false;
+            // Glowing bubble pickup hovers just outside the tube end
+            state.gapBubble = {wx: BELT_OUTER + 450, wy: 0, r: 32, hue: 190, age: 0, collected: false};
+            // TODO: gap-escape thank-you text — wording TBD
+          }
         }
-        var _gFace = Math.atan2(_gapDy, _gapDx);
-        var _gFD = _gFace - (mwb.facing||0);
-        while(_gFD > Math.PI) _gFD -= Math.PI*2;
-        while(_gFD < -Math.PI) _gFD += Math.PI*2;
-        mwb.facing = (mwb.facing||0) + _gFD * 0.2;
-        // Exit: boss cleared the barrier gap — grant bubble unlock
-        if(mwb.wx > BELT_OUTER + 80 && Math.abs(mwb.wy) < BARRIER_GAP_WIDTH + 80){
-          mwb._exitedGap = true;
-          mwb.dead = true;
-          mwb.deathTimer = 0;
-          state._bossInMainWorld = false;
-          if(!state._bubbleUnlocked) triggerBubbleCheatUnlock();
-          // TODO: gap-escape flash text — wording TBD
-        }
+        // No belt clamp during gap escape phases
       } else {
         const _lastHit = mwb.hits >= mwb.hitsNeeded - 1; // final hit — desperate evasion
         if(_lastHit){
@@ -6650,6 +6665,18 @@ function update(){
     });
     // Cleanup fully animated pops
     state.bubbles = state.bubbles.filter(b=>!b.popped||b.popAge<25);
+  }
+
+  // ── Gap bubble pickup — animate and collect ───────────────────────
+  if(!state.inSecretLevel && state.gapBubble && !state.gapBubble.collected){
+    state.gapBubble.age++;
+    const _gb = state.gapBubble;
+    const _ps = getPlayerStyle();
+    const _gbDx = state.x - _gb.wx, _gbDy = state.y - _gb.wy;
+    if(Math.sqrt(_gbDx*_gbDx + _gbDy*_gbDy) < _gb.r + (_ps.size||20)){
+      _gb.collected = true;
+      if(!state._bubbleUnlocked) triggerBubbleCheatUnlock();
+    }
   }
 
   // ── PASSAGE HATCH HIT DETECTION (peanut mode only) ──
@@ -9170,8 +9197,23 @@ function drawGame(){
     const mMaxT=Math.max(...(mwb.tentacleLens||[mwb.tentacleLen]));
     const mOn=Math.abs(mbsx-cx)<canvas.width/2+mMaxT+120&&Math.abs(mbsy-cy)<canvas.height/2+mMaxT+120;
     if(mOn&&!(mwb.dead&&mwb.deathTimer>60)){
-      ctx.save();if(mwb.dead)ctx.globalAlpha=Math.max(0,1-mwb.deathTimer/60);
-      drawBossVisual(ctx,mwb,mbsx,mbsy);
+      ctx.save();
+      if(mwb.dead) ctx.globalAlpha=Math.max(0,1-mwb.deathTimer/60);
+      if(mwb._gapPhase==='through'){
+        // ── Tube squeeze: clip to tube interior and squish to fit ──
+        const _tScrX=BELT_OUTER-state.x+cx, _tScrY=0-state.y+cy;
+        // Clip to tube interior rect so nothing pokes through the walls
+        ctx.beginPath();
+        ctx.rect(_tScrX-30, _tScrY-BARRIER_GAP_WIDTH, 360, BARRIER_GAP_WIDTH*2);
+        ctx.clip();
+        // Squish: compress Y to fit inside tube height, slight X compression too
+        const _sqY = (BARRIER_GAP_WIDTH * 0.92) / mwb.bodyR;
+        ctx.translate(mbsx, mbsy);
+        ctx.scale(0.88, _sqY);
+        drawBossVisual(ctx, mwb, 0, 0);
+      } else {
+        drawBossVisual(ctx,mwb,mbsx,mbsy);
+      }
       ctx.restore();
     }
     // Off-screen arrow — bouncing, close to ship
@@ -9206,6 +9248,32 @@ function drawGame(){
       ctx.fillStyle='rgba(255,255,255,0.3)'; ctx.shadowBlur=0; ctx.fill();
       ctx.restore();
     });
+  }
+
+  // ── Gap bubble pickup — glowing bubble left by boss outside tube ───
+  if(!state.inSecretLevel && state.gapBubble && !state.gapBubble.collected){
+    const _gb = state.gapBubble;
+    const _gbSx = _gb.wx - state.x + cx, _gbSy = _gb.wy - state.y + cy;
+    if(_gbSx > -120 && _gbSx < canvas.width+120 && _gbSy > -120 && _gbSy < canvas.height+120){
+      const _gbPulse = 1 + Math.sin(_gb.age * 0.07) * 0.15;
+      const _gbR = _gb.r * _gbPulse;
+      ctx.save();
+      // Outer glow
+      ctx.shadowBlur = 30*SB; ctx.shadowColor = `hsl(${_gb.hue},100%,75%)`;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR, 0, Math.PI*2);
+      ctx.strokeStyle = `hsl(${_gb.hue},100%,82%)`; ctx.lineWidth = 2.5; ctx.stroke();
+      // Inner shimmer ring
+      ctx.shadowBlur = 0;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 0.88, 0, Math.PI*2);
+      ctx.strokeStyle = `rgba(255,255,255,${0.3 + Math.sin(_gb.age*0.13)*0.1})`; ctx.lineWidth = 1.5; ctx.stroke();
+      // Specular glint top-left
+      ctx.beginPath(); ctx.arc(_gbSx - _gbR*0.28, _gbSy - _gbR*0.32, _gbR*0.2, 0, Math.PI*2);
+      ctx.fillStyle = `rgba(255,255,255,${0.55 + Math.sin(_gb.age*0.18)*0.15})`; ctx.fill();
+      // Small second glint
+      ctx.beginPath(); ctx.arc(_gbSx + _gbR*0.18, _gbSy - _gbR*0.52, _gbR*0.07, 0, Math.PI*2);
+      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+      ctx.restore();
+    }
   }
 
   // Yellow target hint — only visible outside the barrier, and only until outer fuel collected
