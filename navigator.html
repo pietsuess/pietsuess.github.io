@@ -970,6 +970,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="if(typeof triggerPeanutUnlock==='function')triggerPeanutUnlock()">UNLOCK PEANUT</button>
           <button class="dev-btn" onclick="devTriggerSecretUnlock()">UNLOCK SECRET</button>
           <button class="dev-btn gold" onclick="if(typeof triggerLaunchpadVictory==='function')triggerLaunchpadVictory()">LAUNCHPAD WIN</button>
+          <button class="dev-btn purple" onclick="state.gapBubble={wx:state.x+320,wy:state.y,r:32,hue:190,age:0,collected:false};state._bossInMainWorld=false;">ALIEN ESCAPED</button>
           <button class="dev-btn gold" onclick="if(typeof enterVictoryRoom==='function')enterVictoryRoom()">VICTORY ROOM</button>
           <button class="dev-btn danger" onclick="devCollectAll();state.outsideBarrier=true;state._committedInside=false;devTeleport(EARTH_WX,EARTH_WY);triggerEarthVictory();">EARTH VICTORY ★</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
@@ -4928,18 +4929,117 @@ function showBossEscapeTransmission(){
   ov.id='boss-escape-overlay';
   ov.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
   ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
-  ov.innerHTML=`<div style="position:relative;z-index:1;border:2px solid #aa44ff;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 40px rgba(170,68,255,0.3);" onclick="event.stopPropagation()">
+  ov.innerHTML=`<div style="position:relative;z-index:1;border:2px solid #666;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 30px rgba(100,100,100,0.2);" onclick="event.stopPropagation()">
     <div id="boss-escape-close" onclick="document.getElementById('boss-escape-overlay').remove()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
-    <div style="color:#aa44ff;font-size:20px;letter-spacing:3px;margin-bottom:16px;line-height:2;text-shadow:0 0 18px #aa44ff;">INCOMING TRANSMISSION</div>
-    <div style="color:#aa44ff;font-size:28px;letter-spacing:4px;margin-bottom:8px;text-shadow:0 0 24px #aa44ff,0 0 48px #aa44ff;">THE OCTO-ALIEN</div>
-    <div style="color:#00ffcc;font-size:16px;letter-spacing:3px;margin-bottom:28px;text-shadow:0 0 12px #00ffcc;">DEEP SPACE SIGNAL</div>
-    <div style="color:#fff;font-size:14px;letter-spacing:2px;line-height:2.2;margin-bottom:8px;">THANK YOU FOR RELEASING ME.</div>
-    <div style="color:#ffe000;font-size:14px;letter-spacing:2px;margin-bottom:24px;text-shadow:0 0 10px #ffe000;">HERE IS A GIFT FOR YOU.</div>
-    <div style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:24px;">TAP TO CLOSE</div>
+    <div style="color:#fff;font-size:20px;letter-spacing:3px;margin-bottom:24px;line-height:2;text-shadow:0 0 12px rgba(255,255,255,0.4);">INCOMING TRANSMISSION</div>
+    <div id="boss-tx-terminal" style="position:relative;overflow:hidden;background:#0a0a0a;border:1px solid #1a4a1a;padding:24px 28px;text-align:left;margin-bottom:24px;height:180px;box-shadow:inset 0 0 20px rgba(0,255,80,0.04);"></div>
+    <div id="boss-tx-tap" style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:16px;display:none;">TAP TO CLOSE</div>
   </div>`;
   document.body.appendChild(ov);
-  setTimeout(()=>{ const cl=document.getElementById('boss-escape-close'); if(cl) cl.style.display='block'; },2000);
-  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el) el.remove(); },9000);
+  // Add scanline overlay to terminal
+  const _term = document.getElementById('boss-tx-terminal');
+  const _scan = document.createElement('div');
+  _scan.style.cssText = 'position:absolute;inset:0;pointer-events:none;background:repeating-linear-gradient(0deg,rgba(0,255,80,0.06),rgba(0,255,80,0.06) 2px,rgba(0,80,30,0.22) 2px,rgba(0,80,30,0.22) 5px);z-index:10;opacity:0.7;';
+  _term.appendChild(_scan);
+  let _scanUp = true;
+  const _scanPulse = setInterval(()=>{
+    const el = document.getElementById('boss-escape-overlay');
+    if(!el){ clearInterval(_scanPulse); return; }
+    let o = parseFloat(_scan.style.opacity);
+    if(_scanUp){ o += 0.015; if(o >= 0.85){ o = 0.85; _scanUp = false; } }
+    else { o -= 0.015; if(o <= 0.4){ o = 0.4; _scanUp = true; } }
+    _scan.style.opacity = o;
+  }, 50);
+  // Alien glyphs + helpers
+  const _glyphs = '\u2593\u2591\u25A0\u25B2\u25CF\u2660\u2663\u2666\u00A7\u03A3\u03A9\u0394\u03A6\u039B\u2261\u2248\u221E\u2302';
+  function _rndGlyph(){ return _glyphs[Math.floor(Math.random()*_glyphs.length)]; }
+  function _scramble(str){ return str.split('').map(c => c===' ' ? ' ' : _rndGlyph()).join(''); }
+  const _cursor = '\u2588';
+  const _ln = "color:#00ff66;font-size:11px;letter-spacing:2px;line-height:2.0;font-family:'Press Start 2P',monospace;text-shadow:0 0 8px rgba(0,255,102,0.5);position:relative;z-index:2;";
+  function _addEl(){ const el=document.createElement('div'); el.style.cssText=_ln; _term.insertBefore(el,_scan); return el; }
+  function _boop(){
+    if(!audioCtx || state.sfxMuted) return;
+    const t = audioCtx.currentTime;
+    const freq = 260 + Math.random() * 80;
+    playSFX(freq, t, 0.10, 'sine', 0.06);
+    playSFX(freq * 1.5, t + 0.02, 0.05, 'sine', 0.04);
+  }
+  // Build all lines upfront (fixed box height, no resizing)
+  const _el = [_addEl(),_addEl(),_addEl(),_addEl(),_addEl(),_addEl()];
+  // Line content mapping:
+  // 0: > SIGNAL LOCKED...
+  // 1: OCTO-ALIEN (glyphs → decoded)
+  // 2: > TRANSLATING...
+  // 3: message line 1 (glyphs → decoded)
+  // 4: message line 2 (glyphs → decoded)
+  // 5: message line 3 (glyphs → decoded)
+  const _msg = [
+    'OCTO-ALIEN',
+    'THANK YOU FOR RELEASING ME,',
+    'AND FOR YOUR KINDNESS.',
+    'HERE IS A GIFT TO HELP YOU.'
+  ];
+  // Flip one line from glyphs to real text, char by char
+  function _flipLine(el, text, onDone){
+    let _fi = 0;
+    function _flipNext(){
+      if(_fi >= text.length){ el._done = true; el.textContent = text; if(onDone) onDone(); return; }
+      if(text[_fi] === ' '){ _fi++; _flipNext(); return; }
+      const real = text.substring(0, _fi + 1);
+      const rest = _scramble(text.substring(_fi + 1));
+      el.textContent = real + rest.substring(0);
+      _fi++;
+      if(_fi % 4 === 1) _boop();
+      setTimeout(_flipNext, 40 + Math.random() * 25);
+    }
+    _flipNext();
+  }
+  // Scramble timer for undecoded lines
+  let _scrambleTimer = setInterval(()=>{
+    if(!document.getElementById('boss-escape-overlay')){ clearInterval(_scrambleTimer); return; }
+    if(!_el[1]._done) _el[1].textContent = _scramble(_msg[0]);
+    if(!_el[3]._done) _el[3].textContent = _scramble(_msg[1]);
+    if(!_el[4]._done) _el[4].textContent = _scramble(_msg[2]);
+    if(!_el[5]._done) _el[5].textContent = _scramble(_msg[3]);
+  }, 100);
+  // Sequence — calm, line by line with pauses
+  // 0ms: signal locked
+  _el[0].textContent = '> SIGNAL LOCKED...';
+  // 600ms: show OCTO-ALIEN as glyphs (already scrambling)
+  // 1200ms: decode OCTO-ALIEN
+  setTimeout(()=>{
+    _flipLine(_el[1], _msg[0], ()=>{
+      // 400ms pause, then show TRANSLATING status
+      setTimeout(()=>{
+        _el[2].textContent = '> TRANSLATING...';
+        // 500ms pause, then decode message lines one at a time
+        setTimeout(()=>{
+          _flipLine(_el[3], _msg[1], ()=>{
+            setTimeout(()=>{
+              _flipLine(_el[4], _msg[2], ()=>{
+                setTimeout(()=>{
+                  _flipLine(_el[5], _msg[3], ()=>{
+                    clearInterval(_scrambleTimer);
+                    _el[2].textContent = '> TRANSLATION COMPLETE';
+                    // Blink cursor on last line
+                    let _blink = true;
+                    const _blinkInt = setInterval(()=>{
+                      if(!document.getElementById('boss-escape-overlay')){ clearInterval(_blinkInt); return; }
+                      _blink = !_blink;
+                      _el[5].textContent = _msg[3] + (_blink ? ' ' + _cursor : '');
+                    }, 500);
+                    setTimeout(()=>{ const cl=document.getElementById('boss-escape-close'); if(cl) cl.style.display='block'; },400);
+                    const tap=document.getElementById('boss-tx-tap'); if(tap) tap.style.display='block';
+                  });
+                }, 300);
+              });
+            }, 300);
+          });
+        }, 500);
+      }, 400);
+    });
+  }, 1200);
+  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el) el.remove(); },18000);
 }
 function unlockWaveBeam(){
   state.hasWaveBeam=true;state.fireMode='wave';updateFireModeUI();addScore(1200);
@@ -6557,8 +6657,8 @@ function update(){
           if(mwb.wx > BELT_OUTER + 6000){
             mwb.dead = true;
             mwb.deathTimer = 60;
-            setTimeout(showBossEscapeTransmission, 400);
-            setTimeout(()=>addScore(30000), 700);
+            setTimeout(showBossEscapeTransmission, 200);
+            setTimeout(()=>addScore(30000), 500);
           }
         } else {
         const _lastHit = mwb.hits >= mwb.hitsNeeded - 1; // final hit — desperate evasion
@@ -8218,6 +8318,35 @@ function drawRadarMap(){
     }
   }
 
+  // ── Outer space station — gold diamond, visible once player is halfway there ──
+  if(!state.inSecretLevel && state.outsideBarrier){
+    var _halfwayX = BELT_OUTER + (OUTER_TARGET_WX - BELT_OUTER) * 0.5;
+    if(state.x >= _halfwayX){
+      var _osRx = mapX + (OUTER_TARGET_WX - state._radarCX) * scale;
+      var _osRy = mapY + (OUTER_TARGET_WY - state._radarCY) * scale;
+      var _osDx = _osRx - mapX, _osDy = _osRy - mapY;
+      var _osDist = Math.sqrt(_osDx*_osDx + _osDy*_osDy);
+      var _osPulse = 0.55 + Math.sin(state.frameCount * 0.06) * 0.3;
+      if(_osDist <= mapR - 2){
+        ctx.globalAlpha = _osPulse;
+        ctx.save(); ctx.translate(_osRx, _osRy); ctx.rotate(Math.PI/4);
+        ctx.fillStyle = '#ffe000'; ctx.shadowColor = '#ffe000'; ctx.shadowBlur = 8*SB;
+        ctx.fillRect(-3, -3, 6, 6);
+        ctx.shadowBlur = 0; ctx.restore();
+        ctx.globalAlpha = 0.85;
+      } else {
+        var _osClX = mapX + (_osDx / _osDist) * (mapR - 4);
+        var _osClY = mapY + (_osDy / _osDist) * (mapR - 4);
+        ctx.globalAlpha = 0.35 + Math.sin(state.frameCount * 0.06) * 0.15;
+        ctx.save(); ctx.translate(_osClX, _osClY); ctx.rotate(Math.PI/4);
+        ctx.fillStyle = '#ffe000';
+        ctx.fillRect(-2.5, -2.5, 5, 5);
+        ctx.restore();
+        ctx.globalAlpha = 0.85;
+      }
+    }
+  }
+
   // Player blip — offset by radar centre, zoom-aware clamping
   var px = mapX + (state.x - state._radarCX) * scale;
   var py = mapY + (state.y - state._radarCY) * scale;
@@ -9334,24 +9463,63 @@ function drawGame(){
   if(!state.inSecretLevel && state.gapBubble && !state.gapBubble.collected){
     const _gb = state.gapBubble;
     const _gbSx = _gb.wx - state.x + cx, _gbSy = _gb.wy - state.y + cy;
-    if(_gbSx > -120 && _gbSx < canvas.width+120 && _gbSy > -120 && _gbSy < canvas.height+120){
+    if(_gbSx > -300 && _gbSx < canvas.width+300 && _gbSy > -300 && _gbSy < canvas.height+300){
       const _gbPulse = 1 + Math.sin(_gb.age * 0.07) * 0.15;
       const _gbR = _gb.r * _gbPulse;
+      const _hue = _gb.hue;
       ctx.save();
-      // Outer glow
-      ctx.shadowBlur = 30*SB; ctx.shadowColor = `hsl(${_gb.hue},100%,75%)`;
+
+      // ── Sunray streaks radiating outward ──
+      const _rayCount = 14;
+      const _rayRot = _gb.age * 0.011;
+      for(let _ri = 0; _ri < _rayCount; _ri++){
+        const _ra = (_ri / _rayCount) * Math.PI * 2 + _rayRot;
+        const _outerR = _gbR * (2.4 + Math.sin(_gb.age * 0.055 + _ri * 0.9) * 0.5);
+        const _innerR = _gbR * 1.25;
+        const _alpha = (0.18 + Math.sin(_gb.age * 0.07 + _ri * 0.7) * 0.10);
+        const _rayGrad = ctx.createLinearGradient(
+          _gbSx + Math.cos(_ra) * _innerR, _gbSy + Math.sin(_ra) * _innerR,
+          _gbSx + Math.cos(_ra) * _outerR, _gbSy + Math.sin(_ra) * _outerR
+        );
+        _rayGrad.addColorStop(0, `hsla(${_hue},100%,82%,${_alpha + 0.15})`);
+        _rayGrad.addColorStop(1, `hsla(${_hue},100%,75%,0)`);
+        ctx.globalAlpha = 1;
+        ctx.beginPath();
+        ctx.moveTo(_gbSx + Math.cos(_ra - 0.07) * _innerR, _gbSy + Math.sin(_ra - 0.07) * _innerR);
+        ctx.lineTo(_gbSx + Math.cos(_ra) * _outerR,        _gbSy + Math.sin(_ra) * _outerR);
+        ctx.lineTo(_gbSx + Math.cos(_ra + 0.07) * _innerR, _gbSy + Math.sin(_ra + 0.07) * _innerR);
+        ctx.closePath();
+        ctx.fillStyle = _rayGrad;
+        ctx.fill();
+      }
+
+      // ── Wide outer bloom ──
+      ctx.globalAlpha = 0.85;
+      ctx.shadowBlur = 90*SB; ctx.shadowColor = `hsl(${_hue},100%,65%)`;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 1.6, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${_hue},100%,60%,0.07)`; ctx.fill();
+
+      // ── Mid glow halo ──
+      ctx.shadowBlur = 55*SB; ctx.shadowColor = `hsl(${_hue},100%,78%)`;
+      ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 1.2, 0, Math.PI*2);
+      ctx.fillStyle = `hsla(${_hue},100%,72%,0.11)`; ctx.fill();
+
+      // ── Main bubble ring ──
+      ctx.shadowBlur = 32*SB; ctx.shadowColor = `hsl(${_hue},100%,85%)`;
       ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR, 0, Math.PI*2);
-      ctx.strokeStyle = `hsl(${_gb.hue},100%,82%)`; ctx.lineWidth = 2.5; ctx.stroke();
-      // Inner shimmer ring
+      ctx.strokeStyle = `hsl(${_hue},100%,88%)`; ctx.lineWidth = 3; ctx.stroke();
+
+      // ── Inner shimmer ring ──
       ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(_gbSx, _gbSy, _gbR * 0.88, 0, Math.PI*2);
       ctx.strokeStyle = `rgba(255,255,255,${0.3 + Math.sin(_gb.age*0.13)*0.1})`; ctx.lineWidth = 1.5; ctx.stroke();
-      // Specular glint top-left
+
+      // ── Specular glints ──
       ctx.beginPath(); ctx.arc(_gbSx - _gbR*0.28, _gbSy - _gbR*0.32, _gbR*0.2, 0, Math.PI*2);
       ctx.fillStyle = `rgba(255,255,255,${0.55 + Math.sin(_gb.age*0.18)*0.15})`; ctx.fill();
-      // Small second glint
       ctx.beginPath(); ctx.arc(_gbSx + _gbR*0.18, _gbSy - _gbR*0.52, _gbR*0.07, 0, Math.PI*2);
       ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+
       ctx.restore();
     }
   }
