@@ -4078,12 +4078,16 @@ window.onload = function() {
     // Creates spinning 3D preview canvases for the intro screen
     // Uses a SINGLE shared WebGL renderer to avoid mobile context limits
     var _previewRenderer = null;
+    var _previewAnimId = 0;
     function createSpinningPreviews(previewItems, canvasSize) {
+        // Stop any previous preview spin loop before creating new one
+        if (_previewAnimId) { cancelAnimationFrame(_previewAnimId); _previewAnimId = 0; }
+        if (_previewRenderer) { _previewRenderer.dispose(); _previewRenderer = null; }
         // Create one shared offscreen renderer
         var offscreen = document.createElement('canvas');
         var pxSize = canvasSize * 2;
         offscreen.width = pxSize; offscreen.height = pxSize;
-        _previewRenderer = new THREE.WebGLRenderer({ canvas: offscreen, alpha: true, antialias: true });
+        _previewRenderer = new THREE.WebGLRenderer({ canvas: offscreen, alpha: true, antialias: true, preserveDrawingBuffer: true });
         _previewRenderer.setPixelRatio(1);
         _previewRenderer.setSize(pxSize, pxSize, false);
         _previewRenderer.setClearColor(0x000000, 0);
@@ -4106,9 +4110,8 @@ window.onload = function() {
             return { scene: s, camera: c, mesh: mesh, canvas: cvs, ctx: ctx2d };
         });
 
-        var animId = 0;
         function spin() {
-            animId = requestAnimationFrame(spin);
+            _previewAnimId = requestAnimationFrame(spin);
             for (var i = 0; i < entries.length; i++) {
                 var e = entries[i];
                 e.mesh.rotation.x += 0.015;
@@ -4122,7 +4125,7 @@ window.onload = function() {
 
         var canvases = entries.map(function(e) { return e.canvas; });
         canvases._stopAllSpins = function() {
-            cancelAnimationFrame(animId);
+            if (_previewAnimId) { cancelAnimationFrame(_previewAnimId); _previewAnimId = 0; }
             if (_previewRenderer) { _previewRenderer.dispose(); _previewRenderer = null; }
         };
         return canvases;
@@ -4335,9 +4338,13 @@ window.onload = function() {
 
         // No pre-population — items appear after countdown
 
-        // Remove any stale sector intro splash (from previous transition)
+        // Remove any stale sector intro splash + stop its spin loop
         var staleIntro = document.getElementById('sector-intro-splash');
-        if (staleIntro) { staleIntro.remove(); }
+        if (staleIntro) {
+            if (_previewAnimId) { cancelAnimationFrame(_previewAnimId); _previewAnimId = 0; }
+            if (_previewRenderer) { _previewRenderer.dispose(); _previewRenderer = null; }
+            staleIntro.remove();
+        }
 
         document.querySelectorAll('.overlay-screen').forEach(el => el.style.display = 'none');
         document.getElementById('tr-carousel-overlay').style.display = 'none';
