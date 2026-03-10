@@ -4953,17 +4953,13 @@ function showBossEscapeTransmission(){
     else { o -= 0.015; if(o <= 0.4){ o = 0.4; _scanUp = true; } }
     _scan.style.opacity = o;
   }, 50);
-  // Alien glyphs for scrambled text
-  const _glyphs = '\u2588\u2593\u2591\u25A0\u25B2\u25CF\u2660\u2663\u2666\u2191\u2193\u2190\u2192\u00A7\u00B6\u03A3\u03A9\u0394\u03A6\u03A8\u039B\u2234\u2261\u2248\u221E\u2302';
+  // Alien glyphs + helpers
+  const _glyphs = '\u2593\u2591\u25A0\u25B2\u25CF\u2660\u2663\u2666\u00A7\u03A3\u03A9\u0394\u03A6\u039B\u2261\u2248\u221E\u2302';
   function _rndGlyph(){ return _glyphs[Math.floor(Math.random()*_glyphs.length)]; }
   function _scramble(str){ return str.split('').map(c => c===' ' ? ' ' : _rndGlyph()).join(''); }
-  // Block cursor character
   const _cursor = '\u2588';
-  // Line style helper
-  const _lineStyle = "color:#00ff66;font-size:11px;letter-spacing:2px;line-height:1.8;font-family:'Press Start 2P',monospace;text-shadow:0 0 8px rgba(0,255,102,0.5);margin-bottom:4px;position:relative;z-index:2;";
-  const _headerStyle = "color:#00ff66;font-size:16px;letter-spacing:4px;line-height:1.8;font-family:'Press Start 2P',monospace;text-shadow:0 0 10px rgba(0,255,102,0.6);margin-bottom:8px;position:relative;z-index:2;";
-  const _statusStyle = "color:#00ff66;font-size:10px;letter-spacing:2px;line-height:1.8;font-family:'Press Start 2P',monospace;text-shadow:0 0 6px rgba(0,255,102,0.4);margin-bottom:6px;position:relative;z-index:2;";
-  function _addEl(style){ const el=document.createElement('div'); el.style.cssText=style; _term.insertBefore(el,_scan); return el; }
+  const _ln = "color:#00ff66;font-size:11px;letter-spacing:2px;line-height:2.0;font-family:'Press Start 2P',monospace;text-shadow:0 0 8px rgba(0,255,102,0.5);position:relative;z-index:2;";
+  function _addEl(){ const el=document.createElement('div'); el.style.cssText=_ln; _term.insertBefore(el,_scan); return el; }
   function _boop(){
     if(!audioCtx || state.sfxMuted) return;
     const t = audioCtx.currentTime;
@@ -4971,76 +4967,82 @@ function showBossEscapeTransmission(){
     playSFX(freq, t, 0.10, 'sine', 0.06);
     playSFX(freq * 1.5, t + 0.02, 0.05, 'sine', 0.04);
   }
-  // Message content
-  const _headerText = 'OCTO-ALIEN';
-  const _msg1 = 'THANK YOU FOR RELEASING ME,';
-  const _msg2 = 'AND FOR YOUR KINDNESS.';
-  const _msg3 = 'HERE IS A GIFT TO HELP YOU.';
-  // Build all elements upfront so box doesn't resize
-  const _elHeader = _addEl(_headerStyle);
-  const _elStatus = _addEl(_statusStyle);
-  const _elMsg1 = _addEl(_lineStyle);
-  const _elMsg2 = _addEl(_lineStyle);
-  const _elMsg3 = _addEl(_lineStyle);
-  // Phase 1: Show header in glyphs, then type it
-  _elHeader.textContent = _scramble(_headerText);
-  _elMsg1.textContent = _scramble(_msg1);
-  _elMsg2.textContent = _scramble(_msg2);
-  _elMsg3.textContent = _scramble(_msg3);
-  _elStatus.textContent = '> SIGNAL LOCKED...';
-  // Scramble animation on glyphs while waiting
-  let _scrambleTimer = setInterval(()=>{
-    if(!document.getElementById('boss-escape-overlay')){ clearInterval(_scrambleTimer); return; }
-    if(_elHeader._done) return;
-    _elHeader.textContent = _elHeader._real || _scramble(_headerText);
-    if(!_elMsg1._done) _elMsg1.textContent = _scramble(_msg1);
-    if(!_elMsg2._done) _elMsg2.textContent = _scramble(_msg2);
-    if(!_elMsg3._done) _elMsg3.textContent = _scramble(_msg3);
-  }, 80);
-  // Phase 2: After delay, type the header by flipping glyphs to real chars
+  // Build all lines upfront (fixed box height, no resizing)
+  const _el = [_addEl(),_addEl(),_addEl(),_addEl(),_addEl(),_addEl()];
+  // Line content mapping:
+  // 0: > SIGNAL LOCKED...
+  // 1: OCTO-ALIEN (glyphs → decoded)
+  // 2: > TRANSLATING...
+  // 3: message line 1 (glyphs → decoded)
+  // 4: message line 2 (glyphs → decoded)
+  // 5: message line 3 (glyphs → decoded)
+  const _msg = [
+    'OCTO-ALIEN',
+    'THANK YOU FOR RELEASING ME,',
+    'AND FOR YOUR KINDNESS.',
+    'HERE IS A GIFT TO HELP YOU.'
+  ];
+  // Flip one line from glyphs to real text, char by char
   function _flipLine(el, text, onDone){
     let _fi = 0;
     function _flipNext(){
       if(_fi >= text.length){ el._done = true; el.textContent = text; if(onDone) onDone(); return; }
       if(text[_fi] === ' '){ _fi++; _flipNext(); return; }
-      // Show real char up to _fi, scrambled rest, block cursor at _fi
       const real = text.substring(0, _fi + 1);
       const rest = _scramble(text.substring(_fi + 1));
-      el.textContent = real + _cursor + rest.substring(1);
+      el.textContent = real + rest.substring(0);
       _fi++;
-      if(_fi % 3 === 1) _boop();
-      setTimeout(_flipNext, 30 + Math.random() * 20);
+      if(_fi % 4 === 1) _boop();
+      setTimeout(_flipNext, 40 + Math.random() * 25);
     }
     _flipNext();
   }
+  // Scramble timer for undecoded lines
+  let _scrambleTimer = setInterval(()=>{
+    if(!document.getElementById('boss-escape-overlay')){ clearInterval(_scrambleTimer); return; }
+    if(!_el[1]._done) _el[1].textContent = _scramble(_msg[0]);
+    if(!_el[3]._done) _el[3].textContent = _scramble(_msg[1]);
+    if(!_el[4]._done) _el[4].textContent = _scramble(_msg[2]);
+    if(!_el[5]._done) _el[5].textContent = _scramble(_msg[3]);
+  }, 100);
+  // Sequence — calm, line by line with pauses
+  // 0ms: signal locked
+  _el[0].textContent = '> SIGNAL LOCKED...';
+  // 600ms: show OCTO-ALIEN as glyphs (already scrambling)
+  // 1200ms: decode OCTO-ALIEN
   setTimeout(()=>{
-    // Flip header
-    _flipLine(_elHeader, _headerText, ()=>{
-      _elStatus.textContent = '> TRANSLATING...';
+    _flipLine(_el[1], _msg[0], ()=>{
+      // 400ms pause, then show TRANSLATING status
       setTimeout(()=>{
-        // Flip message lines one at a time
-        _flipLine(_elMsg1, _msg1, ()=>{
-          _flipLine(_elMsg2, _msg2, ()=>{
-            _flipLine(_elMsg3, _msg3, ()=>{
-              clearInterval(_scrambleTimer);
-              _elStatus.textContent = '> TRANSLATION COMPLETE';
-              _elMsg3.textContent = _msg3 + ' ' + _cursor;
-              // Blink cursor
-              let _blink = true;
-              const _blinkInt = setInterval(()=>{
-                if(!document.getElementById('boss-escape-overlay')){ clearInterval(_blinkInt); return; }
-                _blink = !_blink;
-                _elMsg3.textContent = _msg3 + (_blink ? ' ' + _cursor : '');
-              }, 500);
-              setTimeout(()=>{ const cl=document.getElementById('boss-escape-close'); if(cl) cl.style.display='block'; },400);
-              const tap=document.getElementById('boss-tx-tap'); if(tap) tap.style.display='block';
-            });
+        _el[2].textContent = '> TRANSLATING...';
+        // 500ms pause, then decode message lines one at a time
+        setTimeout(()=>{
+          _flipLine(_el[3], _msg[1], ()=>{
+            setTimeout(()=>{
+              _flipLine(_el[4], _msg[2], ()=>{
+                setTimeout(()=>{
+                  _flipLine(_el[5], _msg[3], ()=>{
+                    clearInterval(_scrambleTimer);
+                    _el[2].textContent = '> TRANSLATION COMPLETE';
+                    // Blink cursor on last line
+                    let _blink = true;
+                    const _blinkInt = setInterval(()=>{
+                      if(!document.getElementById('boss-escape-overlay')){ clearInterval(_blinkInt); return; }
+                      _blink = !_blink;
+                      _el[5].textContent = _msg[3] + (_blink ? ' ' + _cursor : '');
+                    }, 500);
+                    setTimeout(()=>{ const cl=document.getElementById('boss-escape-close'); if(cl) cl.style.display='block'; },400);
+                    const tap=document.getElementById('boss-tx-tap'); if(tap) tap.style.display='block';
+                  });
+                }, 300);
+              });
+            }, 300);
           });
-        });
-      }, 300);
+        }, 500);
+      }, 400);
     });
-  }, 800);
-  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el) el.remove(); },15000);
+  }, 1200);
+  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el) el.remove(); },18000);
 }
 function unlockWaveBeam(){
   state.hasWaveBeam=true;state.fireMode='wave';updateFireModeUI();addScore(1200);
