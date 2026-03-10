@@ -3013,8 +3013,9 @@ window.onload = function() {
         // ═══════════════════════════════════════════════════════════════
         // CONTENT OBJECT SPAWNING — zone-shaped collectibles, 2x size
         // Spawns uncollected content items at regular intervals
+        // Speed run sectors: no content objects — beat the clock to unlock
         // ═══════════════════════════════════════════════════════════════
-        var contentChance = 0.055 + lvl * 0.008; // generous spawn rate — 2-3 per first run, scales with level
+        var contentChance = isSpeedRun ? 0 : 0.055 + lvl * 0.008;
         if (rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
@@ -3130,9 +3131,9 @@ window.onload = function() {
                 wallMesh.position.set(0, 0, zPos - peakDist);
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 };
                 scene.add(wallMesh); items.push(wallMesh);
-                // Place content object at peak of jump arc for collection during jump
+                // Place content object at peak of jump arc for collection during jump (not in speed runs)
                 var jumpZone = getZoneName(s);
-                var jumpUncollected = (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; });
+                var jumpUncollected = !isSpeedRun ? (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; }) : [];
                 if (jumpUncollected.length > 0 && Math.random() < 0.4) {
                     var jumpPick = jumpUncollected[Math.floor(Math.random() * jumpUncollected.length)];
                     contentSpawnedThisRun.push(jumpPick.title);
@@ -3584,33 +3585,49 @@ window.onload = function() {
         }
 
         var sectorScore = score - sectorStartScore;
-        // Speed run: show time result instead of just score
+        // Speed run: show time result + unlock all content on pass
+        var _speedRunPassed = false;
         if (isSpeedRunSector(currentSector, currentLevel)) {
             var s4Target = getSpeedRunTarget();
-            var s4Passed = sectorTime <= s4Target;
+            _speedRunPassed = sectorTime <= s4Target;
             function fmtTimeShort(t) { var mm=Math.floor(t/60),ss=Math.floor(t%60),tt=Math.floor((t%1)*10); return mm+':'+(ss<10?'0':'')+ss+'.'+tt; }
-            var timeColor = s4Passed ? '#00ff88' : '#ff4444';
-            document.getElementById('victory-score').innerHTML = '<span style="color:'+timeColor+'">TIME: ' + fmtTimeShort(sectorTime) + ' / ' + fmtTimeShort(s4Target) + '</span>'
-                + '<br><span style="font-size:0.7em;color:' + (s4Passed ? '#ffe000' : '#ff6666') + ';">' + (s4Passed ? 'SPEED RUN PASSED!' : 'TOO SLOW — TRY AGAIN') + '</span>';
+            var timeColor = _speedRunPassed ? '#00ff88' : '#ff4444';
+            document.getElementById('victory-score').innerHTML = '<span style="color:'+timeColor+';font-size:clamp(14px,4vw,24px);">TIME: ' + fmtTimeShort(sectorTime) + ' / ' + fmtTimeShort(s4Target) + '</span>';
+
+            // Speed run pass = unlock ALL zone content at once
+            if (_speedRunPassed) {
+                var srZone = getZoneName(currentSector);
+                var srItems = CONTENT_DATA[srZone] || [];
+                var srUnlocked = 0;
+                srItems.forEach(function(it) {
+                    if (!collectedContent[srZone].has(it.title)) {
+                        collectedContent[srZone].add(it.title);
+                        srUnlocked++;
+                    }
+                });
+                if (srUnlocked > 0) updateCollectionHUD();
+            }
         } else {
             document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
         }
 
-        // Score bonus: every 10K sector score unlocks an extra content item
+        // Score bonus: every 10K sector score unlocks an extra content item (not for speed runs)
         _bonusUnlockedTitles = [];
-        var bonusZone = getZoneName(currentSector);
-        var bonusCount = Math.floor(sectorScore / SCORE_BONUS_INCREMENT);
-        if (bonusCount > 0 && !isZoneComplete(currentSector)) {
-            for (var bi = 0; bi < bonusCount; bi++) {
-                var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
-                    return !collectedContent[bonusZone].has(it.title);
-                });
-                if (bonusItems.length === 0) break;
-                var bonusPick = bonusItems[Math.floor(Math.random() * bonusItems.length)];
-                _bonusUnlockedTitles.push(bonusPick.title);
-                collectedContent[bonusZone].add(bonusPick.title);
+        if (!isSpeedRunSector(currentSector, currentLevel)) {
+            var bonusZone = getZoneName(currentSector);
+            var bonusCount = Math.floor(sectorScore / SCORE_BONUS_INCREMENT);
+            if (bonusCount > 0 && !isZoneComplete(currentSector)) {
+                for (var bi = 0; bi < bonusCount; bi++) {
+                    var bonusItems = (CONTENT_DATA[bonusZone] || []).filter(function(it) {
+                        return !collectedContent[bonusZone].has(it.title);
+                    });
+                    if (bonusItems.length === 0) break;
+                    var bonusPick = bonusItems[Math.floor(Math.random() * bonusItems.length)];
+                    _bonusUnlockedTitles.push(bonusPick.title);
+                    collectedContent[bonusZone].add(bonusPick.title);
+                }
+                if (_bonusUnlockedTitles.length > 0) updateCollectionHUD();
             }
-            if (_bonusUnlockedTitles.length > 0) updateCollectionHUD();
         }
 
         // Save sector time
@@ -3662,12 +3679,26 @@ window.onload = function() {
             var zoneColor = ZONE_OBJ_COLORS[contentZone] || '#ffe000';
             var collected = getZoneCollectedCount(currentSector);
             var total = getZoneItemCount(currentSector);
-            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
-            if (_bonusUnlockedTitles.length > 0) {
-                unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
-                    + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + _bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
-                // Play unlock sound when bonus content revealed on victory screen
-                setTimeout(function() { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); AudioEngine.playSFX('bonus_unlock'); }, 600);
+
+            if (isSpeedRunSector(currentSector, currentLevel)) {
+                // Speed run: dramatic pass/fail messaging
+                if (_speedRunPassed) {
+                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(16px,4.5vw,28px);color:#00ff88;text-shadow:0 0 30px #00ff88,0 0 60px #00ff88;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">ALL CONTENT UNLOCKED</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:'+zoneColor+';text-shadow:0 0 16px '+zoneColor+';letter-spacing:3px;margin-top:10px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">' + total + ' ' + contentLabel + ' ITEMS</div>';
+                    setTimeout(function() { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); AudioEngine.playSFX('bonus_unlock'); }, 500);
+                    setTimeout(function() { AudioEngine.playSFX('bonus_unlock'); }, 900);
+                } else {
+                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,24px);color:#ff4444;text-shadow:0 0 25px #ff4444,0 0 50px #ff000066;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">CONTENT LOCKED</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(9px,2.2vw,14px);color:#ff6666;letter-spacing:2px;margin-top:8px;opacity:0.8;animation:fadeSlideUp 0.5s ease-out 0.5s both;">BEAT THE CLOCK TO UNLOCK</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#888;letter-spacing:2px;margin-top:6px;opacity:0.6;animation:fadeSlideUp 0.5s ease-out 0.7s both;">' + total + ' ' + contentLabel + ' ITEMS WAITING</div>';
+                }
+            } else {
+                unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
+                if (_bonusUnlockedTitles.length > 0) {
+                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + _bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
+                    setTimeout(function() { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); AudioEngine.playSFX('bonus_unlock'); }, 600);
+                }
             }
         }
         var unlockEl = document.getElementById('victory-unlocks');
@@ -3676,9 +3707,7 @@ window.onload = function() {
 
         // Speed run: title reflects pass/fail
         if (isSpeedRunSector(currentSector, currentLevel)) {
-            var s4T = getSpeedRunTarget();
-            var s4P = sectorTime <= s4T;
-            document.getElementById('victory-screen').querySelector('.screen-title').innerText = s4P ? 'SPEED RUN CLEARED' : 'SECTOR CLEARED';
+            document.getElementById('victory-screen').querySelector('.screen-title').innerText = _speedRunPassed ? 'CLOCK BEATEN' : 'TOO SLOW';
         } else {
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
         }
@@ -3692,8 +3721,6 @@ window.onload = function() {
             if (s4Failed) {
                 document.getElementById('next-level-btn').innerText = '[ RETRY SPEED RUN ]';
             } else if (collected >= total) {
-                document.getElementById('next-level-btn').innerText = '[ NEXT ZONE > ]';
-            } else if (collected > 0) {
                 document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
             } else {
                 document.getElementById('next-level-btn').innerText = '[ NEXT LEVEL ' + (currentLevel + 1) + ' > ]';
@@ -4371,10 +4398,9 @@ window.onload = function() {
         // Dynamic preview items based on sector + level — split into COLLECT and AVOID rows
         var _s = currentSector, _l = currentLevel;
         var _sr = isSpeedRunSector(_s, _l);
-        var collectItems = [
-            { label: 'CONTENT', color: cColor, shape: contentShape },
-            { label: 'RING', color: '#00ccff', shape: 'ring' },
-        ];
+        var collectItems = [];
+        if (!_sr) collectItems.push({ label: 'CONTENT', color: cColor, shape: contentShape });
+        collectItems.push({ label: 'RING', color: '#00ccff', shape: 'ring' });
         var avoidItems = [];
 
         // Cores (collect): S1 L3+, S2+
