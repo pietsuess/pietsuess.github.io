@@ -3067,6 +3067,7 @@ window.onload = function() {
         var coresEnabled    = (s === 1 && lvl >= 3) || s >= 2;
         var barriersEnabled = s >= 2;
         var knotsEnabled    = ((s === 2 && lvl >= 3) || s >= 3) && s !== 3;  // no knots in S3 speed run
+        var minesEnabled    = s !== 3;  // no mines in S3 speed run — only gap barriers
         var rampsEnabled    = s >= 4;  // ramp+full barrier combos from S4
         var starsEnabled    = s >= 3 || (s === 2 && lvl >= 3);
         var boostEnabled    = s >= 3;  // boost pads from S3 (speed run)
@@ -3154,7 +3155,7 @@ window.onload = function() {
         var baseHazard, baseRing, baseCore;
         if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
         else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
-        else if (s === 3)  { baseHazard = 0.05; baseRing = 0.80; baseCore = 0.15; }  // speed run — mostly rings
+        else if (s === 3)  { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }  // speed run — no hazards, only gap barriers
         else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
         else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
@@ -3203,11 +3204,17 @@ window.onload = function() {
         } else if (rand < coreChance + ringChance) {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
         } else if (rand < coreChance + ringChance + hazardChance) {
-            const hRand = Math.random();
-            // Hazard types gate per sector+level
-            if      (knotsEnabled && hRand < 0.25) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
-            else if (blocksEnabled && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
-            else                                    { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
+            // No hazard objects in S3 — only gap barrier series
+            if (!minesEnabled && !blocksEnabled && !knotsEnabled) {
+                mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
+            } else {
+                const hRand = Math.random();
+                // Hazard types gate per sector+level
+                if      (knotsEnabled && hRand < 0.25) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
+                else if (blocksEnabled && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
+                else if (minesEnabled)                  { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
+                else                                    { mesh = new THREE.Mesh(ringGeo,  ringMat);   type = 'score';  hitRadius = 6.5; }
+            }
         } else {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
@@ -4387,20 +4394,20 @@ window.onload = function() {
             collectItems.push({ label: 'RAMP', color: '#00ffcc', shape: 'ramp' });
         }
 
-        // Mines (avoid): S1 all levels, S2, S4, S5 L2+
-        if (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2)) {
+        // Mines (avoid): S1 all levels, S2, S4, S5 L2+ (NOT S3)
+        if (_s !== 3 && (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2))) {
             avoidItems.push({ label: 'MINE', color: '#ff4444', shape: 'mine' });
         }
-        // Blocks (avoid): S1 L2+, S2+
-        if ((_s === 1 && _l >= 2) || _s >= 2) {
+        // Blocks (avoid): S1 L2+, S2, S4+ (NOT S3)
+        if (_s !== 3 && ((_s === 1 && _l >= 2) || _s >= 2)) {
             avoidItems.push({ label: 'BLOCK', color: '#ff4444', shape: 'block' });
         }
         // Barriers (avoid): S2+
         if (_s >= 2) {
             avoidItems.push({ label: 'BARRIER', color: '#ff2266', shape: 'barrier' });
         }
-        // Knots (avoid): S2 L3+, S3+
-        if ((_s === 2 && _l >= 3) || _s >= 3) {
+        // Knots (avoid): S2 L3+, S4+ (NOT S3)
+        if (_s !== 3 && ((_s === 2 && _l >= 3) || _s >= 3)) {
             avoidItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
         }
 
