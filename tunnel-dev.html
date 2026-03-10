@@ -623,7 +623,6 @@
     <div id="shield-label"></div>
 </div>
 <button id="hamburger-btn" style="display:none;"><span></span><span></span><span></span></button>
-<div id="dbg-strip" style="position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;font:10px monospace;padding:4px 8px;pointer-events:none;max-height:80px;overflow:hidden;"></div>
 <div id="start-screen" class="overlay-screen">
   <canvas id="title-stars-canvas"></canvas>
   <div id="start-inner">
@@ -2229,13 +2228,7 @@ window.onload = function() {
     container.appendChild(renderer.domElement);
 
     // Detect WebGL context loss (white screen diagnostic)
-    renderer.domElement.addEventListener('webglcontextlost', function(e) {
-        console.error('WebGL context LOST — this causes the white screen');
-        e.preventDefault();
-    });
-    renderer.domElement.addEventListener('webglcontextrestored', function() {
-        console.log('WebGL context restored');
-    });
+    renderer.domElement.addEventListener('webglcontextlost', function(e) { e.preventDefault(); });
 
     // --- Ghosting / afterimage fade quad ---
     const fadeScene = new THREE.Scene();
@@ -2872,7 +2865,7 @@ window.onload = function() {
         // thetaStart=0, thetaLength=arcLength — arc sweeps from 0 to arcLength radians
         return new THREE.RingGeometry(20, tubeRadius - 1, 48, 1, 0, arcLength);
     }
-    const barrierMat = new THREE.MeshBasicMaterial({ color: 0xff2266, transparent: true, opacity: 0.9, side: THREE.DoubleSide, depthTest: false });
+    const barrierMat = new THREE.MeshBasicMaterial({ color: 0xff2266, transparent: true, opacity: 0.9, side: THREE.DoubleSide });
 
 
     // Finish ring — large glowing ring spanning the full tube
@@ -2949,7 +2942,6 @@ window.onload = function() {
 
         var tag = e.target.tagName;
         var isHB = e.target.closest('#hamburger-btn');
-        if (isHB) window._dbg('GLOBAL touchstart SAW hamburger (should be blocked by stopProp)');
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !isHB) {
             e.preventDefault();
             handleInputStart(e.touches[0].clientX, e.touches[0].clientY);
@@ -3057,7 +3049,7 @@ window.onload = function() {
         var barriersEnabled = s >= 2;
         var knotsEnabled    = (s === 2 && lvl >= 3) || s >= 3;
         var rampsEnabled    = s >= 4;  // ramp+full barrier combos from S4
-        var starsEnabled    = s >= 3;
+        var starsEnabled    = s >= 3 || (s === 2 && lvl >= 3);
         var boostEnabled    = s >= 3;  // boost pads from S3 (speed run)
 
         // BARRIER RULE: Every full ring barrier MUST have a ramp before it.
@@ -3707,7 +3699,7 @@ window.onload = function() {
         var baseZ = camera.position.z - 600;
 
         // If this sector has baked layout data, spawn it
-        var maxBakedDist = sectorDistance * 0.76;  // stop spawning before finish line
+        var maxBakedDist = sectorDistance * 0.72;  // stop spawning before finish line
         if (bakedLevels[currentSector] && bakedLevels[currentSector].length) {
             bakedLevels[currentSector].forEach(function(obj) {
                 // Skip objects beyond the runway zone
@@ -3758,7 +3750,7 @@ window.onload = function() {
         var spacing = sTable[Math.min(currentLevel - 1, sTable.length - 1)];
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.76;
+        var lastItemDist = sectorDistance * 0.72;
         for (var n = 0; n < 600; n++) {
             var itemDist = startOffset + n * spacing;
             if (itemDist > lastItemDist) break;
@@ -4354,8 +4346,8 @@ window.onload = function() {
         if ((_s === 1 && _l >= 3) || _s >= 2) {
             collectItems.push({ label: 'CORE', color: '#00ccff', shape: 'core' });
         }
-        // Stars (collect): S3+
-        if (_s >= 3) {
+        // Stars (collect): S2 L3+, S3+
+        if (_s >= 3 || (_s === 2 && _l >= 3)) {
             collectItems.push({ label: 'STAR', color: '#ffff00', shape: 'star' });
         }
         // Boost pads (collect): S3+
@@ -4620,8 +4612,6 @@ window.onload = function() {
     }
 
     function togglePause() {
-        window._dbg('togglePause() gs=' + gameState + ' overlay=' + isContentOverlayOpen());
-        document.title = 'PAUSE:' + gameState;
         // Content overlay open — show pause on top without closing anything
         if (isContentOverlayOpen()) {
             if (gameState === 'paused') {
@@ -4913,19 +4903,14 @@ window.onload = function() {
         (function(n) { bindTap('dev-s' + n, function() { devJumpSector(n); }); })(si);
     }
     // Hamburger: isolate from global touch handlers + add click fallback
-    window._dbg = function(msg) {
-        var d = document.getElementById('dbg-strip');
-        if (d) { d.innerHTML = msg + '<br>' + d.innerHTML; if (d.childNodes.length > 6) d.removeChild(d.lastChild); }
-        console.log('[DBG]', msg);
-    };
+    window._dbg = function() {}; // no-op (debug removed)
     (function() {
         var hb = document.getElementById('hamburger-btn');
-        if (!hb) { window._dbg('ERROR: hamburger-btn NOT FOUND'); return; }
-        window._dbg('hamburger handler registered OK');
-        hb.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB touchstart'); }, {passive: false});
-        hb.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB touchend → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
-        hb.addEventListener('mouseup', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB mouseup → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
-        hb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB click → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
+        if (!hb) return;
+        hb.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); }, {passive: false});
+        hb.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); togglePause(); }, {passive: false});
+        hb.addEventListener('mouseup', function(e) { e.preventDefault(); e.stopPropagation(); togglePause(); }, {passive: false});
+        hb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); togglePause(); }, {passive: false});
     })();
     bindTap('resume-btn', togglePause);
 
@@ -5153,17 +5138,6 @@ window.onload = function() {
             }
             let moveDist = speed * delta;
             distanceTraveled += moveDist;
-            if (Math.random() < 0.01) console.log('SECTOR DEBUG:', {
-                dist: Math.round(distanceTraveled),
-                secDist: sectorDistance,
-                pct: (distanceTraveled/sectorDistance*100).toFixed(1)+'%',
-                speed: Math.round(speed),
-                baseSpd: baseSpeed,
-                finSpawned: finishRingSpawned,
-                finRing: !!finishRing,
-                tutActive: TUT.active,
-                sector: currentSector
-            });
             if (!TUT.active) {
                 sectorTime += delta;
                 const tm = sectorTime, m = Math.floor(tm/60), s = Math.floor(tm%60), t = Math.floor((tm%1)*10);
@@ -5665,11 +5639,6 @@ window.onload = function() {
 
         // Always render (even during intro/countdown/pause) so tunnel is visible
         renderer.render(scene, camera);
-        // Debug: show gameState on screen
-        var _ds = document.getElementById('dbg-strip');
-        if (_ds && !_ds._gsLine) { var _g = document.createElement('div'); _g.id = 'dbg-gs'; _g.style.cssText = 'color:#ff0;font-weight:bold;'; _ds.prepend(_g); _ds._gsLine = true; }
-        var _dg = document.getElementById('dbg-gs');
-        if (_dg) _dg.textContent = 'STATE: ' + gameState + ' | hb-visible: ' + document.getElementById('hamburger-btn').style.display;
     }
 
     animate();
