@@ -2926,12 +2926,12 @@ window.onload = function() {
         }
     }
 
-    window.addEventListener('mousedown', e => { var t=e.target.tagName; if(t !== 'BUTTON' && t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) handleInputStart(e.clientX, e.clientY); });
+    window.addEventListener('mousedown', e => { if (gameState === 'title' || gameState === 'loading') return; var t=e.target.tagName; if(t !== 'BUTTON' && t !== 'INPUT' && t !== 'SELECT' && t !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) handleInputStart(e.clientX, e.clientY); });
     window.addEventListener('mousemove', e => handleInputMove(e.clientX, e.clientY));
     window.addEventListener('mouseup', handleInputEnd);
     
     window.addEventListener('touchstart', e => {
-        if (gameState === 'title') return;
+        if (gameState === 'title' || gameState === 'loading') return;
 
         var tag = e.target.tagName;
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
@@ -4075,34 +4075,57 @@ window.onload = function() {
         'BARRIER SLALOM': { shape: 'ring-gap', color: '#ff2266' },
     };
 
-    // Creates a small Three.js canvas with a spinning object for the intro screen
-    function createSpinningPreview(geo, mat, canvasSize) {
-        var cvs = document.createElement('canvas');
-        cvs.width = canvasSize; cvs.height = canvasSize;
-        var r = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
-        r.setPixelRatio(2);
-        r.setSize(canvasSize, canvasSize, false); // false = don't set CSS style
-        r.setClearColor(0x000000, 0);
-        cvs.style.cssText = 'width:'+canvasSize+'px;height:'+canvasSize+'px;display:block;position:static;top:auto;left:auto;pointer-events:none;';
-        var s = new THREE.Scene();
-        var c = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
-        c.position.z = 38;
-        var light = new THREE.PointLight(0xffffff, 1.5, 100);
-        light.position.set(8, 8, 30);
-        s.add(light);
-        s.add(new THREE.AmbientLight(0x666666));
-        var mesh = new THREE.Mesh(geo, mat);
-        s.add(mesh);
+    // Creates spinning 3D preview canvases for the intro screen
+    // Uses a SINGLE shared WebGL renderer to avoid mobile context limits
+    var _previewRenderer = null;
+    function createSpinningPreviews(previewItems, canvasSize) {
+        // Create one shared offscreen renderer
+        var offscreen = document.createElement('canvas');
+        var pxSize = canvasSize * 2;
+        offscreen.width = pxSize; offscreen.height = pxSize;
+        _previewRenderer = new THREE.WebGLRenderer({ canvas: offscreen, alpha: true, antialias: true });
+        _previewRenderer.setPixelRatio(1);
+        _previewRenderer.setSize(pxSize, pxSize, false);
+        _previewRenderer.setClearColor(0x000000, 0);
+
+        var entries = previewItems.map(function(item) {
+            var s = new THREE.Scene();
+            var c = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
+            c.position.z = 38;
+            var light = new THREE.PointLight(0xffffff, 1.5, 100);
+            light.position.set(8, 8, 30);
+            s.add(light);
+            s.add(new THREE.AmbientLight(0x666666));
+            var mesh = new THREE.Mesh(item.geo, item.mat);
+            s.add(mesh);
+            // Display canvas (2D copy target)
+            var cvs = document.createElement('canvas');
+            cvs.width = pxSize; cvs.height = pxSize;
+            cvs.style.cssText = 'width:'+canvasSize+'px;height:'+canvasSize+'px;display:block;position:static;top:auto;left:auto;pointer-events:none;';
+            var ctx2d = cvs.getContext('2d');
+            return { scene: s, camera: c, mesh: mesh, canvas: cvs, ctx: ctx2d };
+        });
+
         var animId = 0;
         function spin() {
             animId = requestAnimationFrame(spin);
-            mesh.rotation.x += 0.015;
-            mesh.rotation.y += 0.025;
-            r.render(s, c);
+            for (var i = 0; i < entries.length; i++) {
+                var e = entries[i];
+                e.mesh.rotation.x += 0.015;
+                e.mesh.rotation.y += 0.025;
+                _previewRenderer.render(e.scene, e.camera);
+                e.ctx.clearRect(0, 0, pxSize, pxSize);
+                e.ctx.drawImage(offscreen, 0, 0);
+            }
         }
         spin();
-        cvs._stopSpin = function() { cancelAnimationFrame(animId); r.dispose(); };
-        return cvs;
+
+        var canvases = entries.map(function(e) { return e.canvas; });
+        canvases._stopAllSpins = function() {
+            cancelAnimationFrame(animId);
+            if (_previewRenderer) { _previewRenderer.dispose(); _previewRenderer = null; }
+        };
+        return canvases;
     }
 
     function showSectorIntro(zone, onDone) {
@@ -4155,12 +4178,13 @@ window.onload = function() {
             { label: 'MINE', color: '#ff4444', geo: new THREE.TetrahedronGeometry(4.5, 0),
               mat: new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0, roughness: 1 }) },
         ];
-        previewItems.forEach(function(item) {
+        // Single shared renderer for all 3 previews (avoids WebGL context limits on mobile)
+        var previewCanvases = createSpinningPreviews(previewItems, previewSize);
+        spinCanvases = previewCanvases;
+        previewItems.forEach(function(item, idx) {
             var col = document.createElement('div');
             col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;width:'+previewSize+'px;';
-            var cvs = createSpinningPreview(item.geo, item.mat, previewSize);
-            spinCanvases.push(cvs);
-            col.appendChild(cvs);
+            col.appendChild(previewCanvases[idx]);
             var lbl = document.createElement('div');
             lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2.2vw,12px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
             lbl.innerText = item.label;
@@ -4206,7 +4230,7 @@ window.onload = function() {
         requestAnimationFrame(function() { el.style.opacity = '1'; });
 
         function cleanup() {
-            spinCanvases.forEach(function(c) { if (c._stopSpin) c._stopSpin(); });
+            if (spinCanvases._stopAllSpins) spinCanvases._stopAllSpins();
             el.style.opacity = '0';
             setTimeout(function() {
                 if (el.parentNode) el.remove();
@@ -4269,7 +4293,6 @@ window.onload = function() {
             sectorRunTimes = {};
             try { localStorage.removeItem('trUnlockedZones'); } catch(e) {}
             rebuildUnlockedMenu();
-            throttle = 0; throttleSmooth = 0; shipZOffset = -18;
             document.getElementById('sector-text').innerText = '01';
             document.getElementById('zone-name').innerText = zone0.name;
             document.getElementById('zone-name').style.color = zone0.color;
@@ -4279,6 +4302,9 @@ window.onload = function() {
             updateCollectionHUD();
         }
         
+        // Always reset throttle state (prevents leftover boost from previous sector)
+        throttle = 0; throttleSmooth = 0; shipZOffset = -18;
+
         health = 100;
         score = sectorStartScore;
         speed = baseSpeed;
@@ -4309,11 +4335,17 @@ window.onload = function() {
 
         // No pre-population — items appear after countdown
 
+        // Remove any stale sector intro splash (from previous transition)
+        var staleIntro = document.getElementById('sector-intro-splash');
+        if (staleIntro) { staleIntro.remove(); }
+
         document.querySelectorAll('.overlay-screen').forEach(el => el.style.display = 'none');
         document.getElementById('tr-carousel-overlay').style.display = 'none';
         document.getElementById('tr-video-player').style.display = 'none';
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-lightbox').style.display = 'none';
+        document.getElementById('tr-design-viewer').style.display = 'none';
+        document.getElementById('inventory-picker').style.display = 'none';
         document.getElementById('finale-screen').style.display = 'none';
         stopFireworks();
         document.body.style.touchAction = 'none';
@@ -4322,9 +4354,11 @@ window.onload = function() {
         document.getElementById('skip-tutorial-btn').style.display = 'none';
         document.getElementById('hamburger-btn').style.display = 'flex';
 
-        gameState = 'playing';
+        // Use 'loading' state during intro/countdown so game loop doesn't advance physics
+        gameState = 'loading';
         clock.getDelta();
         if (isFullReset && !TUT.skipNext && !_tutorialCompleted) {
+            gameState = 'playing';
             tutStart();
         } else {
             TUT.skipNext = false;
