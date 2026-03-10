@@ -1442,8 +1442,8 @@ window.onload = function() {
     // increasing difficulty until all content objects for that zone are collected.
     var _bonusUnlockedTitles = []; // set by triggerVictory if score bonus earned
     const SCORE_BONUS_INCREMENT = 10000; // every 10K sector score = +1 bonus unlock
-    const SECTOR_ZONES = ['EDIT', 'PHOTO', 'DIRECT', 'ANIMATE', 'DESIGN'];
-    const ZONE_SHAPES_3D = ['square', 'pentagon', 'octagon', 'circle', 'triangle'];
+    const SECTOR_ZONES = ['EDIT', 'PHOTO', 'ANIMATE', 'DESIGN', 'DIRECT'];
+    const ZONE_SHAPES_3D = ['square', 'pentagon', 'circle', 'triangle', 'octagon'];
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', DESIGN:'#ff8c00' };
     // Track which content items have been collected per zone (by title)
     let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
@@ -1454,6 +1454,7 @@ window.onload = function() {
     function getZoneCollectedCount(sector) { var z = getZoneName(sector); return collectedContent[z] ? collectedContent[z].size : 0; }
     function isZoneComplete(sector) { return getZoneCollectedCount(sector) >= getZoneItemCount(sector); }
     function allZonesComplete() { for (var i = 1; i <= 5; i++) { if (!isZoneComplete(i)) return false; } return true; }
+    function isSpeedRunSector(sector, level) { return sector === 3 || (sector === 5 && level === 1); }
 
     // Ship system
     const GUNSHIP_ENABLED = false; // feature flag — set true to re-enable gunship
@@ -1486,11 +1487,11 @@ window.onload = function() {
     ];
     // 5 base sectors — speed/distance scale with currentLevel within each sector
     var DEFAULT_ZONES = [
-        { name:'EDITING',  speed:160,  length: Math.round(baseSectorDistance * 1.0) },
-        { name:'PHOTO',    speed:220,  length: Math.round(baseSectorDistance * 1.15) },
-        { name:'DIRECT',   speed:300,  length: Math.round(baseSectorDistance * 1.30) },
-        { name:'ANIMATE',  speed:380,  length: Math.round(baseSectorDistance * 1.45) },
-        { name:'DESIGN',   speed:460,  length: Math.round(baseSectorDistance * 1.60) },
+        { name:'EDITING',    speed:160,  length: Math.round(baseSectorDistance * 1.0) },
+        { name:'PHOTO',      speed:220,  length: Math.round(baseSectorDistance * 1.15) },
+        { name:'ANIMATE',    speed:300,  length: Math.round(baseSectorDistance * 1.30) },
+        { name:'DESIGN',     speed:380,  length: Math.round(baseSectorDistance * 1.45) },
+        { name:'DIRECTION',  speed:460,  length: Math.round(baseSectorDistance * 1.60) },
     ];
     // Level scaling: each replay of a sector increases speed +10%, distance +15%, hazard density +10%
     function getLevelScaledZone(sector) {
@@ -1673,10 +1674,10 @@ window.onload = function() {
     // ═══════════════════════════════════════════════════════════════════
 
     // Every sector has a content zone — direct mapping
-    var CAROUSEL_SECTOR_MAP = { 1:'EDIT', 2:'PHOTO', 3:'DIRECT', 4:'ANIMATE', 5:'DESIGN' };
-    var PORTFOLIO_ZONE_COLORS = { DIRECT:'#ff69b4', EDIT:'#00ffcc', ANIMATE:'#00ff88', PHOTO:'#ffe000', DESIGN:'#FAFFA5' };
-    var CAROUSEL_ZONE_ORDER = ['EDIT','DIRECT','PHOTO','ANIMATE','DESIGN'];
-    var ZONE_DISPLAY_NAMES = { EDIT:'EDITING', DIRECT:'DIRECT', PHOTO:'PHOTO', ANIMATE:'ANIMATE', DESIGN:'DESIGN' };
+    var CAROUSEL_SECTOR_MAP = { 1:'EDIT', 2:'PHOTO', 3:'ANIMATE', 4:'DESIGN', 5:'DIRECT' };
+    var PORTFOLIO_ZONE_COLORS = { EDIT:'#00ffcc', PHOTO:'#ffe000', ANIMATE:'#00ff88', DESIGN:'#FAFFA5', DIRECT:'#ff69b4' };
+    var CAROUSEL_ZONE_ORDER = ['EDIT','PHOTO','ANIMATE','DESIGN','DIRECT'];
+    var ZONE_DISPLAY_NAMES = { EDIT:'EDITING', PHOTO:'PHOTO', ANIMATE:'ANIMATE', DESIGN:'DESIGN', DIRECT:'DIRECTION' };
     var _inventoryCarouselActive = false;
     var _inventoryReturnTo = null;
 
@@ -3041,31 +3042,62 @@ window.onload = function() {
         }
 
         // ═══════════════════════════════════════════════════════════════
-        // HAZARD GATING PER SECTOR:
-        // S1 (EDIT):    mines + rings only (no cores, no barriers)
-        // S2 (PHOTO):   + gap barriers + ramps + full barriers (ramp before full)
-        // S3 (DIRECT):  + health cores + stars + blocks (harder, needs healing)
-        // S4 (ANIMATE): SPEED RUN — gap barrier slalom, minimal objects, time-gated
-        // S5 (DESIGN):  + boost pads + knots, everything active
+        // HAZARD GATING PER SECTOR + LEVEL:
+        // S1 (EDITING):   L1: rings+mines, L2: +blocks, L3: +cores+blocks, L4: same
+        // S2 (PHOTO):     L1-2: +barriers(gap), L3-4: +knots(motion)
+        // S3 (ANIMATE):   SPEED RUN — gap barrier series with twist, stars, boost pads
+        // S4 (DESIGN):    knots(motion), gap barriers, ramps+full barriers — everything
+        // S5 (DIRECTION): L1: speed run (all objects), L2-3: full arsenal
         // ═══════════════════════════════════════════════════════════════
+
+        // Per-sector-per-level object gating
+        var isSpeedRun = (s === 3) || (s === 5 && lvl === 1);
+        var blocksEnabled   = (s === 1 && lvl >= 2) || s >= 2;
+        var coresEnabled    = (s === 1 && lvl >= 3) || s >= 2;
+        var barriersEnabled = s >= 2;
+        var knotsEnabled    = (s === 2 && lvl >= 3) || s >= 3;
+        var rampsEnabled    = s >= 4;  // ramp+full barrier combos from S4
+        var starsEnabled    = s >= 3;
+        var boostEnabled    = s >= 3;  // boost pads from S3 (speed run)
 
         // BARRIER RULE: Every full ring barrier MUST have a ramp before it.
         //   Full ring (no gap) → MUST have a ramp before it
         //   Partial ring (gap) → player steers through
-        var barriersEnabled = s >= 2;
-        var rampsEnabled = s >= 2;   // ramps arrive with barriers in S2
-        var boostEnabled = s >= 5;   // boost pads in final zone only
-        var barrierThreshold = !barriersEnabled ? 0 : (s === 2 ? 0.12 : s === 3 ? 0.16 : s === 4 ? 0.35 : 0.22);
-        // S4 speed run: high barrier density (slalom of gap barriers)
-        // Scale barrier density with level
+        var barrierThreshold = !barriersEnabled ? 0 :
+            isSpeedRun ? 0.30 :  // speed runs: dense gap barrier slalom
+            (s === 2 ? 0.12 : s === 4 ? 0.20 : 0.22);
         barrierThreshold *= (1 + (lvl - 1) * 0.10);
-        if (barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > (s === 4 ? 400 : 800)) {
+
+        // Speed run barrier series: cluster of gap barriers with twisting gap position
+        if (isSpeedRun && barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > 400) {
+            lastRampZ = zPos;
+            // Series of gap barriers with progressive twist
+            var seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] :
+                                s === 5 ? 40 : 30;
+            var seriesCount = 3 + Math.floor(Math.random() * 2); // 3-4 barriers per series
+            var baseGapAngle = Math.random() * Math.PI * 2;
+            var twistPerBarrier = 0.4 + Math.random() * 0.3; // gap rotates around tunnel
+            for (var bi = 0; bi < seriesCount; bi++) {
+                var gapSize = Math.PI * (0.5 + Math.random() * 0.3);
+                var arcLen = Math.PI * 2 - gapSize;
+                var gapAngle = baseGapAngle + bi * twistPerBarrier;
+                var bz = zPos - bi * seriesSpacing;
+                var wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), barrierMat);
+                wallMesh.position.set(0, 0, bz);
+                wallMesh.rotation.z = gapAngle;
+                wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.03, arcLength: arcLen };
+                scene.add(wallMesh); items.push(wallMesh);
+            }
+            return;
+        }
+
+        if (!isSpeedRun && barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > 800) {
             lastRampZ = zPos;
             let angle = Math.random() * Math.PI * 2;
-            // S4: always gap barriers (slalom). Others: mix of gap and ramp+full
-            if (s === 4 || !rampsEnabled || Math.random() < 0.4) {
+            // S2: gap barriers only. S4+: mix of gap and ramp+full
+            if (!rampsEnabled || Math.random() < 0.4) {
                 // Gap barrier — player steers through
-                const gapSize = Math.PI * (s === 4 ? (0.5 + Math.random() * 0.3) : (0.6 + Math.random() * 0.5));
+                const gapSize = Math.PI * (0.6 + Math.random() * 0.5);
                 const gapAngle = Math.random() * Math.PI * 2;
                 const arcLen = Math.PI * 2 - gapSize;
                 let wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), barrierMat);
@@ -3095,7 +3127,6 @@ window.onload = function() {
                     var jcGeo = getContentGeo(s);
                     var jcMat = getContentMat(s).clone();
                     var jcMesh = new THREE.Mesh(jcGeo, jcMat);
-                    // Place at the midpoint of the jump arc, near center of tunnel
                     jcMesh.position.set(Math.cos(angle) * (tubeRadius - 26), Math.sin(angle) * (tubeRadius - 26), zPos - peakDist);
                     jcMesh.userData = { type: 'content', hitRadius: 10.0, contentTitle: jumpPick.title, contentZone: jumpZone, rotSpeedX: 0, rotSpeedY: 0.02, rotSpeedZ: 0.01 };
                     scene.add(jcMesh); items.push(jcMesh);
@@ -3108,13 +3139,13 @@ window.onload = function() {
         rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
         if (rand < 0) rand = Math.random();
 
-        // --- Per-sector spawn profile, scaled by level ---
+        // --- Per-sector spawn profile ---
         var baseHazard, baseRing, baseCore;
-        if (s === 1)      { baseHazard = 0.20; baseRing = 0.80; baseCore = 0.00; }  // S1: no cores
-        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.60; baseCore = 0.05; }  // S2: minimal cores
-        else if (s === 3)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }  // S3: hard, needs healing
-        else if (s === 4)  { baseHazard = 0.05; baseRing = 0.90; baseCore = 0.05; }  // S4: speed run — mostly rings, few hazards
-        else               { baseHazard = 0.60; baseRing = 0.22; baseCore = 0.18; }  // S5: everything
+        if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
+        else if (s === 3)  { baseHazard = 0.05; baseRing = 0.80; baseCore = 0.15; }  // speed run — mostly rings
+        else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
+        else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
@@ -3124,7 +3155,7 @@ window.onload = function() {
         const zoneIdx = Math.min(s - 1, ZONES.length - 1);
         let mesh, type, hitRadius;
 
-        // Boost pad — S5 only, spawns with ring trail along flip arc
+        // Boost pad — S3+ (speed runs and later), spawns with ring trail along flip arc
         var boostThreshold = boostEnabled ? 0.04 : 0;
         if (boostThreshold > 0 && rand < boostThreshold) {
             spiralAngle += 1.1;
@@ -3152,21 +3183,20 @@ window.onload = function() {
             }
             return;
         }
-        // Star — force field pickup, S3+ only (need it when hazards get serious)
-        var starChance = s < 3 ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.015 : 0.025) + (lvl - 1) * 0.005;
+        // Star — force field pickup, S3+ only
+        var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
-        } else if (rand < coreChance) {
+        } else if (coresEnabled && rand < coreChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
         } else if (rand < coreChance + ringChance) {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
         } else if (rand < coreChance + ringChance + hazardChance) {
             const hRand = Math.random();
-            // Hazard types gate per sector:
-            // S1: mines only, S2: mines only, S3: mines+blocks, S4: minimal, S5: mines+blocks+knots
-            if      (s >= 5  && hRand < 0.30) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
-            else if (s >= 3  && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
-            else                               { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
+            // Hazard types gate per sector+level
+            if      (knotsEnabled && hRand < 0.25) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
+            else if (blocksEnabled && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
+            else                                    { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
         } else {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
@@ -3216,10 +3246,10 @@ window.onload = function() {
 
     const ZONE_OBJECTIVES_DEFAULT = [
         'COLLECT EDITING CONTENT',
-        'STEER GAPS & JUMP WALLS',
-        'SURVIVE — GRAB HEALING',
+        'BARRIERS ONLINE — FIND THE GAP',
         'SPEED RUN — BEAT THE CLOCK',
-        'FULL ARSENAL — FINAL ZONE',
+        'FULL HAZARDS — JUMP THE WALLS',
+        'FINAL ZONE — FULL SEND',
     ];
 
     var _objectivesFromConfig = null;
@@ -3499,11 +3529,11 @@ window.onload = function() {
         initializeFlight(true);
     }
 
-    // S4 speed run target time — scales with level
+    // Speed run target time — works for S3 and S5 L1
     function getSpeedRunTarget() {
-        var zone = getLevelScaledZone(4);
+        var zone = getLevelScaledZone(currentSector);
         // Base: sector length / avg speed gives approximate traverse time
-        // Target = 85% of that (must boost to beat it), tighter each level
+        // Target = 90% of that (must boost to beat it), tighter each level
         var avgSpeed = (zone.speed + BOOST_SPEED) / 2;
         var traverseTime = zone.length / avgSpeed;
         return Math.round(traverseTime * (0.90 - (currentLevel - 1) * 0.03));
@@ -3533,8 +3563,8 @@ window.onload = function() {
         }
 
         var sectorScore = score - sectorStartScore;
-        // S4 speed run: show time result instead of just score
-        if (currentSector === 4) {
+        // Speed run: show time result instead of just score
+        if (isSpeedRunSector(currentSector, currentLevel)) {
             var s4Target = getSpeedRunTarget();
             var s4Passed = sectorTime <= s4Target;
             function fmtTimeShort(t) { var mm=Math.floor(t/60),ss=Math.floor(t%60),tt=Math.floor((t%1)*10); return mm+':'+(ss<10?'0':'')+ss+'.'+tt; }
@@ -3621,8 +3651,8 @@ window.onload = function() {
         unlockEl.innerHTML = unlockHtml;
         unlockEl.style.display = unlockHtml ? 'block' : 'none';
 
-        // S4 speed run: title reflects pass/fail
-        if (currentSector === 4) {
+        // Speed run: title reflects pass/fail
+        if (isSpeedRunSector(currentSector, currentLevel)) {
             var s4T = getSpeedRunTarget();
             var s4P = sectorTime <= s4T;
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = s4P ? 'SPEED RUN CLEARED' : 'SECTOR CLEARED';
@@ -3634,8 +3664,8 @@ window.onload = function() {
         } else if (contentZone) {
             var collected = getZoneCollectedCount(currentSector);
             var total = getZoneItemCount(currentSector);
-            // S4: if time not beaten, force replay
-            var s4Failed = (currentSector === 4 && sectorTime > getSpeedRunTarget());
+            // Speed run: if time not beaten, force replay
+            var s4Failed = (isSpeedRunSector(currentSector, currentLevel) && sectorTime > getSpeedRunTarget());
             if (s4Failed) {
                 document.getElementById('next-level-btn').innerText = '[ RETRY SPEED RUN ]';
             } else if (collected >= total) {
@@ -3713,11 +3743,17 @@ window.onload = function() {
         _rampCountThisSector = 0;
         _rampMaxThisSector = currentSector <= 1 ? 0 : 999;
 
-        // Seed tunnel ahead procedurally — density scales with BOTH sector AND level
-        // Base spacing: S1=120, S2=100, S3=80, S4=70, S5=60
-        // Each level tightens spacing by 12% compounding
-        var baseSpacing = Math.max(60, 130 - (currentSector - 1) * 18);
-        var spacing = Math.max(35, Math.round(baseSpacing * Math.pow(0.88, currentLevel - 1)));
+        // Seed tunnel ahead procedurally — spacing set per sector+level
+        // Per-sector-per-level spacing table
+        var SPACING_TABLE = {
+            1: [100, 90, 80, 70],
+            2: [90, 80, 70, 65],
+            3: [90, 80, 70],
+            4: [80, 70, 60],
+            5: [90, 70, 50]
+        };
+        var sTable = SPACING_TABLE[currentSector] || [80];
+        var spacing = sTable[Math.min(currentLevel - 1, sTable.length - 1)];
         var startOffset = 400;
         var seedZ = camera.position.z - startOffset;
         var lastItemDist = sectorDistance * 0.76;
@@ -4028,12 +4064,11 @@ window.onload = function() {
         }
 
         // ── Progression gating ──
-        // S4: must beat speed run target time (content still helps via score bonuses)
-        // Others: zone content must be complete
+        // Speed run sectors: must beat target time. Others: zone content must be complete
         var sectorPassed = isZoneComplete(currentSector);
-        if (currentSector === 4) {
+        if (isSpeedRunSector(currentSector, currentLevel)) {
             var s4Target = getSpeedRunTarget();
-            sectorPassed = sectorPassed && (sectorRunTimes[4] <= s4Target);
+            sectorPassed = sectorPassed && (sectorRunTimes[currentSector] <= s4Target);
         }
         if (sectorPassed) {
             // Advance to next sector
@@ -4181,6 +4216,69 @@ window.onload = function() {
                 ctx.lineTo(-sz * 0.85, sz * 0.7);
                 ctx.closePath();
                 ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'block') {
+                // Block — wide flat rectangle
+                ctx.beginPath();
+                ctx.rect(-sz, -sz * 0.5, sz * 2, sz);
+                ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'core') {
+                // Core — octahedron / diamond
+                ctx.beginPath();
+                ctx.moveTo(0, -sz); ctx.lineTo(sz * 0.7, 0); ctx.lineTo(0, sz); ctx.lineTo(-sz * 0.7, 0);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                // Horizontal line for facets
+                ctx.beginPath(); ctx.moveTo(-sz * 0.7, 0); ctx.lineTo(sz * 0.7, 0); ctx.stroke();
+            } else if (shapeType === 'knot') {
+                // Knot — torus knot approximation (figure-8 ish)
+                ctx.beginPath();
+                for (var i = 0; i <= 60; i++) {
+                    var t = (i / 60) * Math.PI * 4;
+                    var kx = Math.sin(t) * sz * 0.8;
+                    var ky = Math.sin(t * 0.5) * Math.cos(t * 0.5) * sz * 0.8;
+                    ctx[i === 0 ? 'moveTo' : 'lineTo'](kx, ky);
+                }
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'ramp') {
+                // Ramp — slanted rectangle
+                ctx.beginPath();
+                ctx.moveTo(-sz, sz * 0.4);
+                ctx.lineTo(sz, -sz * 0.2);
+                ctx.lineTo(sz, sz * 0.2);
+                ctx.lineTo(-sz, sz * 0.8);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                // Arrow up
+                ctx.beginPath(); ctx.moveTo(0, -sz * 0.1); ctx.lineTo(sz * 0.3, sz * 0.3); ctx.moveTo(0, -sz * 0.1); ctx.lineTo(-sz * 0.3, sz * 0.3); ctx.stroke();
+            } else if (shapeType === 'barrier') {
+                // Barrier — arc with gap
+                ctx.beginPath();
+                ctx.arc(0, 0, sz, 0.4, Math.PI * 2 - 0.4);
+                ctx.stroke();
+                // Glow dots at gap ends
+                ctx.fillStyle = color;
+                ctx.beginPath(); ctx.arc(Math.cos(0.4) * sz, Math.sin(0.4) * sz, 3, 0, Math.PI * 2); ctx.fill();
+                ctx.beginPath(); ctx.arc(Math.cos(-0.4) * sz, Math.sin(-0.4) * sz, 3, 0, Math.PI * 2); ctx.fill();
+            } else if (shapeType === 'star') {
+                // Star — 5-point star
+                ctx.beginPath();
+                for (var i = 0; i < 10; i++) {
+                    var r = i % 2 === 0 ? sz : sz * 0.45;
+                    var a = (Math.PI * 2 / 10) * i - Math.PI / 2;
+                    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * r, Math.sin(a) * r);
+                }
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'boost') {
+                // Boost pad — double chevron
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.5, sz * 0.3); ctx.lineTo(0, -sz * 0.3); ctx.lineTo(sz * 0.5, sz * 0.3);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.5, sz * 0.7); ctx.lineTo(0, sz * 0.1); ctx.lineTo(sz * 0.5, sz * 0.7);
+                ctx.stroke();
             } else {
                 // Fallback — diamond
                 ctx.beginPath();
@@ -4236,34 +4334,79 @@ window.onload = function() {
         var objectsRow = document.createElement('div');
         objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
 
+        // Dynamic preview items based on sector + level
+        var _s = currentSector, _l = currentLevel;
+        var _sr = isSpeedRunSector(_s, _l);
         var previewItems = [
             { label: 'CONTENT', color: cColor, shape: contentShape },
             { label: 'RING', color: '#00ccff', shape: 'ring' },
-            { label: 'MINE', color: '#ff4444', shape: 'mine' },
         ];
-        previewItems.forEach(function(item) {
-            var col = document.createElement('div');
-            col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;width:'+previewSize+'px;';
-            var cvs = createSpinningPreview(item.shape, item.color, previewSize);
-            spinCanvases.push(cvs);
-            col.appendChild(cvs);
-            var lbl = document.createElement('div');
-            lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(8px,2.2vw,12px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
-            lbl.innerText = item.label;
-            col.appendChild(lbl);
-            objectsRow.appendChild(col);
+        // Mines: S1 all levels, S2, S4, S5 L2+
+        if (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2)) {
+            previewItems.push({ label: 'MINE', color: '#ff4444', shape: 'mine' });
+        }
+        // Blocks: S1 L2+, S2+, S4, S5
+        if ((_s === 1 && _l >= 2) || _s >= 2) {
+            previewItems.push({ label: 'BLOCK', color: '#ff4444', shape: 'block' });
+        }
+        // Cores: S1 L3+, S2+
+        if ((_s === 1 && _l >= 3) || _s >= 2) {
+            previewItems.push({ label: 'CORE', color: '#ffaa00', shape: 'core' });
+        }
+        // Barriers (gap): S2+
+        if (_s >= 2) {
+            previewItems.push({ label: 'BARRIER', color: '#ff2266', shape: 'barrier' });
+        }
+        // Knots: S2 L3+, S3+
+        if ((_s === 2 && _l >= 3) || _s >= 3) {
+            previewItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
+        }
+        // Stars: S3+
+        if (_s >= 3) {
+            previewItems.push({ label: 'STAR', color: '#ffff00', shape: 'star' });
+        }
+        // Boost pads: S3+
+        if (_s >= 3) {
+            previewItems.push({ label: 'BOOST', color: '#00ff66', shape: 'boost' });
+        }
+        // Ramps + full barriers: S4+
+        if (_s >= 4) {
+            previewItems.push({ label: 'RAMP', color: '#00ffcc', shape: 'ramp' });
+        }
+
+        // Split into rows of 4 max for readability on mobile
+        var previewRows = [];
+        for (var pi = 0; pi < previewItems.length; pi += 4) {
+            previewRows.push(previewItems.slice(pi, pi + 4));
+        }
+        previewRows.forEach(function(rowItems) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;flex-direction:row;gap:20px;align-items:flex-start;justify-content:center;width:100%;margin:2px 0;';
+            rowItems.forEach(function(item) {
+                var col = document.createElement('div');
+                col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:4px;width:'+previewSize+'px;';
+                var cvs = createSpinningPreview(item.shape, item.color, previewSize);
+                spinCanvases.push(cvs);
+                col.appendChild(cvs);
+                var lbl = document.createElement('div');
+                lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(6px,1.8vw,10px);color:'+item.color+';letter-spacing:1px;text-shadow:0 0 8px '+item.color+'80;text-align:center;';
+                lbl.innerText = item.label;
+                col.appendChild(lbl);
+                row.appendChild(col);
+            });
+            objectsRow.appendChild(row);
         });
         el.appendChild(objectsRow);
 
         // Instruction lines
         var collectLine = document.createElement('div');
-        collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
-        collectLine.innerText = 'COLLECT CONTENT & RINGS';
+        collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
+        collectLine.innerText = _sr ? 'BEAT THE CLOCK' : 'COLLECT CONTENT & RINGS';
         el.appendChild(collectLine);
 
         var avoidLine = document.createElement('div');
-        avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(13px,3.5vw,22px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
-        avoidLine.innerText = 'AVOID HAZARDS';
+        avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
+        avoidLine.innerText = _sr ? 'FIND THE GAPS' : 'AVOID HAZARDS';
         el.appendChild(avoidLine);
 
         // Collection progress
@@ -5009,8 +5152,8 @@ window.onload = function() {
                 const tStr = m+':'+(s<10?'0':'')+s+'.'+t;
                 var timerEl = document.getElementById('hud-timer');
                 timerEl.innerText = tStr;
-                // S4 speed run: show timer in gold/red based on target
-                if (currentSector === 4) {
+                // Speed run: show timer in gold/red based on target
+                if (isSpeedRunSector(currentSector, currentLevel)) {
                     var s4Target = getSpeedRunTarget();
                     timerEl.style.color = sectorTime < s4Target * 0.8 ? '#00ff88' : sectorTime < s4Target ? '#ffe000' : '#ff4444';
                 } else {
