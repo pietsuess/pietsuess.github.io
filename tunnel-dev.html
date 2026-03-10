@@ -3594,18 +3594,20 @@ window.onload = function() {
             var timeColor = _speedRunPassed ? '#00ff88' : '#ff4444';
             document.getElementById('victory-score').innerHTML = '<span style="color:'+timeColor+';font-size:clamp(14px,4vw,24px);">TIME: ' + fmtTimeShort(sectorTime) + ' / ' + fmtTimeShort(s4Target) + '</span>';
 
-            // Speed run pass = unlock ALL zone content at once
+            // Speed run pass = unlock 2 content items per run
+            var _srUnlocked = 0;
             if (_speedRunPassed) {
                 var srZone = getZoneName(currentSector);
                 var srItems = CONTENT_DATA[srZone] || [];
-                var srUnlocked = 0;
-                srItems.forEach(function(it) {
-                    if (!collectedContent[srZone].has(it.title)) {
-                        collectedContent[srZone].add(it.title);
-                        srUnlocked++;
-                    }
-                });
-                if (srUnlocked > 0) updateCollectionHUD();
+                var srUncollected = srItems.filter(function(it) { return !collectedContent[srZone].has(it.title); });
+                // Shuffle and pick up to 2
+                for (var si = srUncollected.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var tmp = srUncollected[si]; srUncollected[si] = srUncollected[sj]; srUncollected[sj] = tmp; }
+                var srToUnlock = Math.min(2, srUncollected.length);
+                for (var su = 0; su < srToUnlock; su++) {
+                    collectedContent[srZone].add(srUncollected[su].title);
+                    _srUnlocked++;
+                }
+                if (_srUnlocked > 0) updateCollectionHUD();
             }
         } else {
             document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
@@ -3682,15 +3684,21 @@ window.onload = function() {
 
             if (isSpeedRunSector(currentSector, currentLevel)) {
                 // Speed run: dramatic pass/fail messaging
-                if (_speedRunPassed) {
-                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(16px,4.5vw,28px);color:#00ff88;text-shadow:0 0 30px #00ff88,0 0 60px #00ff88;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">ALL CONTENT UNLOCKED</div>'
-                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:'+zoneColor+';text-shadow:0 0 16px '+zoneColor+';letter-spacing:3px;margin-top:10px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">' + total + ' ' + contentLabel + ' ITEMS</div>';
+                if (_speedRunPassed && _srUnlocked > 0) {
+                    var srRemaining = total - collected;
+                    var unlockMsg = collected >= total ? 'ZONE COMPLETE' : '+' + _srUnlocked + ' CONTENT UNLOCKED';
+                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,24px);color:#00ff88;text-shadow:0 0 30px #00ff88,0 0 60px #00ff88;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + unlockMsg + '</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:'+zoneColor+';text-shadow:0 0 16px '+zoneColor+';letter-spacing:3px;margin-top:10px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
                     setTimeout(function() { if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); AudioEngine.playSFX('bonus_unlock'); }, 500);
-                    setTimeout(function() { AudioEngine.playSFX('bonus_unlock'); }, 900);
+                } else if (_speedRunPassed) {
+                    // Passed but zone already complete
+                    unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,24px);color:#00ff88;text-shadow:0 0 30px #00ff88;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">ZONE COMPLETE</div>'
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:'+zoneColor+';text-shadow:0 0 16px '+zoneColor+';letter-spacing:3px;margin-top:10px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
                 } else {
+                    var srLeft = total - collected;
                     unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,24px);color:#ff4444;text-shadow:0 0 25px #ff4444,0 0 50px #ff000066;letter-spacing:4px;margin-top:8px;animation:fadeSlideUp 0.5s ease-out 0.3s both;">CONTENT LOCKED</div>'
                         + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(9px,2.2vw,14px);color:#ff6666;letter-spacing:2px;margin-top:8px;opacity:0.8;animation:fadeSlideUp 0.5s ease-out 0.5s both;">BEAT THE CLOCK TO UNLOCK</div>'
-                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#888;letter-spacing:2px;margin-top:6px;opacity:0.6;animation:fadeSlideUp 0.5s ease-out 0.7s both;">' + total + ' ' + contentLabel + ' ITEMS WAITING</div>';
+                        + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#888;letter-spacing:2px;margin-top:6px;opacity:0.6;animation:fadeSlideUp 0.5s ease-out 0.7s both;">' + srLeft + ' ' + contentLabel + ' ITEMS REMAINING</div>';
                 }
             } else {
                 unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:'+zoneColor+';text-shadow:0 0 20px '+zoneColor+';letter-spacing:3px;margin-top:' + (_gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
@@ -4201,7 +4209,7 @@ window.onload = function() {
             angle += 0.025;
             ctx.save();
             ctx.translate(cx, cy);
-            if (shapeType !== 'boost') ctx.rotate(angle);
+            if (shapeType !== 'boost' && shapeType !== 'ramp') ctx.rotate(angle);
             ctx.shadowColor = color;
             ctx.shadowBlur = 12;
             ctx.strokeStyle = color;
