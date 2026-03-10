@@ -34,7 +34,9 @@
   .row { display: flex; align-items: center; gap: 10px; min-height: 28px; }
   .row label { flex: 0 0 200px; color: #888; font-size: 12px; }
   .row input[type=range] { flex: 1; max-width: 280px; accent-color: #00ffcc; }
-  .row .val { flex: 0 0 70px; text-align: right; color: #00ffcc; font-family: 'Press Start 2P', monospace; font-size: 9px; }
+  .row .val-input { flex: 0 0 70px; text-align: right; color: #00ffcc; font-family: 'Press Start 2P', monospace; font-size: 9px; background: #0a0a0a; border: 1px solid #222; border-radius: 3px; padding: 3px 4px; outline: none; -moz-appearance: textfield; }
+  .row .val-input:focus { border-color: #00ffcc; background: #0a1a1a; }
+  .row .val-input::-webkit-inner-spin-button, .row .val-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
   .row .unit { flex: 0 0 40px; color: #555; font-size: 10px; }
   .slider-desc { color: #555; font-size: 11px; line-height: 1.5; margin-top: 3px; padding-left: 2px; }
 
@@ -362,13 +364,18 @@ function slider(containerId, key, label, min, max, step, unit, fmt, desc) {
 
   const val = c[key];
   const display = fmt ? fmt(val) : (step < 1 ? val.toFixed(step < 0.01 ? 3 : 2) : val);
+  const uid = 's_' + key + '_' + containerId;
+  if (fmt) _fmtFns[key] = fmt;
+  if (!_stepCache[key]) _stepCache[key] = step;
 
   group.innerHTML = `
     <div class="row">
       <label>${label}${changed ? ' ●' : ''}</label>
-      <input type="range" min="${min}" max="${max}" step="${step}" value="${val}"
-             oninput="updateVal('${key}', parseFloat(this.value))">
-      <span class="val">${display}</span>
+      <input type="range" id="${uid}_range" min="${min}" max="${max}" step="${step}" value="${val}"
+             oninput="sliderChanged('${key}', parseFloat(this.value), '${uid}', ${step})">
+      <input type="text" class="val-input" id="${uid}_num" value="${display}"
+             onchange="numChanged('${key}', this.value, ${min}, ${max}, ${step})"
+             onkeydown="if(event.key==='Enter'){this.blur();}">
       <span class="unit">${unit || ''}</span>
     </div>
     ${desc ? '<div class="slider-desc">' + desc + '</div>' : ''}
@@ -376,9 +383,40 @@ function slider(containerId, key, label, min, max, step, unit, fmt, desc) {
   container.appendChild(group);
 }
 
+var _fmtFns = {};
+var _stepCache = {};
+
+function sliderChanged(key, val, uid, step) {
+  getC()[key] = Math.round(val * 10000) / 10000;
+  var fmt = _fmtFns[key];
+  var display = fmt ? fmt(val) : (step < 1 ? val.toFixed(step < 0.01 ? 3 : 2) : val);
+  var numEl = document.getElementById(uid + '_num');
+  if (numEl) numEl.value = display;
+  // Debounce full refresh to keep slider smooth
+  clearTimeout(sliderChanged._t);
+  sliderChanged._t = setTimeout(refresh, 150);
+}
+
+function numChanged(key, raw, min, max, step) {
+  var parsed = parseFloat(raw.replace('%',''));
+  if (isNaN(parsed)) { refresh(); return; }
+  // If the format function uses %, the display shows e.g. "78%" but the value is 0.78
+  var fmt = _fmtFns[key];
+  if (fmt && fmt(0.5).includes('%')) parsed = parsed / 100;
+  parsed = Math.max(min, Math.min(max, parsed));
+  parsed = Math.round(parsed / step) * step;
+  parsed = Math.round(parsed * 10000) / 10000;
+  getC()[key] = parsed;
+  refresh();
+}
+
 function updateVal(key, val) {
   getC()[key] = Math.round(val * 10000) / 10000;
   refresh();
+}
+
+function registerFmt(key, fmt) {
+  if (fmt) _fmtFns[key] = fmt;
 }
 
 function toggleGating(key) {
