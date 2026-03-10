@@ -2223,6 +2223,15 @@ window.onload = function() {
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
     container.appendChild(renderer.domElement);
 
+    // Detect WebGL context loss (white screen diagnostic)
+    renderer.domElement.addEventListener('webglcontextlost', function(e) {
+        console.error('WebGL context LOST — this causes the white screen');
+        e.preventDefault();
+    });
+    renderer.domElement.addEventListener('webglcontextrestored', function() {
+        console.log('WebGL context restored');
+    });
+
     // --- Ghosting / afterimage fade quad ---
     const fadeScene = new THREE.Scene();
     const fadeCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
@@ -4076,32 +4085,66 @@ window.onload = function() {
     };
 
     // Creates a small Three.js canvas with a spinning object for the intro screen
-    function createSpinningPreview(geo, mat, canvasSize) {
+    function createSpinningPreview(shapeType, color, canvasSize) {
+        // 2D canvas preview — no WebGL context needed (avoids context exhaustion on mobile)
         var cvs = document.createElement('canvas');
-        cvs.width = canvasSize; cvs.height = canvasSize;
-        var r = new THREE.WebGLRenderer({ canvas: cvs, alpha: true, antialias: true });
-        r.setPixelRatio(2);
-        r.setSize(canvasSize, canvasSize, false); // false = don't set CSS style
-        r.setClearColor(0x000000, 0);
+        var dpr = Math.min(window.devicePixelRatio || 1, 2);
+        cvs.width = canvasSize * dpr; cvs.height = canvasSize * dpr;
         cvs.style.cssText = 'width:'+canvasSize+'px;height:'+canvasSize+'px;display:block;position:static;top:auto;left:auto;pointer-events:none;';
-        var s = new THREE.Scene();
-        var c = new THREE.PerspectiveCamera(30, 1, 0.1, 200);
-        c.position.z = 38;
-        var light = new THREE.PointLight(0xffffff, 1.5, 100);
-        light.position.set(8, 8, 30);
-        s.add(light);
-        s.add(new THREE.AmbientLight(0x666666));
-        var mesh = new THREE.Mesh(geo, mat);
-        s.add(mesh);
+        var ctx = cvs.getContext('2d');
+        ctx.scale(dpr, dpr);
+        var cx = canvasSize/2, cy = canvasSize/2, sz = canvasSize * 0.35;
+        var angle = Math.random() * Math.PI * 2;
         var animId = 0;
-        function spin() {
-            animId = requestAnimationFrame(spin);
-            mesh.rotation.x += 0.015;
-            mesh.rotation.y += 0.025;
-            r.render(s, c);
+        function draw() {
+            animId = requestAnimationFrame(draw);
+            ctx.clearRect(0, 0, canvasSize, canvasSize);
+            angle += 0.025;
+            ctx.save();
+            ctx.translate(cx, cy);
+            ctx.rotate(angle);
+            ctx.shadowColor = color;
+            ctx.shadowBlur = 12;
+            ctx.strokeStyle = color;
+            ctx.lineWidth = 2;
+            ctx.fillStyle = color + '33';
+            if (shapeType === 'ring') {
+                // Torus as ellipse
+                var squash = 0.5 + 0.5 * Math.abs(Math.sin(angle * 0.7));
+                ctx.beginPath();
+                ctx.ellipse(0, 0, sz, sz * squash, 0, 0, Math.PI * 2);
+                ctx.stroke();
+                ctx.beginPath();
+                ctx.ellipse(0, 0, sz * 0.7, sz * 0.7 * squash, 0, 0, Math.PI * 2);
+                ctx.stroke();
+            } else if (shapeType === 'mine') {
+                // Tetrahedron as triangle
+                ctx.beginPath();
+                for (var i = 0; i < 3; i++) {
+                    var a = (Math.PI * 2 / 3) * i - Math.PI / 2;
+                    ctx[i === 0 ? 'moveTo' : 'lineTo'](Math.cos(a) * sz, Math.sin(a) * sz);
+                }
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+            } else {
+                // Content object — diamond/octahedron shape
+                ctx.beginPath();
+                ctx.moveTo(0, -sz);
+                ctx.lineTo(sz * 0.7, 0);
+                ctx.lineTo(0, sz);
+                ctx.lineTo(-sz * 0.7, 0);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                // Cross detail
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.7, 0); ctx.lineTo(sz * 0.7, 0);
+                ctx.moveTo(0, -sz); ctx.lineTo(0, sz);
+                ctx.stroke();
+            }
+            ctx.restore();
         }
-        spin();
-        cvs._stopSpin = function() { cancelAnimationFrame(animId); r.dispose(); };
+        draw();
+        cvs._stopSpin = function() { cancelAnimationFrame(animId); };
         return cvs;
     }
 
@@ -4138,27 +4181,21 @@ window.onload = function() {
         divLine.style.cssText = 'width:80%;max-width:320px;height:2px;background:'+zone.color+';opacity:0.5;margin:4px 0;';
         el.appendChild(divLine);
 
-        // Spinning 3D object previews — zone-appropriate content shape + ring + mine
+        // Spinning 2D previews — no WebGL (avoids context exhaustion on mobile)
         var previewSize = 64;
-        var zoneName = getZoneName(currentSector);
-        var cGeo = getContentGeo(currentSector);
-        var cMatSrc = contentMats[zoneName];
-        var cColor = ZONE_OBJ_COLORS[zoneName] || '#ffe800';
+        var cColor = ZONE_OBJ_COLORS[getZoneName(currentSector)] || '#ffe800';
         var objectsRow = document.createElement('div');
         objectsRow.style.cssText = 'display:flex;flex-direction:row;gap:28px;align-items:flex-start;justify-content:center;width:100%;margin:4px 0;';
 
         var previewItems = [
-            { label: 'CONTENT', color: cColor, geo: cGeo,
-              mat: new THREE.MeshStandardMaterial({ color: cMatSrc.color, emissive: cMatSrc.emissive, emissiveIntensity: 1.8, metalness: 0, roughness: 1, transparent: true, opacity: 0.9 }) },
-            { label: 'RING', color: '#00ff88', geo: new THREE.TorusGeometry(4.5, 0.7, 8, 28),
-              mat: new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0, roughness: 1 }) },
-            { label: 'MINE', color: '#ff4444', geo: new THREE.TetrahedronGeometry(4.5, 0),
-              mat: new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0, roughness: 1 }) },
+            { label: 'CONTENT', color: cColor, shape: 'content' },
+            { label: 'RING', color: '#00ff88', shape: 'ring' },
+            { label: 'MINE', color: '#ff4444', shape: 'mine' },
         ];
         previewItems.forEach(function(item) {
             var col = document.createElement('div');
             col.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;width:'+previewSize+'px;';
-            var cvs = createSpinningPreview(item.geo, item.mat, previewSize);
+            var cvs = createSpinningPreview(item.shape, item.color, previewSize);
             spinCanvases.push(cvs);
             col.appendChild(cvs);
             var lbl = document.createElement('div');
@@ -4314,6 +4351,10 @@ window.onload = function() {
         document.getElementById('tr-video-player').style.display = 'none';
         document.getElementById('tr-video-player-wrap').innerHTML = '';
         document.getElementById('tr-lightbox').style.display = 'none';
+        document.getElementById('tr-design-viewer').style.display = 'none';
+        document.getElementById('inventory-picker').style.display = 'none';
+        var staleIntro = document.getElementById('sector-intro-splash');
+        if (staleIntro) { if (staleIntro._spinCanvases) staleIntro._spinCanvases.forEach(function(c){ if(c._stopSpin) c._stopSpin(); }); staleIntro.remove(); }
         document.getElementById('finale-screen').style.display = 'none';
         stopFireworks();
         document.body.style.touchAction = 'none';
@@ -4322,9 +4363,12 @@ window.onload = function() {
         document.getElementById('skip-tutorial-btn').style.display = 'none';
         document.getElementById('hamburger-btn').style.display = 'flex';
 
-        gameState = 'playing';
+        // Always reset throttle on sector transitions (not just full reset)
+        throttle = 0; throttleSmooth = 0; shipZOffset = -18;
+
         clock.getDelta();
         if (isFullReset && !TUT.skipNext && !_tutorialCompleted) {
+            gameState = 'playing';
             tutStart();
         } else {
             TUT.skipNext = false;
