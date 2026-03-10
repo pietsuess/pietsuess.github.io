@@ -1306,9 +1306,86 @@ var AudioEngine = {
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
       o.type='sine'; o.frequency.setValueAtTime(1320,t+0.03); o.frequency.linearRampToValueAtTime(1760,t+0.12);
       g.gain.setValueAtTime(0.16,t+0.03); g.gain.linearRampToValueAtTime(0,t+0.3); o.start(t+0.03); o.stop(t+0.3);
+    } else if (type === 'countdown_tick') {
+      // Short digital beep for 3-2-1
+      var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
+      o.type='square'; o.frequency.setValueAtTime(880,t);
+      g.gain.setValueAtTime(0.18,t); g.gain.linearRampToValueAtTime(0,t+0.15); o.start(t); o.stop(t+0.15);
+    } else if (type === 'countdown_go') {
+      // Two-tone ascending burst for GO!
+      var o1=audioCtx.createOscillator(),g1=audioCtx.createGain(); o1.connect(g1); g1.connect(sfxGainNode);
+      o1.type='square'; o1.frequency.setValueAtTime(880,t); o1.frequency.setValueAtTime(1320,t+0.08);
+      g1.gain.setValueAtTime(0.2,t); g1.gain.linearRampToValueAtTime(0,t+0.25); o1.start(t); o1.stop(t+0.25);
+      var o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2); g2.connect(sfxGainNode);
+      o2.type='sine'; o2.frequency.setValueAtTime(1760,t+0.05);
+      g2.gain.setValueAtTime(0.12,t+0.05); g2.gain.linearRampToValueAtTime(0,t+0.3); o2.start(t+0.05); o2.stop(t+0.3);
     }
   },
-  suspend: function() { stopMusic(); pauseMusic(); },
+  // --- Persistent engine hum ---
+  _engineNodes: null,
+  startEngine: function() {
+    if (!audioCtx || this._engineNodes) return;
+    // Base engine drone — low sawtooth
+    var eng = audioCtx.createOscillator();
+    eng.type = 'sawtooth';
+    eng.frequency.value = 55;
+    var engGain = audioCtx.createGain();
+    engGain.gain.value = 0.04;
+    eng.connect(engGain);
+    engGain.connect(sfxGainNode);
+    eng.start();
+    // Sub-bass rumble
+    var sub = audioCtx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.value = 35;
+    var subGain = audioCtx.createGain();
+    subGain.gain.value = 0.05;
+    sub.connect(subGain);
+    subGain.connect(sfxGainNode);
+    sub.start();
+    // Boost rumble — noise-based, starts silent
+    var bufLen = audioCtx.sampleRate * 2;
+    var noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    var noiseData = noiseBuf.getChannelData(0);
+    for (var i = 0; i < bufLen; i++) noiseData[i] = Math.random() * 2 - 1;
+    var noise = audioCtx.createBufferSource();
+    noise.buffer = noiseBuf;
+    noise.loop = true;
+    var noiseFilter = audioCtx.createBiquadFilter();
+    noiseFilter.type = 'lowpass';
+    noiseFilter.frequency.value = 200;
+    var noiseGain = audioCtx.createGain();
+    noiseGain.gain.value = 0;
+    noise.connect(noiseFilter);
+    noiseFilter.connect(noiseGain);
+    noiseGain.connect(sfxGainNode);
+    noise.start();
+    this._engineNodes = { eng: eng, engGain: engGain, sub: sub, subGain: subGain, noise: noise, noiseFilter: noiseFilter, noiseGain: noiseGain };
+  },
+  updateEngine: function(throttleSmooth, isFlipping) {
+    var n = this._engineNodes;
+    if (!n || _sfxMuted) return;
+    var hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
+    // Engine pitch rises with throttle
+    n.eng.frequency.value = 55 + throttleSmooth * 40 + hyperFrac * 50;
+    n.engGain.gain.value = 0.03 + throttleSmooth * 0.03 + hyperFrac * 0.04;
+    // Sub-bass gets louder with speed
+    n.sub.frequency.value = 35 + hyperFrac * 25;
+    n.subGain.gain.value = 0.04 + throttleSmooth * 0.03 + hyperFrac * 0.06;
+    // Boost rumble — active during hyper boost or flip
+    var rumble = isFlipping ? 0.14 : hyperFrac * 0.12;
+    n.noiseGain.gain.value += (rumble - n.noiseGain.gain.value) * 0.15;
+    n.noiseFilter.frequency.value = 200 + hyperFrac * 300 + (isFlipping ? 400 : 0);
+  },
+  stopEngine: function() {
+    var n = this._engineNodes;
+    if (!n) return;
+    try { n.eng.stop(); } catch(e) {}
+    try { n.sub.stop(); } catch(e) {}
+    try { n.noise.stop(); } catch(e) {}
+    this._engineNodes = null;
+  },
+  suspend: function() { stopMusic(); pauseMusic(); this.stopEngine(); },
   resume: function() { resumeMusic(); },
   playBGM: function() {},
   stopBGM: function() {},
@@ -3298,6 +3375,7 @@ window.onload = function() {
         camera.fov = BASE_FOV;
         camera.updateProjectionMatrix();
         AudioEngine.playSFX('hit');
+        AudioEngine.stopEngine();
         flash('#ffffff');
         if (score > 0) saveHighScore(score);
 
@@ -3538,6 +3616,7 @@ window.onload = function() {
             document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
         }
         document.getElementById('victory-screen').style.display = 'flex';
+        AudioEngine.stopEngine();
         stopMusic();
         setTimeout(function(){ pauseMusic(); }, 1500);
     }
@@ -3628,6 +3707,7 @@ window.onload = function() {
             numEl.offsetHeight; // reflow to restart
             numEl.style.animation = 'cdPop 0.35s ease-out both';
             numEl.innerText = steps[idx];
+            AudioEngine.playSFX(steps[idx] === 'GO!' ? 'countdown_go' : 'countdown_tick');
             idx++;
             if (idx < steps.length) {
                 setTimeout(showStep, 900);
@@ -3825,6 +3905,7 @@ window.onload = function() {
         setTimeout(function(){
             startCountdown(function(){
                 gameState = 'playing';
+                AudioEngine.startEngine();
                 spawnIntroWave();
             });
         }, 1800);
@@ -4271,6 +4352,7 @@ window.onload = function() {
                     startCountdown(function(){
                         gameState = 'playing';
                         AudioEngine.resume();
+                        AudioEngine.startEngine();
                         spawnIntroWave();
                     });
                 }, 1200);
@@ -4334,6 +4416,7 @@ window.onload = function() {
                 if (fireBtn) fireBtn.style.display = 'block';
             }
             AudioEngine.resume();
+            AudioEngine.startEngine();
             clock.getDelta();
         }
     }
@@ -4907,6 +4990,7 @@ window.onload = function() {
 
             engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
             gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+            AudioEngine.updateEngine(throttleSmooth, isFlipping);
 
             // FOV widens proportionally with hyperFrac
             const targetFov = BASE_FOV + (HYPER_FOV - BASE_FOV) * hyperFrac;
