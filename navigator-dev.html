@@ -4378,7 +4378,70 @@ const MOODS=[
   }
 },
 
-// ── 6  SECRET_BUBBLES ───────────────────────────────────────────
+// ── 6  ASCENT ────────────────────────────────────────────────────
+// Triumphant, warm, soaring. G major. Pleasant VORTEX variant — alien escape.
+// Same driving pulse but major key, long pads, singable melody, no dissonance.
+{
+  name:'ASCENT', bpm:104, scale:'gmaj', root:196.0,
+  gen(t0,bar,bl,sc,root,rng){
+    const B=bar; const barLen=8*bl;
+    const phase= B<=4?'pulse': B<=12?'rise': B<=26?'soar': B<=36?'glory':'pulse';
+    const vol= phase==='pulse'?0.48: phase==='rise'?0.72: phase==='soar'?0.92: 1.05;
+
+    // Kick — VORTEX heartbeat, slightly warmer pitch
+    if(phase!=='glory'){
+      [0,2,4,6].forEach(i=>{ _bass(73.4, t0+i*bl, bl*0.13, 0.085*vol); });
+    } else {
+      for(let i=0;i<8;i++) _bass(73.4, t0+i*bl, bl*0.11, 0.10*vol);
+    }
+
+    // Bass — G major groove, VORTEX rhythm shape (root-3rd-5th)
+    const bassSteps=[0,0,4,0,7,0,4,7];
+    bassSteps.forEach((s,i)=>{
+      _bass(root*fr(s)/2, t0+i*bl, bl*0.85, 0.085*vol);
+    });
+
+    // Chord pads — G - Em - C - D (I-vi-IV-V), lush and sustained
+    if(phase==='rise'||phase==='soar'||phase==='glory'){
+      const progA=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+      const cA=progA[Math.floor(B/2)%4];
+      cA.slice(0, phase==='rise'?2:3).forEach((s,i)=>{
+        _str(root*fr(s), t0+i*0.10, barLen*0.9, 0.038*vol*(1-i*0.13));
+        if(phase==='soar'||phase==='glory')
+          _pad(root*fr(s), t0+i*0.18, barLen+1.2, 0.030*vol, B+i*7);
+      });
+    }
+
+    // Light rhythmic shimmer — gentler chop than VORTEX
+    if(phase==='rise'||phase==='soar'||phase==='glory'){
+      const chopPat= phase==='rise'?[0,4]: phase==='soar'?[0,2,5,7]:[0,1,3,4,6,7];
+      chopPat.forEach(i=>{
+        if(rng(0,3)>0){
+          const s=sc[rng(0,4)];
+          _v(root*fr(s), t0+i*bl, 0.04, bl*0.22, 0.15, 0.030*vol, 'sawtooth', 0.18);
+        }
+      });
+    }
+
+    // Soaring melody — major ascending phrases, warm and triumphant
+    if(phase==='soar'||phase==='glory'){
+      const mel=[0,2,4,7,9,7,4,7,9,11,9,7,4,7,9,7];
+      const mi=B%mel.length;
+      [0,2,4,6].forEach((beat,i)=>{
+        _mel(root*2*fr(sc[mel[(mi+i*2)%mel.length]%sc.length]),
+             t0+beat*bl, bl*1.8, 0.042*vol);
+      });
+    }
+
+    // Glory: fanfare counter-line
+    if(phase==='glory' && B%4===0){
+      const fanf=[0,4,7,9,7,4,7,12,11,9,7,4];
+      fanf.forEach((s,i)=>{ _mel(root*4*fr(s), t0+i*bl*0.5, bl*1.4, 0.030*vol); });
+    }
+  }
+},
+
+// ── 7  SECRET_BUBBLES ───────────────────────────────────────────
 // Playful, bouncy VORTEX variation. D major. Lighthearted discovery feel.
 // Same driving pulse but higher register, gentler bass, whimsical arpeggios.
 {
@@ -4435,7 +4498,7 @@ const MOODS=[
   }
 },
 
-// ── 7  SECRET_VICTORY ───────────────────────────────────────────
+// ── 8  SECRET_VICTORY ───────────────────────────────────────────
 // Triumphant VORTEX variation. D major. Bold, celebratory, earned victory.
 // Full pads from the start, heroic melody, fanfare flourishes.
 {
@@ -4636,7 +4699,8 @@ const MOOD_DESCS=[
   'Warm · Nostalgic · Lush',
   'Urgent · Driving · Pulse',
   'Triumphant · Soaring · Epic',
-  'Jubilant · Driving · Earned'
+  'Jubilant · Driving · Earned',
+  'Triumphant · Warm · Soaring'
 ];
 function updateMusicDrawer(){
   const list=document.getElementById('music-track-list');
@@ -6481,7 +6545,7 @@ function update(){
             state._bossInMainWorld = false;
             state.gapBubble = {wx: BELT_OUTER + 420, wy: 0, r: 32, hue: 190, age: 0, collected: false};
             // ── Triumphant escape: switch to NOVA track + ascending fanfare ──
-            selectTrack(5); // HOMEWARD — Jubilant · Driving · Earned
+            selectTrack(6); // ASCENT — Triumphant · Soaring · Warm
             if(audioCtx && !state.sfxMuted){
               const _ot = audioCtx.currentTime;
               [0,4,7,12,16,19,24,28].forEach((n,i)=>playSFX(noteFreq(220,n),_ot+i*0.07,0.55,'square',0.10));
@@ -13224,7 +13288,7 @@ function enterSecretLevel(){
     isSecret: true
   };
   // Playful bubble music
-  selectTrack(6);
+  selectTrack(7);
   if(audioCtx&&!state.sfxMuted){
     const now=audioCtx.currentTime;
     [0,3,7,10,14].forEach((n,i)=>playBeep(noteFreq(330,n),now+i*0.06,0.2,'sawtooth',0.05));
@@ -13653,7 +13717,7 @@ function updateSecretLevel(){
       state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,pre:'SUCCESS!',msg:'YOU LURED THE OCTOALIEN INTO THE BLACK HOLE',_col:'#aa00ff'};
       if(!state.scoreFlashes) state.scoreFlashes=[];
       state.scoreFlashes.push({wx:_capBoss.wx,wy:_capBoss.wy,score:13750,age:0,hue:280});
-      setTimeout(()=>{ if(state.inSecretLevel) selectTrack(7); },2000);
+      setTimeout(()=>{ if(state.inSecretLevel) selectTrack(8); },2000);
     }
     // Clean up shockwaves and end capture state after they've all aged out
     if(state._bossCaptureTimer > 250){
@@ -13984,7 +14048,7 @@ function killSecretBoss(){
     }},2000);
   }
 
-  setTimeout(()=>{ if(state.inSecretLevel) selectTrack(7); },4000);
+  setTimeout(()=>{ if(state.inSecretLevel) selectTrack(8); },4000);
   // "TIME TO GET OUT OF HERE" after all text clears + 2s beat
   const _getOutDelay = _bubbleNext ? 8000 : 7000;
   setTimeout(()=>{
