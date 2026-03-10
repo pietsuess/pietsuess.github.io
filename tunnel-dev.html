@@ -623,6 +623,7 @@
     <div id="shield-label"></div>
 </div>
 <button id="hamburger-btn" style="display:none;"><span></span><span></span><span></span></button>
+<div id="dbg-strip" style="position:fixed;bottom:0;left:0;right:0;z-index:99999;background:rgba(0,0,0,0.9);color:#0f0;font:10px monospace;padding:4px 8px;pointer-events:none;max-height:80px;overflow:hidden;"></div>
 <div id="start-screen" class="overlay-screen">
   <canvas id="title-stars-canvas"></canvas>
   <div id="start-inner">
@@ -2944,7 +2945,9 @@ window.onload = function() {
         if (gameState === 'title') return;
 
         var tag = e.target.tagName;
-        if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
+        var isHB = e.target.closest('#hamburger-btn');
+        if (isHB) window._dbg('GLOBAL touchstart SAW hamburger (should be blocked by stopProp)');
+        if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !isHB) {
             e.preventDefault();
             handleInputStart(e.touches[0].clientX, e.touches[0].clientY);
         }
@@ -4454,6 +4457,7 @@ window.onload = function() {
     }
 
     function togglePause() {
+        window._dbg('togglePause() gs=' + gameState + ' overlay=' + isContentOverlayOpen());
         document.title = 'PAUSE:' + gameState;
         // Close content overlays first if any are open
         if (isContentOverlayOpen()) {
@@ -4728,20 +4732,19 @@ window.onload = function() {
         (function(n) { bindTap('dev-s' + n, function() { devJumpSector(n); }); })(si);
     }
     // Hamburger: isolate from global touch handlers + add click fallback
+    window._dbg = function(msg) {
+        var d = document.getElementById('dbg-strip');
+        if (d) { d.innerHTML = msg + '<br>' + d.innerHTML; if (d.childNodes.length > 6) d.removeChild(d.lastChild); }
+        console.log('[DBG]', msg);
+    };
     (function() {
         var hb = document.getElementById('hamburger-btn');
-        hb.addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive: true});
-        var lastTap = 0;
-        var handler = function(e) {
-            e.preventDefault(); e.stopPropagation();
-            var now = Date.now();
-            if (now - lastTap < 300) return;
-            lastTap = now;
-            togglePause();
-        };
-        hb.addEventListener('touchend', handler, {passive: false});
-        hb.addEventListener('mouseup', handler, {passive: false});
-        hb.addEventListener('click', handler, {passive: false});
+        if (!hb) { window._dbg('ERROR: hamburger-btn NOT FOUND'); return; }
+        window._dbg('hamburger handler registered OK');
+        hb.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB touchstart'); }, {passive: false});
+        hb.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB touchend → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
+        hb.addEventListener('mouseup', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB mouseup → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
+        hb.addEventListener('click', function(e) { e.preventDefault(); e.stopPropagation(); window._dbg('HB click → togglePause, gs=' + gameState); togglePause(); }, {passive: false});
     })();
     bindTap('resume-btn', togglePause);
 
@@ -5481,6 +5484,11 @@ window.onload = function() {
 
         // Always render (even during intro/countdown/pause) so tunnel is visible
         renderer.render(scene, camera);
+        // Debug: show gameState on screen
+        var _ds = document.getElementById('dbg-strip');
+        if (_ds && !_ds._gsLine) { var _g = document.createElement('div'); _g.id = 'dbg-gs'; _g.style.cssText = 'color:#ff0;font-weight:bold;'; _ds.prepend(_g); _ds._gsLine = true; }
+        var _dg = document.getElementById('dbg-gs');
+        if (_dg) _dg.textContent = 'STATE: ' + gameState + ' | hb-visible: ' + document.getElementById('hamburger-btn').style.display;
     }
 
     animate();
