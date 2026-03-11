@@ -1489,6 +1489,9 @@ window.onload = function() {
     const jumpDuration = 1.2; 
     let lastRampZ = 0;
     let spiralAngle = -Math.PI / 2;  // tracks the rolling path rings follow
+    var _laneAngles = [];   // per-lane running angles
+    var _laneCounter = 0;   // round-robin lane index
+    var _lastSegIdx = -1;   // detect segment transitions
 
     // --- ZONE SYSTEM — configurable sectors ---
     var ZONE_COLOR_PALETTE = [
@@ -3016,12 +3019,19 @@ window.onload = function() {
             spacing: 75, maxSpawnPct: 0.80,
             contentChance: 0.07,
             speed: 200, length: 11000,
-            // spiralPattern overrides spiralStep — segments define step at each % of level
-            // positive = CW, negative = CCW, bigger = tighter twist
+            // spiralPattern — segments with optional lanes for concurrent object streams
+            // step: twist per object (0=straight, +=CW, -=CCW), offset: angular start position
             spiralPattern: [
-                { until: 0.33, step: 0.5 },
-                { until: 0.66, step: -0.5 },
-                { until: 1.00, step: 0.5 }
+                { until: 0.30, step: 0.5 },                         // gentle CW spiral
+                { until: 0.55, lanes: [                              // two parallel straight lines
+                    { step: 0, offset: 0 },
+                    { step: 0, offset: Math.PI }
+                ]},
+                { until: 0.80, lanes: [                              // dual opposing spirals
+                    { step: 0.4, offset: 0 },
+                    { step: -0.4, offset: Math.PI }
+                ]},
+                { until: 1.00, step: -0.6 }                         // tight CCW finish
             ],
             rotMult: 0.7
         }
@@ -3032,19 +3042,49 @@ window.onload = function() {
 
     var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
 
-    // Resolve spiral step for current position — supports spiralPattern segments
-    // spiralPattern: [{ until: 0.25, step: 0.5 }, { until: 0.5, step: -0.8 }, ...]
+    // Advance spiral and return the angle to place the next object at.
+    // Supports spiralPattern with lanes for concurrent object streams.
+    // spiralPattern: [
+    //   { until: 0.33, step: 0.5 },                          // single lane shorthand
+    //   { until: 0.66, lanes: [{ step: 0, offset: 0 }, { step: 0, offset: Math.PI }] },  // parallel lines
+    //   { until: 1.00, lanes: [{ step: 0.4, offset: 0 }, { step: -0.4, offset: Math.PI }] }  // dual spirals
+    // ]
     // Falls back to flat spiralStep, then default 1.1
-    function _getSpiralStep(tuning, zPos) {
+    function _advanceSpiral(tuning, zPos) {
         var pat = tuning.spiralPattern;
-        if (pat && pat.length > 0) {
-            var progress = sectorDistance > 0 ? Math.abs(zPos - _spawnOriginZ) / sectorDistance : 0;
-            for (var i = 0; i < pat.length; i++) {
-                if (progress <= pat[i].until) return pat[i].step;
-            }
-            return pat[pat.length - 1].step; // past last segment, use final
+        if (!pat || pat.length === 0) {
+            // No pattern — simple flat step
+            spiralAngle += (tuning.spiralStep !== undefined ? tuning.spiralStep : 1.1);
+            return spiralAngle;
         }
-        return tuning.spiralStep !== undefined ? tuning.spiralStep : 1.1;
+        var progress = sectorDistance > 0 ? Math.abs(zPos - _spawnOriginZ) / sectorDistance : 0;
+        var segIdx = pat.length - 1;
+        for (var i = 0; i < pat.length; i++) {
+            if (progress <= pat[i].until) { segIdx = i; break; }
+        }
+        var seg = pat[segIdx];
+        // Normalize to lanes array (single step shorthand → one lane)
+        var lanes = seg.lanes || [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
+
+        // Reset lane state on segment transition
+        if (segIdx !== _lastSegIdx) {
+            _lastSegIdx = segIdx;
+            _laneAngles = [];
+            for (var l = 0; l < lanes.length; l++) {
+                _laneAngles[l] = spiralAngle + (lanes[l].offset || 0);
+            }
+            _laneCounter = 0;
+        }
+
+        // Round-robin pick
+        var li = _laneCounter % lanes.length;
+        _laneCounter++;
+        _laneAngles[li] += lanes[li].step;
+
+        // Keep master spiralAngle tracking the first lane (for segment transitions)
+        spiralAngle = _laneAngles[0];
+
+        return _laneAngles[li];
     }
 
     function spawnItem(zPos) {
@@ -3074,10 +3114,10 @@ window.onload = function() {
                 var cGeo = getContentGeo(s);
                 var cMat = getContentMat(s).clone();
                 var cMesh = new THREE.Mesh(cGeo, cMat);
-                spiralAngle += _getSpiralStep(_t, zPos);
+                var cAngle = _advanceSpiral(_t, zPos);
                 var hoverDist = tubeRadius - 6;
-                cMesh.position.set(Math.cos(spiralAngle) * hoverDist, Math.sin(spiralAngle) * hoverDist, zPos);
-                cMesh.rotation.z = spiralAngle;
+                cMesh.position.set(Math.cos(cAngle) * hoverDist, Math.sin(cAngle) * hoverDist, zPos);
+                cMesh.rotation.z = cAngle;
                 // Arrow indicator pointing at the object
                 var arrowGeo = new THREE.ConeGeometry(1.5, 4, 4);
                 var arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
@@ -3222,8 +3262,7 @@ window.onload = function() {
         // Boost pad — S3+ (speed runs and later), spawns with ring trail along flip arc
         var boostThreshold = boostEnabled ? 0.04 : 0;
         if (boostThreshold > 0 && rand < boostThreshold) {
-            spiralAngle += _getSpiralStep(_t, zPos);
-            const bAngle = spiralAngle;
+            const bAngle = _advanceSpiral(_t, zPos);
             const bMesh = createBoostPadMesh(bAngle);
             bMesh.position.set(0, 0, zPos);
             bMesh.rotation.z = bAngle;
@@ -3271,10 +3310,9 @@ window.onload = function() {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
 
-        // Spiral line — step resolved from spiralPattern segments or flat spiralStep
-        spiralAngle += _getSpiralStep(_t, zPos);
+        // Spiral line — resolved from spiralPattern lanes or flat spiralStep
+        const angle = _advanceSpiral(_t, zPos);
         var hoverDist2 = tubeRadius - 6;
-        const angle = spiralAngle;  // everything on the same line, no offsets
 
         mesh.position.x = Math.cos(angle) * hoverDist2;
         mesh.position.y = Math.sin(angle) * hoverDist2;
@@ -4652,6 +4690,7 @@ window.onload = function() {
         shieldsUp = false; shieldsUpTimer = 0;
         lastRampZ = 0;
         spiralAngle = -Math.PI / 2;
+        _laneAngles = []; _laneCounter = 0; _lastSegIdx = -1;
         projectiles.forEach(p => scene.remove(p));
         projectiles.length = 0;
         fireCooldownTimer = 0;
