@@ -2629,6 +2629,11 @@ const bgCanvas = document.getElementById('bg');
 const bgCtx = bgCanvas.getContext('2d');
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
 const SB = isSafari ? 0 : 1.0; // shadowBlur scale factor — 0 on Safari eliminates all canvas blur ops
+// Safari: kill ALL shadowBlur globally — override the setter so no blur ops ever reach the compositor
+if (isSafari) {
+  const proto = CanvasRenderingContext2D.prototype;
+  Object.defineProperty(proto, 'shadowBlur', { set(){}, get(){ return 0; }, configurable: true });
+}
 // Offscreen canvas for zone rings — redrawn only when player moves, not every frame
 const _ringCanvas = document.createElement('canvas');
 const _ringCtx = _ringCanvas.getContext('2d');
@@ -3444,7 +3449,7 @@ function initObjects() {
       }
     }
   })();
-  state.wormholes  = []; state.wormholeZoneSet = new Set(); state._shortcutWarpsSpawned = false;
+  state.wormholes  = (state.wormholes||[]).filter(w => w._editWarp); state.wormholeZoneSet = new Set(); state._shortcutWarpsSpawned = false;
   state.spaceRocks = [];
   state.explosions = [];
   state.wormholeZoneSet = new Set(); // tracks 'fromZone-toZone' to limit to 1 per pair
@@ -3635,7 +3640,7 @@ function finishHullImplosion(){
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
     state.currentLevel=1;
-    populatedCells.clear(); state.spaceRocks=[]; state.wormholes=[]; state.wormholeZoneSet=new Set();
+    populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
     updateLevelDisplay(LEVELS[1]); updateFuelBar();
@@ -6111,6 +6116,8 @@ function update(){
           setTimeout(triggerPeanutUnlock, 2000);
           // Spawn 4 shortcut wormholes near ring 1 gaps → outer zone edges
           spawnShortcutWormholes();
+          // Spawn zone warp portals near launchpad
+          _spawnEditWormholes();
         }
       } else break;
     }
@@ -7244,7 +7251,7 @@ function continueAfterDeath(){
   state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
   state._implosionRing=false; state.gameOver=false;
   state.currentLevel=1;
-  populatedCells.clear(); state.spaceRocks=[]; state.wormholes=[]; state.wormholeZoneSet=new Set();
+  populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
   state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
   initObjects(); initBarrierObjects(); _spawnPostInterzoneContent();
   updateLevelDisplay('EDITING'); updateFuelBar();
@@ -7427,7 +7434,7 @@ function tickVictory(){
       state.debrisWall    = [];
       state.spaceRocks    = [];
       state.explosions    = [];
-      state.wormholes     = []; state.wormholeZoneSet=new Set();
+      state.wormholes     = (state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
       state.tracers       = [];
       state.tronTrail     = [];
       state.hsTail        = [];
@@ -8714,14 +8721,31 @@ function drawGame(){
     ctx.restore();
   });
 
-  // Wormholes — background pass: dark interior only (ship draws on top of this)
+  // Wormholes — full visual: spinning rings, zone color, label
   if(!state.inSecretLevel) state.wormholes.forEach(w=>{
     const sx=w.wx-state.x+cx, sy=w.wy-state.y+cy;
     if(sx<-120||sx>canvas.width+120||sy<-120||sy>canvas.height+120) return;
+    const lc=LEVEL_COLORS[LEVELS[w.destLevel]]||'#aa44ff';
+    const pulse=0.65+Math.sin(w.phase)*0.35;
     ctx.save(); ctx.translate(sx,sy);
-    // Fill the opening black so stars don't show through — ship will appear inside this
-    ctx.beginPath(); ctx.arc(0,0,w.size*0.5,0,Math.PI*2);
+    for(let r=0;r<4;r++){
+      ctx.beginPath(); ctx.arc(0,0,w.size*(0.5+r*0.35),0,Math.PI*2);
+      ctx.strokeStyle=lc; ctx.lineWidth=r===0?2:1;
+      ctx.globalAlpha=pulse*(1-r*0.22); ctx.shadowBlur=20*SB; ctx.shadowColor=lc; ctx.stroke();
+    }
+    ctx.rotate(w.phase*1.5); ctx.globalAlpha=pulse*0.85;
+    for(let k=0;k<6;k++){
+      const a=(k/6)*Math.PI*2;
+      ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(Math.cos(a)*w.size*0.6,Math.sin(a)*w.size*0.6);
+      ctx.strokeStyle=lc; ctx.lineWidth=1; ctx.shadowBlur=8*SB; ctx.stroke();
+    }
+    ctx.rotate(-w.phase*1.5);
+    ctx.beginPath(); ctx.arc(0,0,w.size*0.28,0,Math.PI*2);
     ctx.fillStyle='#000'; ctx.shadowBlur=0; ctx.globalAlpha=1; ctx.fill();
+    ctx.globalAlpha=0.9; ctx.fillStyle=lc;
+    ctx.font='9px "Press Start 2P",monospace'; ctx.textAlign='center'; ctx.textBaseline='top';
+    ctx.fillText('ZONE WARP', 0, w.size*1.7);
+    ctx.fillText(LEVELS[w.destLevel], 0, w.size*1.7 + 16);
     ctx.restore();
   });
 
@@ -10296,17 +10320,17 @@ function drawGame(){
       const _msgY = _hasPre ? flashY-10 : flashY-18;
       if(_hasPre){
         setFont(FONT_18); ctx.fillStyle=_flashCol;
-        ctx.shadowBlur=16; ctx.shadowColor=_flashShadow;
+        ctx.shadowBlur=16*SB; ctx.shadowColor=_flashShadow;
         ctx.fillText(state.zoneCrossFlash.pre, CX(), _msgY-32);
       }
       setFont(FONT_24B);
       ctx.fillStyle=_flashCol;
-      ctx.shadowBlur=32; ctx.shadowColor=_flashShadow;
+      ctx.shadowBlur=32*SB; ctx.shadowColor=_flashShadow;
       ctx.fillText(state.zoneCrossFlash.msg, CX(), _msgY);
       // Sub-text if provided
       if(state.zoneCrossFlash.sub){
         setFont(FONT_24B); ctx.fillStyle='#00ffcc';
-        ctx.shadowColor='#009977'; ctx.shadowBlur=32;
+        ctx.shadowColor='#009977'; ctx.shadowBlur=32*SB;
         ctx.fillText(state.zoneCrossFlash.sub, CX(), _msgY+46);
       }
       ctx.restore();
@@ -10315,7 +10339,7 @@ function drawGame(){
       ctx.globalAlpha=alpha;
       setFont(FONT_18B);
       ctx.textAlign='center'; ctx.fillStyle='#ffe000';
-      ctx.shadowBlur=30; ctx.shadowColor='#ffe000';
+      ctx.shadowBlur=30*SB; ctx.shadowColor='#ffe000';
       ctx.fillText('BOOST DOUBLED!', CX(), flashY-10);
       ctx.restore();
     } else {
@@ -10329,12 +10353,12 @@ function drawGame(){
       ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign = 'center';
       ctx.fillStyle = col;
-      ctx.shadowBlur = 35; ctx.shadowColor = col;
+      ctx.shadowBlur = 35*SB; ctx.shadowColor = col;
       ctx.fillText(mainText, CX(), flashY - 18);
       if(subText){
         setFont(FONT_9);
         ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 8*SB; ctx.shadowColor = '#fff';
         ctx.fillText(subText, CX(), flashY + 18);
       }
       ctx.restore();
@@ -11914,6 +11938,7 @@ function startGame(){
     state._izRingMax=99;
     // Set outside barrier state
     state.outsideBarrier=true; state._committedInside=false;
+
     // Teleport to Moon
     const moonX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
     const moonY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R + 200;
@@ -13501,7 +13526,7 @@ function initSecretLevel(){
   state._radarViewR = undefined; state._radarCX = undefined; state._radarCY = undefined;  // reset radar for secret level
   // Wipe all normal game objects so nothing is hidden-but-present
   state.objects      = [];
-  state.wormholes    = []; state.wormholeZoneSet=new Set();
+  state.wormholes    = (state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
   state.fuelObjects  = [];
   state.waveOrbs     = [];
   state.spaceRocks   = [];
@@ -14368,6 +14393,26 @@ function exitSecretLevel(){
   state.score = _svScore;
   updateLevelDisplay(LEVELS[1]);
   selectTrack(3);
+}
+
+function _spawnEditWormholes(){
+  // Remove any previous edit wormholes to avoid duplicates
+  state.wormholes = state.wormholes.filter(w => !w._editWarp);
+  const _wr = 320; // just beyond fully extended enclosure walls (90+200=290)
+  const _ws = 48;  // 1.25× normal size (38*1.25)
+  // Place each warp in the direction of its target zone
+  // 0=DIRECT(left,π) 2=ANIMATE(right,0) 3=PHOTO(top,-π/2) 4=DESIGN(bottom,π/2)
+  const _zoneAngles = { 0: Math.PI, 2: 0, 3: -Math.PI/2, 4: Math.PI/2 };
+  LEVELS.forEach((lvl, i) => {
+    if(i === 1) return; // skip EDIT→EDIT
+    const ang = _zoneAngles[i];
+    if(ang === undefined) return;
+    state.wormholes.push({
+      wx: Math.cos(ang) * _wr, wy: Math.sin(ang) * _wr,
+      destLevel: i, phase: ang, size: _ws,
+      _permanent: true, _editWarp: true
+    });
+  });
 }
 
 // ── Bell-body path builder (shared by boss visual) ──
