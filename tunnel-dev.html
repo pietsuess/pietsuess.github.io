@@ -2990,6 +2990,25 @@ window.onload = function() {
             }).catch(function(){});
         } catch(e) {}
     }
+    // Send telemetry on page close/navigate away (mid-game only)
+    window.addEventListener('beforeunload', function() {
+        if (gameState === 'playing') {
+            try {
+                var zone = getZoneName(currentSector);
+                var collected = collectedContent[zone] ? collectedContent[zone].size : 0;
+                var totalItems = (CONTENT_DATA[zone] || []).length;
+                var progress = sectorDistance > 0 ? Math.round((distanceTraveled / sectorDistance) * 100) : 0;
+                navigator.sendBeacon(_TELEMETRY_URL, JSON.stringify({
+                    sector: currentSector, level: currentLevel, zone: zone,
+                    score: score, health: Math.round(health),
+                    time: Math.round(sectorTime * 10) / 10,
+                    outcome: 'abandon', progress: Math.min(100, progress),
+                    speedHint: _speedHintShown, collected: collected,
+                    totalContent: totalItems
+                }));
+            } catch(e) {}
+        }
+    });
 
     let turnRate = 0;
 
