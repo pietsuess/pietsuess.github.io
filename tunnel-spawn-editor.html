@@ -109,7 +109,7 @@
 <body>
 
 <h1>TUNNEL RUNNER — SPAWN CONFIG</h1>
-<div class="subtitle">Adjust spawn parameters per sector & level. Export JSON for Claude.</div>
+<div class="subtitle">Adjust spawn parameters per sector & level. Export JSON for Claude. <span id="sync-status" style="color:#555;">Loading game data...</span></div>
 
 <div class="tabs" id="sector-tabs"></div>
 <div class="level-tabs" id="level-tabs"></div>
@@ -353,54 +353,70 @@ function buildDefaults() {
 }
 
 let DEFAULTS = buildDefaults();
-
-// ═══════════════════════════════════════════════════════════════
-// GAME OVERRIDES — mirror SPAWN_TUNING from tunnel-dev.html
-// These patch the defaults so the editor matches what the game actually uses.
-// ═══════════════════════════════════════════════════════════════
-const GAME_OVERRIDES = {
-  'S1L1': {
-    baseHazard: 0.10, baseRing: 0.95,
-    spacing: 75, maxSpawnPct: 0.80,
-    contentChance: 0.07,
-    baseSpeed: 200, levelSpeed: 200,
-    baseLength: 11000, levelLength: 11000,
-    spiralPattern: [
-      { until: 0.35, step: 1.1 },
-      { until: 0.65, lanes: [
-        { step: -1.1, offset: 0.79 },
-        { step: -1.1, offset: 0.79 }
-      ]},
-      { until: 1.0, step: 1.1 }
-    ],
-    rotMult: 0.7
-  }
-};
-// Apply overrides to defaults
-for (const key in GAME_OVERRIDES) {
-  const m = key.match(/^S(\d+)L(\d+)$/);
-  if (m && DEFAULTS[m[1]] && DEFAULTS[m[1]][m[2]]) {
-    Object.assign(DEFAULTS[m[1]][m[2]], GAME_OVERRIDES[key]);
-  }
-}
-
 let config = JSON.parse(JSON.stringify(DEFAULTS));
+
+// ═══════════════════════════════════════════════════════════════
+// LIVE SYNC — fetch SPAWN_TUNING from tunnel-dev.html on load
+// Patches defaults + config so the editor always matches the game.
+// ═══════════════════════════════════════════════════════════════
+var _gameSynced = false;
+function syncFromGame() {
+  fetch('tunnel-dev.html?_=' + Date.now())
+    .then(r => r.text())
+    .then(html => {
+      // Extract SPAWN_TUNING block
+      const m = html.match(/var\s+SPAWN_TUNING\s*=\s*(\{[\s\S]*?\n    \});/);
+      if (!m) { console.warn('SPAWN_TUNING not found in game'); return; }
+      // Evaluate it (handles Math.PI etc)
+      var tuning;
+      try { tuning = new Function('return ' + m[1])(); } catch(e) { console.warn('Failed to parse SPAWN_TUNING:', e); return; }
+      // Apply each override to DEFAULTS
+      for (const key in tuning) {
+        const km = key.match(/^S(\d+)L(\d+)$/);
+        if (!km || !DEFAULTS[km[1]] || !DEFAULTS[km[1]][km[2]]) continue;
+        const overrides = tuning[key];
+        // Map game keys to editor keys
+        const mapped = {};
+        for (const k in overrides) {
+          if (k === 'speed') { mapped.baseSpeed = overrides[k]; mapped.levelSpeed = overrides[k]; }
+          else if (k === 'length') { mapped.baseLength = overrides[k]; mapped.levelLength = overrides[k]; }
+          else { mapped[k] = overrides[k]; }
+        }
+        Object.assign(DEFAULTS[km[1]][km[2]], mapped);
+      }
+      // Rebuild config from patched defaults + localStorage overrides
+      config = JSON.parse(JSON.stringify(DEFAULTS));
+      loadFromStorage();
+      _gameSynced = true;
+      var count = Object.keys(tuning).length;
+      document.getElementById('sync-status').innerHTML = '<span style="color:#00ff88;">Synced ' + count + ' override' + (count > 1 ? 's' : '') + ' from game</span>';
+      refresh();
+    })
+    .catch(e => {
+      console.warn('Failed to fetch game file:', e);
+      document.getElementById('sync-status').innerHTML = '<span style="color:#ff4444;">Could not sync from game</span>';
+    });
+}
+syncFromGame();
 
 // Load saved config from localStorage
 const STORAGE_KEY = 'trSpawnEditorConfig';
-try {
-  const saved = localStorage.getItem(STORAGE_KEY);
-  if (saved) {
-    const parsed = JSON.parse(saved);
-    for (const s in parsed) {
-      if (!config[s]) continue;
-      for (const l in parsed[s]) {
-        if (!config[s][l]) continue;
-        Object.assign(config[s][l], parsed[s][l]);
+function loadFromStorage() {
+  try {
+    const saved = localStorage.getItem(STORAGE_KEY);
+    if (saved) {
+      const parsed = JSON.parse(saved);
+      for (const s in parsed) {
+        if (!config[s]) continue;
+        for (const l in parsed[s]) {
+          if (!config[s][l]) continue;
+          Object.assign(config[s][l], parsed[s][l]);
+        }
       }
     }
-  }
-} catch(e) { console.warn('Failed to load saved config:', e); }
+  } catch(e) { console.warn('Failed to load saved config:', e); }
+}
+loadFromStorage();
 
 function saveConfig() {
   try {
