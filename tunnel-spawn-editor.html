@@ -104,6 +104,20 @@
   .seg-btn:hover { opacity:0.8; }
   .add-seg-btn { font-family:'Press Start 2P',monospace; font-size:8px; padding:8px 16px; cursor:pointer; border-radius:3px; border:1px dashed #444; color:#444; background:transparent; margin-top:10px; display:block; width:100%; }
   .add-seg-btn:hover { border-color:#00ffcc; color:#00ffcc; }
+
+  /* Per-segment spawn overrides */
+  .seg-spawn-toggle { font-family:'Press Start 2P',monospace; font-size:7px; padding:3px 8px; cursor:pointer; border-radius:3px; border:1px dashed #444; color:#555; background:transparent; margin-top:8px; display:block; width:100%; }
+  .seg-spawn-toggle:hover { border-color:#ffe000; color:#ffe000; }
+  .seg-spawn-toggle.active { border-style:solid; border-color:#ffe000; color:#ffe000; }
+  .seg-spawn-body { margin-top:6px; padding:6px 0; border-top:1px solid #222; }
+  .seg-spawn-row { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .seg-spawn-row label { color:#666; font-size:10px; flex:0 0 80px; }
+  .seg-spawn-row input[type=number] { background:#111; border:1px solid #333; color:#ffe000; font-family:'Courier New',monospace; font-size:11px; padding:3px 5px; width:60px; border-radius:3px; outline:none; -moz-appearance:textfield; }
+  .seg-spawn-row input[type=number]:focus { border-color:#ffe000; }
+  .seg-spawn-row input::-webkit-inner-spin-button, .seg-spawn-row input::-webkit-outer-spin-button { -webkit-appearance:none; }
+  .seg-spawn-row .seg-spawn-unit { color:#555; font-size:8px; flex:0 0 50px; }
+  .seg-spawn-row .seg-spawn-set { color:#ffe000; font-size:8px; }
+  .seg-spawn-row .seg-spawn-default { color:#444; font-size:8px; font-style:italic; }
 </style>
 </head>
 <body>
@@ -916,6 +930,42 @@ function buildSpiralEditor() {
       h += '</div></div>';
     });
 
+    // Per-segment spawn overrides
+    var sp = seg.spawn || {};
+    var hasSpawn = Object.keys(sp).length > 0;
+    h += '<button class="seg-spawn-toggle' + (hasSpawn ? ' active' : '') + '" onclick="toggleSegSpawn(' + i + ')">'
+      + (hasSpawn ? '▾ SPAWN OVERRIDES (' + Object.keys(sp).length + ')' : '▸ SPAWN OVERRIDES') + '</button>';
+    if (hasSpawn || _segSpawnOpen[i]) {
+      var gc = getC(); // global config for defaults
+      var SPAWN_FIELDS = [
+        ['baseHazard', 'Hazard %', 0, 1, 0.01, ''],
+        ['baseRing',   'Ring %',   0, 1, 0.01, ''],
+        ['baseCore',   'Core %',   0, 1, 0.01, ''],
+        ['contentChance', 'Content', 0, 0.15, 0.005, ''],
+        ['barrierThreshold', 'Barriers', 0, 0.6, 0.01, ''],
+        ['starChance', 'Stars', 0, 0.10, 0.005, ''],
+        ['boostChance', 'Boost', 0, 0.15, 0.005, ''],
+      ];
+      h += '<div class="seg-spawn-body">';
+      SPAWN_FIELDS.forEach(function(f) {
+        var key = f[0], label = f[1], mn = f[2], mx = f[3], stp = f[4];
+        var val = sp[key];
+        var isSet = val !== undefined;
+        var displayVal = isSet ? val : '';
+        var defaultVal = gc[key] !== undefined ? gc[key] : '—';
+        if (typeof defaultVal === 'number') defaultVal = defaultVal <= 1 && defaultVal > 0 ? (defaultVal * 100).toFixed(1) + '%' : defaultVal;
+        h += '<div class="seg-spawn-row">'
+          + '<label>' + label + '</label>'
+          + '<input type="number" value="' + displayVal + '" placeholder="—" step="' + stp + '" min="' + mn + '" max="' + mx
+          + '" onchange="setSegSpawn(' + i + ',\'' + key + '\',this.value)" onfocus="_segSpawnOpen[' + i + ']=true">'
+          + '<span class="seg-spawn-unit">' + (isSet ? '<span class="seg-spawn-set">SET</span>' : '<span class="seg-spawn-default">def: ' + defaultVal + '</span>') + '</span>'
+          + '</div>';
+      });
+      h += '<button class="seg-btn" style="color:#ff4444;border-color:#ff4444;margin-top:4px;font-size:6px;" '
+        + 'onclick="clearSegSpawn(' + i + ')">CLEAR ALL OVERRIDES</button>';
+      h += '</div>';
+    }
+
     card.innerHTML = h;
     cards.appendChild(card);
     prevU = seg.until;
@@ -1041,6 +1091,35 @@ function removeSpiralSeg(idx) {
   if (idx === pat.length - 1 && idx > 0) pat[idx - 1].until = pat[idx].until;
   pat.splice(idx, 1);
   pat[pat.length - 1].until = 1.0;
+  refresh();
+}
+
+// ── Per-segment spawn overrides ──
+var _segSpawnOpen = {};  // track which segments have the spawn panel open
+
+function toggleSegSpawn(segIdx) {
+  _segSpawnOpen[segIdx] = !_segSpawnOpen[segIdx];
+  refresh();
+}
+
+function setSegSpawn(segIdx, key, val) {
+  var pat = getC().spiralPattern; if (!pat) return;
+  var seg = pat[segIdx];
+  var v = parseFloat(val);
+  if (isNaN(v) || val === '') {
+    if (seg.spawn) { delete seg.spawn[key]; if (Object.keys(seg.spawn).length === 0) delete seg.spawn; }
+  } else {
+    if (!seg.spawn) seg.spawn = {};
+    seg.spawn[key] = Math.round(v * 10000) / 10000;
+  }
+  _segSpawnOpen[segIdx] = true;
+  refresh();
+}
+
+function clearSegSpawn(segIdx) {
+  var pat = getC().spiralPattern; if (!pat) return;
+  delete pat[segIdx].spawn;
+  _segSpawnOpen[segIdx] = false;
   refresh();
 }
 

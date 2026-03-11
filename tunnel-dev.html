@@ -3088,6 +3088,17 @@ window.onload = function() {
         return _laneAngles[li];
     }
 
+    // Per-segment spawn overrides — returns seg.spawn object or null
+    function _getSegSpawn(tuning, zPos) {
+        var pat = tuning.spiralPattern;
+        if (!pat || pat.length === 0) return null;
+        var progress = sectorDistance > 0 ? Math.abs(zPos - _spawnOriginZ) / sectorDistance : 0;
+        for (var i = 0; i < pat.length; i++) {
+            if (progress <= pat[i].until) return pat[i].spawn || null;
+        }
+        return pat[pat.length - 1].spawn || null;
+    }
+
     function spawnItem(zPos) {
         // Hard stop: never place items beyond finish ring (80% of sector distance)
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
@@ -3103,7 +3114,9 @@ window.onload = function() {
         // Speed run sectors: no content objects — beat the clock to unlock
         // ═══════════════════════════════════════════════════════════════
         var _t = _getTuning(s, lvl);
+        var _segS = _getSegSpawn(_t, zPos);
         var contentChance = isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008);
+        if (_segS && _segS.contentChance !== undefined) contentChance = _segS.contentChance;
         if (rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
@@ -3167,6 +3180,7 @@ window.onload = function() {
             isSpeedRun ? 0.30 :  // speed runs: dense gap barrier slalom
             (s === 2 ? 0.12 : s === 4 ? 0.20 : 0.22);
         barrierThreshold *= (1 + (lvl - 1) * 0.10);
+        if (_segS && _segS.barrierThreshold !== undefined) barrierThreshold = _segS.barrierThreshold;
 
         // Speed run barrier series: cluster of gap barriers with twisting gap position
         if (isSpeedRun && barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > 400) {
@@ -3251,6 +3265,12 @@ window.onload = function() {
         if (_t.baseHazard !== undefined) baseHazard = _t.baseHazard;
         if (_t.baseRing !== undefined) baseRing = _t.baseRing;
         if (_t.baseCore !== undefined) baseCore = _t.baseCore;
+        // Apply per-segment spawn overrides (highest priority)
+        if (_segS) {
+            if (_segS.baseHazard !== undefined) baseHazard = _segS.baseHazard;
+            if (_segS.baseRing !== undefined) baseRing = _segS.baseRing;
+            if (_segS.baseCore !== undefined) baseCore = _segS.baseCore;
+        }
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
@@ -3262,6 +3282,7 @@ window.onload = function() {
 
         // Boost pad — S3+ (speed runs and later), spawns with ring trail along flip arc
         var boostThreshold = boostEnabled ? 0.04 : 0;
+        if (_segS && _segS.boostChance !== undefined) boostThreshold = _segS.boostChance;
         if (boostThreshold > 0 && rand < boostThreshold) {
             const bAngle = _advanceSpiral(_t, zPos);
             const bMesh = createBoostPadMesh(bAngle);
@@ -3289,6 +3310,7 @@ window.onload = function() {
         }
         // Star — force field pickup, S3+ only
         var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+        if (_segS && _segS.starChance !== undefined) starChance = _segS.starChance;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (coresEnabled && rand < coreChance) {
