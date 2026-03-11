@@ -875,6 +875,15 @@
     <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:rgba(0,255,204,0.4);letter-spacing:2px;">ROLL ▶</span>
   </div>
 </div>
+<!-- Speed hint — shown on S1L1 if player hasn't boosted by 25% progress -->
+<div id="speed-hint" style="display:none;position:fixed;inset:0;z-index:465;pointer-events:none;
+  align-items:center;justify-content:center;">
+  <div style="padding:14px 24px;text-align:center;
+    background:rgba(0,0,0,0.6);border:1px solid rgba(0,255,204,0.3);border-radius:8px;">
+    <span style="font-family:'Press Start 2P',monospace;font-size:clamp(9px,2.2vw,13px);
+      color:#00ffcc;letter-spacing:2px;text-shadow:0 0 12px rgba(0,255,204,0.6);">DRAG UP FOR SPEED</span>
+  </div>
+</div>
 <div id="countdown-overlay" style="display:none;position:fixed;inset:0;z-index:480;
   pointer-events:none;align-items:center;justify-content:center;">
   <div id="countdown-num" style="font-family:'Press Start 2P',monospace;
@@ -2946,6 +2955,7 @@ window.onload = function() {
     const HYPER_FOV = 120;
     let currentFov = BASE_FOV;
     let throttle = 0, throttleSmooth = 0;
+    var _speedHintShown = false, _everBoosted = false;
 
     let turnRate = 0;
 
@@ -4905,6 +4915,8 @@ window.onload = function() {
         sectorCollectiblesSpawned = 0;
         sectorCollectiblesCollected = 0;
         finishRingSpawned = false;
+        _speedHintShown = false; _everBoosted = false;
+        document.getElementById('speed-hint').style.display = 'none';
         introSpawned = false;
         if (finishRing) { scene.remove(finishRing); finishRing = null; }
         isJumping = false;
@@ -5601,6 +5613,31 @@ window.onload = function() {
                 _bb.style.background='#aa2222'; _bb.style.boxShadow='0 0 6px #aa2222';
             } else {
                 _bb.style.background='rgba(255,68,68,0.25)'; _bb.style.boxShadow='none';
+            }
+
+            // Speed hint — S1L1 only, if player hasn't boosted by 25% progress
+            if (throttleSmooth > 0.5) _everBoosted = true;
+            if (!_speedHintShown && !_everBoosted && currentSector === 1 && currentLevel === 1 && !TUT.active && progressPct >= 25) {
+                _speedHintShown = true;
+                var _sh = document.getElementById('speed-hint');
+                _sh.style.display = 'flex';
+                _sh.style.opacity = '0';
+                _sh.style.transition = 'opacity 0.5s';
+                setTimeout(function(){ _sh.style.opacity = '1'; }, 50);
+                // Auto-dismiss after 4 seconds
+                setTimeout(function(){
+                    _sh.style.opacity = '0';
+                    setTimeout(function(){ _sh.style.display = 'none'; }, 600);
+                }, 4000);
+            }
+            // Dismiss speed hint immediately when player boosts
+            if (_everBoosted && !_speedHintShown) _speedHintShown = true;
+            if (_everBoosted) {
+                var _shEl = document.getElementById('speed-hint');
+                if (_shEl.style.display !== 'none') {
+                    _shEl.style.opacity = '0';
+                    setTimeout(function(){ _shEl.style.display = 'none'; }, 600);
+                }
             }
 
             // Spawn finish ring when 80% through sector — leaves clear gap for speed burst
