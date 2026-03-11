@@ -311,17 +311,17 @@
 </div>
 
 <script>
-// ── SSI.COL — procedural SVG line-draw from both ends ──
-const paths = document.querySelectorAll('.hero-logo path');
-const dur = 6000; // ms
+// ── SSI.COL — procedural SVG line-draw, cycling ──
+const drawDur = 6000;
+const pause = 4000;
 const easing = 'cubic-bezier(0.25, 0.0, 0.65, 0.85)';
 
+const allEls = [];
 [...document.querySelectorAll('.hero-logo path')].forEach((path) => {
   const len = path.getTotalLength();
   const n = 16;
-  const e = len / n; // segment length
+  const e = len / n;
 
-  // 8 clones: original + 7 new
   const els = [path];
   for (let i = 0; i < n - 1; i++) {
     const c = path.cloneNode(true);
@@ -330,17 +330,43 @@ const easing = 'cubic-bezier(0.25, 0.0, 0.65, 0.85)';
   }
 
   els.forEach((el, i) => {
-    // Even segments grow forward, odd segments grow backward
     const offStart = i % 2 === 0 ? -i * e : -(i + 1) * e;
     const offEnd   = i % 2 === 0 ? -i * e : -i * e;
     el.style.strokeDasharray = `0 ${len}`;
     el.style.strokeDashoffset = offStart;
+    allEls.push({ el, len, e, offStart, offEnd });
+  });
+});
+
+function drawIn() {
+  const anims = allEls.map(({ el, len, e, offStart, offEnd }) =>
     el.animate([
       { strokeDasharray: `0 ${len}`, strokeDashoffset: offStart },
       { strokeDasharray: `${e} ${len - e}`, strokeDashoffset: offEnd },
-    ], { duration: dur, easing, fill: 'forwards' });
-  });
-});
+    ], { duration: drawDur, easing, fill: 'forwards' })
+  );
+  return Promise.all(anims.map(a => a.finished));
+}
+
+function drawOut() {
+  const anims = allEls.map(({ el, len, e, offStart, offEnd }) =>
+    el.animate([
+      { strokeDasharray: `${e} ${len - e}`, strokeDashoffset: offEnd },
+      { strokeDasharray: `0 ${len}`, strokeDashoffset: offStart },
+    ], { duration: drawDur, easing, fill: 'forwards' })
+  );
+  return Promise.all(anims.map(a => a.finished));
+}
+
+async function cycle() {
+  while (true) {
+    await drawIn();
+    await new Promise(r => setTimeout(r, pause));
+    await drawOut();
+    await new Promise(r => setTimeout(r, 800));
+  }
+}
+cycle();
 
 // Scroll reveal
 const io = new IntersectionObserver((entries) => {
