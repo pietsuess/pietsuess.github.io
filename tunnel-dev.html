@@ -3020,22 +3020,22 @@ window.onload = function() {
             contentChance: 0.07,
             speed: 200, length: 11000,
             spiralPattern: [
-                { until: 0.45, step: 0.8, spawn: { contentChance: 1 } },
+                { until: 0.45, step: 0.8, spawn: { contentCount: 1 } },
                 { until: 0.65, lanes: [
                     { step: -0.5, offset: 3.14 },
                     { step: 0.5, offset: 1.57 }
-                ], spawn: { baseHazard: 100, baseRing: 0, contentChance: 1 } },
+                ], spawn: { baseHazard: 100, baseRing: 0, contentCount: 1 } },
                 { until: 0.85, lanes: [
                     { step: 0.6, offset: 3.14 },
                     { step: -0.6, offset: 1.75 },
                     { step: 0.1, offset: 1.57 }
-                ], spawn: { baseRing: 50, baseHazard: 40, contentChance: 2 } },
+                ], spawn: { baseRing: 50, baseHazard: 40, contentCount: 2 } },
                 { until: 1.0, lanes: [
                     { step: -0.1, offset: 1.22 },
                     { step: -0.1, offset: 1.75 },
                     { step: -0.1, offset: 2.27 },
                     { step: -0.1, offset: 2.79 }
-                ], spacing: 60, spawn: { baseRing: 100, baseHazard: 0, contentChance: 1 } }
+                ], spacing: 60, spawn: { baseRing: 100, baseHazard: 0, contentCount: 1 } }
             ],
             rotMult: 0.7
         }
@@ -3045,6 +3045,7 @@ window.onload = function() {
     }
 
     var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
+    var _forceContent = false; // set by spawn loop for contentCount positions
 
     // Advance spiral and return the angle to place the next object at.
     // Supports spiralPattern with lanes for concurrent object streams.
@@ -3119,8 +3120,8 @@ window.onload = function() {
         var _t = _getTuning(s, lvl);
         var _segS = _getSegSpawn(_t, zPos);
         var contentChance = isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008);
-        if (_segS && _segS.contentChance !== undefined) contentChance = _segS.contentChance;
-        if (rand < contentChance) {
+        var _fc = _forceContent; _forceContent = false;
+        if (_fc || rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
             // Pick a random uncollected item
@@ -3935,7 +3936,48 @@ window.onload = function() {
         // Walk forward, checking per-segment spacing overrides
         // Multi-lane segments spawn one item per lane at the same Z
         var pat = _tSpawn.spiralPattern;
+
+        // Pre-compute forced content positions for segments with contentCount
+        var _contentIndices = {};  // spawnCallIdx → true
+        if (pat && pat.length > 0 && sectorDistance > 0) {
+            // Pass 1: simulate walk to map spawn-call indices to segments
+            var _simWalk = startOffset, _simCallIdx = 0;
+            var _segCalls = {};  // segIdx → [callIdx, callIdx, ...]
+            for (var _sn = 0; _sn < 600; _sn++) {
+                if (_simWalk > lastItemDist) break;
+                var _simProg = _simWalk / sectorDistance;
+                var _simSi = pat.length - 1, _simLanes = 1, _simSpacing = spacing;
+                for (var _si = 0; _si < pat.length; _si++) {
+                    if (_simProg <= pat[_si].until) {
+                        _simSi = _si;
+                        if (pat[_si].lanes) _simLanes = pat[_si].lanes.length;
+                        if (pat[_si].spacing) _simSpacing = pat[_si].spacing;
+                        break;
+                    }
+                }
+                if (!_segCalls[_simSi]) _segCalls[_simSi] = [];
+                for (var _sl = 0; _sl < _simLanes; _sl++) {
+                    _segCalls[_simSi].push(_simCallIdx++);
+                }
+                _simWalk += _simSpacing;
+            }
+            // Pass 2: pick evenly-spaced content positions per segment
+            for (var _sci = 0; _sci < pat.length; _sci++) {
+                var _seg = pat[_sci];
+                if (_seg.spawn && _seg.spawn.contentCount > 0) {
+                    var _calls = _segCalls[_sci] || [];
+                    var _count = Math.min(_seg.spawn.contentCount, _calls.length);
+                    for (var _ci = 0; _ci < _count; _ci++) {
+                        var _pickIdx = Math.round((_ci + 0.5) / _count * _calls.length - 0.5);
+                        _pickIdx = Math.max(0, Math.min(_calls.length - 1, _pickIdx));
+                        _contentIndices[_calls[_pickIdx]] = true;
+                    }
+                }
+            }
+        }
+
         var walkDist = startOffset;
+        var _spawnCallIdx = 0;
         for (var n = 0; n < 600; n++) {
             if (walkDist > lastItemDist) break;
             // How many lanes does the current segment have?
@@ -3954,7 +3996,9 @@ window.onload = function() {
             // Spawn one item per lane at this Z position
             var spawnZ = seedZ - (walkDist - startOffset);
             for (var ln = 0; ln < laneCount; ln++) {
+                _forceContent = _contentIndices[_spawnCallIdx] || false;
                 spawnItem(spawnZ);
+                _spawnCallIdx++;
             }
             walkDist += segSpacing;
         }
