@@ -220,7 +220,7 @@
       <p>Commercial, portrait, landscape, and product photography — analog roots, digital delivery.</p>
     </div>
     <div class="disc-card">
-      <h3>Web &amp; Interactive</h3>
+      <h3>Coding</h3>
       <p>Responsive websites, interactive experiences, and digital product design.</p>
     </div>
   </div>
@@ -300,29 +300,88 @@
 // Each letter is a path of (col, row) positions on a 7-row grid.
 // At full size, dots overlap their neighbours.
 
-// Double-density letterforms (half-step grid)
+// Narrow double-stack letterforms — each stroke is 2 dots wide
+// Generated from stroke definitions on a 0.5-step grid
+const step = 0.5;
+const dOff = 0.5; // double-stack offset
+
+function hStroke(x1, x2, y) {
+  // Horizontal stroke, doubled vertically
+  const pts = [];
+  for (let x = x1; x <= x2; x += step) {
+    pts.push([x, y]);
+    pts.push([x, y + dOff]);
+  }
+  return pts;
+}
+function vStroke(x, y1, y2) {
+  // Vertical stroke, doubled horizontally
+  const pts = [];
+  for (let y = y1; y <= y2; y += step) {
+    pts.push([x, y]);
+    pts.push([x + dOff, y]);
+  }
+  return pts;
+}
+
+const lh = 10; // letter height
+const lw = 3;  // letter width
+
 const letters = {
-  S: [[6,0],[5,0],[4,0],[3,0],[2,0],[1,0],[0.5,0.5],[0,1],[0,1.5],[0,2],[0,2.5],[0.5,3],[1,3],[2,3],[3,3],[4,3],[5,3],[5.5,3.5],[6,4],[6,4.5],[6,5],[6,5.5],[5.5,6],[5,6],[4,6],[3,6],[2,6],[1,6],[0,6]],
-  I: [[0,0],[0,0.5],[0,1],[0,1.5],[0,2],[0,2.5],[0,3],[0,3.5],[0,4],[0,4.5],[0,5],[0,5.5],[0,6]],
-  dot: [[0,5.5],[0,6]],
-  C: [[6,0],[5,0],[4,0],[3,0],[2,0],[1,0],[0.5,0.5],[0,1],[0,1.5],[0,2],[0,2.5],[0,3],[0,3.5],[0,4],[0,4.5],[0,5],[0.5,5.5],[1,6],[2,6],[3,6],[4,6],[5,6],[6,6]],
-  O: [[1,0],[2,0],[3,0],[4,0],[5,0],[5.5,0.5],[6,1],[6,1.5],[6,2],[6,2.5],[6,3],[6,3.5],[6,4],[6,4.5],[6,5],[5.5,5.5],[5,6],[4,6],[3,6],[2,6],[1,6],[0.5,5.5],[0,5],[0,4.5],[0,4],[0,3.5],[0,3],[0,2.5],[0,2],[0,1.5],[0,1],[0.5,0.5]],
-  L: [[0,0],[0,0.5],[0,1],[0,1.5],[0,2],[0,2.5],[0,3],[0,3.5],[0,4],[0,4.5],[0,5],[0,5.5],[0,6],[1,6],[2,6],[3,6],[4,6],[5,6],[6,6]]
+  S: [
+    ...hStroke(0, lw, 0),           // top bar
+    ...vStroke(0, 0, lh/2),         // left down
+    ...hStroke(0, lw, lh/2),        // middle bar
+    ...vStroke(lw - dOff, lh/2, lh),// right down
+    ...hStroke(0, lw, lh - dOff),   // bottom bar
+  ],
+  I: vStroke(0, 0, lh),
+  dot: [
+    [0, lh - dOff], [dOff, lh - dOff],
+    [0, lh], [dOff, lh],
+  ],
+  C: [
+    ...hStroke(0, lw, 0),           // top bar
+    ...vStroke(0, 0, lh),           // left vertical
+    ...hStroke(0, lw, lh - dOff),   // bottom bar
+  ],
+  O: [
+    ...hStroke(0, lw, 0),           // top
+    ...vStroke(lw - dOff, 0, lh),   // right
+    ...hStroke(0, lw, lh - dOff),   // bottom
+    ...vStroke(0, 0, lh),           // left
+  ],
+  L: [
+    ...vStroke(0, 0, lh),           // left vertical
+    ...hStroke(0, lw, lh - dOff),   // bottom bar
+  ],
 };
 
+// Deduplicate dots per letter (overlapping corners)
+Object.keys(letters).forEach(k => {
+  const seen = new Set();
+  letters[k] = letters[k].filter(([x, y]) => {
+    const key = `${x.toFixed(1)},${y.toFixed(1)}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+});
+
 // Layout: S S I . C O L with gaps
+const gap = 2.5;
 const layout = [
   { letter: 'S', xOff: 0 },
-  { letter: 'S', xOff: 9 },
-  { letter: 'I', xOff: 18 },
-  { letter: 'dot', xOff: 21.5 },
-  { letter: 'C', xOff: 25 },
-  { letter: 'O', xOff: 34 },
-  { letter: 'L', xOff: 43 }
+  { letter: 'S', xOff: lw + gap },
+  { letter: 'I', xOff: 2 * (lw + gap) },
+  { letter: 'dot', xOff: 2 * (lw + gap) + dOff + gap * 0.7 },
+  { letter: 'C', xOff: 2 * (lw + gap) + dOff + gap * 1.6 },
+  { letter: 'O', xOff: 2 * (lw + gap) + dOff + gap * 1.6 + lw + gap },
+  { letter: 'L', xOff: 2 * (lw + gap) + dOff + gap * 1.6 + 2 * (lw + gap) }
 ];
 
-const gridW = 50; // total grid width
-const gridH = 7;  // total grid height
+const gridW = layout[layout.length - 1].xOff + lw;
+const gridH = lh;
 
 // Build all dot positions in grid space
 const gridDots = [];
