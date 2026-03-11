@@ -338,14 +338,21 @@
             overflow:hidden;
         }
         #tr-carousel-top {
-            position:absolute; top:25%; left:0; right:0; transform:translateY(-50%);
+            position:absolute; top:60px; left:0; right:0;
             text-align:center; pointer-events:none; z-index:2;
         }
         #tr-carousel-unlocked {
-            font-family:'Press Start 2P',monospace; font-size:clamp(9px,2.2vw,12px);
-            letter-spacing:4px;
-            color:#ffe000; text-shadow:0 0 12px rgba(255,224,0,0.6);
-            margin-bottom:8px;
+            display:flex; justify-content:center; gap:6px; flex-wrap:wrap;
+            margin-bottom:12px; padding:0 20px;
+        }
+        .tr-unlock-box {
+            width:clamp(14px,3vw,20px); height:clamp(14px,3vw,20px);
+            border:1px solid #555; border-radius:2px;
+            transition:background 0.3s, border-color 0.3s, box-shadow 0.3s;
+        }
+        .tr-unlock-box.filled {
+            border-color:currentColor;
+            box-shadow:0 0 6px currentColor;
         }
         #tr-carousel-header {
             font-family:'Press Start 2P',monospace; font-size:clamp(14px,3.5vw,22px);
@@ -402,7 +409,8 @@
         #tr-carousel-continue:active { background:rgba(255,224,0,0.22); transform:scale(0.97); }
 
         /* DESIGN zone light background overrides */
-        .tr-design-bg #tr-carousel-unlocked { color:#333; text-shadow:none; }
+        .tr-design-bg .tr-unlock-box { border-color:#bbb; }
+        .tr-design-bg .tr-unlock-box.filled { border-color:#333; box-shadow:0 0 6px rgba(0,0,0,0.3); }
         .tr-design-bg .tr-carousel-name { color:#222; }
         .tr-design-bg #tr-carousel-scroll-hint { color:#999; }
         .tr-design-bg #tr-carousel-continue { background:rgba(0,0,0,0.06); border-color:#333; color:#333; }
@@ -1455,7 +1463,7 @@ window.onload = function() {
     // 5 sectors, each tied to a content zone. Player replays sector at
     // increasing difficulty until all content objects for that zone are collected.
     var _bonusUnlockedTitles = []; // set by triggerVictory if score bonus earned
-    const SCORE_BONUS_INCREMENT = 10000; // every 10K sector score = +1 bonus unlock
+    const SCORE_BONUS_INCREMENT = 20000; // every 20K sector score = +1 bonus unlock
     const SECTOR_ZONES = ['EDIT', 'PHOTO', 'ANIMATE', 'DESIGN', 'DIRECT'];
     const ZONE_SHAPES_3D = ['square', 'pentagon', 'circle', 'triangle', 'octagon'];
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', DESIGN:'#ff8c00' };
@@ -1489,6 +1497,9 @@ window.onload = function() {
     const jumpDuration = 1.2; 
     let lastRampZ = 0;
     let spiralAngle = -Math.PI / 2;  // tracks the rolling path rings follow
+    var _laneAngles = [];   // per-lane running angles
+    var _laneCounter = 0;   // round-robin lane index
+    var _lastSegIdx = -1;   // detect segment transitions
 
     // --- ZONE SYSTEM — configurable sectors ---
     var ZONE_COLOR_PALETTE = [
@@ -1511,11 +1522,14 @@ window.onload = function() {
     function getLevelScaledZone(sector) {
         var base = getZone(sector);
         var lvl = currentLevel - 1; // 0-indexed level offset
+        var _t = _getTuning(sector, currentLevel);
+        var baseSpd = _t.speed !== undefined ? _t.speed : base.speed;
+        var baseLen = _t.length !== undefined ? _t.length : base.length;
         return {
             name: base.name, color: base.color, fogColor: base.fogColor,
             wireColor: base.wireColor,
-            speed: Math.round(base.speed * Math.pow(1.10, lvl)),
-            length: Math.round(base.length * Math.pow(1.15, lvl)),
+            speed: Math.round(baseSpd * Math.pow(1.10, lvl)),
+            length: Math.round(baseLen * Math.pow(1.15, lvl)),
             label: 'SECTOR ' + sector + ' // ' + base.name + (lvl > 0 ? ' // LEVEL ' + currentLevel : '')
         };
     }
@@ -1773,9 +1787,22 @@ window.onload = function() {
             var sectorScore = score - sectorStartScore;
             bonusText = 'SCORED ' + sectorScore.toLocaleString() + ' — +' + _bonusUnlockedTitles.length + ' BONUS UNLOCK' + (_bonusUnlockedTitles.length > 1 ? 'S' : '') + '!';
         }
-        document.getElementById('tr-carousel-unlocked').innerText = carouselFromPause ? '' : (bonusText || '★ CONTENT UNLOCKED ★');
+        // Build unlock boxes — one per content item, filled if collected
+        var unlockEl = document.getElementById('tr-carousel-unlocked');
+        unlockEl.innerHTML = '';
+        unlockEl.style.color = zoneColor;
+        var collected = collectedContent[zone] || new Set();
+        items.forEach(function(item) {
+            var box = document.createElement('div');
+            box.className = 'tr-unlock-box';
+            if (collected.has(item.title)) {
+                box.classList.add('filled');
+                box.style.background = zoneColor;
+            }
+            unlockEl.appendChild(box);
+        });
         var header = document.getElementById('tr-carousel-header');
-        header.innerText = (ZONE_DISPLAY_NAMES[zone]||zone) + ' PROJECTS';
+        header.innerText = (ZONE_DISPLAY_NAMES[zone]||zone) + ' CONTENT';
         header.style.color = zoneColor;
 
         // Continue button text
@@ -3003,7 +3030,108 @@ window.onload = function() {
     var _rampCountThisSector = 0;
     var _rampMaxThisSector = 999;
 
+    // ═══════════════════════════════════════════════════════════════
+    // SPAWN TUNING — per-sector-per-level overrides from spawn editor
+    // Keys: "S{sector}L{level}" → override values. Missing = use default.
+    // ═══════════════════════════════════════════════════════════════
+    var SPAWN_TUNING = {
+        'S1L1': {
+            baseHazard: 0.10, baseRing: 0.95,
+            spacing: 80, maxSpawnPct: 0.85,
+            speed: 200, length: 11000,
+            spiralPattern: [
+                { until: 0.35, lanes: [
+                    { step: 0.8, offset: 0.44 }
+                ], spacing: 70, spawn: { contentCount: 3 } },
+                { until: 0.55, lanes: [
+                    { step: 0.1, offset: 2.09 },
+                    { step: 0.1, offset: 1.05 },
+                    { step: 0.1, offset: 0 }
+                ], spacing: 100, spawn: { baseHazard: 80, baseRing: 0, contentCount: 0, baseCore: 20 } },
+                { until: 0.85, lanes: [
+                    { step: 0.6, offset: 3.14 },
+                    { step: -0.6, offset: 1.75 },
+                    { step: 0.1, offset: 1.57 }
+                ], spawn: { contentCount: 3 } },
+                { until: 1.0, lanes: [
+                    { step: -0.1, offset: 1.22 },
+                    { step: -0.1, offset: 1.75 },
+                    { step: -0.1, offset: 2.27 },
+                    { step: -0.1, offset: 2.79 }
+                ], spacing: 60, spawn: { baseRing: 100, baseHazard: 0, contentCount: 2 } }
+            ],
+            rotMult: 0.7
+        }
+    };
+    function _getTuning(sector, level) {
+        return SPAWN_TUNING['S' + sector + 'L' + level] || {};
+    }
+
     var _spawnOriginZ = 0; // set by spawnIntroWave to camera Z at spawn time
+    var _forceContent = false; // set by spawn loop for contentCount positions
+
+    // Advance spiral and return the angle to place the next object at.
+    // Supports spiralPattern with lanes for concurrent object streams.
+    // spiralPattern: [
+    //   { until: 0.33, step: 0.5 },                          // single lane shorthand
+    //   { until: 0.66, lanes: [{ step: 0, offset: 0 }, { step: 0, offset: Math.PI }] },  // parallel lines
+    //   { until: 1.00, lanes: [{ step: 0.4, offset: 0 }, { step: -0.4, offset: Math.PI }] }  // dual spirals
+    // ]
+    // Falls back to flat spiralStep, then default 1.1
+    function _advanceSpiral(tuning, zPos) {
+        var pat = tuning.spiralPattern;
+        if (!pat || pat.length === 0) {
+            // No pattern — simple flat step
+            spiralAngle += (tuning.spiralStep !== undefined ? tuning.spiralStep : 1.1);
+            return spiralAngle;
+        }
+        var progress = sectorDistance > 0 ? Math.abs(zPos - _spawnOriginZ) / sectorDistance : 0;
+        var segIdx = pat.length - 1;
+        for (var i = 0; i < pat.length; i++) {
+            if (progress <= pat[i].until) { segIdx = i; break; }
+        }
+        var seg = pat[segIdx];
+        // Normalize to lanes array (single step shorthand → one lane)
+        var lanes = seg.lanes || [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
+
+        // Reset lane state on segment transition
+        if (segIdx !== _lastSegIdx) {
+            _lastSegIdx = segIdx;
+            _laneAngles = [];
+            for (var l = 0; l < lanes.length; l++) {
+                // Editor stores degrees-as-radians. Convert to screen position:
+                // User degrees: 0°=bottom, 90°=right, 180°=top, 270°=left
+                // Steering right = decreasing shipAngle, camera.rotation.z flips view
+                _laneAngles[l] = (lanes[l].offset || 0) + shipAngle;
+            }
+            _laneCounter = 0;
+        }
+
+        // Round-robin pick
+        var li = _laneCounter % lanes.length;
+        _laneCounter++;
+        // Skip step on first round after segment transition — place at exact offset
+        if (_laneCounter > lanes.length) {
+            _laneAngles[li] += lanes[li].step;
+        }
+
+        // Keep master spiralAngle tracking the first lane (for segment transitions)
+        spiralAngle = _laneAngles[0];
+
+        return _laneAngles[li];
+    }
+
+    // Per-segment spawn overrides — returns seg.spawn object or null
+    function _getSegSpawn(tuning, zPos) {
+        var pat = tuning.spiralPattern;
+        if (!pat || pat.length === 0) return null;
+        var progress = sectorDistance > 0 ? Math.abs(zPos - _spawnOriginZ) / sectorDistance : 0;
+        for (var i = 0; i < pat.length; i++) {
+            if (progress <= pat[i].until) return pat[i].spawn || null;
+        }
+        return pat[pat.length - 1].spawn || null;
+    }
+
     function spawnItem(zPos) {
         // Hard stop: never place items beyond finish ring (80% of sector distance)
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
@@ -3018,8 +3146,16 @@ window.onload = function() {
         // Spawns uncollected content items at regular intervals
         // Speed run sectors: no content objects — beat the clock to unlock
         // ═══════════════════════════════════════════════════════════════
-        var contentChance = isSpeedRun ? 0 : 0.055 + lvl * 0.008;
-        if (rand < contentChance) {
+        var _t = _getTuning(s, lvl);
+        var _segS = _getSegSpawn(_t, zPos);
+        var _fc = _forceContent; _forceContent = false;
+        // If current segment defines contentCount, suppress random contentChance — only forced positions spawn content
+        var contentChance = 0;
+        if (!_fc) {
+            var _segHasCount = _segS && _segS.contentCount !== undefined;
+            contentChance = _segHasCount ? 0 : (isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008));
+        }
+        if (_fc || rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
             // Pick a random uncollected item
@@ -3030,10 +3166,10 @@ window.onload = function() {
                 var cGeo = getContentGeo(s);
                 var cMat = getContentMat(s).clone();
                 var cMesh = new THREE.Mesh(cGeo, cMat);
-                spiralAngle += 1.1;
+                var cAngle = _advanceSpiral(_t, zPos);
                 var hoverDist = tubeRadius - 6;
-                cMesh.position.set(Math.cos(spiralAngle) * hoverDist, Math.sin(spiralAngle) * hoverDist, zPos);
-                cMesh.rotation.z = spiralAngle;
+                cMesh.position.set(Math.cos(cAngle) * hoverDist, Math.sin(cAngle) * hoverDist, zPos);
+                cMesh.rotation.z = cAngle;
                 // Arrow indicator pointing at the object
                 var arrowGeo = new THREE.ConeGeometry(1.5, 4, 4);
                 var arrowMat = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.8 });
@@ -3082,6 +3218,7 @@ window.onload = function() {
             isSpeedRun ? 0.30 :  // speed runs: dense gap barrier slalom
             (s === 2 ? 0.12 : s === 4 ? 0.20 : 0.22);
         barrierThreshold *= (1 + (lvl - 1) * 0.10);
+        if (_segS && _segS.barrierThreshold !== undefined) barrierThreshold = _segS.barrierThreshold;
 
         // Speed run barrier series: cluster of gap barriers with twisting gap position
         if (isSpeedRun && barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > 400) {
@@ -3154,13 +3291,24 @@ window.onload = function() {
         rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
         if (rand < 0) rand = Math.random();
 
-        // --- Per-sector spawn profile ---
+        // --- Per-sector spawn profile (check SPAWN_TUNING overrides) ---
         var baseHazard, baseRing, baseCore;
         if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+
         else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
         else if (s === 3)  { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }  // speed run — no hazards, only gap barriers
         else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
         else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
+        // Apply SPAWN_TUNING overrides
+        if (_t.baseHazard !== undefined) baseHazard = _t.baseHazard;
+        if (_t.baseRing !== undefined) baseRing = _t.baseRing;
+        if (_t.baseCore !== undefined) baseCore = _t.baseCore;
+        // Apply per-segment spawn overrides (highest priority)
+        if (_segS) {
+            if (_segS.baseHazard !== undefined) baseHazard = _segS.baseHazard;
+            if (_segS.baseRing !== undefined) baseRing = _segS.baseRing;
+            if (_segS.baseCore !== undefined) baseCore = _segS.baseCore;
+        }
         // Level escalation: +10% hazards per level, rings/cores shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
@@ -3172,9 +3320,9 @@ window.onload = function() {
 
         // Boost pad — S3+ (speed runs and later), spawns with ring trail along flip arc
         var boostThreshold = boostEnabled ? 0.04 : 0;
+        if (_segS && _segS.boostChance !== undefined) boostThreshold = _segS.boostChance;
         if (boostThreshold > 0 && rand < boostThreshold) {
-            spiralAngle += 1.1;
-            const bAngle = spiralAngle;
+            const bAngle = _advanceSpiral(_t, zPos);
             const bMesh = createBoostPadMesh(bAngle);
             bMesh.position.set(0, 0, zPos);
             bMesh.rotation.z = bAngle;
@@ -3200,6 +3348,7 @@ window.onload = function() {
         }
         // Star — force field pickup, S3+ only
         var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+        if (_segS && _segS.starChance !== undefined) starChance = _segS.starChance;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
         } else if (coresEnabled && rand < coreChance) {
@@ -3222,10 +3371,9 @@ window.onload = function() {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
         }
 
-        // Single deterministic spiral line — bigger step = more twist per item
-        spiralAngle += 1.1;
+        // Spiral line — resolved from spiralPattern lanes or flat spiralStep
+        const angle = _advanceSpiral(_t, zPos);
         var hoverDist2 = tubeRadius - 6;
-        const angle = spiralAngle;  // everything on the same line, no offsets
 
         mesh.position.x = Math.cos(angle) * hoverDist2;
         mesh.position.y = Math.sin(angle) * hoverDist2;
@@ -3234,7 +3382,7 @@ window.onload = function() {
         // Unified rotation: all items face the same way along the spiral
         mesh.rotation.z = angle;  // face outward from tube centre
 
-        let rotMult = 1 + zoneIdx * 0.4;
+        let rotMult = _t.rotMult !== undefined ? _t.rotMult : (1 + zoneIdx * 0.4);
         // Knots sway back and forth along the tube wall
         var isKnot = mesh._isKnot;
         delete mesh._isKnot;
@@ -3381,7 +3529,7 @@ window.onload = function() {
                         AudioEngine.playSFX('destroy');
                         flash('#ff8800');
                         spawnPointBurst('DESTROYED', 'c-gold');
-                        score += 100;
+                        score += 35;
                         document.getElementById('score').innerText = score.toString().padStart(6, '0');
                         scene.remove(item);
                         items.splice(ii, 1);
@@ -3395,7 +3543,7 @@ window.onload = function() {
                         AudioEngine.playSFX('destroy');
                         flash('#ff8800');
                         spawnPointBurst('DESTROYED', 'c-gold');
-                        score += 100;
+                        score += 35;
                         document.getElementById('score').innerText = score.toString().padStart(6, '0');
                         scene.remove(item);
                         items.splice(ii, 1);
@@ -3440,9 +3588,9 @@ window.onload = function() {
     }
 
     function takeDamage() {
-        // Damage scales with hyper: 30 at normal, 100+ at full hyper (instant kill)
+        // Damage scales with hyper: 20 at normal, 100+ at full hyper (instant kill)
         const hyperFracNow = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
-        const dmg = 30 + hyperFracNow * 70;
+        const dmg = 20 + hyperFracNow * 80;
         health -= dmg;
         combo = 0; comboTimer = 0;
         AudioEngine.playSFX('hit');
@@ -3640,9 +3788,9 @@ window.onload = function() {
             try { localStorage.setItem('trBestTimes', JSON.stringify(bestTimes)); } catch(e) {}
         }
 
-        // Unlock gunship at 25,000 points
+        // Unlock gunship at 17,000 points
         var _gunshipJustUnlocked = false;
-        if (GUNSHIP_ENABLED && score >= 25000 && !unlockedShips.gunship) {
+        if (GUNSHIP_ENABLED && score >= 17000 && !unlockedShips.gunship) {
             unlockedShips.gunship = true;
             _gunshipJustUnlocked = true;
             try { localStorage.setItem('trUnlockedShips', JSON.stringify(unlockedShips)); } catch(e) {}
@@ -3806,7 +3954,7 @@ window.onload = function() {
         // Seed tunnel ahead procedurally — spacing set per sector+level
         // Per-sector-per-level spacing table
         var SPACING_TABLE = {
-            1: [100, 90, 80, 70],
+            1: [75, 90, 80, 70],
             2: [90, 80, 70, 65],
             3: [90, 80, 70],
             4: [80, 70, 60],
@@ -3817,11 +3965,76 @@ window.onload = function() {
         var startOffset = 400;
         _spawnOriginZ = camera.position.z;
         var seedZ = camera.position.z - startOffset;
-        var lastItemDist = sectorDistance * 0.78;
+        var _tSpawn = _getTuning(currentSector, currentLevel);
+        var lastItemDist = sectorDistance * (_tSpawn.maxSpawnPct || 0.78);
+        // Walk forward, checking per-segment spacing overrides
+        // Multi-lane segments spawn one item per lane at the same Z
+        var pat = _tSpawn.spiralPattern;
+
+        // Pre-compute forced content positions for segments with contentCount
+        var _contentIndices = {};  // spawnCallIdx → true
+        if (pat && pat.length > 0 && sectorDistance > 0) {
+            // Pass 1: simulate walk to map spawn-call indices to segments
+            var _simWalk = startOffset, _simCallIdx = 0;
+            var _segCalls = {};  // segIdx → [callIdx, callIdx, ...]
+            for (var _sn = 0; _sn < 600; _sn++) {
+                if (_simWalk > lastItemDist) break;
+                var _simProg = _simWalk / sectorDistance;
+                var _simSi = pat.length - 1, _simLanes = 1, _simSpacing = spacing;
+                for (var _si = 0; _si < pat.length; _si++) {
+                    if (_simProg <= pat[_si].until) {
+                        _simSi = _si;
+                        if (pat[_si].lanes) _simLanes = pat[_si].lanes.length;
+                        if (pat[_si].spacing) _simSpacing = pat[_si].spacing;
+                        break;
+                    }
+                }
+                if (!_segCalls[_simSi]) _segCalls[_simSi] = [];
+                for (var _sl = 0; _sl < _simLanes; _sl++) {
+                    _segCalls[_simSi].push(_simCallIdx++);
+                }
+                _simWalk += _simSpacing;
+            }
+            // Pass 2: pick evenly-spaced content positions per segment
+            for (var _sci = 0; _sci < pat.length; _sci++) {
+                var _seg = pat[_sci];
+                if (_seg.spawn && _seg.spawn.contentCount > 0) {
+                    var _calls = _segCalls[_sci] || [];
+                    var _count = Math.min(_seg.spawn.contentCount, _calls.length);
+                    for (var _ci = 0; _ci < _count; _ci++) {
+                        var _pickIdx = Math.round((_ci + 0.5) / _count * _calls.length - 0.5);
+                        _pickIdx = Math.max(0, Math.min(_calls.length - 1, _pickIdx));
+                        _contentIndices[_calls[_pickIdx]] = true;
+                    }
+                }
+            }
+        }
+
+        var walkDist = startOffset;
+        var _spawnCallIdx = 0;
         for (var n = 0; n < 600; n++) {
-            var itemDist = startOffset + n * spacing;
-            if (itemDist > lastItemDist) break;
-            spawnItem(seedZ - n * spacing);
+            if (walkDist > lastItemDist) break;
+            // How many lanes does the current segment have?
+            var laneCount = 1;
+            var segSpacing = spacing;
+            if (pat && pat.length > 0 && sectorDistance > 0) {
+                var prog = walkDist / sectorDistance;
+                for (var si = 0; si < pat.length; si++) {
+                    if (prog <= pat[si].until) {
+                        if (pat[si].lanes) laneCount = pat[si].lanes.length;
+                        if (pat[si].spacing) segSpacing = pat[si].spacing;
+                        break;
+                    }
+                }
+            }
+            // Spawn one item per lane at this Z position
+            var spawnZ = seedZ - (walkDist - startOffset);
+            for (var ln = 0; ln < laneCount; ln++) {
+                _forceContent = _contentIndices[_spawnCallIdx] || false;
+                spawnItem(spawnZ);
+                _spawnCallIdx++;
+            }
+            walkDist += segSpacing;
         }
     }
 
@@ -4602,6 +4815,7 @@ window.onload = function() {
         shieldsUp = false; shieldsUpTimer = 0;
         lastRampZ = 0;
         spiralAngle = -Math.PI / 2;
+        _laneAngles = []; _laneCounter = 0; _lastSegIdx = -1;
         projectiles.forEach(p => scene.remove(p));
         projectiles.length = 0;
         fireCooldownTimer = 0;
@@ -5582,7 +5796,7 @@ window.onload = function() {
                             AudioEngine.playSFX('jump');
                             flash('#ffaa00');
                             spawnPointBurst('BOOST!', 'c-cyan');
-                            score += 200;
+                            score += 65;
                             scene.remove(item);
                             items.splice(i, 1);
                             continue;
@@ -5600,7 +5814,7 @@ window.onload = function() {
                                 AudioEngine.playSFX('destroy');
                                 flash('#00ccff');
                                 spawnPointBurst('SMASH!', 'c-cyan');
-                                score += 100;
+                                score += 35;
                             } else {
                                 takeDamage();
                             }
@@ -5619,7 +5833,7 @@ window.onload = function() {
                                 AudioEngine.playSFX('jump');
                                 flash('#00ffcc');
                                 spawnPointBurst('JUMP!', 'c-cyan');
-                                score += 125;
+                                score += 40;
                             }
                             else if (item.userData.type === 'hazard' && !isJumping) {
                                 if (isFlipping || shieldsUp) {
@@ -5627,7 +5841,7 @@ window.onload = function() {
                                     AudioEngine.playSFX('destroy');
                                     flash('#00ccff');
                                     spawnPointBurst('SMASH!', 'c-cyan');
-                                    score += 100;
+                                    score += 35;
                                 } else {
                                     takeDamage();
                                     if (TUT.active) tutHit('hazard');
@@ -5640,7 +5854,7 @@ window.onload = function() {
                                 AudioEngine.playSFX('star');
                                 flash('#ff44ff');
                                 spawnPointBurst('FORCE FIELD!', 'c-magenta');
-                                score += 500;
+                                score += 165;
                             }
                             else if (item.userData.type === 'content') {
                                 var cZone = item.userData.contentZone;
@@ -5651,7 +5865,7 @@ window.onload = function() {
                                     var zColor = ZONE_OBJ_COLORS[cZone] || '#fff';
                                     flash(zColor);
                                     spawnPointBurst(cTitle.length > 20 ? cTitle.substring(0, 18) + '..' : cTitle, 'c-gold');
-                                    score += 1000;
+                                    score += 335;
                                     updateCollectionHUD();
                                     // Check if zone is now complete
                                     var cSector = 0;
@@ -5672,11 +5886,11 @@ window.onload = function() {
                             }
                             else if (item.userData.type === 'health') {
                                 sectorCollectiblesCollected++;
-                                health = Math.min(100, health + 15);
-                                score += 250;
+                                health = Math.min(100, health + 20);
+                                score += 85;
                                 AudioEngine.playSFX('core');
                                 flash('#44aaff');
-                                spawnPointBurst('+15 SHIELD', 'c-cyan');
+                                spawnPointBurst('+20 SHIELD', 'c-cyan');
                                 if (TUT.active) tutHit('health');
                             }
                             else if (item.userData.type === 'score') {
@@ -5684,7 +5898,7 @@ window.onload = function() {
                                 combo++;
                                 comboTimer = COMBO_WINDOW;
                                 const mult = Math.min(combo, 4);
-                                const pts = 625 * mult;
+                                const pts = 210 * mult;
                                 score += pts;
                                 AudioEngine.playSFX('ring');
                                 // Ascending combo SFX on multiplier thresholds
