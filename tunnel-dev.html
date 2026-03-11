@@ -2959,6 +2959,38 @@ window.onload = function() {
     let throttle = 0, throttleSmooth = 0;
     var _speedHintShown = false, _everBoosted = false;
 
+    // ═══════════════════════════════════════════════════════════════
+    // TELEMETRY — posts play session data to Google Sheets
+    // ═══════════════════════════════════════════════════════════════
+    var _TELEMETRY_URL = 'https://script.google.com/macros/s/AKfycby0JJFdRIqYRWc-bZh_c3rN0T4PjHsiq3G2GFssGN-9QqF-DhuGF_TtEfTCNNQIkhKM/exec';
+    function _sendTelemetry(outcome) {
+        try {
+            var zone = getZoneName(currentSector);
+            var collected = collectedContent[zone] ? collectedContent[zone].size : 0;
+            var totalItems = (CONTENT_DATA[zone] || []).length;
+            var progress = sectorDistance > 0 ? Math.round((distanceTraveled / sectorDistance) * 100) : 0;
+            var payload = {
+                sector: currentSector,
+                level: currentLevel,
+                zone: zone,
+                score: score,
+                health: Math.round(health),
+                time: Math.round(sectorTime * 10) / 10,
+                outcome: outcome,
+                progress: Math.min(100, progress),
+                speedHint: _speedHintShown,
+                collected: collected,
+                totalContent: totalItems
+            };
+            fetch(_TELEMETRY_URL, {
+                method: 'POST',
+                mode: 'no-cors',
+                headers: { 'Content-Type': 'text/plain' },
+                body: JSON.stringify(payload)
+            }).catch(function(){});
+        } catch(e) {}
+    }
+
     let turnRate = 0;
 
     function handleInputStart(x, y) {
@@ -3714,6 +3746,7 @@ window.onload = function() {
     }
 
     function triggerGameOver() {
+        _sendTelemetry('death');
         gameState = 'dead';
         document.getElementById('speedrun-clock').style.display = 'none';
         // Capture speed-based intensity before resetting
@@ -3821,6 +3854,7 @@ window.onload = function() {
     }
 
     function triggerVictory() {
+        _sendTelemetry('victory');
         gameState = 'victory';
         document.getElementById('speedrun-clock').style.display = 'none';
         AudioEngine.playSFX('victory');
@@ -5301,7 +5335,7 @@ window.onload = function() {
         }
     });
     bindTap('retry-sector-btn', () => initializeFlight(false));
-    bindTap('abort-run-btn', () => initializeFlight(true));
+    bindTap('abort-run-btn', () => { _sendTelemetry('quit'); initializeFlight(true); });
     // Dev sector jump buttons
     function devJumpSector(n) {
         document.getElementById('pause-screen').style.display = 'none';
