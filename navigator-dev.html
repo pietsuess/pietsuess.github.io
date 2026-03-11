@@ -9153,66 +9153,70 @@ function drawGame(){
         ctx.lineWidth = PEN_BARRIER_WALL_T;
         ctx.stroke();
       } else if(_pbState.closed && !_pbState.opening){
-        // Closed — continuous ring with distinct remnant anchors visible underneath
-        // First draw the remnant anchors (slightly brighter, always visible through the ring)
+        // Closed — batched: remnant anchors + ring + fake glow (no shadowBlur)
+        ctx.lineCap = 'round';
+        ctx.shadowBlur = 0;
+        // Remnant anchors (batched into 1 path)
+        ctx.beginPath();
         for(let si = 0; si < _pbRemnants; si++){
           const _segMid = si * _arcSpanPb + _fullArcHalf;
-          ctx.beginPath();
+          ctx.moveTo(_pbCx + Math.cos(_segMid - _remnantArcHalf) * PEN_BARRIER_R, _pbCy + Math.sin(_segMid - _remnantArcHalf) * PEN_BARRIER_R);
           ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _remnantArcHalf, _segMid + _remnantArcHalf);
-          ctx.strokeStyle = 'rgba(180,200,210,0.9)';
-          ctx.lineWidth = PEN_BARRIER_WALL_T + 2;
-          ctx.lineCap = 'round';
-          ctx.shadowBlur = 0;
-          ctx.stroke();
         }
-        // Then the full continuous ring on top
+        ctx.strokeStyle = 'rgba(180,200,210,0.9)';
+        ctx.lineWidth = PEN_BARRIER_WALL_T + 2;
+        ctx.stroke();
+        // Glow ring (wider translucent — cheap fake glow, no shadow)
+        ctx.beginPath();
+        ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, 0, Math.PI * 2);
+        ctx.strokeStyle = `rgba(0,255,204,${0.12 + _pbPulse})`;
+        ctx.lineWidth = PEN_BARRIER_WALL_T + 8;
+        ctx.stroke();
+        // Metallic ring on top
         ctx.beginPath();
         ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(100,130,150,0.85)';
         ctx.lineWidth = PEN_BARRIER_WALL_T;
-        ctx.shadowBlur = 0;
-        ctx.stroke();
-        // Glow ring
-        ctx.beginPath();
-        ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, 0, Math.PI * 2);
-        ctx.strokeStyle = `rgba(0,255,204,${0.2 + _pbPulse})`;
-        ctx.lineWidth = PEN_BARRIER_WALL_T + 4;
-        ctx.shadowBlur = 8 * SB;
-        ctx.shadowColor = '#00ffcc';
         ctx.stroke();
       } else {
-        // Opening — 32 segments retracting from full arc to remnant size
+        // Opening — 32 segments retracting, batched into 3 paths (no shadowBlur)
         const _openFrac = Math.min(1, _pbState.openTimer / _pbState.openDuration);
         const _easedFrac = 1 - (1 - _openFrac) * (1 - _openFrac); // ease-out
-        // Current arc half-size: lerp from full segment to remnant
         const _curArcHalf = _fullArcHalf + (_remnantArcHalf - _fullArcHalf) * _easedFrac;
+        ctx.shadowBlur = 0;
+        // Glow layer (wider translucent — fake glow, no shadow)
+        ctx.beginPath();
         for(let si = 0; si < _pbRemnants; si++){
           const _segMid = si * _arcSpanPb + _fullArcHalf;
-          // Retracting segment — metallic
-          ctx.beginPath();
+          ctx.moveTo(_pbCx + Math.cos(_segMid - _curArcHalf) * PEN_BARRIER_R, _pbCy + Math.sin(_segMid - _curArcHalf) * PEN_BARRIER_R);
           ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _curArcHalf, _segMid + _curArcHalf);
-          ctx.strokeStyle = `rgba(100,130,150,${0.85 - _easedFrac * 0.35})`;
-          ctx.lineWidth = PEN_BARRIER_WALL_T;
-          ctx.lineCap = 'butt';
-          ctx.shadowBlur = 0;
-          ctx.stroke();
-          // Glow — fades as it retracts
-          ctx.beginPath();
-          ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _curArcHalf, _segMid + _curArcHalf);
-          ctx.strokeStyle = `rgba(0,255,204,${(0.2 + _pbPulse) * (1 - _easedFrac * 0.5)})`;
-          ctx.lineWidth = PEN_BARRIER_WALL_T + 4 - _easedFrac * 1;
-          ctx.shadowBlur = (8 - _easedFrac * 3) * SB;
-          ctx.shadowColor = '#00ffcc';
-          ctx.stroke();
-          // Remnant anchor — brightens as it's revealed
-          ctx.beginPath();
-          ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _remnantArcHalf, _segMid + _remnantArcHalf);
-          ctx.strokeStyle = `rgba(180,200,210,${0.3 + _easedFrac * 0.6})`;
-          ctx.lineWidth = PEN_BARRIER_WALL_T + 2;
-          ctx.lineCap = 'round';
-          ctx.shadowBlur = 0;
-          ctx.stroke();
         }
+        ctx.strokeStyle = `rgba(0,255,204,${(0.12 + _pbPulse) * (1 - _easedFrac * 0.5)})`;
+        ctx.lineWidth = PEN_BARRIER_WALL_T + 8 - _easedFrac * 2;
+        ctx.lineCap = 'butt';
+        ctx.stroke();
+        // Metallic retracting segments
+        ctx.beginPath();
+        for(let si = 0; si < _pbRemnants; si++){
+          const _segMid = si * _arcSpanPb + _fullArcHalf;
+          ctx.moveTo(_pbCx + Math.cos(_segMid - _curArcHalf) * PEN_BARRIER_R, _pbCy + Math.sin(_segMid - _curArcHalf) * PEN_BARRIER_R);
+          ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _curArcHalf, _segMid + _curArcHalf);
+        }
+        ctx.strokeStyle = `rgba(100,130,150,${0.85 - _easedFrac * 0.35})`;
+        ctx.lineWidth = PEN_BARRIER_WALL_T;
+        ctx.lineCap = 'butt';
+        ctx.stroke();
+        // Remnant anchors — brighten as revealed
+        ctx.beginPath();
+        ctx.lineCap = 'round';
+        for(let si = 0; si < _pbRemnants; si++){
+          const _segMid = si * _arcSpanPb + _fullArcHalf;
+          ctx.moveTo(_pbCx + Math.cos(_segMid - _remnantArcHalf) * PEN_BARRIER_R, _pbCy + Math.sin(_segMid - _remnantArcHalf) * PEN_BARRIER_R);
+          ctx.arc(_pbCx, _pbCy, PEN_BARRIER_R, _segMid - _remnantArcHalf, _segMid + _remnantArcHalf);
+        }
+        ctx.strokeStyle = `rgba(180,200,210,${0.3 + _easedFrac * 0.6})`;
+        ctx.lineWidth = PEN_BARRIER_WALL_T + 2;
+        ctx.stroke();
       }
       ctx.shadowBlur = 0;
       ctx.restore();
@@ -9235,37 +9239,32 @@ function drawGame(){
       ctx.strokeStyle = 'rgb(140,160,170)';
       ctx.lineWidth = INTERZONE_WALL_T;
       ctx.lineCap = 'round';
+      ctx.beginPath();
       for(let w = 0; w < _walls.length; w++){
         const _s = _walls[w].start, _e = _walls[w].end;
         const _bendSpan = INTERZONE_BEND_LEN / _izR;
-        // Start bend: curves OUTWARD, tip at gap edge
         const _sJoinAng = _s + _bendSpan;
         const _sTipR = _izR + INTERZONE_BEND_DEPTH_OUT;
         const _sTipX = _sTipR * Math.cos(_s) + _izCx;
         const _sTipY = _sTipR * Math.sin(_s) + _izCy;
         const _sJoinX = _izR * Math.cos(_sJoinAng) + _izCx;
         const _sJoinY = _izR * Math.sin(_sJoinAng) + _izCy;
-        // CP along counter-clockwise tangent at junction (back toward tip)
         const _sCpX = _sJoinX + Math.sin(_sJoinAng) * 224;
         const _sCpY = _sJoinY - Math.cos(_sJoinAng) * 224;
-        // End bend: curves INWARD, tip at gap edge
         const _eJoinAng = _e - _bendSpan;
         const _eTipR = _izR - INTERZONE_BEND_DEPTH_IN;
         const _eTipX = _eTipR * Math.cos(_e) + _izCx;
         const _eTipY = _eTipR * Math.sin(_e) + _izCy;
         const _eJoinX = _izR * Math.cos(_eJoinAng) + _izCx;
         const _eJoinY = _izR * Math.sin(_eJoinAng) + _izCy;
-        // CP along clockwise tangent at junction (toward tip)
         const _eCpX = _eJoinX - Math.sin(_eJoinAng) * 224;
         const _eCpY = _eJoinY + Math.cos(_eJoinAng) * 224;
-        // ONE continuous path: start_tip → bezier → shortened arc → bezier → end_tip
-        ctx.beginPath();
         ctx.moveTo(_sTipX, _sTipY);
         ctx.quadraticCurveTo(_sCpX, _sCpY, _sJoinX, _sJoinY);
         ctx.arc(_izCx, _izCy, _izR, _sJoinAng, _eJoinAng);
         ctx.quadraticCurveTo(_eCpX, _eCpY, _eTipX, _eTipY);
-        ctx.stroke();
       }
+      ctx.stroke();
     }
     ctx.restore();
     // ── Boost pads — permanent double chevrons along inner ring walls ──
@@ -9282,24 +9281,25 @@ function drawGame(){
         const pulse = 0.6 + 0.4 * Math.sin(bp.phase * 3);
         ctx.globalAlpha = pulse;
         const _isReward = bp._interzoneReward;
+        ctx.shadowBlur = 0;
+        ctx.lineJoin = 'round';
+        // Glow layer (wider, translucent — cheap fake glow)
+        ctx.strokeStyle = _isReward ? 'rgba(0,255,204,0.25)' : 'rgba(0,255,136,0.2)';
+        ctx.lineWidth = _isReward ? 10 : 8;
+        ctx.beginPath();
+        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
+        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
+        ctx.stroke();
+        // Chevron core
         ctx.strokeStyle = _isReward ? '#00ffcc' : '#00ff88';
         ctx.fillStyle = _isReward ? 'rgba(0,255,204,0.35)' : 'rgba(0,255,136,0.25)';
-        ctx.shadowColor = _isReward ? '#00ffcc' : '#00ff88';
-        ctx.shadowBlur = (_isReward ? 18 : 12) * SB;
         ctx.lineWidth = _isReward ? 4.5 : 3.5;
-        ctx.lineJoin = 'round';
-        // Double chevron >>
         ctx.beginPath();
-        ctx.moveTo(-20, -16);
-        ctx.lineTo(0, 0);
-        ctx.lineTo(-20, 16);
+        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
         ctx.stroke(); ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-4, -16);
-        ctx.lineTo(16, 0);
-        ctx.lineTo(-4, 16);
+        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
         ctx.stroke(); ctx.fill();
-        ctx.shadowBlur = 0;
         ctx.restore();
       }
       ctx.restore();
