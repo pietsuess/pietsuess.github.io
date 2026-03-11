@@ -75,6 +75,35 @@
   .speed-run-badge { font-family: 'Press Start 2P', monospace; font-size: 8px; color: #ff4444; background: #1a0000; border: 1px solid #ff4444; padding: 3px 8px; border-radius: 3px; display: inline-block; margin-left: 8px; text-shadow: 0 0 6px #ff4444; }
 
   .diff-highlight { background: #1a1a00 !important; border-color: #554400 !important; }
+
+  /* Spiral Pattern Editor */
+  .spiral-mode-row { display:flex; align-items:center; gap:8px; margin-bottom:12px; }
+  .spiral-bar-wrap { position:relative; margin:8px 0 4px; user-select:none; }
+  .spiral-bar { display:flex; height:56px; border-radius:4px; overflow:hidden; border:1px solid #333; }
+  .spiral-seg { display:flex; align-items:center; justify-content:center; flex-direction:column; overflow:hidden; min-width:24px; transition:flex-basis 0.15s; }
+  .spiral-seg-label { font-family:'Press Start 2P',monospace; font-size:7px; color:rgba(255,255,255,0.5); pointer-events:none; }
+  .spiral-seg-info { font-size:10px; color:rgba(255,255,255,0.35); pointer-events:none; margin-top:2px; }
+  .spiral-handle { position:absolute; top:-4px; width:16px; height:calc(100% + 8px); cursor:ew-resize; z-index:10; display:flex; align-items:center; justify-content:center; }
+  .spiral-handle::after { content:''; width:3px; height:100%; background:#fff; border-radius:2px; box-shadow:0 0 6px rgba(255,255,255,0.5); }
+  .spiral-handle:hover::after, .spiral-handle.dragging::after { background:#00ffcc; box-shadow:0 0 12px #00ffcc; }
+  .spiral-handle .pct-label { position:absolute; top:-18px; font-family:'Press Start 2P',monospace; font-size:7px; color:#888; white-space:nowrap; pointer-events:none; }
+  .seg-cards { display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .seg-card { flex:1; min-width:180px; max-width:380px; background:#0a0a0a; border:2px solid #333; border-radius:4px; padding:10px; }
+  .seg-card-hdr { font-family:'Press Start 2P',monospace; font-size:8px; margin-bottom:8px; letter-spacing:1px; display:flex; align-items:center; justify-content:space-between; }
+  .seg-field { display:flex; align-items:center; gap:6px; margin-bottom:5px; }
+  .seg-field label { color:#666; font-size:10px; flex:0 0 50px; }
+  .seg-field input[type=number] { background:#111; border:1px solid #333; color:#00ffcc; font-family:'Courier New',monospace; font-size:12px; padding:3px 5px; width:58px; border-radius:3px; outline:none; -moz-appearance:textfield; }
+  .seg-field input[type=number]:focus { border-color:#00ffcc; }
+  .seg-field input::-webkit-inner-spin-button, .seg-field input::-webkit-outer-spin-button { -webkit-appearance:none; }
+  .seg-field .unit { color:#555; font-size:9px; }
+  .lane-row { background:#111; border:1px solid #222; border-radius:3px; padding:6px 8px; margin-bottom:4px; }
+  .lane-hdr { display:flex; align-items:center; gap:6px; margin-bottom:4px; }
+  .lane-dir { font-size:15px; width:18px; text-align:center; }
+  .lane-dir-label { font-family:'Press Start 2P',monospace; font-size:7px; letter-spacing:1px; }
+  .seg-btn { font-family:'Press Start 2P',monospace; font-size:7px; padding:4px 8px; cursor:pointer; border-radius:3px; border:1px solid; background:transparent; }
+  .seg-btn:hover { opacity:0.8; }
+  .add-seg-btn { font-family:'Press Start 2P',monospace; font-size:8px; padding:8px 16px; cursor:pointer; border-radius:3px; border:1px dashed #444; color:#444; background:transparent; margin-top:10px; display:block; width:100%; }
+  .add-seg-btn:hover { border-color:#00ffcc; color:#00ffcc; }
 </style>
 </head>
 <body>
@@ -150,6 +179,13 @@
     <div class="section-title">SECTOR PHYSICS</div>
     <div class="section-desc">Speed and length define the feel of the sector. Fast + short = intense burst. Slow + long = endurance run. Each level replay scales these up automatically (speed ×1.1, length ×1.15).</div>
     <div id="physics-sliders"></div>
+  </div>
+
+  <!-- Spiral Pattern -->
+  <div class="section">
+    <div class="section-title">SPIRAL PATTERN</div>
+    <div class="section-desc">Controls how objects wind around the tunnel walls. In <b>uniform</b> mode, one continuous twist runs the whole level. Switch to <b>pattern</b> mode to add segments with different directions, speeds, and multiple parallel lanes of objects. Drag the breakpoints on the bar to resize segments.</div>
+    <div id="spiral-editor"></div>
   </div>
 </div>
 
@@ -257,8 +293,9 @@ function buildDefaults() {
       const baseLength = Math.round(BASE_SECTOR_DISTANCE * SECTOR_LENGTH_MULTS[s-1]);
       const levelLength = Math.round(baseLength * Math.pow(1.15, lvl - 1));
 
-      // Spiral step
+      // Spiral
       const spiralStep = 1.1;
+      const spiralPattern = null; // null = flat mode, array = pattern mode
 
       // Rotation speed multiplier
       const rotMult = 1 + (s - 1) * 0.4;
@@ -301,7 +338,7 @@ function buildDefaults() {
         baseSpeed, levelSpeed,
         baseLength, levelLength,
         // Spiral / rotation
-        spiralStep,
+        spiralStep, spiralPattern,
         rotMult: Math.round(rotMult * 10) / 10,
         // Knot sway
         knotSwaySpeedMin, knotSwaySpeedMax,
@@ -526,7 +563,7 @@ function buildComputedStats() {
     <div class="crow"><span class="cl">Est. hazards</span><span class="cv">~${estHazards}</span></div>
     <div class="crow"><span class="cl">Est. rings</span><span class="cv">~${estRings}</span></div>
     <div class="crow"><span class="cl">Effective hazard%</span><span class="cv">${(hazardEff * 100).toFixed(1)}%</span></div>
-    <div class="crow"><span class="cl">Spiral step</span><span class="cv">${c.spiralStep} rad</span></div>
+    <div class="crow"><span class="cl">Spiral</span><span class="cv">${c.spiralPattern ? c.spiralPattern.length + ' segments' : c.spiralStep + ' rad (uniform)'}</span></div>
     <div class="crow"><span class="cl">Rotation mult</span><span class="cv">${c.rotMult}×</span></div>
   `;
 }
@@ -614,9 +651,6 @@ function buildSliders() {
     'Empty buffer zone at the start of each sector. Nothing spawns for this distance, giving you a moment to get oriented before the action starts.');
   slider('spacing-sliders', 'maxSpawnPct', 'Spawn cutoff', 0.50, 0.95, 0.01, '', v => (v*100).toFixed(0)+'%',
     'Objects stop spawning at this % of the sector length. The remaining space is clear runway leading to the finish ring. At 78%, the last ~22% of the tunnel is empty.');
-  slider('spacing-sliders', 'spiralStep', 'Spiral step', 0.3, 3.0, 0.1, 'rad', null,
-    'How much each object rotates around the tunnel compared to the previous one. Controls the spiral pattern. Low = objects form a gentle helix. High = objects jump around the tunnel walls more randomly. At 1.1 rad (~63°), you get a nice spread.');
-
   // Special objects
   slider('special-sliders', 'starChance', 'Star chance', 0, 0.10, 0.005, '', null,
     'Chance per spawn point of getting a force field star. Rare defensive pickups that absorb one hit. <b style="color:#ff44ff;">= ~' + _nStar + ' stars</b> in this sector.', !c.stars);
@@ -663,11 +697,273 @@ function buildSliders() {
     'How fast objects spin in place. Later sectors spin faster, making hazards harder to read at a glance. At 1.0× objects rotate gently. At 2.8× they\'re whipping around.');
 }
 
+// ═══════════════════════════════════════════════════════════════
+// SPIRAL PATTERN EDITOR
+// ═══════════════════════════════════════════════════════════════
+
+const SEG_BG =     ['#1a3a3a','#3a1a2a','#3a3a1a','#1a3a1a','#3a2a1a','#1a1a3a','#3a1a1a','#1a2a3a'];
+const SEG_BORDER = ['#00ffcc','#ff69b4','#ffe000','#00ff88','#ff8c00','#5555ff','#ff4444','#44aaff'];
+
+function buildSpiralEditor() {
+  const el = document.getElementById('spiral-editor');
+  el.innerHTML = '';
+  const c = getC();
+  const usePattern = Array.isArray(c.spiralPattern) && c.spiralPattern.length > 0;
+
+  // Mode toggle row
+  const modeRow = document.createElement('div');
+  modeRow.className = 'spiral-mode-row';
+  if (!usePattern) {
+    modeRow.innerHTML = '<span class="badge on" style="cursor:pointer;" onclick="enableSpiralPattern()">UNIFORM</span>'
+      + '<span style="color:#555;font-size:11px;">One continuous twist —</span>'
+      + '<span style="color:#00ffcc;font-size:11px;cursor:pointer;" onclick="enableSpiralPattern()">switch to pattern mode →</span>';
+    el.appendChild(modeRow);
+    // Flat spiralStep slider
+    slider('spiral-editor', 'spiralStep', 'Spiral twist', 0.1, 3.0, 0.1, 'rad', null,
+      'How much each object rotates around the tunnel. Low = gentle helix, high = spread out. Use pattern mode for direction changes and multiple lanes.');
+    return;
+  }
+
+  const pat = c.spiralPattern;
+  modeRow.innerHTML = '<span class="badge on" style="cursor:pointer;background:#1a0030;color:#ff69b4;border-color:#ff69b4;" onclick="disableSpiralPattern()">PATTERN</span>'
+    + '<span style="color:#555;font-size:11px;">' + pat.length + ' segment' + (pat.length > 1 ? 's' : '') + ' — drag breakpoints to resize</span>';
+  el.appendChild(modeRow);
+
+  // ── Visual Bar ──
+  const barWrap = document.createElement('div');
+  barWrap.className = 'spiral-bar-wrap';
+  const bar = document.createElement('div');
+  bar.className = 'spiral-bar';
+  bar.id = 'spiral-bar';
+
+  let prevU = 0;
+  pat.forEach((seg, i) => {
+    const pct = ((seg.until - prevU) * 100);
+    const lanes = seg.lanes || [{ step: seg.step || 0, offset: 0 }];
+    const arrows = lanes.map(l => l.step > 0 ? '↻' : l.step < 0 ? '↺' : '—').join(' ');
+    const segEl = document.createElement('div');
+    segEl.className = 'spiral-seg';
+    segEl.style.cssText = 'flex:0 0 ' + pct + '%;background:' + SEG_BG[i % SEG_BG.length] + ';';
+    segEl.innerHTML = '<div class="spiral-seg-label">' + Math.round(pct) + '%</div>'
+      + '<div class="spiral-seg-info">' + lanes.length + (lanes.length > 1 ? ' lanes' : ' lane') + ' ' + arrows + '</div>';
+    bar.appendChild(segEl);
+    prevU = seg.until;
+  });
+  barWrap.appendChild(bar);
+
+  // Drag handles at breakpoints (not after last)
+  for (let i = 0; i < pat.length - 1; i++) {
+    const h = document.createElement('div');
+    h.className = 'spiral-handle';
+    h.style.left = 'calc(' + (pat[i].until * 100) + '% - 8px)';
+    h.innerHTML = '<div class="pct-label">' + Math.round(pat[i].until * 100) + '%</div>';
+    h.dataset.idx = i;
+    h.addEventListener('mousedown', startSpiralDrag);
+    h.addEventListener('touchstart', startSpiralDrag, { passive: false });
+    barWrap.appendChild(h);
+  }
+  el.appendChild(barWrap);
+
+  // ── Segment Cards ──
+  const cards = document.createElement('div');
+  cards.className = 'seg-cards';
+  prevU = 0;
+  pat.forEach((seg, i) => {
+    const lanes = seg.lanes || [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
+    const color = SEG_BORDER[i % SEG_BORDER.length];
+    const fromPct = Math.round(prevU * 100);
+    const toPct = Math.round(seg.until * 100);
+
+    const card = document.createElement('div');
+    card.className = 'seg-card';
+    card.style.borderColor = color;
+
+    let h = '<div class="seg-card-hdr"><span style="color:' + color + ';">SEG ' + (i+1) + '  ' + fromPct + '→' + toPct + '%</span>';
+    if (pat.length > 1) h += '<button class="seg-btn" style="color:#ff4444;border-color:#ff4444;" onclick="removeSpiralSeg(' + i + ')">✕</button>';
+    h += '</div>';
+
+    // Until input (not for last segment — always 100%)
+    if (i < pat.length - 1) {
+      h += '<div class="seg-field"><label>Ends at</label>'
+        + '<input type="number" value="' + toPct + '" min="' + (fromPct + 5) + '" max="95" step="5" onchange="setSpiralUntil(' + i + ',this.value)">'
+        + '<span class="unit">%</span></div>';
+    }
+
+    // Lanes header
+    h += '<div style="display:flex;align-items:center;gap:6px;margin:8px 0 6px;">'
+      + '<span style="color:#666;font-size:10px;font-family:\'Press Start 2P\',monospace;letter-spacing:1px;">' + lanes.length + ' LANE' + (lanes.length > 1 ? 'S' : '') + '</span>'
+      + '<button class="seg-btn" style="color:#00ff88;border-color:#00ff88;" onclick="addSpiralLane(' + i + ')">+</button>';
+    if (lanes.length > 1) h += '<button class="seg-btn" style="color:#ff4444;border-color:#ff4444;" onclick="rmSpiralLane(' + i + ')">−</button>';
+    h += '</div>';
+
+    // Per-lane rows
+    lanes.forEach((lane, li) => {
+      const dir = lane.step > 0 ? '↻' : lane.step < 0 ? '↺' : '—';
+      const dirColor = lane.step > 0 ? '#00ffcc' : lane.step < 0 ? '#ff69b4' : '#666';
+      const dirLabel = lane.step > 0 ? 'CW' : lane.step < 0 ? 'CCW' : 'STRAIGHT';
+      h += '<div class="lane-row">'
+        + '<div class="lane-hdr">'
+        + '<div class="lane-dir" style="color:' + dirColor + ';">' + dir + '</div>'
+        + '<div class="lane-dir-label" style="color:' + dirColor + ';">' + dirLabel + '</div>'
+        + '</div>'
+        + '<div style="display:flex;flex-wrap:wrap;gap:4px 12px;">'
+        + '<div class="seg-field" style="margin-bottom:0;"><label>Twist</label>'
+        + '<input type="number" value="' + lane.step + '" step="0.1" min="-3" max="3" onchange="setSpiralLaneStep(' + i + ',' + li + ',this.value)">'
+        + '<span class="unit">rad</span></div>';
+      if (lanes.length > 1) {
+        const offPi = Math.round((lane.offset || 0) / Math.PI * 100) / 100;
+        h += '<div class="seg-field" style="margin-bottom:0;"><label>Offset</label>'
+          + '<input type="number" value="' + offPi + '" step="0.25" min="0" max="2" onchange="setSpiralLaneOffset(' + i + ',' + li + ',this.value)">'
+          + '<span class="unit">×π</span></div>';
+      }
+      h += '</div></div>';
+    });
+
+    card.innerHTML = h;
+    cards.appendChild(card);
+    prevU = seg.until;
+  });
+  el.appendChild(cards);
+
+  // Add segment button
+  const addBtn = document.createElement('button');
+  addBtn.className = 'add-seg-btn';
+  addBtn.innerText = '+ ADD SEGMENT';
+  addBtn.onclick = addSpiralSeg;
+  el.appendChild(addBtn);
+}
+
+// ── Spiral helpers ──
+
+function enableSpiralPattern() {
+  const c = getC();
+  c.spiralPattern = [{ until: 1.0, step: c.spiralStep || 1.1 }];
+  refresh();
+}
+
+function disableSpiralPattern() {
+  const c = getC();
+  if (c.spiralPattern && c.spiralPattern.length > 0) {
+    const first = c.spiralPattern[0];
+    const lanes = first.lanes || [{ step: first.step || 1.1 }];
+    c.spiralStep = Math.abs(lanes[0].step) || 1.1;
+  }
+  c.spiralPattern = null;
+  refresh();
+}
+
+function setSpiralUntil(idx, val) {
+  const pat = getC().spiralPattern; if (!pat) return;
+  let pct = Math.max(5, Math.min(95, parseInt(val) || 50));
+  const prev = idx > 0 ? pat[idx - 1].until : 0;
+  const next = idx < pat.length - 1 ? pat[idx + 1].until : 1;
+  pct = Math.max(Math.round(prev * 100) + 5, Math.min(Math.round(next * 100) - 5, pct));
+  pat[idx].until = pct / 100;
+  refresh();
+}
+
+function setSpiralLaneStep(segIdx, laneIdx, val) {
+  const pat = getC().spiralPattern; if (!pat) return;
+  const v = Math.round((parseFloat(val) || 0) * 10) / 10;
+  const seg = pat[segIdx];
+  if (seg.lanes) { seg.lanes[laneIdx].step = v; }
+  else { seg.step = v; }
+  refresh();
+}
+
+function setSpiralLaneOffset(segIdx, laneIdx, val) {
+  const pat = getC().spiralPattern; if (!pat) return;
+  const seg = pat[segIdx];
+  if (seg.lanes && seg.lanes[laneIdx]) {
+    seg.lanes[laneIdx].offset = Math.round((parseFloat(val) || 0) * Math.PI * 100) / 100;
+  }
+  refresh();
+}
+
+function addSpiralLane(segIdx) {
+  const seg = getC().spiralPattern[segIdx];
+  if (!seg.lanes) {
+    seg.lanes = [{ step: seg.step || 1.1, offset: 0 }];
+    delete seg.step;
+  }
+  const n = seg.lanes.length;
+  seg.lanes.push({ step: seg.lanes[0].step, offset: Math.round(Math.PI / n * 100) / 100 });
+  refresh();
+}
+
+function rmSpiralLane(segIdx) {
+  const seg = getC().spiralPattern[segIdx];
+  if (!seg.lanes || seg.lanes.length <= 1) return;
+  seg.lanes.pop();
+  if (seg.lanes.length === 1) { seg.step = seg.lanes[0].step; delete seg.lanes; }
+  refresh();
+}
+
+function addSpiralSeg() {
+  const pat = getC().spiralPattern;
+  const last = pat[pat.length - 1];
+  const prevU = pat.length > 1 ? pat[pat.length - 2].until : 0;
+  const mid = Math.round(((prevU + last.until) / 2) * 20) / 20; // snap to 5%
+  const newSeg = JSON.parse(JSON.stringify(last));
+  // Flip direction for variety
+  if (newSeg.lanes) { newSeg.lanes.forEach(l => { l.step = -l.step; }); }
+  else { newSeg.step = -(newSeg.step || 1.1); }
+  newSeg.until = last.until;
+  last.until = mid;
+  pat.push(newSeg);
+  refresh();
+}
+
+function removeSpiralSeg(idx) {
+  const pat = getC().spiralPattern;
+  if (pat.length <= 1) return;
+  if (idx === pat.length - 1 && idx > 0) pat[idx - 1].until = pat[idx].until;
+  pat.splice(idx, 1);
+  pat[pat.length - 1].until = 1.0;
+  refresh();
+}
+
+// ── Breakpoint drag ──
+var _spiralDrag = null;
+
+function startSpiralDrag(e) {
+  e.preventDefault();
+  const idx = parseInt(e.currentTarget.dataset.idx);
+  const bar = document.getElementById('spiral-bar');
+  const rect = bar.getBoundingClientRect();
+  _spiralDrag = { idx, rect };
+  e.currentTarget.classList.add('dragging');
+
+  function onMove(ev) {
+    const cx = ev.touches ? ev.touches[0].clientX : ev.clientX;
+    let pct = (cx - _spiralDrag.rect.left) / _spiralDrag.rect.width;
+    const pat = getC().spiralPattern;
+    const prev = _spiralDrag.idx > 0 ? pat[_spiralDrag.idx - 1].until : 0;
+    const next = _spiralDrag.idx < pat.length - 2 ? pat[_spiralDrag.idx + 1].until : 1;
+    pct = Math.max(prev + 0.05, Math.min(next - 0.05, pct));
+    pct = Math.round(pct * 20) / 20; // snap to 5%
+    pat[_spiralDrag.idx].until = pct;
+    refresh();
+  }
+  function onUp() {
+    document.removeEventListener('mousemove', onMove);
+    document.removeEventListener('mouseup', onUp);
+    document.removeEventListener('touchmove', onMove);
+    document.removeEventListener('touchend', onUp);
+    _spiralDrag = null;
+  }
+  document.addEventListener('mousemove', onMove);
+  document.addEventListener('mouseup', onUp);
+  document.addEventListener('touchmove', onMove, { passive: false });
+  document.addEventListener('touchend', onUp);
+}
+
 function refresh() {
   buildTabs();
   buildLevelTabs();
   buildGatingToggles();
   buildSliders();
+  buildSpiralEditor();
   buildSpawnChart();
   buildComputedStats();
 }
