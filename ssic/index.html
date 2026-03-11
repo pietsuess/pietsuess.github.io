@@ -316,29 +316,40 @@ const paths = document.querySelectorAll('.hero-logo path');
 const dur = 6000; // ms
 const easing = 'cubic-bezier(0.25, 0.0, 0.65, 0.85)';
 
-paths.forEach((path) => {
+[...document.querySelectorAll('.hero-logo path')].forEach((path) => {
   const len = path.getTotalLength();
-  // Clone for drawing from the end
-  const clone = path.cloneNode(true);
-  path.parentNode.appendChild(clone);
+  const q = len / 4;
 
-  // Both halves: dash covers full length, gap covers full length
-  path.style.strokeDasharray = len;
-  clone.style.strokeDasharray = len;
+  // 4 clones: original + 3 new — each draws one quarter of the path
+  const els = [path];
+  for (let i = 0; i < 3; i++) {
+    const c = path.cloneNode(true);
+    path.parentNode.appendChild(c);
+    els.push(c);
+  }
 
-  // Original: offset len (hidden) → len/2 (first half visible from start)
-  path.style.strokeDashoffset = len;
-  path.animate(
-    [{ strokeDashoffset: len }, { strokeDashoffset: len / 2 }],
-    { duration: dur, easing, fill: 'forwards' }
-  );
+  // Each quarter: animate dasharray from 0→q (dash grows from a point)
+  // and dashoffset to position the growing dash at the right spot
+  const configs = [
+    // Q1: grows from start (0) toward L/4
+    { off: [0, 0] },
+    // Q2: grows from midpoint (L/2) backward toward L/4
+    { off: [-len / 2, -q] },
+    // Q3: grows from midpoint (L/2) forward toward 3L/4
+    { off: [-len / 2, -len / 2] },
+    // Q4: grows from end (L) backward toward 3L/4
+    { off: [-len, -3 * q] },
+  ];
 
-  // Clone: offset -len (hidden) → -len/2 (second half visible from end)
-  clone.style.strokeDashoffset = -len;
-  clone.animate(
-    [{ strokeDashoffset: -len }, { strokeDashoffset: -len / 2 }],
-    { duration: dur, easing, fill: 'forwards' }
-  );
+  els.forEach((el, i) => {
+    const { off } = configs[i];
+    el.style.strokeDasharray = `0 ${len}`;
+    el.style.strokeDashoffset = off[0];
+    el.animate([
+      { strokeDasharray: `0 ${len}`, strokeDashoffset: off[0] },
+      { strokeDasharray: `${q} ${3 * q}`, strokeDashoffset: off[1] },
+    ], { duration: dur, easing, fill: 'forwards' });
+  });
 });
 
 // Scroll reveal
