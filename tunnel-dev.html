@@ -3908,18 +3908,28 @@ window.onload = function() {
         var _tSpawn = _getTuning(currentSector, currentLevel);
         var lastItemDist = sectorDistance * (_tSpawn.maxSpawnPct || 0.78);
         // Walk forward, checking per-segment spacing overrides
+        // Multi-lane segments spawn one item per lane at the same Z
         var pat = _tSpawn.spiralPattern;
         var walkDist = startOffset;
         for (var n = 0; n < 600; n++) {
             if (walkDist > lastItemDist) break;
-            spawnItem(seedZ - (walkDist - startOffset));
-            // Determine spacing for next step: check segment override
+            // How many lanes does the current segment have?
+            var laneCount = 1;
             var segSpacing = spacing;
             if (pat && pat.length > 0 && sectorDistance > 0) {
                 var prog = walkDist / sectorDistance;
                 for (var si = 0; si < pat.length; si++) {
-                    if (prog <= pat[si].until) { if (pat[si].spacing) segSpacing = pat[si].spacing; break; }
+                    if (prog <= pat[si].until) {
+                        if (pat[si].lanes) laneCount = pat[si].lanes.length;
+                        if (pat[si].spacing) segSpacing = pat[si].spacing;
+                        break;
+                    }
                 }
+            }
+            // Spawn one item per lane at this Z position
+            var spawnZ = seedZ - (walkDist - startOffset);
+            for (var ln = 0; ln < laneCount; ln++) {
+                spawnItem(spawnZ);
             }
             walkDist += segSpacing;
         }
