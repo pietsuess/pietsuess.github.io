@@ -2631,7 +2631,7 @@ let state = {
 const bgCanvas = document.getElementById('bg');
 const bgCtx = bgCanvas.getContext('2d');
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
-const SB = isSafari ? 0.4 : 1.0; // shadowBlur scale factor — Safari halves all blur
+const SB = isSafari ? 0 : 1.0; // shadowBlur scale factor — 0 on Safari eliminates all canvas blur ops
 // Offscreen canvas for zone rings — redrawn only when player moves, not every frame
 const _ringCanvas = document.createElement('canvas');
 const _ringCtx = _ringCanvas.getContext('2d');
@@ -2827,8 +2827,8 @@ function drawBg(){
   });
   bgCtx.globalAlpha = 1;
 
-  // ── Zone ring guides — drawn to offscreen canvas, composited each frame ──
-  if(!state.inSecretLevel && !state._victoryPhase){
+  // ── Zone ring guides — skip on Safari (offscreen canvas drawImage kills FPS)
+  if(!isSafari && !state.inSecretLevel && !state._victoryPhase){
     const ox = bgCanvas.width/2 - state.x;
     const oy = bgCanvas.height/2 - state.y;
     // Only redraw offscreen canvas when player moves more than 8px
@@ -10299,17 +10299,17 @@ function drawGame(){
       const _msgY = _hasPre ? flashY-10 : flashY-18;
       if(_hasPre){
         setFont(FONT_18); ctx.fillStyle=_flashCol;
-        ctx.shadowBlur=16; ctx.shadowColor=_flashShadow;
+        ctx.shadowBlur=16*SB; ctx.shadowColor=_flashShadow;
         ctx.fillText(state.zoneCrossFlash.pre, CX(), _msgY-32);
       }
       setFont(FONT_24B);
       ctx.fillStyle=_flashCol;
-      ctx.shadowBlur=32; ctx.shadowColor=_flashShadow;
+      ctx.shadowBlur=32*SB; ctx.shadowColor=_flashShadow;
       ctx.fillText(state.zoneCrossFlash.msg, CX(), _msgY);
       // Sub-text if provided
       if(state.zoneCrossFlash.sub){
         setFont(FONT_24B); ctx.fillStyle='#00ffcc';
-        ctx.shadowColor='#009977'; ctx.shadowBlur=32;
+        ctx.shadowColor='#009977'; ctx.shadowBlur=32*SB;
         ctx.fillText(state.zoneCrossFlash.sub, CX(), _msgY+46);
       }
       ctx.restore();
@@ -10318,7 +10318,7 @@ function drawGame(){
       ctx.globalAlpha=alpha;
       setFont(FONT_18B);
       ctx.textAlign='center'; ctx.fillStyle='#ffe000';
-      ctx.shadowBlur=30; ctx.shadowColor='#ffe000';
+      ctx.shadowBlur=30*SB; ctx.shadowColor='#ffe000';
       ctx.fillText('BOOST DOUBLED!', CX(), flashY-10);
       ctx.restore();
     } else {
@@ -10332,12 +10332,12 @@ function drawGame(){
       ctx.font = `bold ${_fontSz}px "Press Start 2P",monospace`; _curFont='';
       ctx.textAlign = 'center';
       ctx.fillStyle = col;
-      ctx.shadowBlur = 35; ctx.shadowColor = col;
+      ctx.shadowBlur = 35*SB; ctx.shadowColor = col;
       ctx.fillText(mainText, CX(), flashY - 18);
       if(subText){
         setFont(FONT_9);
         ctx.fillStyle = '#fff';
-        ctx.shadowBlur = 8; ctx.shadowColor = '#fff';
+        ctx.shadowBlur = 8*SB; ctx.shadowColor = '#fff';
         ctx.fillText(subText, CX(), flashY + 18);
       }
       ctx.restore();
@@ -11917,6 +11917,7 @@ function startGame(){
     state._izRingMax=99;
     // Set outside barrier state
     state.outsideBarrier=true; state._committedInside=false;
+    _spawnEditWormholes(); // zone warps near launchpad for when player returns
     // Teleport to Moon
     const moonX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
     const moonY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R + 200;
@@ -14371,6 +14372,24 @@ function exitSecretLevel(){
   state.score = _svScore;
   updateLevelDisplay(LEVELS[1]);
   selectTrack(3);
+  // Spawn zone warp portals near launchpad (just beyond arms, r=120)
+  _spawnEditWormholes();
+}
+
+function _spawnEditWormholes(){
+  // Remove any previous edit wormholes to avoid duplicates
+  state.wormholes = state.wormholes.filter(w => !w._editWarp);
+  const _wr = 120; // just beyond launchpad basR=68
+  const _ws = 48;  // 1.25× normal size (38*1.25)
+  LEVELS.forEach((lvl, i) => {
+    if(i === 1) return; // skip EDIT→EDIT
+    const ang = (i / LEVELS.length) * Math.PI * 2 - Math.PI / 2;
+    state.wormholes.push({
+      wx: Math.cos(ang) * _wr, wy: Math.sin(ang) * _wr,
+      destLevel: i, phase: ang, size: _ws,
+      _permanent: true, _editWarp: true
+    });
+  });
 }
 
 // ── Bell-body path builder (shared by boss visual) ──
