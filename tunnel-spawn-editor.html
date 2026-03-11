@@ -903,12 +903,10 @@ function buildSpiralEditor() {
         + '<div class="seg-field" style="margin-bottom:0;"><label>Twist</label>'
         + '<input type="number" value="' + lane.step + '" step="0.1" min="-3" max="3" onchange="setSpiralLaneStep(' + i + ',' + li + ',this.value)">'
         + '<span class="unit">rad</span></div>';
-      if (lanes.length > 1) {
-        const offPi = Math.round((lane.offset || 0) / Math.PI * 100) / 100;
-        h += '<div class="seg-field" style="margin-bottom:0;"><label>Offset</label>'
-          + '<input type="number" value="' + offPi + '" step="0.25" min="0" max="2" onchange="setSpiralLaneOffset(' + i + ',' + li + ',this.value)">'
-          + '<span class="unit">×π</span></div>';
-      }
+      var offDeg = Math.round((lane.offset || 0) * 180 / Math.PI);
+      h += '<div class="seg-field" style="margin-bottom:0;"><label>Start °</label>'
+        + '<input type="number" value="' + offDeg + '" step="15" min="0" max="360" onchange="setSpiralLaneOffsetDeg(' + i + ',' + li + ',this.value)">'
+        + '<span class="unit">deg</span></div>';
       h += '</div></div>';
     });
 
@@ -973,14 +971,31 @@ function setSpiralLaneOffset(segIdx, laneIdx, val) {
   refresh();
 }
 
+function setSpiralLaneOffsetDeg(segIdx, laneIdx, val) {
+  const pat = getC().spiralPattern; if (!pat) return;
+  const deg = Math.max(0, Math.min(360, parseFloat(val) || 0));
+  const rad = Math.round(deg * Math.PI / 180 * 100) / 100;
+  const seg = pat[segIdx];
+  if (seg.lanes) {
+    seg.lanes[laneIdx].offset = rad;
+  } else {
+    // Single-lane segment — convert to lanes format to store offset
+    seg.lanes = [{ step: seg.step || 1.1, offset: rad }];
+    delete seg.step;
+  }
+  refresh();
+}
+
 function addSpiralLane(segIdx) {
   const seg = getC().spiralPattern[segIdx];
   if (!seg.lanes) {
     seg.lanes = [{ step: seg.step || 1.1, offset: 0 }];
     delete seg.step;
   }
-  const n = seg.lanes.length;
-  seg.lanes.push({ step: seg.lanes[0].step, offset: Math.round(Math.PI / n * 100) / 100 });
+  // Space new lane evenly — e.g. 2nd lane at 180°, 3rd at 120°/240°, etc.
+  const total = seg.lanes.length + 1;
+  const newOffset = Math.round(2 * Math.PI / total * seg.lanes.length * 100) / 100;
+  seg.lanes.push({ step: seg.lanes[0].step, offset: newOffset });
   refresh();
 }
 
