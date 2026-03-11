@@ -194,7 +194,8 @@
   <button class="export-btn" onclick="exportCurrent()">EXPORT CURRENT SECTOR</button>
   <button class="export-btn green" onclick="exportAll()">EXPORT ALL SECTORS</button>
   <button class="export-btn gold" onclick="copyExport()">COPY TO CLIPBOARD</button>
-  <button class="export-btn" onclick="resetCurrent()" style="color:#ff4444;border-color:#ff4444;background:#1a0000;">RESET TO DEFAULTS</button>
+  <button class="export-btn" onclick="resetCurrent()" style="color:#ff4444;border-color:#ff4444;background:#1a0000;">RESET THIS LEVEL</button>
+  <button class="export-btn" onclick="resetAll()" style="color:#ff4444;border-color:#ff4444;background:#1a0000;">RESET ALL</button>
   <textarea id="export-output" placeholder="Export data will appear here..."></textarea>
 </div>
 
@@ -353,6 +354,51 @@ function buildDefaults() {
 
 let DEFAULTS = buildDefaults();
 let config = JSON.parse(JSON.stringify(DEFAULTS));
+
+// Load saved config from localStorage
+const STORAGE_KEY = 'trSpawnEditorConfig';
+try {
+  const saved = localStorage.getItem(STORAGE_KEY);
+  if (saved) {
+    const parsed = JSON.parse(saved);
+    for (const s in parsed) {
+      if (!config[s]) continue;
+      for (const l in parsed[s]) {
+        if (!config[s][l]) continue;
+        Object.assign(config[s][l], parsed[s][l]);
+      }
+    }
+  }
+} catch(e) { console.warn('Failed to load saved config:', e); }
+
+function saveConfig() {
+  try {
+    // Only save keys that differ from defaults
+    const diff = {};
+    let hasDiff = false;
+    for (const s in config) {
+      for (const l in config[s]) {
+        const c = config[s][l];
+        const d = DEFAULTS[s][l];
+        const ld = {};
+        let levelHasDiff = false;
+        for (const k in c) {
+          if (JSON.stringify(c[k]) !== JSON.stringify(d[k])) {
+            ld[k] = c[k];
+            levelHasDiff = true;
+          }
+        }
+        if (levelHasDiff) {
+          if (!diff[s]) diff[s] = {};
+          diff[s][l] = ld;
+          hasDiff = true;
+        }
+      }
+    }
+    if (hasDiff) localStorage.setItem(STORAGE_KEY, JSON.stringify(diff));
+    else localStorage.removeItem(STORAGE_KEY);
+  } catch(e) {}
+}
 
 let activeSector = 1;
 let activeLevel = 1;
@@ -966,6 +1012,7 @@ function refresh() {
   buildSpiralEditor();
   buildSpawnChart();
   buildComputedStats();
+  saveConfig();
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -1032,7 +1079,15 @@ function copyExport() {
 }
 
 function resetCurrent() {
+  if (!confirm('Reset S' + activeSector + 'L' + activeLevel + ' to defaults?')) return;
   config[activeSector][activeLevel] = JSON.parse(JSON.stringify(DEFAULTS[activeSector][activeLevel]));
+  refresh();
+}
+
+function resetAll() {
+  if (!confirm('Reset ALL sectors and levels to defaults? This clears all saved changes.')) return;
+  config = JSON.parse(JSON.stringify(DEFAULTS));
+  try { localStorage.removeItem(STORAGE_KEY); } catch(e) {}
   refresh();
 }
 
