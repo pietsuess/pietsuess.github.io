@@ -2631,6 +2631,31 @@ let state = {
   _dtScale: 1
 };
 
+// ── Analytics — silent POST to Google Sheets ──
+const _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbx9cJRgS2VLwjvfwXQ2X_mGsQwPkyWrwyEJ-Oe4OkxrZtJXAi8mIjhJtNNwsZ39n1xFZg/exec';
+const _analyticsSession = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+let _analyticsStartTime = 0;
+function _sendAnalytics(event, extra){
+  try {
+    const payload = {
+      session: _analyticsSession,
+      event: event,
+      zone: (typeof LEVELS !== 'undefined' && state.currentLevel >= 0 && state.currentLevel < LEVELS.length) ? LEVELS[state.currentLevel] : (state.outsideBarrier ? 'OUTER' : 'BELT'),
+      score: state.score || 0,
+      fuel: Math.round((state.fuel || 0) * 100),
+      timePlayed: Math.round((Date.now() - _analyticsStartTime) / 1000),
+      rocksDestroyed: state.rocksDestroyed || 0,
+      deaths: 0,
+      secretFound: !!state.secretUnlocked,
+      bossDefeated: !!state.secretBossDefeated,
+      victory: !!(state._victoryPhase),
+      userAgent: navigator.userAgent.slice(0, 120)
+    };
+    if(extra) Object.assign(payload, extra);
+    navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(payload));
+  } catch(e){}
+}
+
 const bgCanvas = document.getElementById('bg');
 const bgCtx = bgCanvas.getContext('2d');
 const isSafari = /^((?!chrome|android).)*safari/i.test(navigator.userAgent);
@@ -5168,6 +5193,7 @@ function updateWaveBeams(){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
             if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
               state.secretUnlocked = true;
+              _sendAnalytics('secret_found');
               setTimeout(triggerSecretLevelUnlock, 500);
             }
           }
@@ -5650,6 +5676,7 @@ function update(){
       updateLevelDisplay(_outerZoneKey);
       const _col = _inHomeward ? '#4488ff' : '#ff8800';
       state.zoneCrossFlash = { lvl:-3, timer:160, msg:'ZONE: ' + _outerZoneKey, _col };
+      _sendAnalytics('zone_enter', { zone: _outerZoneKey });
     }
 
     const nowZone = _outerZoneKey ? -99 : zoneAt(state.x, state.y);
@@ -5660,6 +5687,7 @@ function update(){
       state.currentLevel = nowZone;
       if(!state.visitedLevels) state.visitedLevels = new Set([1]);
       if(nowZone >= 0) state.visitedLevels.add(nowZone);
+      _sendAnalytics('zone_enter', { zone: nowZone >= 0 ? LEVELS[nowZone] : 'BELT' });
       const _zLabel = nowZone >= 0 ? LEVELS[nowZone] : 'ASTEROID BELT';
       updateLevelDisplay(_zLabel);
       // Show EDIT flash only when actually inside the pen barrier; intermediary shows INTER
@@ -6081,6 +6109,7 @@ function update(){
         // Final ring cleared — interzone complete sequence
         if(ir2 === INTERZONE_RINGS.length - 1 && !state._interzoneComplete){
           state._interzoneComplete = true;
+          _sendAnalytics('interzone_complete');
           // Kill boosters
           state.hyperspace = false;
           state.hsTail = [];
@@ -6389,6 +6418,7 @@ function update(){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
             if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
               state.secretUnlocked = true;
+              _sendAnalytics('secret_found');
               setTimeout(triggerSecretLevelUnlock, 500);
             }
           }
@@ -7633,6 +7663,7 @@ function submitVictoryScore(){
 // victoryReturnToTitle removed — now handled by NAVIGATOR-VICTORY.html
 
 function triggerEarthVictory(){
+  _sendAnalytics('victory');
   state._victoryPhase = 'zoom';
   state._victoryTimer = 0;
   state._victoryZoom  = 1;
@@ -11893,6 +11924,8 @@ function initLeaderboardWithScore(topInitials, topScore){
 
 function startGame(){
   if(state.started)return;
+  _analyticsStartTime = Date.now();
+  _sendAnalytics('session_start');
   if(Date.now() - (window._titleReturnTime||0) < 600) return;
   if(!window._contentManifestsReady){
     const sub=document.getElementById('intro-sub');
@@ -13349,6 +13382,7 @@ function resetIdleTimer(){
 }
 
 function showIdleOverlay(){
+  _sendAnalytics('death');
   const el = document.getElementById('idle-overlay');
   el.style.display = 'flex';
   document.getElementById('idle-score').textContent = String(state.score).padStart(6,'0');
@@ -13954,6 +13988,7 @@ function updateSecretLevel(){
       state._bossCaptureTriggered=true;
       state._bossInMainWorld=true;
       state.secretBossDefeated=true;
+      _sendAnalytics('boss_defeated');
       _capBoss.dead=true; _capBoss.deathTimer=0;
       addScore(13750);
       state.zoneCrossFlash={lvl:-3,timer:300,maxT:300,pre:'SUCCESS!',msg:'YOU LURED THE OCTOALIEN INTO THE BLACK HOLE',_col:'#aa00ff'};
