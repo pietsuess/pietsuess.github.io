@@ -91,14 +91,17 @@
     font-family: 'Urbanist', sans-serif;
     font-weight: 300;
     font-size: clamp(0.75rem, 1.4vw, 1rem);
-    letter-spacing: 0.15em;
     text-transform: uppercase;
     color: var(--gold);
     opacity: 0;
     pointer-events: none;
-    /* justify text to fill exact logo width */
-    text-align: justify;
-    text-align-last: justify;
+    display: flex;
+    justify-content: center;
+    white-space: nowrap;
+  }
+  .hero-fullname .char {
+    display: inline-block;
+    transition: none;
   }
   .hero-fullname.show {
     opacity: 0.6;
@@ -494,6 +497,20 @@ function spreadIntoDepth() {
   layerEls[6].targetZ = -50;
 }
 
+// ── Split full name into individual characters ──
+const fullnameEl = document.getElementById('fullname');
+const fullnameText = fullnameEl.textContent;
+fullnameEl.textContent = '';
+const chars = [];
+for (let i = 0; i < fullnameText.length; i++) {
+  const span = document.createElement('span');
+  span.className = 'char';
+  span.textContent = fullnameText[i] === ' ' ? '\u00A0' : fullnameText[i];
+  fullnameEl.appendChild(span);
+  chars.push(span);
+}
+const totalChars = chars.length;
+
 // ── Mouse parallax ──
 let mx = 0, my = 0, cx = 0, cy = 0;
 document.addEventListener('mousemove', e => {
@@ -532,6 +549,19 @@ function tick() {
   });
 
   scene.style.transform = `rotateY(${rotY}deg) rotateX(${rotX}deg)`;
+
+  // Responsive letter spacing — condenses toward mouse side
+  const baseGap = 0.15; // em
+  const swing = 0.25;   // em max variation
+  for (let i = 0; i < totalChars; i++) {
+    const t = i / (totalChars - 1); // 0 = left, 1 = right
+    // cx is -1 (left) to 1 (right)
+    // When mouse is left (cx<0), left letters compress (less gap), right expand
+    // gap = base + cx * (t - 0.5) * swing * 2
+    const gap = baseGap + cx * (t - 0.5) * swing * 2;
+    chars[i].style.marginRight = gap + 'em';
+  }
+
   requestAnimationFrame(tick);
 }
 tick();
