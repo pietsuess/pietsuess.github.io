@@ -875,13 +875,14 @@
     <span style="font-family:'Press Start 2P',monospace;font-size:7px;color:rgba(0,255,204,0.4);letter-spacing:2px;">ROLL ▶</span>
   </div>
 </div>
-<!-- Speed hint — shown on S1L1 if player hasn't boosted by 25% progress -->
-<div id="speed-hint" style="display:none;position:fixed;inset:0;z-index:465;pointer-events:none;
-  align-items:center;justify-content:center;">
-  <div style="padding:14px 24px;text-align:center;
-    background:rgba(0,0,0,0.6);border:1px solid rgba(0,255,204,0.3);border-radius:8px;">
-    <span style="font-family:'Press Start 2P',monospace;font-size:clamp(9px,2.2vw,13px);
-      color:#00ffcc;letter-spacing:2px;text-shadow:0 0 12px rgba(0,255,204,0.6);">DRAG UP FOR SPEED</span>
+<!-- Speed hint — animated arrow slides from center to top, loops until player boosts -->
+<div id="speed-hint" style="display:none;position:fixed;left:0;right:0;z-index:465;pointer-events:none;
+  text-align:center;">
+  <div id="speed-hint-inner" style="display:inline-block;font-family:'Press Start 2P',monospace;
+    color:#00ffcc;text-shadow:0 0 14px rgba(0,255,204,0.7),0 0 30px rgba(0,255,204,0.3);
+    font-size:clamp(9px,2.2vw,13px);letter-spacing:2px;">
+    <div style="font-size:clamp(18px,5vw,28px);line-height:1;margin-bottom:6px;">&#9650;</div>
+    DRAG UP TO<br>INCREASE SPEED
   </div>
 </div>
 <div id="countdown-overlay" style="display:none;position:fixed;inset:0;z-index:480;
@@ -5619,28 +5620,40 @@ window.onload = function() {
                 _bb.style.background='rgba(255,68,68,0.25)'; _bb.style.boxShadow='none';
             }
 
-            // Speed hint — S1L1 only, if player hasn't boosted by 25% progress
+            // Speed hint — S1L1 only, loops arrow from center to top until player boosts
             if (throttleSmooth > 0.5) _everBoosted = true;
             if (!_speedHintShown && !_everBoosted && currentSector === 1 && currentLevel === 1 && progressPct >= 25) {
                 _speedHintShown = true;
                 var _sh = document.getElementById('speed-hint');
-                _sh.style.display = 'flex';
-                _sh.style.opacity = '0';
-                _sh.style.transition = 'opacity 0.5s';
-                setTimeout(function(){ _sh.style.opacity = '1'; }, 50);
-                // Auto-dismiss after 4 seconds
-                setTimeout(function(){
-                    _sh.style.opacity = '0';
-                    setTimeout(function(){ _sh.style.display = 'none'; }, 600);
-                }, 4000);
+                _sh.style.display = 'block';
+                _sh.style.opacity = '1';
+                // Animate: slide from 50% to 15% top, fade out, reset, repeat
+                var _shCycle = function() {
+                    if (_everBoosted) return;
+                    _sh.style.transition = 'none';
+                    _sh.style.top = '50%';
+                    _sh.style.opacity = '0.9';
+                    // Small delay so transition reset takes effect
+                    requestAnimationFrame(function(){ requestAnimationFrame(function(){
+                        _sh.style.transition = 'top 1.4s ease-in-out, opacity 1.4s ease-in-out';
+                        _sh.style.top = '12%';
+                        _sh.style.opacity = '0.15';
+                    }); });
+                };
+                _shCycle();
+                _sh._interval = setInterval(function(){
+                    if (_everBoosted) { clearInterval(_sh._interval); return; }
+                    _shCycle();
+                }, 1800);
             }
             // Dismiss speed hint immediately when player boosts
-            if (_everBoosted && !_speedHintShown) _speedHintShown = true;
             if (_everBoosted) {
                 var _shEl = document.getElementById('speed-hint');
+                if (_shEl._interval) { clearInterval(_shEl._interval); _shEl._interval = null; }
                 if (_shEl.style.display !== 'none') {
+                    _shEl.style.transition = 'opacity 0.4s';
                     _shEl.style.opacity = '0';
-                    setTimeout(function(){ _shEl.style.display = 'none'; }, 600);
+                    setTimeout(function(){ _shEl.style.display = 'none'; }, 500);
                 }
             }
 
