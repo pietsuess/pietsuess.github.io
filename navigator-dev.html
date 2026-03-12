@@ -13707,7 +13707,7 @@ function _spawnSecretBoss(){
   state.secretBoss={wx:state.x+Math.cos(bossAng)*bossDist,wy:state.y+Math.sin(bossAng)*bossDist,
     bodyR:132,tentacles:N_TENT,tentacleLen:450,hits:0,hitsNeeded:75,dead:false,deathTimer:0,flashTimer:0,
     phase:0,pulsePhase:0,facing:bossAng,
-    homeAngles:Array.from({length:N_TENT},(_,i)=>Math.PI+(i-3.5)*0.45), // rear hemisphere: tentacles trail behind dome
+    homeAngles:Array.from({length:N_TENT},(_,i)=>(i-3.5)*0.45), // front hemisphere: tentacles reach toward player (legs-first)
     swingPhases:Array.from({length:N_TENT},()=>Math.random()*Math.PI*2),
     swingSpeeds:Array.from({length:N_TENT},()=>0.022+Math.random()*0.028),
     swingAmps:Array.from({length:N_TENT},()=>0.38+Math.random()*0.32),
@@ -13846,7 +13846,8 @@ function updateSecretLevel(){
       let _facingDiff = _toPlayer - (boss.facing||0);
       while(_facingDiff >  Math.PI) _facingDiff -= Math.PI*2;
       while(_facingDiff < -Math.PI) _facingDiff += Math.PI*2;
-      const _turnSpeed = boss.hits>=12 ? 0.045 : boss.hits>=6 ? 0.028 : 0.018;
+      const _lastQuarter = boss.hits >= Math.floor(boss.hitsNeeded * 0.75);
+      const _turnSpeed = _lastQuarter ? 0.06 : boss.hits>=12 ? 0.045 : boss.hits>=6 ? 0.028 : 0.018;
       boss.facing = (boss.facing||0) + _facingDiff * _turnSpeed;
 
       // ── Early approach: drift toward player when within 2000px ──
@@ -13862,7 +13863,8 @@ function updateSecretLevel(){
       // Boss hangs back so tentacle midpoints reach the player
       const _hits = boss.hits;
       let chaseSpeed = 0;
-      if(_hits >= 12)      chaseSpeed = 8.0;
+      if(_lastQuarter)          chaseSpeed = 12.0;
+      else if(_hits >= 12)      chaseSpeed = 8.0;
       else if(_hits >= 6)  chaseSpeed = 4.0;
       if(chaseSpeed > 0){
         const _avgTentLen = boss.tentacleLens
@@ -14649,7 +14651,8 @@ function drawBossVisual(ctx,boss,bsx,bsy){
     : (boss._fleeing && (boss._velX||boss._velY))
       ? Math.atan2(boss._velY||0, boss._velX||0)
       : Math.atan2(state.y-boss.wy, state.x-boss.wx);
-  ctx.rotate(ea+Math.PI/2);
+  // Secret level: dome faces away (protected), legs lead. Main world: dome faces player.
+  ctx.rotate(ea + (state.inSecretLevel ? -Math.PI/2 : Math.PI/2));
   const _bvelX=boss._velX||0,_bvelY=boss._velY||0;
   const _bspd=Math.sqrt(_bvelX*_bvelX+_bvelY*_bvelY);
   const _bStretch=Math.min(0.15,_bspd*0.012);
