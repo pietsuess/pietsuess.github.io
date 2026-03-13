@@ -2632,12 +2632,25 @@ let state = {
 };
 
 // ── Analytics — silent POST to Google Sheets ──
-const _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbx9cJRgS2VLwjvfwXQ2X_mGsQwPkyWrwyEJ-Oe4OkxrZtJXAi8mIjhJtNNwsZ39n1xFZg/exec';
+const _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbyzI9CzRILv55QR2sTMyM5XfjIydiEah2VQ3IvYxRaEkOeJysU7kZubj1UkrkimcwllXQ/exec';
 const _analyticsSession = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
 let _analyticsStartTime = 0;
 let _analyticsDeathCount = 0;
 let _analyticsActions = [];  // recent button/toggle actions
 let _analyticsHeartbeat = null;
+// Geolocation via ipapi.co — fetched once on load
+let _geoData = { ip:'', city:'', region:'', country:'', isOwner:false };
+(function(){
+  try {
+    fetch('https://ipapi.co/json/').then(r=>r.json()).then(d=>{
+      _geoData.ip = d.ip || '';
+      _geoData.city = d.city || '';
+      _geoData.region = d.region || '';
+      _geoData.country = d.country_name || '';
+      _geoData.isOwner = (d.ip || '').startsWith('2604:3d08:1788');
+    }).catch(()=>{});
+  } catch(e){}
+})();
 function _analyticsZone(){
   if(!state.started) return 'TITLE';
   if(state.inSecretLevel) return 'SECRET';
@@ -2647,6 +2660,7 @@ function _analyticsZone(){
 }
 function _analyticsPayload(event, extra){
   const p = {
+    game: 'NAVIGATOR',
     session: _analyticsSession,
     event: event,
     zone: _analyticsZone(),
@@ -2670,7 +2684,12 @@ function _analyticsPayload(event, extra){
     actions: _analyticsActions.join(';'),
     wx: Math.round(state.x || 0),
     wy: Math.round(state.y || 0),
-    userAgent: navigator.userAgent.slice(0, 120)
+    userAgent: navigator.userAgent.slice(0, 120),
+    ip: _geoData.ip,
+    city: _geoData.city,
+    region: _geoData.region,
+    country: _geoData.country,
+    isOwner: _geoData.isOwner
   };
   if(extra) Object.assign(p, extra);
   return p;
