@@ -1007,7 +1007,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="if(typeof triggerPeanutUnlock==='function')triggerPeanutUnlock()">UNLOCK PEANUT</button>
           <button class="dev-btn" onclick="devTriggerSecretUnlock()">UNLOCK SECRET</button>
           <button class="dev-btn gold" onclick="if(typeof triggerLaunchpadVictory==='function')triggerLaunchpadVictory()">LAUNCHPAD WIN</button>
-          <button class="dev-btn purple" onclick="state.gapBubble={wx:state.x+320,wy:state.y,r:32,hue:190,age:0,collected:false};state._bossInMainWorld=false;">ALIEN ESCAPED</button>
+          <button class="dev-btn purple" onclick="state._gapBubblePending=true;_spawnGapBubbleNearShip();state._bossInMainWorld=false;">ALIEN ESCAPED</button>
           <button class="dev-btn gold" onclick="if(typeof enterVictoryRoom==='function')enterVictoryRoom()">VICTORY ROOM</button>
           <button class="dev-btn danger" onclick="devCollectAll();state.outsideBarrier=true;state._committedInside=false;devTeleport(EARTH_WX,EARTH_WY);triggerEarthVictory();">EARTH VICTORY ★</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
@@ -4847,18 +4847,11 @@ window.addEventListener('keydown',e=>{
     if(!['INPUT','TEXTAREA','SELECT'].includes(activeTag)) e.preventDefault();
     if(!state.paused&&!state.gameOver&&state.fuel>0&&!['INPUT','TEXTAREA','SELECT'].includes(activeTag)){
       if(state.cheat==='bubbles'){
-        // Boost while in bubble mode — pop the bubble, deactivate cheat
-        triggerBubblePop(state.x, state.y, 195);
-        state.cheat=null; updateFireModeUI();
-        state.zoneCrossFlash={lvl:-3,timer:160,msg:'BUBBLE POPPED!',sub:'SHIP MODE DEACTIVATED'};
-        if(audioCtx&&!state.sfxMuted){
-          const t=audioCtx.currentTime;
-          const o=audioCtx.createOscillator(),g=audioCtx.createGain();
-          o.connect(g);g.connect(sfxGainNode||audioCtx.destination);
-          o.type='sine';o.frequency.setValueAtTime(600,t);
-          o.frequency.exponentialRampToValueAtTime(80,t+0.35);
-          g.gain.setValueAtTime(0.25,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.35);
-          o.start(t);o.stop(t+0.36);
+        // Boost while in bubble mode — inflate while held, pop at threshold
+        if(!state._bubblePopAnim){
+          state._bubblePopAnim = { scale: 1, smokeParticles: [], inflating: true, _pressureSFX: null };
+        } else {
+          state._bubblePopAnim.inflating = true;
         }
       } else if(state.fireMode==='wave'&&state.hasWaveBeam){
         fireWaveBeam();
@@ -4947,11 +4940,11 @@ function cycleShipMode(){
   const cur=state.cheat==='peanut'?'peanut':state.cheat==='bubbles'?'bubbles':'standard';
   const next=m[(m.indexOf(cur)+1)%m.length];
   state.cheat = next==='standard' ? null : next;
-  // If toggling to bubble while boost is held, pop immediately
+  // If toggling to bubble while boost is held, start inflating
   if(state.cheat==='bubbles' && state.keys['Space']){
-    triggerBubblePop(state.x, state.y, 195);
-    state.cheat=null;
-    state.zoneCrossFlash={lvl:-3,timer:160,msg:'BUBBLE POPPED!',sub:'SHIP MODE DEACTIVATED'};
+    if(!state._bubblePopAnim){
+      state._bubblePopAnim = { scale: 1, smokeParticles: [], inflating: true, _pressureSFX: null, _pressureSFXActive: false };
+    }
   } else {
     // Ship mode toggle flash text
     const _modeMsg = next==='peanut' ? 'HARD SHELL' : next==='bubbles' ? 'BOUNCY AND FRAGILE' : 'DELTA WING';
@@ -5016,9 +5009,9 @@ function showBossEscapeTransmission(){
   const ov=document.createElement('div');
   ov.id='boss-escape-overlay';
   ov.style.cssText='position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
-  ov.onclick=function(e){ if(e.target===ov) ov.remove(); };
+  ov.onclick=function(e){ if(e.target===ov){ ov.remove(); _spawnGapBubbleNearShip(); } };
   ov.innerHTML=`<div style="position:relative;z-index:1;border:2px solid #666;padding:48px 56px;background:#000;text-align:center;max-width:92vw;font-family:'Press Start 2P',monospace;box-sizing:border-box;box-shadow:0 0 30px rgba(100,100,100,0.2);" onclick="event.stopPropagation()">
-    <div id="boss-escape-close" onclick="document.getElementById('boss-escape-overlay').remove()" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
+    <div id="boss-escape-close" onclick="document.getElementById('boss-escape-overlay').remove();_spawnGapBubbleNearShip();" style="display:none;position:absolute;top:16px;right:20px;cursor:pointer;color:#666;font-size:18px;padding:4px 8px;line-height:1;">✕</div>
     <div style="color:#fff;font-size:20px;letter-spacing:3px;margin-bottom:24px;line-height:2;text-shadow:0 0 12px rgba(255,255,255,0.4);">INCOMING TRANSMISSION</div>
     <div id="boss-tx-terminal" style="position:relative;overflow:hidden;background:#0a0a0a;border:1px solid #1a4a1a;padding:24px 28px;text-align:left;margin-bottom:24px;height:180px;box-shadow:inset 0 0 20px rgba(0,255,80,0.04);"></div>
     <div id="boss-tx-tap" style="color:rgba(255,255,255,0.4);font-size:12px;letter-spacing:2px;margin-top:16px;display:none;">TAP TO CLOSE</div>
@@ -5127,7 +5120,15 @@ function showBossEscapeTransmission(){
       }, 400);
     });
   }, 1200);
-  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el) el.remove(); },18000);
+  setTimeout(()=>{ const el=document.getElementById('boss-escape-overlay'); if(el){ el.remove(); _spawnGapBubbleNearShip(); } },18000);
+}
+function _spawnGapBubbleNearShip(){
+  if(!state._gapBubblePending) return;
+  state._gapBubblePending = false;
+  // Spawn the special bubble within 200px of the ship's current position
+  const ang = Math.random() * Math.PI * 2;
+  const dist = 120 + Math.random() * 80; // 120-200px from ship
+  state.gapBubble = {wx: state.x + Math.cos(ang) * dist, wy: state.y + Math.sin(ang) * dist, r: 32, hue: 190, age: 0, collected: false};
 }
 function unlockWaveBeam(){
   state.hasWaveBeam=true;state.fireMode='wave';updateFireModeUI();addScore(1200);
@@ -5927,6 +5928,10 @@ function update(){
     }
   }
 
+  // ── Ship collision radius — accounts for expanded bubble ──
+  const _shipCollR = (state.cheat==='bubbles') ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 6;
+  const _bubBounce = (state.cheat==='bubbles') ? 1.8 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.6 : 1.2;
+
   // ── Launchpad enclosure — 8 walls that open outward ──
   const _lw = state.launchpadWalls;
   if(_lw && !state.inSecretLevel){
@@ -5941,7 +5946,7 @@ function update(){
     // Collision — only when walls are nearby (closed or still opening)
     const _wallR = ENCLOSURE_INIT_R + _lw.extendDist;
     const _pDist = Math.sqrt(state.x * state.x + state.y * state.y) || 1;
-    if(_pDist > _wallR - ENCLOSURE_WALL_T - 15 && _pDist < _wallR + ENCLOSURE_WALL_T + 15){
+    if(_pDist > _wallR - ENCLOSURE_WALL_T - _shipCollR - 2 && _pDist < _wallR + ENCLOSURE_WALL_T + _shipCollR + 2){
       for(let wi = 0; wi < ENCLOSURE_WALL_ANGLES.length; wi++){
         const wAng = ENCLOSURE_WALL_ANGLES[wi];
         // Wall centre in world space
@@ -5958,17 +5963,31 @@ function update(){
         const dTan  = dx * wtx + dy * wty;
         const halfW = ENCLOSURE_WALL_W / 2;
         const halfT = ENCLOSURE_WALL_T / 2;
-        if(Math.abs(dTan) < halfW && Math.abs(dNorm) < halfT + 12){
-          // Simple collision — push player out to nearest face
-          const pushDir = dNorm >= 0 ? 1 : -1;
-          const pushAmt = (halfT + 12) - Math.abs(dNorm);
-          state.x += wnx * pushDir * pushAmt;
-          state.y += wny * pushDir * pushAmt;
-          // Kill velocity toward wall
-          const vDot = state.vx * wnx * pushDir + state.vy * wny * pushDir;
-          if(vDot < 0){
-            state.vx -= wnx * pushDir * vDot;
-            state.vy -= wny * pushDir * vDot;
+        if(Math.abs(dTan) < halfW + _shipCollR && Math.abs(dNorm) < halfT + _shipCollR){
+          // Determine if we're hitting the face or rounding an end
+          if(Math.abs(dTan) < halfW){
+            // Face collision — push along normal
+            const pushDir = dNorm >= 0 ? 1 : -1;
+            const pushAmt = (halfT + _shipCollR) - Math.abs(dNorm);
+            state.x += wnx * pushDir * pushAmt;
+            state.y += wny * pushDir * pushAmt;
+            const vDot = state.vx * wnx * pushDir + state.vy * wny * pushDir;
+            if(vDot < 0){ state.vx -= wnx * pushDir * vDot * _bubBounce; state.vy -= wny * pushDir * vDot * _bubBounce; }
+          } else {
+            // End cap collision — closest endpoint is a circle
+            const endSign = dTan >= 0 ? 1 : -1;
+            const endX = wcx + wtx * halfW * endSign;
+            const endY = wcy + wty * halfW * endSign;
+            const edx = state.x - endX, edy = state.y - endY;
+            const eDist = Math.sqrt(edx * edx + edy * edy);
+            if(eDist < halfT + _shipCollR && eDist > 0.1){
+              const enx = edx / eDist, eny = edy / eDist;
+              const ePush = (halfT + _shipCollR) - eDist;
+              state.x += enx * ePush;
+              state.y += eny * ePush;
+              const eVdot = state.vx * enx + state.vy * eny;
+              if(eVdot < 0){ state.vx -= enx * eVdot * _bubBounce; state.vy -= eny * eVdot * _bubBounce; }
+            }
           }
           break;
         }
@@ -5988,15 +6007,15 @@ function update(){
     const _pbDist = Math.sqrt(state.x * state.x + state.y * state.y);
     if(_pb.closed && !_pb.opening){
       // Full barrier collision — solid ring
-      if(_pbDist > PEN_BARRIER_R - 8){
+      if(_pbDist > PEN_BARRIER_R - _shipCollR){
         const _pbAng = Math.atan2(state.y, state.x);
-        state.x = Math.cos(_pbAng) * (PEN_BARRIER_R - 8);
-        state.y = Math.sin(_pbAng) * (PEN_BARRIER_R - 8);
+        state.x = Math.cos(_pbAng) * (PEN_BARRIER_R - _shipCollR);
+        state.y = Math.sin(_pbAng) * (PEN_BARRIER_R - _shipCollR);
         const _pbCos = Math.cos(_pbAng), _pbSin = Math.sin(_pbAng);
         const _pbVrad = state.vx * _pbCos + state.vy * _pbSin;
         if(_pbVrad > 0){
-          state.vx -= _pbCos * _pbVrad;
-          state.vy -= _pbSin * _pbVrad;
+          state.vx -= _pbCos * _pbVrad * _bubBounce;
+          state.vy -= _pbSin * _pbVrad * _bubBounce;
         }
         if(audioCtx && !state.sfxMuted){
           const _now = audioCtx.currentTime;
@@ -6024,7 +6043,7 @@ function update(){
       const _openFrac = Math.min(1, _pb.openTimer / _pb.openDuration);
       const _easedFrac = 1 - (1 - _openFrac) * (1 - _openFrac);
       const _curArcHalf = _fullArcHalfO + (_remnantArcHalfO - _fullArcHalfO) * _easedFrac;
-      if(Math.abs(_pbDist - PEN_BARRIER_R) < 14 && _pbDist > PEN_BARRIER_R - 8){
+      if(Math.abs(_pbDist - PEN_BARRIER_R) < _shipCollR + 6 && _pbDist > PEN_BARRIER_R - _shipCollR){
         const _pAng = Math.atan2(state.y, state.x);
         for(let ri = 0; ri < _pbRemnantsO; ri++){
           const _rMid = ri * _arcSpanO + _fullArcHalfO;
@@ -6033,11 +6052,11 @@ function update(){
           while(_aDiff < -Math.PI) _aDiff += Math.PI * 2;
           if(Math.abs(_aDiff) < _curArcHalf){
             const _pbAng = Math.atan2(state.y, state.x);
-            state.x = Math.cos(_pbAng) * (PEN_BARRIER_R - 8);
-            state.y = Math.sin(_pbAng) * (PEN_BARRIER_R - 8);
+            state.x = Math.cos(_pbAng) * (PEN_BARRIER_R - _shipCollR);
+            state.y = Math.sin(_pbAng) * (PEN_BARRIER_R - _shipCollR);
             const _pbCos = Math.cos(_pbAng), _pbSin = Math.sin(_pbAng);
             const _pbVrad = state.vx * _pbCos + state.vy * _pbSin;
-            if(_pbVrad > 0){ state.vx -= _pbCos * _pbVrad; state.vy -= _pbSin * _pbVrad; }
+            if(_pbVrad > 0){ state.vx -= _pbCos * _pbVrad * _bubBounce; state.vy -= _pbSin * _pbVrad * _bubBounce; }
             break;
           }
         }
@@ -6046,7 +6065,7 @@ function update(){
       // Remnant collision — 32 small arc stubs at PEN_BARRIER_R
       const _pbRemnants = 32;
       const _remnantArcHalf = 30 / PEN_BARRIER_R; // 30px in radians
-      if(Math.abs(_pbDist - PEN_BARRIER_R) < 14){
+      if(Math.abs(_pbDist - PEN_BARRIER_R) < _shipCollR + 6){
         const _pAng = Math.atan2(state.y, state.x);
         const _arcSpan = (Math.PI * 2) / _pbRemnants;
         for(let ri = 0; ri < _pbRemnants; ri++){
@@ -6055,14 +6074,14 @@ function update(){
           let _aDiff = _pAng - _rMid;
           while(_aDiff > Math.PI) _aDiff -= Math.PI * 2;
           while(_aDiff < -Math.PI) _aDiff += Math.PI * 2;
-          if(Math.abs(_aDiff) < _remnantArcHalf && _pbDist > PEN_BARRIER_R - 8){
-            state.x = Math.cos(_pAng) * (PEN_BARRIER_R - 8);
-            state.y = Math.sin(_pAng) * (PEN_BARRIER_R - 8);
+          if(Math.abs(_aDiff) < _remnantArcHalf && _pbDist > PEN_BARRIER_R - _shipCollR){
+            state.x = Math.cos(_pAng) * (PEN_BARRIER_R - _shipCollR);
+            state.y = Math.sin(_pAng) * (PEN_BARRIER_R - _shipCollR);
             const _pbCos = Math.cos(_pAng), _pbSin = Math.sin(_pAng);
             const _pbVrad = state.vx * _pbCos + state.vy * _pbSin;
             if(_pbVrad > 0){
-              state.vx -= _pbCos * _pbVrad;
-              state.vy -= _pbSin * _pbVrad;
+              state.vx -= _pbCos * _pbVrad * _bubBounce;
+              state.vy -= _pbSin * _pbVrad * _bubBounce;
             }
             break;
           }
@@ -6077,8 +6096,9 @@ function update(){
     const _izPrevX = state.x - state.vx, _izPrevY = state.y - state.vy;
     const _izPrevDist = Math.sqrt(_izPrevX * _izPrevX + _izPrevY * _izPrevY);
     const _izHalfW = INTERZONE_WALL_T / 2;
-    const _izMargin = _izHalfW + 6;   // detection zone matches push-out — no snap
-    const _izPush  = _izHalfW + 6;    // push-out distance: safely outside wall
+    const _izBubOff = (state.cheat==='bubbles') ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 6;
+    const _izMargin = _izHalfW + _izBubOff;   // detection zone — expanded for bubble
+    const _izPush  = _izHalfW + _izBubOff;    // push-out distance — matches bubble edge
     for(let ir = 0; ir < INTERZONE_RINGS.length; ir++){
       const _izR = INTERZONE_RINGS[ir];
       // Normal proximity check OR crossed the ring this frame (tunneling prevention)
@@ -6112,8 +6132,8 @@ function update(){
           const _izCos = Math.cos(_izAng), _izSin = Math.sin(_izAng);
           const _izVrad = state.vx * _izCos + state.vy * _izSin;
           if(_outside ? _izVrad < 0 : _izVrad > 0){
-            state.vx -= _izCos * _izVrad * 1.2;  // slight bounce
-            state.vy -= _izSin * _izVrad * 1.2;
+            state.vx -= _izCos * _izVrad * _bubBounce;
+            state.vy -= _izSin * _izVrad * _bubBounce;
           }
         }
         break;
@@ -6142,11 +6162,11 @@ function update(){
           const _nr3 = _out3 ? _r3 + _izPush : _r3 - _izPush;
           state.x = Math.cos(_a3) * _nr3;
           state.y = Math.sin(_a3) * _nr3;
-          // Zero out radial velocity
+          // Bounce off radially
           const _c3 = Math.cos(_a3), _s3 = Math.sin(_a3);
           const _vr3 = state.vx * _c3 + state.vy * _s3;
-          state.vx -= _c3 * _vr3;
-          state.vy -= _s3 * _vr3;
+          state.vx -= _c3 * _vr3 * _bubBounce;
+          state.vy -= _s3 * _vr3 * _bubBounce;
         }
       }
     }
@@ -6171,8 +6191,8 @@ function update(){
         // Kill velocity toward the hook
         const _hvn = state.vx * _hnx + state.vy * _hny;
         if(_hvn < 0){
-          state.vx -= _hnx * _hvn * 1.2;
-          state.vy -= _hny * _hvn * 1.2;
+          state.vx -= _hnx * _hvn * _bubBounce;
+          state.vy -= _hny * _hvn * _bubBounce;
         }
         break;
       }
@@ -6427,6 +6447,78 @@ function update(){
     state.bubbleDeforms=state.bubbleDeforms.filter(d=>d.depth>0.008);
   }
 
+  // Bubble pop expand animation — inflate while boost held, pop at threshold, hold size on release
+  if(state._bubblePopAnim && state.cheat==='bubbles'){
+    const bpa = state._bubblePopAnim;
+    const _popThreshold = 3.0; // pop at 3x size
+    // Track whether boost is held
+    bpa.inflating = !!state.keys['Space'];
+    // Inflate while boost is held
+    if(bpa.inflating){
+      bpa.scale += 0.027; // ~75 frames from 1→3x
+      // Pressure SFX — start/restart when inflating begins
+      if(!bpa._pressureSFXActive && audioCtx && !state.sfxMuted){
+        bpa._pressureSFXActive = true;
+        const t=audioCtx.currentTime;
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.connect(g);g.connect(sfxGainNode||audioCtx.destination);
+        o.type='sine';
+        const progress = (bpa.scale - 1) / (_popThreshold - 1);
+        o.frequency.setValueAtTime(120 + progress * 380,t);
+        o.frequency.exponentialRampToValueAtTime(500,t+1.5);
+        g.gain.setValueAtTime(0.12,t);g.gain.exponentialRampToValueAtTime(0.25,t+1.2);
+        g.gain.exponentialRampToValueAtTime(0.001,t+1.5);
+        o.start(t);o.stop(t+1.51);
+        bpa._pressureSFX = { osc: o, gain: g, startT: t };
+      }
+      // Spawn smoke wisps while inflating
+      if(bpa.scale > 1.3 && (state.frameCount||0) % 3 === 0){
+        const ang = Math.random() * Math.PI * 2;
+        const dist = Math.random() * 6;
+        bpa.smokeParticles.push({
+          ox: Math.cos(ang) * dist, oy: Math.sin(ang) * dist,
+          vx: (Math.random()-0.5)*0.8, vy: (Math.random()-0.5)*0.8,
+          age: 0, maxAge: 25, sz: 2 + Math.random() * 3,
+          alpha: 0.3 + Math.random() * 0.3
+        });
+      }
+    } else {
+      // Released boost — kill pressure SFX
+      if(bpa._pressureSFXActive){
+        bpa._pressureSFXActive = false;
+        if(bpa._pressureSFX && bpa._pressureSFX.gain){
+          try{ bpa._pressureSFX.gain.gain.cancelScheduledValues(audioCtx.currentTime);
+            bpa._pressureSFX.gain.gain.setValueAtTime(bpa._pressureSFX.gain.gain.value,audioCtx.currentTime);
+            bpa._pressureSFX.gain.gain.exponentialRampToValueAtTime(0.001,audioCtx.currentTime+0.15);
+          }catch(e){}
+        }
+        bpa._pressureSFX = null;
+      }
+    }
+    // Tick smoke particles (always, even when not inflating — they fade out naturally)
+    bpa.smokeParticles.forEach(p=>{ p.ox+=p.vx; p.oy+=p.vy; p.age++; p.vx*=0.96; p.vy*=0.96; });
+    bpa.smokeParticles = bpa.smokeParticles.filter(p=>p.age<p.maxAge);
+    // Pop when threshold reached
+    if(bpa.scale >= _popThreshold){
+      state._bubblePopAnim = null;
+      triggerBubblePop(state.x, state.y, 195);
+      state.cheat=null; updateFireModeUI();
+      state.zoneCrossFlash={lvl:-3,timer:160,msg:'BUBBLE POPPED!',sub:'SHIP MODE DEACTIVATED'};
+      if(audioCtx&&!state.sfxMuted){
+        const t=audioCtx.currentTime;
+        const o=audioCtx.createOscillator(),g=audioCtx.createGain();
+        o.connect(g);g.connect(sfxGainNode||audioCtx.destination);
+        o.type='sine';o.frequency.setValueAtTime(600,t);
+        o.frequency.exponentialRampToValueAtTime(80,t+0.35);
+        g.gain.setValueAtTime(0.3,t);g.gain.exponentialRampToValueAtTime(0.001,t+0.35);
+        o.start(t);o.stop(t+0.36);
+      }
+    }
+    // Clear anim if player switched away from bubble mode
+  } else if(state._bubblePopAnim && state.cheat!=='bubbles'){
+    state._bubblePopAnim = null;
+  }
+
   // Tron trail
   if(state.cheat==='honey'&&spd>0.3&&state.frameCount%3===0){
     state.tronTrail.push({wx:state.x,wy:state.y});
@@ -6487,7 +6579,8 @@ function update(){
     }
     const dx=r.wx-state.x, dy=r.wy-state.y;
     const dist=Math.sqrt(dx*dx+dy*dy);
-    const minDist = r.size + (state.cheat==='bubbles' ? 29 : 10);
+    const _bubVisR = (state.cheat==='bubbles') ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 0;
+    const minDist = r.size + (state.cheat==='bubbles' ? _bubVisR : 10);
     // Push-out: if ship centre is inside rock boundary, push it out
     if(dist < minDist && dist > 0.1){
       const overlap = minDist - dist;
@@ -6780,7 +6873,7 @@ function update(){
           if(mwb.wx > BELT_OUTER + 310){
             mwb._gapPhase = 'outer';
             state._bossInMainWorld = false;
-            state.gapBubble = {wx: BELT_OUTER + 420, wy: 0, r: 32, hue: 190, age: 0, collected: false};
+            state._gapBubblePending = true; // spawns near ship after transmission popup closes
             // ── Triumphant escape: switch to NOVA track + ascending fanfare ──
             selectTrack(6); // ASCENT — Triumphant · Soaring · Warm
             if(audioCtx && !state.sfxMuted){
@@ -10214,24 +10307,43 @@ function drawGame(){
         ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
         ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
       }
-      const _bubR = ps.size * 1.4375;
+      const _bubBaseR = ps.size * 1.4375;
+      const _bpa = state._bubblePopAnim;
+      const _bubScale = _bpa ? _bpa.scale : 1;
+      const _bubR = _bubBaseR * _bubScale;
       const _bubPhase = (state.frameCount||0) * 0.04;
-      // Outer glow
-      ctx.shadowBlur = 22; ctx.shadowColor = '#aaeeff';
+      const _bubStress = _bpa ? (_bpa.scale - 1) / 2.0 : 0; // 0→1 stress as scale goes 1→3
+      // Outer glow — shifts warm as stress builds
+      ctx.shadowBlur = 22 + _bubStress * 14; ctx.shadowColor = _bpa ? `hsl(${195 - _bubStress*160},100%,70%)` : '#aaeeff';
       ctx.beginPath(); ctx.arc(0, 0, _bubR, 0, Math.PI*2);
-      ctx.strokeStyle = `hsla(${195 + Math.sin(_bubPhase)*15},100%,80%,0.9)`;
-      ctx.lineWidth = 2; ctx.globalAlpha = alpha; ctx.stroke();
+      const _bubHue = 195 + Math.sin(_bubPhase)*15 - _bubStress * 140;
+      ctx.strokeStyle = `hsla(${_bubHue},100%,80%,${0.9 - _bubStress*0.2})`;
+      ctx.lineWidth = 2 + _bubStress * 1.5; ctx.globalAlpha = alpha; ctx.stroke();
       // Inner shimmer ring
       ctx.shadowBlur = 0;
       ctx.beginPath(); ctx.arc(0, 0, _bubR * 0.94, 0, Math.PI*2);
       ctx.strokeStyle = `rgba(255,255,255,${0.22 + Math.sin(_bubPhase*1.7)*0.12})`;
       ctx.lineWidth = 1.5; ctx.stroke();
-      // Specular glint top-left
+      // Smoke wisps inside bubble during pop animation
+      if(_bpa && _bpa.smokeParticles.length > 0){
+        _bpa.smokeParticles.forEach(p=>{
+          const life = 1 - p.age / p.maxAge;
+          const sz = p.sz * _bubScale * (0.6 + life * 0.4);
+          ctx.beginPath(); ctx.arc(p.ox * _bubScale, p.oy * _bubScale, sz, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(${180+_bubStress*75},${160-_bubStress*100},${200-_bubStress*150},${p.alpha * life * 0.7})`;
+          ctx.fill();
+        });
+        // Haze fill — increasingly opaque cloudy interior
+        ctx.beginPath(); ctx.arc(0, 0, _bubR * 0.85, 0, Math.PI*2);
+        ctx.fillStyle = `rgba(${200+_bubStress*55},${140-_bubStress*80},${80},${_bubStress * 0.25})`;
+        ctx.fill();
+      }
+      // Specular glint top-left — fades during pop
       ctx.beginPath(); ctx.arc(-_bubR*0.30, -_bubR*0.34, _bubR*0.18, 0, Math.PI*2);
-      ctx.fillStyle = `rgba(255,255,255,${0.45 + Math.sin(_bubPhase*2.1)*0.15})`; ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${(0.45 + Math.sin(_bubPhase*2.1)*0.15) * (1-_bubStress*0.7)})`; ctx.fill();
       // Tiny second glint
       ctx.beginPath(); ctx.arc(_bubR*0.20, -_bubR*0.55, _bubR*0.07, 0, Math.PI*2);
-      ctx.fillStyle = 'rgba(255,255,255,0.5)'; ctx.fill();
+      ctx.fillStyle = `rgba(255,255,255,${0.5 * (1-_bubStress*0.7)})`; ctx.fill();
     } else if(ps.shape==='hex'){
       // Honey mode: draw honeyHexCount hexagons in formation
       const hc=state.honeyHexCount||1;
@@ -12554,7 +12666,7 @@ function updateDebrisWall(){
   if(state._implodeTimer>0||state._driftingDead||state._implosionCountdown>0) return;
 
   const isBubble=state.cheat==='bubbles';
-  const shipR=12;
+  const shipR=isBubble ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 12;
 
   for(const p of state.debrisWall){
     if(p.exploding||p._hitCooldown>0) continue;
@@ -12574,8 +12686,9 @@ function updateDebrisWall(){
     // Ship bounces BACK (-nx direction)
     state.x -= nx*(hitR-dist+3);
     state.y -= ny*(hitR-dist+3);
-    state.vx = -nx*(impactSpd*0.5+2);
-    state.vy = -ny*(impactSpd*0.5+2);
+    const _debBounce = isBubble ? 1.5 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.4 : 1;
+    state.vx = -nx*(impactSpd*0.5+2)*_debBounce;
+    state.vy = -ny*(impactSpd*0.5+2)*_debBounce;
 
     if(isBubble){
       p._hitCooldown=30;
@@ -13533,14 +13646,14 @@ function returnToTitleWithScore(initials, score){
     wormholes:[], wormholeFlash:0, currentLevel:1,
     outsideBarrier:false, _prevX:0, _prevY:0, _committedInside:true, _implodeTimer:0, _driftingDead:false, _driftTimer:0, _refuelDenied:false, _implosionCountdown:0, _shipDestroyed:false, _implosionRing:false, _implosionRingWx:0, _implosionRingWy:0,
     tronTrail:[], refuelShip:null, refuelRequested:false,
-    spaceRocks:[], explosions:[], bubbleDeforms:[],
+    spaceRocks:[], explosions:[], bubbleDeforms:[], _bubblePopAnim:null,
     honeyHexCount:1, honeySplitTimer:0, honeyReversing:false,
     showAll:false, dockStation:null, boostDoubled:false, secretBoss:null, secretBossExploding:0, secretBossHits:0,
     rocksDestroyed:0, secretUnlocked:false, secretVisitCount:0, secretThreshold:10,
     inSecretLevel:false, bubbles:[], secretBlackHole:null, bhCapture:null, exitSpin:0,
     visitedLevels:new Set([1]), collectedItems:[], contentOpen:false, zoneCrossFlash:null,
     keys:{}, songIndex:3,
-    x2BoostStar: null, _x2StarSpawned: false,
+    x2BoostStar: null, _x2StarSpawned: false, gapBubble: null, _gapBubblePending: false,
     passageHatch: { hits: 0, broken: false, hitCooldown: 0 },
     launchpadWalls: { closed: true, opening: false, openTimer: 0, openDuration: 60, extendDist: 0 },
     editMissionComplete: false,
