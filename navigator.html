@@ -1838,6 +1838,7 @@ function _updatePopupToggleUI() {
   }
 }
 
+let _popupPromptToggled = false;
 function _showPopupPrompt(){
   const ov = document.createElement('div');
   ov.id = 'popup-prompt-overlay';
@@ -1848,7 +1849,7 @@ function _showPopupPrompt(){
     <div id="content-popup-canvas-slot"></div>
     <div style="color:#00ff88;font-size:20px;letter-spacing:3px;margin-bottom:28px;line-height:2;text-shadow:0 0 18px #00ff88;">COLLECT ALL OF THE CONTENT<br>IN THE EDITING ZONE</div>
     <div style="color:rgba(255,255,255,0.85);font-size:16px;letter-spacing:2px;margin-bottom:28px;line-height:2.4;">PLAY IN ARCADE MODE<br>WITH NO CONTENT POP-UPS?</div>
-    <div onclick="event.stopPropagation();toggleContentPopups();_syncPromptToggle();" style="
+    <div onclick="event.stopPropagation();toggleContentPopups();_syncPromptToggle();_popupPromptToggled=true;" style="
       display:flex;align-items:center;justify-content:space-between;
       padding:18px 24px;border:2px solid rgba(255,224,0,0.3);
       cursor:pointer;margin-bottom:20px;
@@ -6413,6 +6414,18 @@ function update(){
   if((state.fuel<=0||state._driftingDead||state._implosionCountdown>0||state._implodeTimer>0)&&!state.gameOver){
     const tryMove=state.keys['ArrowUp']||state.keys['ArrowDown']||state.keys['Space'];
     if(tryMove&&state.frameCount%2===0){
+      // Sputter cough SFX — short crackly bursts
+      if(audioCtx&&!state.sfxMuted&&state.frameCount%8===0){
+        const _st=audioCtx.currentTime;
+        const _so=audioCtx.createOscillator(),_sg=audioCtx.createGain();
+        _so.connect(_sg);_sg.connect(sfxGainNode||audioCtx.destination);
+        _so.type='sawtooth';
+        _so.frequency.setValueAtTime(50+Math.random()*80,_st);
+        _so.frequency.exponentialRampToValueAtTime(20+Math.random()*30,_st+0.06);
+        _sg.gain.setValueAtTime(0.08+Math.random()*0.06,_st);
+        _sg.gain.exponentialRampToValueAtTime(0.001,_st+0.08);
+        _so.start(_st);_so.stop(_st+0.09);
+      }
       for(let _s=0;_s<3;_s++){
         const a=(state.angle+Math.PI)+(Math.random()-0.5)*1.4;
         const spd=1.0+Math.random()*4.0;
@@ -7362,6 +7375,24 @@ function triggerFuelEmpty(){
   if(state._devGodMode){ state.fuel=1.0; return; }
   state.gameOver=false;
   state.fuel=0.001;
+  // Dying engine SFX — descending whine + crackle
+  if(audioCtx&&!state.sfxMuted){
+    const t=audioCtx.currentTime;
+    // Engine dying whine
+    const o1=audioCtx.createOscillator(),g1=audioCtx.createGain();
+    o1.connect(g1);g1.connect(sfxGainNode||audioCtx.destination);
+    o1.type='sawtooth';o1.frequency.setValueAtTime(400,t);
+    o1.frequency.exponentialRampToValueAtTime(35,t+1.2);
+    g1.gain.setValueAtTime(0.18,t);g1.gain.exponentialRampToValueAtTime(0.001,t+1.3);
+    o1.start(t);o1.stop(t+1.31);
+    // Low rumble cut-out
+    const o2=audioCtx.createOscillator(),g2=audioCtx.createGain();
+    o2.connect(g2);g2.connect(sfxGainNode||audioCtx.destination);
+    o2.type='sine';o2.frequency.setValueAtTime(80,t);
+    o2.frequency.exponentialRampToValueAtTime(20,t+0.8);
+    g2.gain.setValueAtTime(0.12,t);g2.gain.exponentialRampToValueAtTime(0.001,t+0.9);
+    o2.start(t);o2.stop(t+0.91);
+  }
   stopMusic();
   if(state.outsideBarrier){
     // Phase 1: start drifting, show normal FUEL CRITICAL popup — user will request tanker
@@ -13550,6 +13581,9 @@ function _dismissTopmostPopup(e){
   }
   // Content popups only close via Escape key, backdrop click, or X button — not arbitrary key presses
   const _escOnly = (e.type==='keydown' && e.code!=='Escape');
+  // Popup prompt — only dismissible after player has toggled once
+  const ppo=document.getElementById('popup-prompt-overlay');
+  if(ppo){ if(!_popupPromptToggled) return false; if(_escOnly) return false; _pickPopupPref(); return true; }
   // Fuel info popup — Escape/click only, not any key
   const fp=document.getElementById('fuel-popup-overlay');
   if(fp){ if(_escOnly) return false; _dismissFuelPopup(); return true; }
