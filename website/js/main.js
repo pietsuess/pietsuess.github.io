@@ -651,7 +651,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   const contactForm = document.querySelector('.contact-form');
   if (contactForm) {
-    contactForm.addEventListener('submit', (e) => {
+    contactForm.addEventListener('submit', async (e) => {
       e.preventDefault();
 
       const required = contactForm.querySelectorAll('[required]');
@@ -659,16 +659,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
       required.forEach(field => {
         field.classList.remove('error');
-
         const value = field.value.trim();
-        if (!value) {
-          valid = false;
-          field.classList.add('error');
-        }
-
+        if (!value) { valid = false; field.classList.add('error'); }
         if (field.type === 'email' && value && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) {
-          valid = false;
-          field.classList.add('error');
+          valid = false; field.classList.add('error');
         }
       });
 
@@ -678,11 +672,45 @@ document.addEventListener('DOMContentLoaded', () => {
         return;
       }
 
-      const thankYou = document.createElement('div');
-      thankYou.className = 'form-thank-you';
-      thankYou.textContent = 'Thank you! Your message has been received.';
-      contactForm.style.display = 'none';
-      contactForm.parentNode.insertBefore(thankYou, contactForm.nextSibling);
+      const submitBtn = contactForm.querySelector('.submit-btn');
+      const origText = submitBtn.textContent;
+      submitBtn.textContent = 'Sending...';
+      submitBtn.disabled = true;
+
+      try {
+        const formData = new FormData(contactForm);
+        const body = {
+          access_key: '0f45da86-7dcf-4c66-8881-d7597d02d720',
+          subject: 'New message from pietsuess.com',
+          from_name: formData.get('name'),
+          name: formData.get('name'),
+          email: formData.get('email'),
+          phone: formData.get('phone') || '',
+          services: formData.getAll('services').join(', ') || 'None selected',
+          message: formData.get('message')
+        };
+
+        const res = await fetch('https://api.web3forms.com/submit', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(body)
+        });
+        const data = await res.json();
+
+        if (data.success) {
+          const thankYou = document.createElement('div');
+          thankYou.className = 'form-thank-you';
+          thankYou.textContent = 'Thank you! Your message has been sent.';
+          contactForm.style.display = 'none';
+          contactForm.parentNode.insertBefore(thankYou, contactForm.nextSibling);
+        } else {
+          submitBtn.textContent = 'Error — try again';
+          submitBtn.disabled = false;
+        }
+      } catch (err) {
+        submitBtn.textContent = 'Error — try again';
+        submitBtn.disabled = false;
+      }
     });
 
     contactForm.addEventListener('input', (e) => {
