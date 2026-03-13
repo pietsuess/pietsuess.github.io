@@ -2960,52 +2960,63 @@ window.onload = function() {
     var _speedHintShown = false, _everBoosted = false;
 
     // ═══════════════════════════════════════════════════════════════
-    // TELEMETRY — posts play session data to Google Sheets
+    // ANALYTICS — posts play session data to Google Sheets via sendBeacon
     // ═══════════════════════════════════════════════════════════════
-    var _TELEMETRY_URL = 'https://script.google.com/macros/s/AKfycby0JJFdRIqYRWc-bZh_c3rN0T4PjHsiq3G2GFssGN-9QqF-DhuGF_TtEfTCNNQIkhKM/exec';
-    function _sendTelemetry(outcome) {
+    var _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbxQcS_M7eZe3ob69qbxaH3QDUUqDQGvec6BKDN94wildC5p3LGTSwytm_2ZyutpznB4/exec';
+    var _analyticsSession = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    var _analyticsStartTime = 0;
+    var _analyticsDeathCount = 0;
+    var _geoData = { ip:'', city:'', region:'', country:'', isOwner:false };
+    (function(){
+      try {
+        fetch('https://ipwho.is/').then(function(r){return r.json();}).then(function(d){
+          _geoData.ip = d.ip || '';
+          _geoData.city = d.city || '';
+          _geoData.region = d.region || '';
+          _geoData.country = d.country || '';
+          _geoData.isOwner = (d.ip || '').startsWith('2604:3d08:1788');
+        }).catch(function(){});
+      } catch(e){}
+    })();
+    function _trAnalyticsPayload(event, extra) {
+        var zone = getZoneName(currentSector);
+        var collected = collectedContent[zone] ? collectedContent[zone].size : 0;
+        var totalItems = (CONTENT_DATA[zone] || []).length;
+        var progress = sectorDistance > 0 ? Math.round((distanceTraveled / sectorDistance) * 100) : 0;
+        var p = {
+            game: 'TunnelRunner',
+            session: _analyticsSession,
+            event: event,
+            sector: currentSector,
+            level: currentLevel,
+            zone: zone,
+            score: score,
+            health: Math.round(health),
+            timePlayed: Math.round((Date.now() - _analyticsStartTime) / 1000),
+            deaths: _analyticsDeathCount,
+            progress: Math.min(100, progress),
+            collected: collected,
+            totalContent: totalItems,
+            userAgent: navigator.userAgent.slice(0, 120),
+            ip: _geoData.ip,
+            city: _geoData.city,
+            region: _geoData.region,
+            country: _geoData.country,
+            isOwner: _geoData.isOwner
+        };
+        if (extra) Object.assign(p, extra);
+        return p;
+    }
+    function _sendTelemetry(event) {
         try {
-            var zone = getZoneName(currentSector);
-            var collected = collectedContent[zone] ? collectedContent[zone].size : 0;
-            var totalItems = (CONTENT_DATA[zone] || []).length;
-            var progress = sectorDistance > 0 ? Math.round((distanceTraveled / sectorDistance) * 100) : 0;
-            var payload = {
-                sector: currentSector,
-                level: currentLevel,
-                zone: zone,
-                score: score,
-                health: Math.round(health),
-                time: Math.round(sectorTime * 10) / 10,
-                outcome: outcome,
-                progress: Math.min(100, progress),
-                speedHint: _speedHintShown,
-                collected: collected,
-                totalContent: totalItems
-            };
-            fetch(_TELEMETRY_URL, {
-                method: 'POST',
-                mode: 'no-cors',
-                headers: { 'Content-Type': 'text/plain' },
-                body: JSON.stringify(payload)
-            }).catch(function(){});
+            navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(_trAnalyticsPayload(event)));
         } catch(e) {}
     }
-    // Send telemetry on page close/navigate away (mid-game only)
+    // Send analytics on page close/navigate away (mid-game only)
     window.addEventListener('beforeunload', function() {
         if (gameState === 'playing') {
             try {
-                var zone = getZoneName(currentSector);
-                var collected = collectedContent[zone] ? collectedContent[zone].size : 0;
-                var totalItems = (CONTENT_DATA[zone] || []).length;
-                var progress = sectorDistance > 0 ? Math.round((distanceTraveled / sectorDistance) * 100) : 0;
-                navigator.sendBeacon(_TELEMETRY_URL, JSON.stringify({
-                    sector: currentSector, level: currentLevel, zone: zone,
-                    score: score, health: Math.round(health),
-                    time: Math.round(sectorTime * 10) / 10,
-                    outcome: 'abandon', progress: Math.min(100, progress),
-                    speedHint: _speedHintShown, collected: collected,
-                    totalContent: totalItems
-                }));
+                navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(_trAnalyticsPayload('abandon')));
             } catch(e) {}
         }
     });
@@ -3765,6 +3776,7 @@ window.onload = function() {
     }
 
     function triggerGameOver() {
+        _analyticsDeathCount++;
         _sendTelemetry('death');
         gameState = 'dead';
         document.getElementById('speedrun-clock').style.display = 'none';
@@ -3850,6 +3862,7 @@ window.onload = function() {
     }
 
     function showFinale() {
+        _sendTelemetry('finale');
         gameState = 'finale';
         document.getElementById('finale-score').innerText = 'FINAL SCORE: ' + score.toString().padStart(6,'0');
         document.getElementById('finale-initials').style.display = 'block';
@@ -4942,6 +4955,7 @@ window.onload = function() {
         items.length = 0;
         
         if (isFullReset) {
+            _analyticsStartTime = Date.now(); _analyticsDeathCount = 0; _sendTelemetry('session_start');
             currentSector = 1;
             currentLevel = 1;
             introSpawned = false;
