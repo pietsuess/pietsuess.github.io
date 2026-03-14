@@ -882,20 +882,23 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('resize', resize);
 
     for (let i = 0; i < DOT_COUNT; i++) {
+      // Depth: 0 = far background, 1 = foreground
+      const depth = Math.random();
       dots.push({
         x: Math.random() * 2000,
         y: Math.random() * 2000,
-        r: Math.random() * 1.5 + 1,
-        alpha: 1,
-        // Orbital motion
-        cx: Math.random() * 2000,  // orbit center
+        r: 0.5 + depth * 2.5,
+        alpha: 0.3 + depth * 0.7,
+        depth: depth,
+        // Orbital motion — deeper dots orbit slower
+        cx: Math.random() * 2000,
         cy: Math.random() * 2000,
-        orbitR: Math.random() * 100 + 30,
-        orbitSpeed: (Math.random() - 0.5) * 0.01,
+        orbitR: 20 + depth * 100,
+        orbitSpeed: (Math.random() - 0.5) * (0.003 + depth * 0.012),
         angle: Math.random() * Math.PI * 2,
-        // Drift
-        driftX: (Math.random() - 0.5) * 0.2,
-        driftY: (Math.random() - 0.5) * 0.2,
+        // Drift — deeper dots drift faster
+        driftX: (Math.random() - 0.5) * (0.05 + depth * 0.3),
+        driftY: (Math.random() - 0.5) * (0.05 + depth * 0.3),
       });
     }
 
@@ -915,7 +918,9 @@ document.addEventListener('DOMContentLoaded', () => {
         if (d.cy > h + 100) d.cy = -100;
 
         const screenX = d.cx + Math.cos(d.angle) * d.orbitR;
-        const screenY = d.cy + Math.sin(d.angle) * d.orbitR - scrollY * 0.05;
+        // Parallax: foreground dots scroll faster than background
+        const parallax = 0.02 + d.depth * 0.15;
+        const screenY = d.cy + Math.sin(d.angle) * d.orbitR - scrollY * parallax;
 
         // Wrap vertically with scroll
         const drawY = ((screenY % h) + h) % h;
