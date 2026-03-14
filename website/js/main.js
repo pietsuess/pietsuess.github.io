@@ -1190,34 +1190,8 @@ document.addEventListener('DOMContentLoaded', () => {
     fsBtn.addEventListener('click', () => {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
-        localStorage.setItem('ps-fullscreen', '1');
       } else {
         document.exitFullscreen();
-        localStorage.removeItem('ps-fullscreen');
-      }
-    });
-
-    // Re-enter fullscreen: intercept nav clicks to restore before navigating
-    if (localStorage.getItem('ps-fullscreen') === '1' && !document.fullscreenElement) {
-      const navLinks = document.querySelectorAll('a[href]');
-      navLinks.forEach(a => {
-        const href = a.getAttribute('href');
-        if (!href || href.startsWith('http') || href.startsWith('#')) return;
-        a.addEventListener('click', function(e) {
-          e.preventDefault();
-          document.documentElement.requestFullscreen().then(() => {
-            window.location.href = href;
-          }).catch(() => {
-            window.location.href = href;
-          });
-        }, { once: true });
-      });
-    }
-
-    // Clear pref if user exits fullscreen via Escape
-    document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement && !document.hidden) {
-        localStorage.removeItem('ps-fullscreen');
       }
     });
   }
