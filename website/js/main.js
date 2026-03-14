@@ -1013,6 +1013,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
+      // DEBUG: red line showing grid edge — REMOVE WHEN DONE
+      ctx.strokeStyle = 'red';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(edgeX, gr.top);
+      ctx.lineTo(edgeX, gr.bottom);
+      ctx.stroke();
+
       ctx.save();
       ctx.translate(edgeX, gr.top);
 
