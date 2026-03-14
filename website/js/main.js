@@ -865,8 +865,6 @@ document.addEventListener('DOMContentLoaded', () => {
     const walkers = [
       { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
       { side: 'left',  size: 20, speed: -0.9, offset: 400 },
-      { side: 'right', size: 24, speed: 1.0,  offset: 200 },
-      { side: 'right', size: 32, speed: -0.7, offset: 600 },
     ];
 
     function render() {
