@@ -1745,7 +1745,7 @@ const CONTENT_DATA = {
       o.isSinglePhoto = true;
       o.singleUrl = baseUrl + item.file;
     } else {
-      o.gallery = (item.files||[]).map(f=>{ const g={url:baseUrl+f.file, caption:f.caption||''}; if(f.wide) g.wide=true; return g; });
+      o.gallery = (item.files||[]).map(f=>{ const g={url:baseUrl+f.file, caption:f.caption||''}; if(f.wide) g.wide=true; if(f.portrait) g.portrait=true; return g; });
     }
     return o;
   }
@@ -11367,9 +11367,12 @@ function openContent(item, replay=false){
         galGrid.style.display='flex'; galGrid.style.flexWrap='wrap'; galGrid.style.flexDirection=''; galGrid.style.gap='6px';
       }
       galGrid.innerHTML=item.gallery.map((img,i)=>{
-        const _span=!_isDesign?(img.wide?'grid-column:1/-1':'grid-column:span 2'):'';
-        return `<div class="${_thumbCls}" onclick="openLightbox(${i})" style="${_span}">
-          <img src="${img.url}" alt="${img.caption}" loading="lazy"${_isDesign?' style="background:transparent;"':''}>
+        const _span=!_isDesign?(img.wide?'grid-column:1/-1;':'grid-column:span 2;'):'';
+        const _prt=img.portrait;
+        const _divStyle=_span+(_prt?'align-self:stretch;overflow:hidden;':'');
+        const _imgStyle=_prt?'object-fit:cover;width:100%;height:100%;':'';
+        return `<div class="${_thumbCls}" onclick="openLightbox(${i})" style="${_divStyle}">
+          <img src="${img.url}" alt="${img.caption}" loading="lazy"${_isDesign?' style="background:transparent;"':_imgStyle?' style="'+_imgStyle+'"':''}>
           <div class="gallery-thumb-label">${img.caption}</div>
         </div>`;
       }).join('');
@@ -12214,13 +12217,28 @@ function submitGlobalScore(name, score){
   } catch(e){}
 }
 
+function _getCachedGlobalScores(){
+  try { const c=localStorage.getItem('ps_globalLB'); return c?JSON.parse(c):[]; } catch(e){ return []; }
+}
+function _setCachedGlobalScores(arr){
+  try { localStorage.setItem('ps_globalLB', JSON.stringify(arr)); } catch(e){}
+}
 function loadGlobalScores(callback){
-  fetch(_ANALYTICS_URL + '?game=NAVIGATOR')
+  // Serve cached scores immediately
+  const cached = _getCachedGlobalScores();
+  if(cached.length) callback(cached.map(e=>({name:String(e.name),score:parseInt(e.score)||0,isNew:false,global:true})));
+  // Fetch fresh with 5s timeout, update cache on success
+  const ctrl = new AbortController();
+  const timeout = setTimeout(()=>ctrl.abort(), 5000);
+  fetch(_ANALYTICS_URL + '?game=NAVIGATOR', {signal:ctrl.signal})
     .then(r=>r.json())
     .then(arr=>{
-      callback((Array.isArray(arr)?arr:[]).map(e=>({name:String(e.name),score:parseInt(e.score)||0,isNew:false,global:true})));
+      clearTimeout(timeout);
+      const entries = (Array.isArray(arr)?arr:[]).map(e=>({name:String(e.name),score:parseInt(e.score)||0,isNew:false,global:true}));
+      _setCachedGlobalScores(Array.isArray(arr)?arr:[]);
+      callback(entries);
     })
-    .catch(()=>callback([]));
+    .catch(()=>{ clearTimeout(timeout); if(!cached.length) callback([]); });
 }
 
 function loadSavedScores(){
@@ -13704,7 +13722,11 @@ function _dismissTopmostPopup(e){
   if(wp){ if(!_wavePopupToggled) return false; if(_escOnly) return false; _dismissWavePopup(); return true; }
   // Victory room zone menu removed — now in NAVIGATOR-VICTORY.html
   const lb=document.getElementById('gallery-lightbox');
-  if(lb && lb.classList.contains('open')){ closeLightbox(); return true; }
+  if(lb && lb.classList.contains('open')){
+    if(e.type==='keydown' && e.code==='ArrowRight'){ lightboxNav(1); return true; }
+    if(e.type==='keydown' && e.code==='ArrowLeft'){ lightboxNav(-1); return true; }
+    closeLightbox(); return true;
+  }
   const pf=document.getElementById('photo-fullscreen');
   if(pf && pf.style.display==='flex'){ if(_escOnly) return false; closePhotoFullscreen(); return true; }
   const co=document.getElementById('content-overlay');
