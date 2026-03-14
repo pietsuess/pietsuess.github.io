@@ -324,7 +324,28 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }, { threshold: 0.01, rootMargin: '0px 0px 200px 0px' });
 
-  document.querySelectorAll('.fade-in, .entrance, .slide-in-left').forEach(el => fadeObserver.observe(el));
+  document.querySelectorAll('.fade-in, .entrance').forEach(el => fadeObserver.observe(el));
+
+  // Scroll-driven slide-in-left — position tied to scroll, reversible
+  (function() {
+    const els = document.querySelectorAll('.slide-in-left');
+    if (!els.length) return;
+    function update() {
+      const vh = window.innerHeight;
+      els.forEach(el => {
+        const rect = el.getBoundingClientRect();
+        // progress 0 = element just entering bottom, 1 = element at 40% from top
+        const start = vh;
+        const end = vh * 0.4;
+        const progress = Math.max(0, Math.min(1, (start - rect.top) / (start - end)));
+        const eased = 1 - Math.pow(1 - progress, 3);
+        el.style.transform = 'translateX(' + (-100 + eased * 100) + '%)';
+        el.style.opacity = eased;
+      });
+      requestAnimationFrame(update);
+    }
+    requestAnimationFrame(update);
+  })();
 
 
   /* -------------------------------------------------------
