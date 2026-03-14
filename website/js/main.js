@@ -881,8 +881,8 @@ document.addEventListener('DOMContentLoaded', () => {
       dots.push({
         x: Math.random() * 2000,
         y: Math.random() * 2000,
-        r: Math.random() * 6 + 3,
-        alpha: Math.random() * 0.5 + 0.35,
+        r: Math.random() * 1.2 + 0.5,
+        alpha: 1,
         // Orbital motion
         cx: Math.random() * 2000,  // orbit center
         cy: Math.random() * 2000,
