@@ -344,5 +344,97 @@
 
 <button class="back-to-top" aria-label="Back to top">&uarr; Back to Top</button>
 <script src="js/main.js"></script>
+
+<!-- Dev Mode: add ?dev to URL to enable drag-and-drop reordering -->
+<script>
+if (location.search.includes('dev')) {
+  const toolbar = document.createElement('div');
+  toolbar.innerHTML = `
+    <div id="devToolbar" style="position:fixed;bottom:20px;right:20px;z-index:9999;background:rgba(0,0,0,0.85);color:#fff;padding:12px 16px;border-radius:12px;font-family:system-ui;font-size:13px;display:flex;gap:10px;align-items:center;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.2);">
+      <span style="color:#e8735a;font-weight:600;">DEV MODE</span>
+      <span>Drag items to reorder</span>
+      <button id="devCopyOrder" style="background:#e8735a;color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">Copy Order</button>
+    </div>
+  `;
+  document.body.appendChild(toolbar);
+
+  const mixedGrid = document.querySelector('.animate-grid-mixed');
+  if (mixedGrid) {
+    let dragItem = null;
+    const items = mixedGrid.querySelectorAll('.anim-item');
+    items.forEach((item, i) => {
+      item.setAttribute('draggable', 'true');
+      item.dataset.devIndex = i;
+      item.style.cursor = 'grab';
+      item.style.border = '2px solid transparent';
+      item.style.borderRadius = '6px';
+      item.style.transition = 'border-color 0.2s';
+
+      item.addEventListener('dragstart', e => {
+        dragItem = item;
+        item.style.opacity = '0.4';
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      item.addEventListener('dragend', () => {
+        dragItem.style.opacity = '1';
+        dragItem = null;
+        items.forEach(el => el.style.borderColor = 'transparent');
+      });
+      item.addEventListener('dragover', e => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        item.style.borderColor = '#e8735a';
+      });
+      item.addEventListener('dragleave', () => {
+        item.style.borderColor = 'transparent';
+      });
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        item.style.borderColor = 'transparent';
+        if (dragItem && dragItem !== item) {
+          const allItems = [...mixedGrid.querySelectorAll('.anim-item')];
+          const dragIdx = allItems.indexOf(dragItem);
+          const dropIdx = allItems.indexOf(item);
+          if (dragIdx < dropIdx) {
+            item.after(dragItem);
+          } else {
+            item.before(dragItem);
+          }
+        }
+      });
+    });
+
+    document.getElementById('devCopyOrder').addEventListener('click', () => {
+      const order = [...mixedGrid.querySelectorAll('.anim-item')].map(el => {
+        const comment = el.previousElementSibling;
+        let label = '';
+        const prev = el.previousSibling;
+        // Walk back to find the HTML comment
+        let node = el.previousSibling;
+        while (node) {
+          if (node.nodeType === 8) { label = node.textContent.trim(); break; }
+          if (node.nodeType === 1) break;
+          node = node.previousSibling;
+        }
+        if (!label) {
+          const vid = el.querySelector('video');
+          const img = el.querySelector('img');
+          const canvas = el.querySelector('canvas');
+          if (vid) label = vid.src.split('/').pop();
+          else if (img) label = img.alt || img.src.split('/').pop();
+          else if (canvas) label = 'Unveil Canvas';
+        }
+        return label;
+      });
+      const text = order.map((name, i) => `${i+1}. ${name}`).join('\n');
+      navigator.clipboard.writeText(text).then(() => {
+        const btn = document.getElementById('devCopyOrder');
+        btn.textContent = 'Copied!';
+        setTimeout(() => btn.textContent = 'Copy Order', 2000);
+      });
+    });
+  }
+}
+</script>
 </body>
 </html>
