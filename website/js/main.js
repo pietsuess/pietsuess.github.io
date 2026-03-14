@@ -928,10 +928,14 @@ document.addEventListener('DOMContentLoaded', () => {
         if (pivotY < -wk.size || pivotY > vh + wk.size) continue;
 
         const goingDown = wk.speed > 0;
+        const s = wk.size;
+        const r = s * 0.15;
 
         ctx.save();
         ctx.translate(edgeX, pivotY);
 
+        // Rotate so local X axis points along the edge (downward or upward)
+        // and local Y axis points inward from the edge
         if (wk.side === 'left') {
           if (goingDown) {
             ctx.rotate(Math.PI / 2);
@@ -947,22 +951,24 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.rotate(Math.PI / 2);
           }
         }
-        // Tip in the opposite direction: mirror, tip, mirror back
-        ctx.scale(-1, 1);
-        ctx.rotate(tipAngle);
 
-        const s = wk.size;
-        const r = s * 0.15;
+        // Tip: pivot is at origin (leading corner on edge)
+        // Square body extends left (-x) and up (-y)
+        // tipAngle rotates 0→PI/2, tipping it forward
+        // To reverse tip direction: pivot from the OTHER corner
+        // Draw body at (0,-s) to (s,0), pivot bottom-left instead of bottom-right
+        ctx.rotate(-tipAngle);
+
         ctx.beginPath();
-        ctx.moveTo(-s + r, -s);
-        ctx.lineTo(-r, -s);
-        ctx.quadraticCurveTo(0, -s, 0, -s + r);
-        ctx.lineTo(0, -r);
-        ctx.quadraticCurveTo(0, 0, -r, 0);
-        ctx.lineTo(-s + r, 0);
-        ctx.quadraticCurveTo(-s, 0, -s, -r);
-        ctx.lineTo(-s, -s + r);
-        ctx.quadraticCurveTo(-s, -s, -s + r, -s);
+        ctx.moveTo(r, -s);
+        ctx.lineTo(s - r, -s);
+        ctx.quadraticCurveTo(s, -s, s, -s + r);
+        ctx.lineTo(s, -r);
+        ctx.quadraticCurveTo(s, 0, s - r, 0);
+        ctx.lineTo(r, 0);
+        ctx.quadraticCurveTo(0, 0, 0, -r);
+        ctx.lineTo(0, -s + r);
+        ctx.quadraticCurveTo(0, -s, r, -s);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
