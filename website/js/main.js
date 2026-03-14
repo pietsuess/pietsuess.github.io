@@ -1006,10 +1006,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!firstItem) { requestAnimationFrame(render); return; }
       const ir = firstItem.getBoundingClientRect();
       const gr = grid.getBoundingClientRect();
-      if (gr.bottom < 0 || gr.top > vh) {
-        requestAnimationFrame(render);
-        return;
-      }
 
       const scrollY = window.scrollY || 0;
       const totalLen = gr.height;
