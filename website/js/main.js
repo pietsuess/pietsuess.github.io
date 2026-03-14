@@ -324,7 +324,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }, { threshold: 0.01, rootMargin: '0px 0px 200px 0px' });
 
-  document.querySelectorAll('.fade-in, .entrance').forEach(el => fadeObserver.observe(el));
+  document.querySelectorAll('.fade-in, .entrance, .slide-in-left').forEach(el => fadeObserver.observe(el));
 
 
   /* -------------------------------------------------------
