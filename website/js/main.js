@@ -1012,46 +1012,33 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const scrollY = window.scrollY || 0;
-      // Edit: left edge of first thumbnail. Direct: right edge of last thumbnail in row.
-      let edgeX;
+      const totalLen = gr.height;
+
+      // Get thumbnail edges
+      let gridEdgeX;
       if (isEdit) {
-        edgeX = ir.left;
+        gridEdgeX = ir.left;
       } else {
         const allItems = grid.querySelectorAll('.portfolio-item');
         const lastInRow = allItems.length > 1 ? allItems[1] : allItems[0];
-        edgeX = lastInRow.getBoundingClientRect().right;
+        gridEdgeX = lastInRow.getBoundingClientRect().right;
       }
-      const totalLen = gr.height;
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      // DEBUG: red line showing thumbnail edge — REMOVE WHEN DONE
-      ctx.strokeStyle = 'red';
-      ctx.lineWidth = 2;
-      ctx.beginPath();
-      ctx.moveTo(edgeX, gr.top);
-      ctx.lineTo(edgeX, gr.bottom);
-      ctx.stroke();
-
+      // Walker 1: right face, grid edge, walking down
       ctx.save();
-      ctx.translate(edgeX, gr.top);
+      ctx.translate(gridEdgeX, gr.top);
+      ctx.scale(-1, 1);
+      ctx.rotate(Math.PI / 2);
+      walkSquare(ctx, 0, 0, totalLen, 48, scrollY * 1.2, 'above');
+      ctx.restore();
 
-      if (isEdit) {
-        // Edit: RIGHT face on left edge (body extends right, onto grid)
-        // Rotate horizontal walk +90° then mirror for right face
-        ctx.scale(-1, 1);
-        ctx.rotate(Math.PI / 2);
-      } else {
-        // Direct: LEFT face on right edge (body extends left, onto grid)
-        // Rotate horizontal walk +90° for left face
-        ctx.rotate(Math.PI / 2);
-      }
-
-      for (const w of walkers) {
-        const dist = scrollY * w.speed + w.offset;
-        walkSquare(ctx, 0, 0, totalLen, w.size, dist, 'above');
-      }
-
+      // Walker 2: left face, screen edge (x=0), walking up (negative scroll)
+      ctx.save();
+      ctx.translate(0, gr.top);
+      ctx.rotate(Math.PI / 2);
+      walkSquare(ctx, 0, 0, totalLen, 38, scrollY * 0.9 + 400, 'above');
       ctx.restore();
       requestAnimationFrame(render);
     }
