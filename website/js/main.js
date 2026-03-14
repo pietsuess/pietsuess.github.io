@@ -217,7 +217,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // Only show on pages with enough content
     if (document.body.scrollHeight < window.innerHeight * 1.5) return;
 
-    const TAPE_COLOR = '#fff';
+    const TAPE_COLOR = document.body.classList.contains('design-page') ? '#000' : '#fff';
 
     const strip = document.createElement('div');
     strip.style.cssText = 'position:fixed;right:0;top:0;width:50px;height:100%;z-index:98;pointer-events:none;overflow:visible;';
@@ -280,7 +280,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (isMajor) {
           const lbl = document.createElement('div');
           lbl.textContent = px + 'px';
-          lbl.style.cssText = `position:absolute;right:0;top:-14px;font:bold 9px monospace;color:#fff;opacity:${opacity.toFixed(2)};white-space:nowrap;`;
+          lbl.style.cssText = `position:absolute;right:0;top:-14px;font:bold 9px monospace;color:${TAPE_COLOR};opacity:${opacity.toFixed(2)};white-space:nowrap;`;
           tick.appendChild(lbl);
         }
         strip.appendChild(tick);
@@ -294,11 +294,11 @@ document.addEventListener('DOMContentLoaded', () => {
           if (opacity < 0.02) return;
 
           const mark = document.createElement('div');
-          mark.style.cssText = `position:absolute;right:0;top:${screenY}px;width:50px;height:2px;background:#fff;opacity:${opacity.toFixed(2)};`;
+          mark.style.cssText = `position:absolute;right:0;top:${screenY}px;width:50px;height:2px;background:${TAPE_COLOR};opacity:${opacity.toFixed(2)};`;
 
           const lbl = document.createElement('div');
           lbl.textContent = m.name;
-          lbl.style.cssText = `position:absolute;right:0;top:-14px;font:bold 9px monospace;color:#fff;opacity:${opacity.toFixed(2)};white-space:nowrap;`;
+          lbl.style.cssText = `position:absolute;right:0;top:-14px;font:bold 9px monospace;color:${TAPE_COLOR};opacity:${opacity.toFixed(2)};white-space:nowrap;`;
           mark.appendChild(lbl);
           strip.appendChild(mark);
         }
