@@ -373,27 +373,30 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const bigS = 48, smS = 36;
 
-    // Walk-in-place: uses the same gravity-eased tipping from test3
-    // but the square stays put — tips forward one step then resets
-    function walkInPlace(ctx, pivotX, groundY, size, frac, direction) {
-      // direction: 1 = tips right, -1 = tips left
-      // Gravity easing (same as test3)
+    // Exact walkSquare from test3 — unchanged
+    function walkSquareBio(ctx, lineX, lineY, lineLen, size, dist, side) {
+      const totalLen = lineLen;
+      const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+      const steps = rawDist / size;
+      const stepIdx = Math.floor(steps);
+      const frac = steps - stepIdx;
+
       const eased = frac < 0.5
         ? 0.5 * Math.pow(frac * 2, 0.7)
         : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
-      const tipAngle = eased * (Math.PI / 2) * direction;
+      const tipAngle = eased * (Math.PI / 2);
+
+      const pivotX = lineX + ((stepIdx + 1) * size) % totalLen;
+
+      ctx.save();
+      ctx.translate(pivotX, lineY);
+      ctx.rotate(tipAngle);
 
       const s = size;
       const r = s * 0.15;
-
-      ctx.save();
-      // Pivot at bottom corner on the tipping side
-      ctx.translate(pivotX, groundY);
-      ctx.rotate(tipAngle);
-
-      // Draw square with bottom edge at ground
-      const x = direction === 1 ? -s : 0;
-      const y = -s;
+      const yOff = side === 'above' ? -s : 0;
+      const x = -s;
+      const y = yOff;
 
       ctx.beginPath();
       ctx.moveTo(x+r,y); ctx.lineTo(x+s-r,y);
@@ -402,6 +405,34 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.quadraticCurveTo(x,y+s,x,y+s-r); ctx.lineTo(x,y+r);
       ctx.quadraticCurveTo(x,y,x+r,y);
       ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
+    // Treadmill wrapper: exact test3 walk but counter-translate to keep center stationary
+    function walkTreadmill(ctx, centerX, groundY, size, dist, color) {
+      const totalLen = size * 10000;
+      const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+      const steps = rawDist / size;
+      const stepIdx = Math.floor(steps);
+      const frac = steps - stepIdx;
+
+      // Same easing to compute tip angle for center offset
+      const eased = frac < 0.5
+        ? 0.5 * Math.pow(frac * 2, 0.7)
+        : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+      const tipAngle = eased * (Math.PI / 2);
+
+      // Pivot position on virtual line
+      const pivotVirtual = (stepIdx + 1) * size;
+      // Square center during tip (relative to pivot)
+      const centerOffsetX = (size / 2) * (Math.sin(tipAngle) - Math.cos(tipAngle));
+      // Translate so square center stays at centerX
+      const tx = centerX - pivotVirtual - centerOffsetX;
+
+      ctx.save();
+      ctx.translate(tx, 0);
+      ctx.fillStyle = color;
+      walkSquareBio(ctx, 0, groundY, totalLen, size, dist, 'above');
       ctx.restore();
     }
 
@@ -422,21 +453,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = c.getContext('2d');
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,w,h);
-        ctx.fillStyle = 'rgba(254,249,240,0.5)';
 
         const groundY = h * 0.55;
         const centerX = w * 0.5;
+        const color = 'rgba(254,249,240,0.5)';
 
-        // Big square — tips right then resets, continuous loop
-        // One full tip cycle = one "step" duration
-        const bigCycle = 1.8; // seconds per tip
-        const bigFrac = ((elapsed / bigCycle) % 1);
-        walkInPlace(ctx, centerX, groundY, bigS, bigFrac, 1);
+        // Big square walks right on treadmill
+        walkTreadmill(ctx, centerX - bigS * 0.3, groundY, bigS, elapsed * 60, color);
 
-        // Small square — tips left, offset timing
-        const smCycle = 1.5;
-        const smFrac = (((elapsed + 0.9) / smCycle) % 1);
-        walkInPlace(ctx, centerX, groundY, smS, smFrac, -1);
+        // Small square walks left on treadmill (mirrored)
+        ctx.save();
+        ctx.translate(centerX + smS * 0.3, 0);
+        ctx.scale(-1, 1);
+        ctx.translate(-(centerX + smS * 0.3), 0);
+        walkTreadmill(ctx, centerX + smS * 0.3, groundY, smS, elapsed * 45 + 200, color);
+        ctx.restore();
       });
       requestAnimationFrame(render);
     }
