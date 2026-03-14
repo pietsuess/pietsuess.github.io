@@ -850,19 +850,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* -------------------------------------------------------
      WALKING SQUARES — scroll-driven along grid edges
+     Fixed overlay canvas — does NOT touch the grid DOM
      ------------------------------------------------------- */
   (function() {
     const grid = document.querySelector('.portfolio-grid') || document.querySelector('.animate-grid');
     if (!grid) return;
 
-    // Place canvas as sibling of grid inside zone-page-main (already position context)
-    const parent = grid.parentElement;
-    if (!parent) return;
-    parent.style.position = 'relative';
-
     const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;';
-    parent.appendChild(canvas);
+    canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10;';
+    document.body.appendChild(canvas);
 
     const ctx = canvas.getContext('2d');
 
@@ -875,32 +871,33 @@ document.addEventListener('DOMContentLoaded', () => {
 
     function render() {
       const dpr = window.devicePixelRatio || 1;
-      const gridRect = grid.getBoundingClientRect();
-      const parentRect = parent.getBoundingClientRect();
-      // Grid position relative to parent
-      const gLeft = gridRect.left - parentRect.left;
-      const gRight = gridRect.right - parentRect.left;
-      const gTop = gridRect.top - parentRect.top;
-      const w = parent.scrollWidth;
-      const h = parent.scrollHeight;
+      const vw = window.innerWidth;
+      const vh = window.innerHeight;
 
-      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
-        canvas.width = Math.round(w * dpr);
-        canvas.height = Math.round(h * dpr);
+      if (canvas.width !== Math.round(vw * dpr) || canvas.height !== Math.round(vh * dpr)) {
+        canvas.width = Math.round(vw * dpr);
+        canvas.height = Math.round(vh * dpr);
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      ctx.clearRect(0, 0, w, h);
+      ctx.clearRect(0, 0, vw, vh);
 
-      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
+      // Grid edges in viewport coords
+      const gr = grid.getBoundingClientRect();
+      const scrollY = window.scrollY || 0;
+
+      // Only draw if grid is on screen
+      if (gr.bottom < 0 || gr.top > vh) {
+        requestAnimationFrame(render);
+        return;
+      }
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      const gridH = gridRect.height;
+      const gridH = gr.height;
 
       for (const wk of walkers) {
-        // Left/right edge of the actual grid content
-        const edgeX = wk.side === 'left' ? gLeft : gRight;
+        const edgeX = wk.side === 'left' ? gr.left : gr.right;
         const totalRange = gridH + wk.size;
         const dist = scrollY * wk.speed + wk.offset;
         const absDist = ((dist % totalRange) + totalRange) % totalRange;
@@ -914,14 +911,19 @@ document.addEventListener('DOMContentLoaded', () => {
           : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
         const tipAngle = eased * (Math.PI / 2);
 
-        const pivotY = gTop + (((stepIdx + 1) * wk.size) % totalRange);
+        // Y position along the grid edge (viewport coords)
+        const localY = ((stepIdx + 1) * wk.size) % totalRange;
+        const pivotY = gr.top + localY;
+
+        // Skip if off screen
+        if (pivotY < -wk.size || pivotY > vh + wk.size) continue;
+
         const goingDown = wk.speed > 0;
 
         ctx.save();
         ctx.translate(edgeX, pivotY);
 
         if (wk.side === 'left') {
-          // Walk down left edge, square body extends inward (right)
           ctx.rotate(Math.PI / 2);
           if (!goingDown) ctx.scale(1, -1);
         } else {
