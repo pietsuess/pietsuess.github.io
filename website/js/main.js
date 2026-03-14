@@ -947,7 +947,9 @@ document.addEventListener('DOMContentLoaded', () => {
             ctx.rotate(Math.PI / 2);
           }
         }
-        ctx.rotate(-tipAngle);
+        // Tip in the opposite direction: mirror, tip, mirror back
+        ctx.scale(-1, 1);
+        ctx.rotate(tipAngle);
 
         const s = wk.size;
         const r = s * 0.15;
