@@ -848,4 +848,114 @@ document.addEventListener('DOMContentLoaded', () => {
     draw();
   })();
 
+  /* -------------------------------------------------------
+     ANIMATED PS LOGO — walking squares
+     ------------------------------------------------------- */
+  (function() {
+    const logoLink = document.querySelector('.logo');
+    if (!logoLink) return;
+    const img = logoLink.querySelector('img');
+    if (!img) return;
+
+    function setup() {
+      const imgH = img.offsetHeight || 40;
+      const VW = 301.72, VH = 228.21;
+      const sc = imgH / VH;
+      const imgW = VW * sc;
+
+      const canvas = document.createElement('canvas');
+      const dpr = window.devicePixelRatio || 1;
+      canvas.width = imgW * dpr;
+      canvas.height = imgH * dpr;
+      canvas.style.width = imgW + 'px';
+      canvas.style.height = imgH + 'px';
+      canvas.style.display = 'block';
+      img.style.display = 'none';
+      logoLink.appendChild(canvas);
+
+      const ctx = canvas.getContext('2d');
+
+      const letterPath = new Path2D(
+        "M156.79,91.23v-.32c0-24.5-18.02-38.88-45.99-38.88h-40.95c-3.57,0-6.46,2.89-6.46,6.46v97.7c0,3.57,2.89,6.46,6.46,6.46h17.74c3.57,0,6.46-2.89,6.46-6.46v-18.69c0-3.57,2.89-6.46,6.46-6.46h8.71c27.5,0,47.57-13.75,47.57-39.83ZM126.13,92.65c0,8.69-6.64,14.38-17.54,14.38h-8.08c-3.57,0-6.46-2.89-6.46-6.46v-16.32c0-3.57,2.89-6.46,6.46-6.46h7.92c11.06,0,17.7,5.06,17.7,14.54v.32Z " +
+        "M252.45,128.21v.32c0,22.6-17.86,36.03-44.72,36.03-17.11,0-33.5-4.7-46.43-13.99-3.05-2.19-3.58-6.52-1.17-9.39l8.96-10.7c2.13-2.55,5.83-3.03,8.6-1.18,9.65,6.45,20.17,9.82,31.16,9.82,8.22,0,12.64-2.84,12.64-7.59v-.32c0-4.58-3.63-7.11-18.65-10.59-23.55-5.37-41.72-12.01-41.72-34.77v-.32c0-20.54,16.28-35.4,42.83-35.4,16.05,0,29.11,3.68,40.06,10.76,3.09,1.99,3.88,6.17,1.76,9.16l-8.07,11.4c-1.95,2.75-5.67,3.5-8.59,1.81-8.67-5.03-17.75-7.68-25.95-7.68-7.43,0-11.06,3.16-11.06,7.11v.32c0,5.06,3.79,7.27,19.12,10.75,25.44,5.53,41.25,13.75,41.25,34.45Z"
+      );
+
+      // Walkers: each walks a horizontal line, tipping over edges
+      // size = square side length (viewBox units), groundY, startX, range, speed, dir
+      const walkers = [
+        { size: 22, groundY: 30, x0: 20,  range: 270, speed: 35, dir: 1,  dist: 0 },
+        { size: 18, groundY: 198, x0: 280, range: 260, speed: 28, dir: -1, dist: 80 },
+        { size: 20, groundY: 172, x0: 140, range: 150, speed: 22, dir: 1,  dist: 40 },
+        { size: 16, groundY: 48, x0: 260, range: 120, speed: 30, dir: -1, dist: 60 },
+      ];
+
+      let lastT = null;
+
+      function animate(time) {
+        if (!lastT) lastT = time;
+        const dt = (time - lastT) / 1000;
+        lastT = time;
+
+        ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+        ctx.clearRect(0, 0, imgW, imgH);
+        ctx.scale(sc, sc);
+
+        // Draw letters
+        ctx.fillStyle = '#fff';
+        ctx.fill(letterPath, 'evenodd');
+
+        // Draw walking squares
+        for (const w of walkers) {
+          w.dist += w.speed * dt;
+          const loopDist = w.dist % w.range;
+
+          const steps = loopDist / w.size;
+          const stepIdx = Math.floor(steps);
+          const frac = steps - stepIdx;
+
+          // Gravity easing for the tip
+          const eased = frac < 0.5
+            ? 0.5 * Math.pow(frac * 2, 0.7)
+            : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+          const tipAngle = eased * (Math.PI / 2);
+
+          // Pivot = leading bottom corner
+          const pivotLocalX = ((stepIdx + 1) * w.size) % w.range;
+          const pivotX = w.x0 + pivotLocalX * w.dir;
+          const pivotY = w.groundY;
+
+          ctx.save();
+          ctx.translate(pivotX, pivotY);
+          if (w.dir < 0) ctx.scale(-1, 1);
+          ctx.rotate(tipAngle);
+
+          // Rounded square
+          const s = w.size;
+          const r = s * 0.2;
+          ctx.beginPath();
+          ctx.moveTo(-s + r, -s);
+          ctx.lineTo(-r, -s);
+          ctx.quadraticCurveTo(0, -s, 0, -s + r);
+          ctx.lineTo(0, -r);
+          ctx.quadraticCurveTo(0, 0, -r, 0);
+          ctx.lineTo(-s + r, 0);
+          ctx.quadraticCurveTo(-s, 0, -s, -r);
+          ctx.lineTo(-s, -s + r);
+          ctx.quadraticCurveTo(-s, -s, -s + r, -s);
+          ctx.closePath();
+          ctx.fillStyle = '#fff';
+          ctx.fill();
+
+          ctx.restore();
+        }
+
+        requestAnimationFrame(animate);
+      }
+      requestAnimationFrame(animate);
+    }
+
+    if (img.complete) setup();
+    else img.addEventListener('load', setup);
+  })();
+
 });
