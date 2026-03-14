@@ -148,6 +148,11 @@
     </div>
   </main>
 
+  <!-- Walking Squares Fill -->
+  <div class="contact-squares-fill" style="width:100%;overflow:hidden;padding:40px 0 0;">
+    <canvas id="walkingRows" style="width:100%;display:block;"></canvas>
+  </div>
+
   <!-- Footer -->
   <footer class="site-footer">
     <div class="footer-inner">
@@ -173,5 +178,108 @@
   <img src="images/Arcade_LOOP.gif" alt="Arcade">
 </a>
 <script src="js/main.js"></script>
+<script>
+(function() {
+  const canvas = document.getElementById('walkingRows');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+
+  const rows = [
+    { size: 48, dir: 1,  speed: 0.4, y: 0 },
+    { size: 38, dir: -1, speed: 0.35, y: 0 },
+    { size: 48, dir: 1,  speed: 0.45, y: 0 },
+    { size: 38, dir: -1, speed: 0.3, y: 0 },
+    { size: 48, dir: 1,  speed: 0.5, y: 0 },
+    { size: 38, dir: -1, speed: 0.4, y: 0 },
+  ];
+
+  const gap = 12;
+
+  function walkSquare(ctx, pivotX, pivotY, size, frac, side) {
+    const eased = frac < 0.5
+      ? 0.5 * Math.pow(frac * 2, 0.7)
+      : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+    const tipAngle = eased * (Math.PI / 2);
+
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(tipAngle);
+
+    const s = size;
+    const r = s * 0.15;
+    const x = -s;
+    const y = side === 'above' ? -s : 0;
+
+    ctx.beginPath();
+    ctx.moveTo(x + r, y);
+    ctx.lineTo(x + s - r, y);
+    ctx.quadraticCurveTo(x + s, y, x + s, y + r);
+    ctx.lineTo(x + s, y + s - r);
+    ctx.quadraticCurveTo(x + s, y + s, x + s - r, y + s);
+    ctx.lineTo(x + r, y + s);
+    ctx.quadraticCurveTo(x, y + s, x, y + s - r);
+    ctx.lineTo(x, y + r);
+    ctx.quadraticCurveTo(x, y, x + r, y);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  }
+
+  function layout() {
+    let y = 0;
+    for (const row of rows) {
+      row.y = y;
+      y += row.size + gap;
+    }
+    return y;
+  }
+
+  const totalH = layout();
+  let startTime = null;
+
+  function render(time) {
+    if (!startTime) startTime = time;
+    const elapsed = (time - startTime) * 0.001;
+
+    const dpr = window.devicePixelRatio || 1;
+    const w = canvas.parentElement.clientWidth;
+
+    canvas.style.height = totalH + 'px';
+    if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(totalH * dpr)) {
+      canvas.width = Math.round(w * dpr);
+      canvas.height = Math.round(totalH * dpr);
+    }
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, w, totalH);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+
+    for (const row of rows) {
+      const s = row.size;
+      const lineY = row.y + s;
+      const dist = elapsed * s * row.speed * 60;
+      const totalLen = w + s;
+
+      // Fill the row with walking squares
+      const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+
+      for (let startX = -s; startX < w + s; startX += s) {
+        const pos = row.dir > 0
+          ? ((startX + rawDist) % totalLen + totalLen) % totalLen - s
+          : w - ((startX + rawDist) % totalLen + totalLen) % totalLen;
+
+        const steps = (dist + startX) / s;
+        const frac = ((steps % 1) + 1) % 1;
+
+        walkSquare(ctx, row.dir > 0 ? pos + s : pos, lineY, s, frac, 'above');
+      }
+    }
+
+    requestAnimationFrame(render);
+  }
+
+  requestAnimationFrame(render);
+})();
+</script>
 </body>
 </html>
