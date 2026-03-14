@@ -1192,21 +1192,26 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
 
-    // Re-enter fullscreen on first click if it was on before navigation
+    // Re-enter fullscreen: intercept nav clicks to restore before navigating
     if (localStorage.getItem('ps-fullscreen') === '1' && !document.fullscreenElement) {
-      document.addEventListener('click', function restoreFS() {
-        document.documentElement.requestFullscreen().catch(() => {});
-        document.removeEventListener('click', restoreFS);
-      }, { once: true });
+      const navLinks = document.querySelectorAll('a[href]');
+      navLinks.forEach(a => {
+        const href = a.getAttribute('href');
+        if (!href || href.startsWith('http') || href.startsWith('#')) return;
+        a.addEventListener('click', function(e) {
+          e.preventDefault();
+          document.documentElement.requestFullscreen().then(() => {
+            window.location.href = href;
+          }).catch(() => {
+            window.location.href = href;
+          });
+        }, { once: true });
+      });
     }
 
-    // Clear pref if user exits fullscreen via Escape (not during navigation)
-    let navigating = false;
-    document.querySelectorAll('a[href]').forEach(a => {
-      a.addEventListener('click', () => { navigating = true; });
-    });
+    // Clear pref if user exits fullscreen via Escape
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement && !navigating) {
+      if (!document.fullscreenElement && !document.hidden) {
         localStorage.removeItem('ps-fullscreen');
       }
     });
