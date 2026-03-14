@@ -407,12 +407,12 @@ document.addEventListener('DOMContentLoaded', () => {
           const d = dots[i];
           const px = (d.x - cxLogo) * fitScale + ox;
           const py = (d.y - cyLogo) * fitScale + oy;
-          const baseR = 12 * fitScale / 10;
+          const baseR = Math.max(3, 12 * fitScale / 6);
           // Each dot breathes at slightly offset phase
           const phase = t * 1.2 + i * 0.12;
           const breath = 0.6 + 0.4 * Math.sin(phase);
           const r = baseR * breath;
-          const alpha = 0.15 + 0.2 * breath;
+          const alpha = 0.3 + 0.4 * breath;
           ctx.fillStyle = 'rgba(254,249,240,' + alpha + ')';
           ctx.beginPath();
           ctx.arc(px, py, r, 0, Math.PI*2);
