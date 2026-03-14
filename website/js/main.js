@@ -1159,4 +1159,125 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   })();
 
+  /* -------------------------------------------------------
+     WEBSITE ANALYTICS — sends to same Google Sheet as Navigator
+     Tracks: page views, nav clicks, project popups, social clicks,
+     scroll depth, arcade link, fullscreen, contact form, time on page
+     ------------------------------------------------------- */
+  (function() {
+    const ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbxQcS_M7eZe3ob69qbxaH3QDUUqDQGvec6BKDN94wildC5p3LGTSwytm_2ZyutpznB4/exec';
+    const session = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
+    const pageLoadTime = Date.now();
+    const page = location.pathname.split('/').pop() || 'index.html';
+    let maxScroll = 0;
+    let actions = [];
+
+    // Geo lookup
+    let geo = { ip:'', city:'', region:'', country:'' };
+    try {
+      fetch('https://api.db-ip.com/v2/free/self').then(r=>r.json()).then(d=>{
+        geo.ip = d.ipAddress || '';
+        geo.city = d.city || '';
+        geo.region = d.stateProv || '';
+        geo.country = d.countryName || '';
+      }).catch(()=>{});
+    } catch(e){}
+
+    function track(action) {
+      if (actions.length < 100) actions.push(action);
+    }
+
+    function payload(event) {
+      return {
+        game: 'WEBSITE',
+        session: session,
+        event: event,
+        zone: page,
+        timePlayed: Math.round((Date.now() - pageLoadTime) / 1000),
+        actions: actions.join(';'),
+        score: maxScroll,
+        userAgent: navigator.userAgent.slice(0, 120),
+        ip: geo.ip,
+        city: geo.city,
+        region: geo.region,
+        country: geo.country
+      };
+    }
+
+    function send(event) {
+      try { navigator.sendBeacon(ANALYTICS_URL, JSON.stringify(payload(event))); } catch(e){}
+    }
+
+    // Page view
+    send('pageview');
+
+    // Track scroll depth
+    window.addEventListener('scroll', () => {
+      const docH = document.documentElement.scrollHeight - window.innerHeight;
+      if (docH > 0) maxScroll = Math.max(maxScroll, Math.round((window.scrollY / docH) * 100));
+    }, { passive: true });
+
+    // Nav clicks
+    document.querySelectorAll('.main-nav a, .mobile-nav-overlay a').forEach(a => {
+      a.addEventListener('click', () => track('nav:' + (a.textContent.trim())));
+    });
+
+    // Social icon clicks
+    document.querySelectorAll('.social-icons a').forEach(a => {
+      a.addEventListener('click', () => track('social:' + (a.getAttribute('aria-label') || 'link')));
+    });
+
+    // Project popup clicks
+    document.addEventListener('click', (e) => {
+      const item = e.target.closest('.portfolio-item a, a.portfolio-item');
+      if (item) track('project:' + (item.getAttribute('href') || '').replace(/.*\//, '').replace('.html',''));
+    });
+
+    // Design lightbox clicks
+    document.addEventListener('click', (e) => {
+      if (e.target.closest('.lightbox-trigger')) track('lightbox:' + (e.target.alt || 'image'));
+    });
+
+    // Arcade link click
+    const arcadeEl = document.querySelector('.arcade-link');
+    if (arcadeEl) arcadeEl.addEventListener('click', () => track('arcade-click'));
+
+    // Fullscreen button
+    const fsBtn = document.querySelector('.fullscreen-btn');
+    if (fsBtn) fsBtn.addEventListener('click', () => track('fullscreen'));
+
+    // Back to top
+    const btt = document.querySelector('.back-to-top');
+    if (btt) btt.addEventListener('click', () => track('back-to-top'));
+
+    // Contact form submit
+    const form = document.querySelector('.contact-form');
+    if (form) {
+      form.addEventListener('submit', (e) => {
+        e.preventDefault();
+        const data = new FormData(form);
+        const services = data.getAll('services').join(',');
+        track('contact-submit:' + services);
+        // Send form data to sheet
+        const formPayload = payload('contact');
+        formPayload.contactName = data.get('name') || '';
+        formPayload.contactEmail = data.get('email') || '';
+        formPayload.contactPhone = data.get('phone') || '';
+        formPayload.contactServices = services;
+        formPayload.contactMessage = data.get('message') || '';
+        try {
+          navigator.sendBeacon(ANALYTICS_URL, JSON.stringify(formPayload));
+        } catch(ex){}
+        // Show confirmation
+        form.innerHTML = '<p style="text-align:center;padding:40px;font-size:18px;">Thank you! I\'ll be in touch soon.</p>';
+      });
+    }
+
+    // Send final data on page leave
+    window.addEventListener('beforeunload', () => send('leave'));
+
+    // Heartbeat every 30s
+    setInterval(() => send('heartbeat'), 30000);
+  })();
+
 });
