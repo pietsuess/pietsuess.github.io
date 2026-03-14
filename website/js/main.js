@@ -853,8 +853,14 @@ document.addEventListener('DOMContentLoaded', () => {
      Fixed overlay canvas — does NOT touch the grid DOM
      ------------------------------------------------------- */
   (function() {
-    const grid = document.querySelector('.portfolio-grid') || document.querySelector('.animate-grid');
+    const grid = document.querySelector('.portfolio-grid');
     if (!grid) return;
+
+    // Determine which page: edit = left edge, direct = right edge, otherwise skip
+    const page = location.pathname;
+    const isEdit = page.includes('edit');
+    const isDirect = page.includes('direct');
+    if (!isEdit && !isDirect) return;
 
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10;';
@@ -862,10 +868,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ctx = canvas.getContext('2d');
 
-    const walkers = [
-      { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
-      { side: 'left',  size: 20, speed: -0.9, offset: 400 },
-    ];
+    const walkers = isEdit
+      ? [
+          { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
+          { side: 'left',  size: 20, speed: -0.9, offset: 400 },
+        ]
+      : [
+          { side: 'right', size: 28, speed: 1.2,  offset: 0 },
+          { side: 'right', size: 20, speed: -0.9, offset: 400 },
+        ];
 
     function render() {
       const dpr = window.devicePixelRatio || 1;
