@@ -1357,14 +1357,19 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   font-family:'Press Start 2P',monospace; text-align:center;
   overflow:hidden; background:#000;
 ">
+  <!-- Fullscreen toggle — top-right corner -->
+  <div id="vic-fullscreen" onclick="toggleFullscreen()" title="Toggle Fullscreen"
+    style="position:fixed;top:10px;right:12px;z-index:10;cursor:pointer;font-size:22px;color:#555;padding:4px 6px;user-select:none;line-height:1;"
+    onmouseover="this.style.color='#00ffcc'" onmouseout="this.style.color='#555'">&#x26F6;</div>
+
   <!-- Fireworks canvas fills entire background -->
   <canvas id="fireworks-canvas" style="position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;"></canvas>
 
   <!-- Phase: initials entry -->
   <div id="vic-initials" style="display:none;position:fixed;inset:0;z-index:2;pointer-events:none;">
     <!-- GAME OVER + subtitle at upper-50% midpoint (~22vh) -->
-    <div style="position:absolute;top:37vh;left:0;right:0;text-align:center;pointer-events:none;">
-      <div style="font-size:clamp(18px,5vw,42px);color:#00ffcc;text-shadow:0 0 30px #00ffcc,0 0 60px #00aaaa,0 0 100px #008888;line-height:1.6;animation:pulse 0.5s steps(1) infinite;letter-spacing:3px;">★ MISSION COMPLETE ★</div>
+    <div style="position:absolute;top:27vh;left:0;right:0;text-align:center;pointer-events:none;">
+      <div style="font-size:clamp(12px,5vw,36px);color:#00ffcc;text-shadow:0 0 30px #00ffcc,0 0 60px #00aaaa,0 0 100px #008888;line-height:1.6;animation:pulse 0.5s steps(1) infinite;letter-spacing:3px;">★ MISSION COMPLETE ★</div>
       <div style="font-size:clamp(8px,2vw,14px);color:#44ddff;line-height:2.4;margin-top:10px;letter-spacing:2px;">YOU HAVE RETURNED HOME · WITH TREASURES TO SHARE</div>
     </div>
     <!-- Score + initials form at lower-50% midpoint (~68vh) -->
@@ -2812,9 +2817,12 @@ function toggleFullscreen(){
   }
 }
 document.addEventListener('fullscreenchange', ()=>{
-  const btn = document.getElementById('hud-fullscreen');
   const isFS = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  if(btn) btn.innerHTML = isFS ? '&#x2715;' : '&#x26F6;';
+  const icon = isFS ? '&#x2715;' : '&#x26F6;';
+  const btn = document.getElementById('hud-fullscreen');
+  if(btn) btn.innerHTML = icon;
+  const vBtn = document.getElementById('vic-fullscreen');
+  if(vBtn) vBtn.innerHTML = icon;
 });
 resize();
 window.addEventListener('resize', resize);
@@ -5950,7 +5958,8 @@ function update(){
     // Collision — only when walls are nearby (closed or still opening)
     const _wallR = ENCLOSURE_INIT_R + _lw.extendDist;
     const _pDist = Math.sqrt(state.x * state.x + state.y * state.y) || 1;
-    if(_pDist > _wallR - ENCLOSURE_WALL_T - _shipCollR - 2 && _pDist < _wallR + ENCLOSURE_WALL_T + _shipCollR + 2){
+    const _shipSpeed = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+    if(_pDist > _wallR - ENCLOSURE_WALL_T - _shipCollR - 2 - _shipSpeed && _pDist < _wallR + ENCLOSURE_WALL_T + _shipCollR + 2 + _shipSpeed){
       for(let wi = 0; wi < ENCLOSURE_WALL_ANGLES.length; wi++){
         const wAng = ENCLOSURE_WALL_ANGLES[wi];
         // Wall centre in world space
@@ -5967,12 +5976,17 @@ function update(){
         const dTan  = dx * wtx + dy * wty;
         const halfW = ENCLOSURE_WALL_W / 2;
         const halfT = ENCLOSURE_WALL_T / 2;
-        if(Math.abs(dTan) < halfW + _shipCollR && Math.abs(dNorm) < halfT + _shipCollR){
+        // Tunneling prevention: check if ship crossed the wall plane this frame
+        const prevDx = state._prevX - wcx, prevDy = state._prevY - wcy;
+        const prevDNorm = prevDx * wnx + prevDy * wny;
+        const _crossed = (prevDNorm * dNorm < 0); // sign flip = tunneled through
+        if(Math.abs(dTan) < halfW + _shipCollR && (Math.abs(dNorm) < halfT + _shipCollR || _crossed)){
           // Determine if we're hitting the face or rounding an end
           if(Math.abs(dTan) < halfW){
             // Face collision — push along normal
-            const pushDir = dNorm >= 0 ? 1 : -1;
-            const pushAmt = (halfT + _shipCollR) - Math.abs(dNorm);
+            const pushDir = _crossed ? (prevDNorm >= 0 ? 1 : -1) : (dNorm >= 0 ? 1 : -1);
+            // When tunneled, ship is on wrong side — push all the way back through wall
+            const pushAmt = _crossed ? (Math.abs(dNorm) + halfT + _shipCollR) : ((halfT + _shipCollR) - Math.abs(dNorm));
             state.x += wnx * pushDir * pushAmt;
             state.y += wny * pushDir * pushAmt;
             const vDot = state.vx * wnx * pushDir + state.vy * wny * pushDir;
@@ -5984,7 +5998,7 @@ function update(){
             const endY = wcy + wty * halfW * endSign;
             const edx = state.x - endX, edy = state.y - endY;
             const eDist = Math.sqrt(edx * edx + edy * edy);
-            if(eDist < halfT + _shipCollR && eDist > 0.1){
+            if(eDist < halfT + _shipCollR + _shipSpeed && eDist > 0.1){
               const enx = edx / eDist, eny = edy / eDist;
               const ePush = (halfT + _shipCollR) - eDist;
               state.x += enx * ePush;
@@ -5995,6 +6009,20 @@ function update(){
           }
           break;
         }
+      }
+    }
+    // Safety-net radial clamp: inscribed circle of octagon = _wallR * cos(π/8)
+    // If per-wall checks missed (corner tunneling), hard-clamp to inscribed radius
+    if((_lw.closed || _lw.opening)){
+      const _inscR = _wallR * 0.9239 - _shipCollR; // cos(π/8) ≈ 0.9239
+      const _pDist2 = Math.sqrt(state.x * state.x + state.y * state.y);
+      if(_pDist2 > _inscR){
+        const _eAng = Math.atan2(state.y, state.x);
+        state.x = Math.cos(_eAng) * _inscR;
+        state.y = Math.sin(_eAng) * _inscR;
+        const _eCos = Math.cos(_eAng), _eSin = Math.sin(_eAng);
+        const _eVrad = state.vx * _eCos + state.vy * _eSin;
+        if(_eVrad > 0){ state.vx -= _eCos * _eVrad * _bubBounce; state.vy -= _eSin * _eVrad * _bubBounce; }
       }
     }
   }
@@ -7693,10 +7721,6 @@ function tickVictory(){
       // Move ship far off-world so real ship draw is off-screen too
       state.x = 999999; state.y = 999999;
       state.vx = 0; state.vy = 0;
-      // Hide HUD elements
-      ['fuel-bar-outer','score','fire-mode-display','hud-toggles'].forEach(id=>{
-        const el=document.getElementById(id); if(el) el.style.visibility='hidden';
-      });
       state._victoryPhase = 'fireworks';
       state._victoryTimer  = 0;
       startVictoryFireworks();
@@ -7758,6 +7782,9 @@ function startVictoryFireworks(){
   ov.style.background='transparent';
   document.getElementById('vic-initials').style.display='none';
   document.getElementById('vic-summary').style.display='none';
+  // Sync victory fullscreen button icon
+  const _vfb = document.getElementById('vic-fullscreen');
+  if(_vfb) _vfb.innerHTML = (document.fullscreenElement || document.webkitFullscreenElement) ? '&#x2715;' : '&#x26F6;';
   _fwInterval = setInterval(_fireworkBurst, 400);
   _fireworkBurst();
   // Music fanfare
@@ -7912,6 +7939,10 @@ function triggerEarthVictory(){
   state.hsTail        = [];
   state.vx = 0; state.vy = 0;
   stopMusic();
+  // Hide ALL HUD, drawers, and controls immediately
+  ['hud','music-drawer','menu-overlay','level-display','fuel-hud'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.visibility='hidden';
+  });
   _victoryTextAlpha   = 0;
   // NOTE: do NOT set gameOver=true — that kills the update loop
   // Swell chord
@@ -10878,15 +10909,19 @@ function drawGame(){
     ctx.restore();
   }
 
-  // ── Victory: fixed ship on screen centre during fireworks + initials ──
+  // ── Victory: ship flies up from bottom, locks at centre pointing up ──
   if(state._victoryPhase === 'fireworks' || state._victoryPhase === 'initials'){
-    const _vscx = CX(), _vscy = CY();
-    const _vsAngle = Math.PI * 0.25; // 45° — facing northeast
+    const _vscx = CX(), _vsTargetY = CY() - 60;
+    const _flyFrames = 300; // fly in over full fireworks phase, arrive as titles appear
+    const _t = Math.min(1, state._victoryTimer / _flyFrames);
+    const _ease = _t * _t * (3 - 2 * _t); // smooth ease-in-out (hermite)
+    const _startY = canvas.height + 40; // start below screen
+    const _vscy = _startY + (_vsTargetY - _startY) * _ease;
     const s = 16; // 2x default ship size
     const _fc = state.frameCount;
     ctx.save();
     ctx.translate(_vscx, _vscy);
-    ctx.rotate(_vsAngle);
+    // Point straight up (no rotation needed — ship nose is at 0,-s which is up)
     ctx.globalAlpha = 1;
     // Glow
     ctx.shadowBlur = 30; ctx.shadowColor = '#ff4500';
@@ -11447,6 +11482,11 @@ function updateMissionBriefing(){
   // Mission 4: always shown as mystery
   var _m4done = state.secretVisitCount > 0 || state.secretBossDefeated;
   html += mLine(_m4done, _m4done ? 'MISSION 4: DISCOVER THE SECRET LEVEL' : 'MISSION 4: ???');
+  // Mission 5: shown only after Mission 4 is revealed
+  if(_m4done){
+    var _m5done = !!state._victoryPhase;
+    html += mLine(_m5done, 'MISSION 5: RETURN HOME');
+  }
   html += '<div style="margin-top:28px;font-size:14px;color:#aaa;letter-spacing:2px;">[ PRESS ANY KEY TO CONTINUE ]</div>';
   mb.innerHTML = html;
 }
@@ -11882,18 +11922,17 @@ function showInfo(type){
           <span class="ins-sec-head">SHIP MODES</span>
           <div style="display:flex;align-items:center;justify-content:center;gap:24px;flex-wrap:wrap;">
             <div style="display:flex;align-items:center;gap:10px;">
-              <div style="border:2px solid #00ff88;color:#00ff88;font-size:16px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:rgba(0,255,136,0.07);font-family:'Press Start 2P',monospace;">X</div>
-              <div style="color:#fff;font-size:9px;letter-spacing:2px;text-align:left;">TOGGLE<br>SHIP STATE</div>
-            </div>
-            <div style="display:flex;align-items:center;gap:10px;">
               <div style="border:2px solid #00ff88;color:#00ff88;font-size:16px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:rgba(0,255,136,0.07);font-family:'Press Start 2P',monospace;">Z</div>
               <div style="color:#fff;font-size:9px;letter-spacing:2px;text-align:left;">TOGGLE<br>SHIP FUNCTION</div>
             </div>
+            <div style="display:flex;align-items:center;gap:10px;">
+              <div style="border:2px solid #00ff88;color:#00ff88;font-size:16px;width:42px;height:42px;display:flex;align-items:center;justify-content:center;background:rgba(0,255,136,0.07);font-family:'Press Start 2P',monospace;">X</div>
+              <div style="color:#fff;font-size:9px;letter-spacing:2px;text-align:left;">TOGGLE<br>SHIP MODE</div>
+            </div>
           </div>
         </div>
+        <hr class="ins-divider" style="margin-top:-6px;">
       </div>
-
-      <hr class="ins-divider" style="margin-top:-6px;">
 
       <!-- OBJECTS -->
 
@@ -11905,7 +11944,7 @@ function showInfo(type){
           <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">COLLECT</div>
         </div>
 
-        <div style="display:grid;grid-template-columns:auto auto;gap:8px 48px;width:fit-content;margin:0 auto;">
+        <div style="display:grid;grid-template-columns:auto auto auto;gap:8px 48px;width:fit-content;margin:0 auto;">
 
           <div style="display:flex;align-items:center;gap:14px;">
             <canvas id="ins-fuel" width="52" height="60" style="width:44px;height:50px;position:static;pointer-events:auto;"></canvas>
@@ -11918,8 +11957,8 @@ function showInfo(type){
           </div>
 
           <div style="display:flex;align-items:center;gap:14px;">
-            <canvas id="ins-waveorb" width="52" height="52" style="width:44px;height:44px;position:static;pointer-events:auto;"></canvas>
-            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">? ? ?</div>
+            <canvas id="ins-boostpad" width="52" height="52" style="width:44px;height:44px;position:static;pointer-events:auto;"></canvas>
+            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">BOOST PAD</div>
           </div>
 
           <div style="display:flex;align-items:center;gap:14px;">
@@ -11928,13 +11967,13 @@ function showInfo(type){
           </div>
 
           <div style="display:flex;align-items:center;gap:14px;">
-            <svg width="44" height="44" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="#00ff88" stroke-width="2" stroke-dasharray="4 4"/><text x="24" y="25" text-anchor="middle" dominant-baseline="central" font-size="18" fill="#00ff88" font-family="'Press Start 2P',monospace">?</text></svg>
-            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">SECRET LEVEL</div>
+            <canvas id="ins-bubble" width="52" height="52" style="width:44px;height:44px;position:static;pointer-events:auto;"></canvas>
+            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">? ? ?</div>
           </div>
 
           <div style="display:flex;align-items:center;gap:14px;">
-            <svg width="44" height="44" viewBox="0 0 48 48"><circle cx="24" cy="24" r="18" fill="none" stroke="#00ff88" stroke-width="2" stroke-dasharray="4 4"/><text x="24" y="25" text-anchor="middle" dominant-baseline="central" font-size="18" fill="#00ff88" font-family="'Press Start 2P',monospace">?</text></svg>
-            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">ALIEN BOSS</div>
+            <canvas id="ins-waveorb" width="52" height="52" style="width:44px;height:44px;position:static;pointer-events:auto;"></canvas>
+            <div style="color:#00ff88;font-size:9px;letter-spacing:2px;white-space:nowrap;">? ? ?</div>
           </div>
 
         </div>
@@ -12048,6 +12087,67 @@ function initInsCanvases(){
       gS.fillStyle='#ffe000';gS.fillText('X2',0,0);gS.restore();
       }
     drS();window._insAnimIntervals.push(setInterval(drS,33));}
+  // Gap bubble — glowing orb with sunrays, bloom, shimmer, glints (left by Octo-Alien)
+  var bc=document.getElementById('ins-bubble');
+  if(bc){var gB=bc.getContext('2d'),_bf=0;
+    function drB(){gB.clearRect(0,0,52,52);_bf++;var cx=26,cy=26,r=12;
+      var pulse=1+Math.sin(_bf*0.07)*0.15;
+      var br=r*pulse,hue=190;
+      gB.save();
+      // Sunray streaks
+      var rayCount=10,rayRot=_bf*0.011;
+      for(var ri=0;ri<rayCount;ri++){
+        var ra=(ri/rayCount)*Math.PI*2+rayRot;
+        var outerR=br*(2.2+Math.sin(_bf*0.055+ri*0.9)*0.4);
+        var innerR=br*1.2;
+        var al=0.15+Math.sin(_bf*0.07+ri*0.7)*0.08;
+        var rg=gB.createLinearGradient(cx+Math.cos(ra)*innerR,cy+Math.sin(ra)*innerR,cx+Math.cos(ra)*outerR,cy+Math.sin(ra)*outerR);
+        rg.addColorStop(0,'hsla('+hue+',100%,82%,'+(al+0.12)+')');
+        rg.addColorStop(1,'hsla('+hue+',100%,75%,0)');
+        gB.globalAlpha=1;gB.beginPath();
+        gB.moveTo(cx+Math.cos(ra-0.1)*innerR,cy+Math.sin(ra-0.1)*innerR);
+        gB.lineTo(cx+Math.cos(ra)*outerR,cy+Math.sin(ra)*outerR);
+        gB.lineTo(cx+Math.cos(ra+0.1)*innerR,cy+Math.sin(ra+0.1)*innerR);
+        gB.closePath();gB.fillStyle=rg;gB.fill();
+      }
+      // Outer bloom
+      gB.globalAlpha=0.7;gB.shadowBlur=16;gB.shadowColor='hsl('+hue+',100%,65%)';
+      gB.beginPath();gB.arc(cx,cy,br*1.4,0,Math.PI*2);
+      gB.fillStyle='hsla('+hue+',100%,60%,0.07)';gB.fill();
+      // Mid halo
+      gB.shadowBlur=10;gB.beginPath();gB.arc(cx,cy,br*1.1,0,Math.PI*2);
+      gB.fillStyle='hsla('+hue+',100%,72%,0.1)';gB.fill();
+      // Main ring
+      gB.shadowBlur=10;gB.shadowColor='hsl('+hue+',100%,85%)';
+      gB.beginPath();gB.arc(cx,cy,br,0,Math.PI*2);
+      gB.strokeStyle='hsl('+hue+',100%,88%)';gB.lineWidth=2.5;gB.stroke();
+      // Inner shimmer
+      gB.shadowBlur=0;gB.beginPath();gB.arc(cx,cy,br*0.88,0,Math.PI*2);
+      gB.strokeStyle='rgba(255,255,255,'+(0.3+Math.sin(_bf*0.13)*0.1)+')';gB.lineWidth=1;gB.stroke();
+      // Specular glints
+      gB.beginPath();gB.arc(cx-br*0.28,cy-br*0.32,br*0.18,0,Math.PI*2);
+      gB.fillStyle='rgba(255,255,255,'+(0.5+Math.sin(_bf*0.18)*0.15)+')';gB.fill();
+      gB.beginPath();gB.arc(cx+br*0.18,cy-br*0.52,br*0.06,0,Math.PI*2);
+      gB.fillStyle='rgba(255,255,255,0.45)';gB.fill();
+      gB.restore();}
+    drB();window._insAnimIntervals.push(setInterval(drB,33));}
+  // Boost pad
+  var bpc=document.getElementById('ins-boostpad');
+  if(bpc){var gP=bpc.getContext('2d'),_pf=0;
+    function drP(){gP.clearRect(0,0,52,52);_pf++;var cx=26,cy=26;
+      var pulse=0.6+0.4*Math.sin(_pf*0.1);
+      gP.save();gP.translate(cx,cy);gP.globalAlpha=pulse;
+      gP.lineJoin='round';
+      // Glow
+      gP.strokeStyle='rgba(0,255,136,0.2)';gP.lineWidth=8;
+      gP.beginPath();gP.moveTo(-16,-14);gP.lineTo(4,0);gP.lineTo(-16,14);gP.stroke();
+      gP.beginPath();gP.moveTo(0,-14);gP.lineTo(20,0);gP.lineTo(0,14);gP.stroke();
+      // Core
+      gP.strokeStyle='#00ff88';gP.fillStyle='rgba(0,255,136,0.25)';gP.lineWidth=3.5;
+      gP.beginPath();gP.moveTo(-16,-14);gP.lineTo(4,0);gP.lineTo(-16,14);gP.stroke();gP.fill();
+      gP.beginPath();gP.moveTo(0,-14);gP.lineTo(20,0);gP.lineTo(0,14);gP.stroke();gP.fill();
+      gP.restore();}
+    drP();window._insAnimIntervals.push(setInterval(drP,33));}
 }
 function closeInfo(){
   if(window._insAnimIntervals){window._insAnimIntervals.forEach(clearInterval);window._insAnimIntervals=[];}
@@ -13706,6 +13806,10 @@ function returnToTitleWithScore(initials, score){
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set(); musicBarCount=0;
   populatedCells.clear();
 
+  // Restore HUD/drawer visibility (hidden during victory)
+  ['hud','music-drawer','menu-overlay','level-display','fuel-hud'].forEach(id=>{
+    const el=document.getElementById(id); if(el) el.style.visibility='';
+  });
   // Reset all HUD elements to default state
   document.getElementById('score').textContent='000000';
   const refuelPop=document.getElementById('refuel-popup');
