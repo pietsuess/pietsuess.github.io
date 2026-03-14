@@ -348,31 +348,28 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
 
 
-  // Bio walking squares — tumbling in place on right side of bio sections
+  // Bio walking squares — two squares tipping in place, back to back
   (function() {
     const bios = document.querySelectorAll('.edit-bio-inner');
     if (!bios.length) return;
 
-    function drawSquare(ctx, cx, cy, size, angle, alpha) {
-      const r = size * 0.15;
+    function walkSquare(ctx, pivotX, pivotY, size, frac, dir) {
+      const eased = frac < 0.5
+        ? 0.5 * Math.pow(frac * 2, 0.7)
+        : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+      const tipAngle = eased * (Math.PI / 2) * dir;
       ctx.save();
-      ctx.globalAlpha = alpha;
-      ctx.translate(cx, cy);
-      ctx.rotate(angle);
-      const s = size, hs = s / 2;
+      ctx.translate(pivotX, pivotY);
+      ctx.rotate(tipAngle);
+      const s = size, r = s * 0.15;
+      const x = dir > 0 ? -s : 0, y = -s;
       ctx.beginPath();
-      ctx.moveTo(-hs + r, -hs);
-      ctx.lineTo(hs - r, -hs);
-      ctx.quadraticCurveTo(hs, -hs, hs, -hs + r);
-      ctx.lineTo(hs, hs - r);
-      ctx.quadraticCurveTo(hs, hs, hs - r, hs);
-      ctx.lineTo(-hs + r, hs);
-      ctx.quadraticCurveTo(-hs, hs, -hs, hs - r);
-      ctx.lineTo(-hs, -hs + r);
-      ctx.quadraticCurveTo(-hs, -hs, -hs + r, -hs);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+s-r,y);
+      ctx.quadraticCurveTo(x+s,y,x+s,y+r); ctx.lineTo(x+s,y+s-r);
+      ctx.quadraticCurveTo(x+s,y+s,x+s-r,y+s); ctx.lineTo(x+r,y+s);
+      ctx.quadraticCurveTo(x,y+s,x,y+s-r); ctx.lineTo(x,y+r);
+      ctx.quadraticCurveTo(x,y,x+r,y);
+      ctx.closePath(); ctx.fill(); ctx.restore();
     }
 
     const canvases = [];
@@ -383,12 +380,8 @@ document.addEventListener('DOMContentLoaded', () => {
       canvases.push(c);
     });
 
-    // Square configs: different sizes, speeds, vertical positions
-    const squares = [
-      { size: 44, speed: 0.035, yFrac: 0.25, dir: 1 },
-      { size: 32, speed: 0.045, yFrac: 0.55, dir: -1 },
-      { size: 52, speed: 0.025, yFrac: 0.78, dir: 1 },
-    ];
+    const bigS = 48, smS = 36;
+    const bigSpeed = 0.035, smSpeed = 0.04;
 
     let startTime = null;
     function render(time) {
@@ -407,22 +400,20 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = c.getContext('2d');
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,w,h);
-        ctx.fillStyle = 'rgba(254,249,240,1)';
+        ctx.fillStyle = 'rgba(254,249,240,0.5)';
 
-        squares.forEach(sq => {
-          const dist = elapsed * sq.size * sq.speed * 60;
-          const steps = dist / sq.size;
-          const frac = steps - Math.floor(steps);
-          // Gravity easing for tumble
-          const eased = frac < 0.5
-            ? 0.5 * Math.pow(frac * 2, 0.7)
-            : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
-          const angle = eased * (Math.PI / 2) * sq.dir;
-          // Fixed position — tumbling in place
-          const cx = w * 0.5;
-          const cy = h * sq.yFrac;
-          drawSquare(ctx, cx, cy, sq.size, angle, 0.4);
-        });
+        const groundY = h * 0.55;
+        const centerX = w * 0.5;
+
+        // Big square — tips right, sits left of center
+        const bigDist = elapsed * bigS * bigSpeed * 60;
+        const bigFrac = (bigDist / bigS) % 1;
+        walkSquare(ctx, centerX, groundY, bigS, bigFrac, 1);
+
+        // Small square — tips left, sits right of center (back to back)
+        const smDist = elapsed * smS * smSpeed * 60;
+        const smFrac = (smDist / smS) % 1;
+        walkSquare(ctx, centerX, groundY, smS, smFrac, -1);
       });
       requestAnimationFrame(render);
     }
