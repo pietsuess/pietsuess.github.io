@@ -908,7 +908,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ctx.beginPath();
         ctx.arc(screenX, drawY, d.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(0,0,0,${d.alpha})`;
+        ctx.fillStyle = `rgba(255,255,255,${d.alpha})`;
         ctx.fill();
       }
 
