@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Walking Squares — Rotated Horizontal to Vertical</title>
+  <style>
+    body { margin: 0; background: #1a0e2e; overflow: hidden; }
+    canvas { display: block; }
+    .label { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.3); font: 12px monospace; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="label">Horizontal walk logic, rotated 90° for vertical lines</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// WORKING horizontal walk logic — same as the original tests
+// A square walks along a horizontal line.
+// It tips forward by rotating around its leading bottom corner.
+// "above" the line = the square body sits ON TOP of the line.
+// "below" the line = the square body hangs BELOW the line.
+
+function walkSquare(ctx, lineX, lineY, lineLen, size, dist, color, side) {
+  // side: 'above' = body above line, 'below' = body below line
+  const totalLen = lineLen;
+  const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+
+  const steps = rawDist / size;
+  const stepIdx = Math.floor(steps);
+  const frac = steps - stepIdx;
+
+  // Gravity easing
+  const eased = frac < 0.5
+    ? 0.5 * Math.pow(frac * 2, 0.7)
+    : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+  const tipAngle = eased * (Math.PI / 2);
+
+  // Pivot = leading corner on the ground line
+  const pivotX = lineX + ((stepIdx + 1) * size) % totalLen;
+  const pivotY = lineY;
+
+  ctx.save();
+  ctx.translate(pivotX, pivotY);
+
+  // Tip forward = rotate clockwise around pivot
+  ctx.rotate(tipAngle);
+
+  // Draw square relative to pivot (bottom-right corner at origin)
+  const s = size;
+  const r = s * 0.15;
+  const yOff = side === 'above' ? -s : 0;
+  const x = -s;
+  const y = yOff;
+
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + s - r, y);
+  ctx.quadraticCurveTo(x + s, y, x + s, y + r);
+  ctx.lineTo(x + s, y + s - r);
+  ctx.quadraticCurveTo(x + s, y + s, x + s - r, y + s);
+  ctx.lineTo(x + r, y + s);
+  ctx.quadraticCurveTo(x, y + s, x, y + s - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// Demo lines
+const demos = [
+  // HORIZONTAL — proof they still work
+  { type: 'horiz', y: 150, x: 100, len: 600, label: 'HORIZONTAL (original)' },
+  // VERTICAL LEFT FACE — same logic, canvas rotated -90°
+  { type: 'vert-left', x: 200, y: 250, len: 500, label: 'VERTICAL left face (rotated)' },
+  { type: 'vert-left', x: 450, y: 250, len: 500, label: 'VERTICAL left face (rotated)' },
+  // VERTICAL RIGHT FACE — same logic, canvas rotated +90°
+  { type: 'vert-right', x: 700, y: 250, len: 500, label: 'VERTICAL right face (rotated)' },
+  { type: 'vert-right', x: 950, y: 250, len: 500, label: 'VERTICAL right face (rotated)' },
+];
+
+const walkerDefs = [
+  { size: 40, speed: 60, offset: 0,   side: 'above', color: 'rgba(244,197,66,0.7)' },
+  { size: 30, speed: -45, offset: 200, side: 'above', color: 'rgba(232,115,90,0.7)' },
+];
+
+let startTime = null;
+
+function animate(time) {
+  if (!startTime) startTime = time;
+  const elapsed = (time - startTime) / 1000;
+  const W = canvas.width;
+  const H = canvas.height;
+
+  ctx.clearRect(0, 0, W, H);
+
+  for (const demo of demos) {
+    if (demo.type === 'horiz') {
+      // Draw horizontal guide line
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(demo.x, demo.y);
+      ctx.lineTo(demo.x + demo.len, demo.y);
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'left';
+      ctx.fillText(demo.label, demo.x, demo.y - 60);
+
+      // Walk squares horizontally
+      for (const w of walkerDefs) {
+        const dist = w.speed * elapsed + w.offset;
+        walkSquare(ctx, demo.x, demo.y, demo.len, w.size, dist, w.color, w.side);
+      }
+
+    } else if (demo.type === 'vert-left') {
+      // VERTICAL LEFT FACE: body sits LEFT of line
+      // = horizontal walk rotated -90° (counter-clockwise)
+      // Horizontal "above" becomes LEFT of the vertical line
+
+      // Draw vertical guide line
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(demo.x, demo.y);
+      ctx.lineTo(demo.x, demo.y + demo.len);
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(demo.label, demo.x, demo.y - 10);
+
+      // Rotate the whole coordinate system -90°
+      // so horizontal walk becomes vertical, walking downward
+      ctx.save();
+      ctx.translate(demo.x, demo.y);
+      ctx.rotate(-Math.PI / 2);
+      // Now: local +X = screen UP, local +Y = screen RIGHT
+      // We want local +X to go DOWN the line, so rotate by -90°
+      // Actually: after rotate(-PI/2), local +X points UP on screen
+      // We need it to point DOWN, so let's use +PI/2 instead:
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(demo.x, demo.y);
+      ctx.rotate(Math.PI / 2);
+      // Now local +X = screen DOWN, local -Y = screen LEFT (where body should go)
+      // "above" in horizontal = -Y in local = LEFT on screen = LEFT FACE ✓
+
+      for (const w of walkerDefs) {
+        const dist = w.speed * elapsed + w.offset;
+        walkSquare(ctx, 0, 0, demo.len, w.size, dist, w.color, w.side);
+      }
+      ctx.restore();
+
+    } else if (demo.type === 'vert-right') {
+      // VERTICAL RIGHT FACE: body sits RIGHT of line
+      // = horizontal walk rotated +90° but with "below" becoming right
+      // OR: rotate -90° with "above" becoming right
+
+      // Draw vertical guide line
+      ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(demo.x, demo.y);
+      ctx.lineTo(demo.x, demo.y + demo.len);
+      ctx.stroke();
+
+      // Label
+      ctx.fillStyle = 'rgba(255,255,255,0.3)';
+      ctx.font = '11px monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(demo.label, demo.x, demo.y - 10);
+
+      ctx.save();
+      ctx.translate(demo.x, demo.y);
+      ctx.rotate(-Math.PI / 2);
+      // Now local +X = screen UP, local +Y = screen RIGHT
+      // "above" in horizontal = -Y in local = RIGHT on screen... wait
+      // After rotate(-PI/2): local +X → screen UP, local +Y → screen LEFT... no
+      // Let me think: rotate(-PI/2) means:
+      //   screen_x = local_x * cos(-90) - local_y * sin(-90) = local_y
+      //   screen_y = local_x * sin(-90) + local_y * cos(-90) = -local_x
+      // So local +X → screen -Y (UP), local +Y → screen +X (RIGHT)
+      // "above" draws at -Y in local → that maps to... -(-local_x) in screen? No.
+      // The walkSquare draws relative to local coords. "above" = y from -s to 0.
+      // In local coords that's negative Y. After transform:
+      //   local (0, -s) → screen (-s * sin(-90), -s * cos(-90)) = wait let me just test.
+      // Simpler: just flip. Use the +90° rotation and flip the side.
+
+      // Actually simplest: use +PI/2 rotation (same as left face) but mirror with scale
+      ctx.restore();
+
+      ctx.save();
+      ctx.translate(demo.x, demo.y);
+      // Mirror horizontally at the line, then do the same rotation as left face
+      ctx.scale(-1, 1);
+      ctx.rotate(Math.PI / 2);
+
+      for (const w of walkerDefs) {
+        const dist = w.speed * elapsed + w.offset;
+        walkSquare(ctx, 0, 0, demo.len, w.size, dist, w.color, w.side);
+      }
+      ctx.restore();
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
