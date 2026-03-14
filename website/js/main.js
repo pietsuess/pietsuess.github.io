@@ -454,19 +454,19 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,w,h);
 
-        const groundY = h * 0.55;
-        const centerX = w * 0.5;
+        const groundY = h * 0.4;
+        const centerX = w * 0.65;
         const color = 'rgba(254,249,240,0.5)';
 
         // Big square walks right on treadmill
-        walkTreadmill(ctx, centerX - bigS * 0.3, groundY, bigS, elapsed * 60, color);
+        walkTreadmill(ctx, centerX - bigS * 0.6, groundY, bigS, elapsed * 60, color);
 
         // Small square walks left on treadmill (mirrored)
         ctx.save();
-        ctx.translate(centerX + smS * 0.3, 0);
+        ctx.translate(centerX + smS * 0.6, 0);
         ctx.scale(-1, 1);
-        ctx.translate(-(centerX + smS * 0.3), 0);
-        walkTreadmill(ctx, centerX + smS * 0.3, groundY, smS, elapsed * 45 + 200, color);
+        ctx.translate(-(centerX + smS * 0.6), 0);
+        walkTreadmill(ctx, centerX + smS * 0.6, groundY, smS, elapsed * 45 + 200, color);
         ctx.restore();
       });
       requestAnimationFrame(render);
