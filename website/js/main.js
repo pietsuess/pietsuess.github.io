@@ -850,8 +850,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* -------------------------------------------------------
      WALKING SQUARES — scroll-driven along grid edges
-     Edit page: left edge, body extends right (onto grid)
-     Direct page: right edge, body extends left (onto grid)
+     Uses proven horizontal walk logic, rotated 90° for vertical.
+     Edit: right face, left edge (body on grid), walking down
+     Direct: left face, right edge (body on grid), walking down
      ------------------------------------------------------- */
   (function() {
     const grid = document.querySelector('.portfolio-grid');
@@ -862,32 +863,58 @@ document.addEventListener('DOMContentLoaded', () => {
     const isDirect = page.includes('direct');
     if (!isEdit && !isDirect) return;
 
-    const side = isEdit ? 'left' : 'right';
-
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10;';
     document.body.appendChild(canvas);
     const ctx = canvas.getContext('2d');
 
-    // speed > 0 = walks down, speed < 0 = walks up
     const walkers = [
       { size: 48, speed: 1.2, offset: 0 },
-      { size: 38, speed: -0.9, offset: 400 },
+      { size: 38, speed: 0.9, offset: 400 },
     ];
 
-    function drawRoundedSquare(s, r) {
+    // Exact horizontal walk function from working test3
+    function walkSquare(ctx, lineX, lineY, lineLen, size, dist, side) {
+      const totalLen = lineLen;
+      const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+
+      const steps = rawDist / size;
+      const stepIdx = Math.floor(steps);
+      const frac = steps - stepIdx;
+
+      // Gravity easing
+      const eased = frac < 0.5
+        ? 0.5 * Math.pow(frac * 2, 0.7)
+        : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+      const tipAngle = eased * (Math.PI / 2);
+
+      // Pivot = leading corner on the ground line
+      const pivotX = lineX + ((stepIdx + 1) * size) % totalLen;
+
+      ctx.save();
+      ctx.translate(pivotX, lineY);
+      ctx.rotate(tipAngle);
+
+      // Draw square: bottom-right corner at origin
+      const s = size;
+      const r = s * 0.15;
+      const yOff = side === 'above' ? -s : 0;
+      const x = -s;
+      const y = yOff;
+
       ctx.beginPath();
-      ctx.moveTo(r, 0);
-      ctx.lineTo(s - r, 0);
-      ctx.quadraticCurveTo(s, 0, s, r);
-      ctx.lineTo(s, s - r);
-      ctx.quadraticCurveTo(s, s, s - r, s);
-      ctx.lineTo(r, s);
-      ctx.quadraticCurveTo(0, s, 0, s - r);
-      ctx.lineTo(0, r);
-      ctx.quadraticCurveTo(0, 0, r, 0);
+      ctx.moveTo(x + r, y);
+      ctx.lineTo(x + s - r, y);
+      ctx.quadraticCurveTo(x + s, y, x + s, y + r);
+      ctx.lineTo(x + s, y + s - r);
+      ctx.quadraticCurveTo(x + s, y + s, x + s - r, y + s);
+      ctx.lineTo(x + r, y + s);
+      ctx.quadraticCurveTo(x, y + s, x, y + s - r);
+      ctx.lineTo(x, y + r);
+      ctx.quadraticCurveTo(x, y, x + r, y);
       ctx.closePath();
       ctx.fill();
+      ctx.restore();
     }
 
     function render() {
@@ -910,99 +937,31 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const scrollY = window.scrollY || 0;
-      const edgeX = side === 'left' ? gr.left : gr.right;
+      const edgeX = isEdit ? gr.left : gr.right;
       const totalLen = gr.height;
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      for (const w of walkers) {
-        // Total distance walked (scroll replaces time)
-        const rawDist = scrollY * Math.abs(w.speed) + w.offset;
-        const loopDist = rawDist % totalLen;
+      ctx.save();
+      ctx.translate(edgeX, gr.top);
 
-        // Which step are we on and how far through the tip
-        const steps = loopDist / w.size;
-        const stepIdx = Math.floor(steps);
-        const frac = steps - stepIdx;
-
-        // Gravity easing — same as test page
-        const eased = frac < 0.5
-          ? 0.5 * Math.pow(frac * 2, 0.7)
-          : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
-        const tipAngle = eased * (Math.PI / 2);
-
-        // Pivot corner position along the edge
-        const pivotAlongEdge = ((stepIdx + 1) * w.size) % totalLen;
-
-        // Walking down: pivot moves down from grid top
-        // Walking up: pivot moves up from grid bottom
-        const goingDown = w.speed > 0;
-        const pivotY = goingDown
-          ? gr.top + pivotAlongEdge
-          : gr.bottom - pivotAlongEdge;
-
-        if (pivotY < -w.size * 2 || pivotY > vh + w.size * 2) continue;
-
-        ctx.save();
-        ctx.translate(edgeX, pivotY);
-
-        // The square sits on the grid edge, body extends ONTO the grid.
-        // Pivot is the corner touching the edge.
-        // We tip the square forward (in travel direction) around this pivot.
-
-        if (side === 'left') {
-          // Left edge: body extends RIGHT (onto grid)
-          if (goingDown) {
-            // Walking down: pivot is bottom-left corner of square
-            // Square body is above and to the right
-            // Tip forward = rotate clockwise around pivot
-            ctx.rotate(tipAngle);
-            drawRoundedSquare(w.size, w.size * 0.15);
-            // Offset so pivot is at bottom-left: draw from (-0, -size) but
-            // we need bottom-left at origin
-            // Actually: draw square so (0,0) is bottom-left
-            // That means square goes from (0, -size) to (size, 0)
-          } else {
-            // Walking up: pivot is top-left corner of square
-            // Square body is below and to the right
-            // Tip forward (upward) = rotate counter-clockwise
-            ctx.rotate(-tipAngle);
-          }
-        } else {
-          // Right edge: body extends LEFT (onto grid)
-          if (goingDown) {
-            // Walking down: pivot is bottom-right corner
-            // Tip forward = rotate counter-clockwise
-            ctx.scale(-1, 1);
-            ctx.rotate(tipAngle);
-          } else {
-            // Walking up: pivot is top-right corner
-            // Tip forward (upward) = rotate clockwise
-            ctx.scale(-1, 1);
-            ctx.rotate(-tipAngle);
-          }
-        }
-
-        // Draw square with BOTTOM-LEFT corner at origin
-        // Body goes RIGHT (+x) and UP (-y)
-        const s = w.size;
-        const r = s * 0.15;
-        ctx.beginPath();
-        ctx.moveTo(r, 0);
-        ctx.lineTo(s - r, 0);
-        ctx.quadraticCurveTo(s, 0, s, -r);
-        ctx.lineTo(s, -(s - r));
-        ctx.quadraticCurveTo(s, -s, s - r, -s);
-        ctx.lineTo(r, -s);
-        ctx.quadraticCurveTo(0, -s, 0, -(s - r));
-        ctx.lineTo(0, -r);
-        ctx.quadraticCurveTo(0, 0, r, 0);
-        ctx.closePath();
-        ctx.fill();
-
-        ctx.restore();
+      if (isEdit) {
+        // Edit: RIGHT face on left edge (body extends right, onto grid)
+        // Rotate horizontal walk +90° then mirror for right face
+        ctx.scale(-1, 1);
+        ctx.rotate(Math.PI / 2);
+      } else {
+        // Direct: LEFT face on right edge (body extends left, onto grid)
+        // Rotate horizontal walk +90° for left face
+        ctx.rotate(Math.PI / 2);
       }
 
+      for (const w of walkers) {
+        const dist = scrollY * w.speed + w.offset;
+        walkSquare(ctx, 0, 0, totalLen, w.size, dist, 'above');
+      }
+
+      ctx.restore();
       requestAnimationFrame(render);
     }
 
