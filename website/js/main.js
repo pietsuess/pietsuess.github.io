@@ -1103,9 +1103,13 @@ document.addEventListener('DOMContentLoaded', () => {
       }, { once: true });
     }
 
-    // Clear pref if user exits fullscreen via Escape
+    // Clear pref if user exits fullscreen via Escape (not during navigation)
+    let navigating = false;
+    document.querySelectorAll('a[href]').forEach(a => {
+      a.addEventListener('click', () => { navigating = true; });
+    });
     document.addEventListener('fullscreenchange', () => {
-      if (!document.fullscreenElement) {
+      if (!document.fullscreenElement && !navigating) {
         localStorage.removeItem('ps-fullscreen');
       }
     });
