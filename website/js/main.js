@@ -197,7 +197,11 @@ document.addEventListener('DOMContentLoaded', () => {
     function update() {
       const y = -window.scrollY * 0.15;
       const fade = Math.max(0, 1 - window.scrollY / (window.innerHeight * 0.8));
-      el.style.transform = `translateX(-50%) translateY(${y}px)`;
+      const scrollPct = Math.min(1, window.scrollY / (window.innerHeight * 0.6));
+      const rotX = scrollPct * 25;
+      const scaleY = 1 + scrollPct * 0.3;
+      el.style.transform = `translateX(-50%) translateY(${y}px) perspective(600px) rotateX(${rotX}deg) scaleY(${scaleY})`;
+      el.style.transformOrigin = 'center bottom';
       el.style.opacity = fade.toString();
     }
 
