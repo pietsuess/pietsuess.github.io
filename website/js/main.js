@@ -1011,31 +1011,47 @@ document.addEventListener('DOMContentLoaded', () => {
       const totalLen = gr.height;
 
       // Get thumbnail edges
-      let gridEdgeX;
-      if (isEdit) {
-        gridEdgeX = ir.left;
-      } else {
-        const allItems = grid.querySelectorAll('.portfolio-item');
-        const lastInRow = allItems.length > 1 ? allItems[1] : allItems[0];
-        gridEdgeX = lastInRow.getBoundingClientRect().right;
-      }
+      const allItems = grid.querySelectorAll('.portfolio-item');
+      const lastInRow = allItems.length > 1 ? allItems[1] : allItems[0];
+      const thumbLeft = ir.left;
+      const thumbRight = lastInRow.getBoundingClientRect().right;
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      // Walker 1: right face, grid edge, walking down
-      ctx.save();
-      ctx.translate(gridEdgeX, gr.top);
-      ctx.scale(-1, 1);
-      ctx.rotate(Math.PI / 2);
-      walkSquare(ctx, 0, 0, totalLen, 48, scrollY * 1.2, 'above');
-      ctx.restore();
+      if (isEdit) {
+        // EDIT PAGE:
+        // Big box: right face, walking down, left edge of thumbnails
+        ctx.save();
+        ctx.translate(thumbLeft, gr.top);
+        ctx.scale(-1, 1);
+        ctx.rotate(Math.PI / 2);
+        walkSquare(ctx, 0, 0, totalLen, 48, scrollY * 1.2, 'above');
+        ctx.restore();
 
-      // Walker 2: left face, screen edge (x=0), walking up (negative scroll)
-      ctx.save();
-      ctx.translate(0, gr.top);
-      ctx.rotate(Math.PI / 2);
-      walkSquare(ctx, 0, 0, totalLen, 38, scrollY * 0.9 + 400, 'above');
-      ctx.restore();
+        // Small box: left face, walking down, left screen edge
+        ctx.save();
+        ctx.translate(0, gr.top);
+        ctx.rotate(Math.PI / 2);
+        walkSquare(ctx, 0, 0, totalLen, 38, scrollY * 0.9 + 400, 'above');
+        ctx.restore();
+
+      } else {
+        // DIRECT PAGE:
+        // Big box: left face, walking down, right edge of thumbnails
+        ctx.save();
+        ctx.translate(thumbRight, gr.top);
+        ctx.rotate(Math.PI / 2);
+        walkSquare(ctx, 0, 0, totalLen, 48, scrollY * 1.2, 'above');
+        ctx.restore();
+
+        // Small box: right face, walking up, right screen edge
+        ctx.save();
+        ctx.translate(vw, gr.top);
+        ctx.scale(-1, 1);
+        ctx.rotate(Math.PI / 2);
+        walkSquare(ctx, 0, 0, totalLen, 38, scrollY * 0.9 + 400, 'above');
+        ctx.restore();
+      }
       requestAnimationFrame(render);
     }
 
