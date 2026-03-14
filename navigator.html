@@ -5287,7 +5287,8 @@ function updateWaveBeams(){
           // Track belt-only rock kills for secret level unlock
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
-            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
+            const _secretThresh = (state.secretVisitCount > 0) ? 5 : 15;
+            if(state._beltRocksDestroyed >= _secretThresh && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
               state.secretUnlocked = true;
               _sendAnalytics('secret_found');
               setTimeout(triggerSecretLevelUnlock, 500);
@@ -5854,7 +5855,7 @@ function update(){
             }, 1400);
           }
         }
-      } else if(nowZone === -1 && !state.outsideBarrier && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
+      } else if(nowZone === -1 && !state.outsideBarrier && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
         // Entering asteroid belt — Mission 4: discover the secret level (only if never visited, not outside barrier)
         state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
         state._beltMissionShown = true;
@@ -6687,12 +6688,23 @@ function update(){
           splitFlags.add(ri);
           triggerRockSplit(r.wx, r.wy, r.size);
           const _rockPts = 500 + Math.floor(r.size)*8;
-          addScore(zoneAt(r.wx, r.wy) === -1 ? -Math.round(_rockPts * 0.1) : _rockPts);
+          // Peanut mode: diminishing points — halves with each rapid kill (2s window), min 1
+          if(state.cheat==='peanut'){
+            const now_ms = Date.now();
+            if(!state._peanutLastKill || now_ms - state._peanutLastKill > 2000){ state._peanutCombo = 0; }
+            state._peanutLastKill = now_ms;
+            const _dimPts = Math.max(1, Math.floor(_rockPts / Math.pow(2, state._peanutCombo)));
+            state._peanutCombo++;
+            addScore(_dimPts);
+          } else {
+            addScore(_rockPts);
+          }
           state.rocksDestroyed=(state.rocksDestroyed||0)+1;
           // Track belt-only rock kills for secret level unlock
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
-            if(state._beltRocksDestroyed >= 15 && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld && !(state.secretVisitCount > 0)){
+            const _secretThresh = (state.secretVisitCount > 0) ? 5 : 15;
+            if(state._beltRocksDestroyed >= _secretThresh && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
               state.secretUnlocked = true;
               _sendAnalytics('secret_found');
               setTimeout(triggerSecretLevelUnlock, 500);
@@ -10202,7 +10214,7 @@ function drawGame(){
         var _neighbors = _neighborMap[_curZ] || [];
         // Count remaining missions from this zone
         var _hasNeighborMission = _neighbors.some(function(_nz){ return !state['completedLevel_'+_nz]; });
-        var _hasBeltMission = !state.secretBossDefeated && !(state.secretVisitCount > 0) && !state._bossInMainWorld;
+        var _hasBeltMission = !state.secretBossDefeated && !state._bossInMainWorld;
         if(!_hasNeighborMission && !_hasBeltMission) {} // all missions done — suppress hint entirely
         else {
         // "NEXT MISSION" text
@@ -10217,7 +10229,7 @@ function drawGame(){
         var _bounce3 = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
         var _arrowDist = 150;  // distance from ship centre
         // Arrow 1: toward asteroid belt (radially outward) — skip if secret level already visited
-        if(!state.secretBossDefeated && !(state.secretVisitCount > 0) && !state._bossInMainWorld){
+        if(!state.secretBossDefeated && !state._bossInMainWorld){
           var _beltAng = Math.atan2(state.y, state.x);
           ctx.save();
           ctx.translate(cx + Math.cos(_beltAng) * (_arrowDist + _bounce3), cy + Math.sin(_beltAng) * (_arrowDist + _bounce3));
@@ -11199,6 +11211,12 @@ function warpToLevelFromMenu(destIdx){
 }
 
 function cleanupSecretLevel(){
+  // Save surviving bubbles for persistence across visits
+  if(state.bubbles && state.bubbles.length > 0 && !state._allBubblesPopped){
+    state._savedBubbles = state.bubbles.map(function(b){
+      return { wx:b.wx, wy:b.wy, r:b.r, orbitCx:b.orbitCx, orbitCy:b.orbitCy, orbitR:b.orbitR, orbitAng:b.orbitAng, orbitSpeed:b.orbitSpeed, hue:b.hue, popped:b.popped, popAge:b.popAge };
+    });
+  }
   state.inSecretLevel=false;
   state.bubbles=[];
   state.secretBlackHole=null;
@@ -14041,6 +14059,32 @@ function initSecretLevel(){
     selectTrack(3); // Boss music — VORTEX at peak intensity
     setTimeout(()=>{ if(state.inSecretLevel) _spawnSecretBoss(); }, 100); // after black hole created
     if(!state.hasWaveBeam) setTimeout(()=>{ if(state.inSecretLevel && !state.secretBossDefeated) spawnSecretWaveOrb(); }, 600);
+  } else if(state._savedBubbles && state._savedBubbles.length > 0){
+    // Restore bubbles from previous visit — reposition orbits around current landing
+    state._waveOrbSpawned = false;
+    const _spawnCx=state.x, _spawnCy=state.y;
+    setTimeout(()=>{
+      if(!state.inSecretLevel) return;
+      state._savedBubbles.forEach(function(b){
+        // Offset orbit centers to current landing position
+        const dx = _spawnCx - b.orbitCx, dy = _spawnCy - b.orbitCy;
+        if(!b.popped){
+          state.bubbles.push({ wx:b.wx+dx, wy:b.wy+dy, r:b.r,
+            orbitCx:_spawnCx, orbitCy:_spawnCy,
+            orbitR:b.orbitR, orbitAng:b.orbitAng, orbitSpeed:b.orbitSpeed,
+            hue:b.hue, popped:false, popAge:0 });
+        }
+      });
+      state._bubblesReady = true;
+      const _alive = state.bubbles.filter(function(b){ return !b.popped; });
+      state._bubbleHUDTotal = _alive.length;
+      state._bubbleHUDPopped = 0;
+      state._bubbleHUDHues = _alive.map(function(b){ return b.hue; });
+      setTimeout(()=>{
+        if(!state.inSecretLevel) return;
+        state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'SECRET MISSION:', msg: 'POP THE REMAINING BUBBLES', _col: '#ff44ff' };
+      }, 600);
+    }, 400);
   } else {
     state._waveOrbSpawned = false;
     const _spawnCx=state.x, _spawnCy=state.y;
@@ -14060,7 +14104,6 @@ function initSecretLevel(){
       state._bubbleHUDTotal = state.bubbles.length;
       state._bubbleHUDPopped = 0;
       state._bubbleHUDHues = state.bubbles.map(function(b){ return b.hue; });
-      // Mission flash after bubbles appear
       setTimeout(()=>{
         if(!state.inSecretLevel) return;
         state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'SECRET MISSION:', msg: 'POP ALL THE BUBBLES', _col: '#ff44ff' };
@@ -14847,6 +14890,12 @@ function exitSecretLevel(){
       _guardX:_bossX, _guardY:0,
       _shipCD:0
     };
+  }
+  // Save surviving bubbles for persistence across visits
+  if(state.bubbles && state.bubbles.length > 0 && !state._allBubblesPopped){
+    state._savedBubbles = state.bubbles.map(function(b){
+      return { wx:b.wx, wy:b.wy, r:b.r, orbitCx:b.orbitCx, orbitCy:b.orbitCy, orbitR:b.orbitR, orbitAng:b.orbitAng, orbitSpeed:b.orbitSpeed, hue:b.hue, popped:b.popped, popAge:b.popAge };
+    });
   }
   state.inSecretLevel=false;
   state._radarViewR = undefined; state._radarCX = undefined; state._radarCY = undefined;  // reset radar for main world
