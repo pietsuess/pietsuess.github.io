@@ -373,6 +373,38 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const bigS = 48, smS = 36;
 
+    // Walk-in-place: uses the same gravity-eased tipping from test3
+    // but the square stays put — tips forward one step then resets
+    function walkInPlace(ctx, pivotX, groundY, size, frac, direction) {
+      // direction: 1 = tips right, -1 = tips left
+      // Gravity easing (same as test3)
+      const eased = frac < 0.5
+        ? 0.5 * Math.pow(frac * 2, 0.7)
+        : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+      const tipAngle = eased * (Math.PI / 2) * direction;
+
+      const s = size;
+      const r = s * 0.15;
+
+      ctx.save();
+      // Pivot at bottom corner on the tipping side
+      ctx.translate(pivotX, groundY);
+      ctx.rotate(tipAngle);
+
+      // Draw square with bottom edge at ground
+      const x = direction === 1 ? -s : 0;
+      const y = -s;
+
+      ctx.beginPath();
+      ctx.moveTo(x+r,y); ctx.lineTo(x+s-r,y);
+      ctx.quadraticCurveTo(x+s,y,x+s,y+r); ctx.lineTo(x+s,y+s-r);
+      ctx.quadraticCurveTo(x+s,y+s,x+s-r,y+s); ctx.lineTo(x+r,y+s);
+      ctx.quadraticCurveTo(x,y+s,x,y+s-r); ctx.lineTo(x,y+r);
+      ctx.quadraticCurveTo(x,y,x+r,y);
+      ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+
     let startTime = null;
     function render(time) {
       if (!startTime) startTime = time;
@@ -395,21 +427,16 @@ document.addEventListener('DOMContentLoaded', () => {
         const groundY = h * 0.55;
         const centerX = w * 0.5;
 
-        // Big square — tips right from bottom-right corner, smooth continuous
-        const bigAngle = Math.sin(elapsed * 0.8) * (Math.PI / 6);
-        ctx.save();
-        ctx.translate(centerX, groundY);
-        ctx.rotate(bigAngle);
-        drawRoundedRect(ctx, -bigS, -bigS, bigS, bigS * 0.15);
-        ctx.restore();
+        // Big square — tips right then resets, continuous loop
+        // One full tip cycle = one "step" duration
+        const bigCycle = 1.8; // seconds per tip
+        const bigFrac = ((elapsed / bigCycle) % 1);
+        walkInPlace(ctx, centerX, groundY, bigS, bigFrac, 1);
 
-        // Small square — tips left from bottom-left corner, slightly different speed
-        const smAngle = Math.sin(elapsed * 1.1 + Math.PI) * (Math.PI / 6);
-        ctx.save();
-        ctx.translate(centerX, groundY);
-        ctx.rotate(smAngle);
-        drawRoundedRect(ctx, 0, -smS, smS, smS * 0.15);
-        ctx.restore();
+        // Small square — tips left, offset timing
+        const smCycle = 1.5;
+        const smFrac = (((elapsed + 0.9) / smCycle) % 1);
+        walkInPlace(ctx, centerX, groundY, smS, smFrac, -1);
       });
       requestAnimationFrame(render);
     }
