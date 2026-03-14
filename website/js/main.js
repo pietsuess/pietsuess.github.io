@@ -353,23 +353,14 @@ document.addEventListener('DOMContentLoaded', () => {
     const bios = document.querySelectorAll('.edit-bio-inner');
     if (!bios.length) return;
 
-    function walkSquare(ctx, pivotX, pivotY, size, frac, dir) {
-      const eased = frac < 0.5
-        ? 0.5 * Math.pow(frac * 2, 0.7)
-        : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
-      const tipAngle = eased * (Math.PI / 2) * dir;
-      ctx.save();
-      ctx.translate(pivotX, pivotY);
-      ctx.rotate(tipAngle);
-      const s = size, r = s * 0.15;
-      const x = dir > 0 ? -s : 0, y = -s;
+    function drawRoundedRect(ctx, x, y, s, r) {
       ctx.beginPath();
       ctx.moveTo(x+r,y); ctx.lineTo(x+s-r,y);
       ctx.quadraticCurveTo(x+s,y,x+s,y+r); ctx.lineTo(x+s,y+s-r);
       ctx.quadraticCurveTo(x+s,y+s,x+s-r,y+s); ctx.lineTo(x+r,y+s);
       ctx.quadraticCurveTo(x,y+s,x,y+s-r); ctx.lineTo(x,y+r);
       ctx.quadraticCurveTo(x,y,x+r,y);
-      ctx.closePath(); ctx.fill(); ctx.restore();
+      ctx.closePath(); ctx.fill();
     }
 
     const canvases = [];
@@ -381,7 +372,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
 
     const bigS = 48, smS = 36;
-    const bigSpeed = 0.035, smSpeed = 0.04;
 
     let startTime = null;
     function render(time) {
@@ -405,15 +395,21 @@ document.addEventListener('DOMContentLoaded', () => {
         const groundY = h * 0.55;
         const centerX = w * 0.5;
 
-        // Big square — tips right, sits left of center
-        const bigDist = elapsed * bigS * bigSpeed * 60;
-        const bigFrac = (bigDist / bigS) % 1;
-        walkSquare(ctx, centerX, groundY, bigS, bigFrac, 1);
+        // Big square — tips right from bottom-right corner, smooth continuous
+        const bigAngle = Math.sin(elapsed * 0.8) * (Math.PI / 6);
+        ctx.save();
+        ctx.translate(centerX, groundY);
+        ctx.rotate(bigAngle);
+        drawRoundedRect(ctx, -bigS, -bigS, bigS, bigS * 0.15);
+        ctx.restore();
 
-        // Small square — tips left, sits right of center (back to back)
-        const smDist = elapsed * smS * smSpeed * 60;
-        const smFrac = (smDist / smS) % 1;
-        walkSquare(ctx, centerX, groundY, smS, smFrac, -1);
+        // Small square — tips left from bottom-left corner, slightly different speed
+        const smAngle = Math.sin(elapsed * 1.1 + Math.PI) * (Math.PI / 6);
+        ctx.save();
+        ctx.translate(centerX, groundY);
+        ctx.rotate(smAngle);
+        drawRoundedRect(ctx, 0, -smS, smS, smS * 0.15);
+        ctx.restore();
       });
       requestAnimationFrame(render);
     }
