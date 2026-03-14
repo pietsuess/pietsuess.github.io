@@ -855,20 +855,17 @@ document.addEventListener('DOMContentLoaded', () => {
     const grid = document.querySelector('.portfolio-grid') || document.querySelector('.animate-grid');
     if (!grid) return;
 
-    const canvas = document.createElement('canvas');
-    canvas.className = 'walk-squares-canvas';
-    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;';
+    // Place canvas as sibling of grid inside zone-page-main (already position context)
+    const parent = grid.parentElement;
+    if (!parent) return;
+    parent.style.position = 'relative';
 
-    // Wrap the grid in a relative container so canvas overlays it
-    const wrapper = document.createElement('div');
-    wrapper.style.position = 'relative';
-    grid.parentNode.insertBefore(wrapper, grid);
-    wrapper.appendChild(grid);
-    wrapper.appendChild(canvas);
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;pointer-events:none;z-index:2;';
+    parent.appendChild(canvas);
 
     const ctx = canvas.getContext('2d');
 
-    // Walkers along left and right edges — big & fast
     const walkers = [
       { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
       { side: 'left',  size: 20, speed: -0.9, offset: 400 },
@@ -876,31 +873,35 @@ document.addEventListener('DOMContentLoaded', () => {
       { side: 'right', size: 32, speed: -0.7, offset: 600 },
     ];
 
-    // The scroll container — .site-content has overflow
-    const scrollEl = document.querySelector('.site-content');
-
     function render() {
       const dpr = window.devicePixelRatio || 1;
-      const w = wrapper.offsetWidth;
-      const h = grid.scrollHeight;
+      const gridRect = grid.getBoundingClientRect();
+      const parentRect = parent.getBoundingClientRect();
+      // Grid position relative to parent
+      const gLeft = gridRect.left - parentRect.left;
+      const gRight = gridRect.right - parentRect.left;
+      const gTop = gridRect.top - parentRect.top;
+      const w = parent.scrollWidth;
+      const h = parent.scrollHeight;
 
       if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
         canvas.width = Math.round(w * dpr);
         canvas.height = Math.round(h * dpr);
-        canvas.style.height = h + 'px';
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      const scrollY = (scrollEl ? scrollEl.scrollTop : window.scrollY) || 0;
+      const scrollY = window.scrollY || document.documentElement.scrollTop || 0;
 
-      ctx.fillStyle = 'rgba(255,255,255,0.45)';
+      ctx.fillStyle = 'rgba(255,255,255,0.5)';
+
+      const gridH = gridRect.height;
 
       for (const wk of walkers) {
-        // Position on the edge: inset so the square is visible
-        const edgeX = wk.side === 'left' ? wk.size / 2 : w - wk.size / 2;
-        const totalRange = h + wk.size;
+        // Left/right edge of the actual grid content
+        const edgeX = wk.side === 'left' ? gLeft : gRight;
+        const totalRange = gridH + wk.size;
         const dist = scrollY * wk.speed + wk.offset;
         const absDist = ((dist % totalRange) + totalRange) % totalRange;
 
@@ -908,33 +909,29 @@ document.addEventListener('DOMContentLoaded', () => {
         const stepIdx = Math.floor(steps);
         const frac = steps - stepIdx;
 
-        // Gravity easing for tipping
         const eased = frac < 0.5
           ? 0.5 * Math.pow(frac * 2, 0.7)
           : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
         const tipAngle = eased * (Math.PI / 2);
 
-        // Pivot position along the vertical edge
-        const pivotY = ((stepIdx + 1) * wk.size) % totalRange;
+        const pivotY = gTop + (((stepIdx + 1) * wk.size) % totalRange);
         const goingDown = wk.speed > 0;
 
         ctx.save();
         ctx.translate(edgeX, pivotY);
 
         if (wk.side === 'left') {
-          // Square walks down along left edge, body extends inward (right)
+          // Walk down left edge, square body extends inward (right)
           ctx.rotate(Math.PI / 2);
           if (!goingDown) ctx.scale(1, -1);
         } else {
-          // Square walks down along right edge, body extends inward (left)
           ctx.rotate(-Math.PI / 2);
           if (goingDown) ctx.scale(1, -1);
         }
         ctx.rotate(tipAngle);
 
-        // Draw rounded square (bottom-right corner at origin)
         const s = wk.size;
-        const r = s * 0.2;
+        const r = s * 0.15;
         ctx.beginPath();
         ctx.moveTo(-s + r, -s);
         ctx.lineTo(-r, -s);
@@ -947,7 +944,6 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.quadraticCurveTo(-s, -s, -s + r, -s);
         ctx.closePath();
         ctx.fill();
-
         ctx.restore();
       }
 
