@@ -372,6 +372,82 @@ document.querySelectorAll('video[data-loop-start]').forEach(v => {
 </a>
 <script src="js/main.js"></script>
 
+<!-- Walking squares — left and right at zone label level -->
+<script>
+(function() {
+  const canvas = document.createElement('canvas');
+  canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10;';
+  document.body.appendChild(canvas);
+  const ctx = canvas.getContext('2d');
+
+  function walkSquare(ctx, pivotX, pivotY, size, frac, dir) {
+    const eased = frac < 0.5
+      ? 0.5 * Math.pow(frac * 2, 0.7)
+      : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+    const tipAngle = eased * (Math.PI / 2) * dir;
+    ctx.save();
+    ctx.translate(pivotX, pivotY);
+    ctx.rotate(tipAngle);
+    const s = size, r = s * 0.15;
+    const x = dir > 0 ? -s : 0, y = -s;
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+s-r,y);
+    ctx.quadraticCurveTo(x+s,y,x+s,y+r); ctx.lineTo(x+s,y+s-r);
+    ctx.quadraticCurveTo(x+s,y+s,x+s-r,y+s); ctx.lineTo(x+r,y+s);
+    ctx.quadraticCurveTo(x,y+s,x,y+s-r); ctx.lineTo(x,y+r);
+    ctx.quadraticCurveTo(x,y,x+r,y);
+    ctx.closePath(); ctx.fill(); ctx.restore();
+  }
+
+  let startTime = null;
+  function render(time) {
+    if (!startTime) startTime = time;
+    const elapsed = (time - startTime) * 0.001;
+    const dpr = window.devicePixelRatio || 1;
+    const vw = window.innerWidth, vh = window.innerHeight;
+    if (canvas.width !== Math.round(vw*dpr) || canvas.height !== Math.round(vh*dpr)) {
+      canvas.width = Math.round(vw*dpr);
+      canvas.height = Math.round(vh*dpr);
+    }
+    ctx.setTransform(dpr,0,0,dpr,0,0);
+    ctx.clearRect(0,0,vw,vh);
+
+    // Zone label baseline — roughly matches bg-zone-label bottom
+    const label = document.getElementById('bgZoneLabel');
+    let lineY = vh * 0.15;
+    if (label) {
+      const r = label.getBoundingClientRect();
+      lineY = r.bottom;
+    }
+
+    ctx.fillStyle = 'rgba(255,255,255,0.5)';
+
+    // Big square — left side, walking right
+    const bigS = 48, bigSpeed = 0.04;
+    const bigDist = elapsed * bigS * bigSpeed * 60;
+    const bigTotal = vw * 0.35;
+    const bigRaw = ((bigDist % bigTotal) + bigTotal) % bigTotal;
+    const bigSteps = bigRaw / bigS;
+    const bigFrac = bigSteps - Math.floor(bigSteps);
+    const bigPx = Math.floor(bigSteps) * bigS % bigTotal;
+    walkSquare(ctx, bigPx, lineY, bigS, bigFrac, 1);
+
+    // Small square — right side, walking left
+    const smS = 38, smSpeed = 0.035;
+    const smDist = elapsed * smS * smSpeed * 60;
+    const smTotal = vw * 0.35;
+    const smRaw = ((smDist % smTotal) + smTotal) % smTotal;
+    const smSteps = smRaw / smS;
+    const smFrac = smSteps - Math.floor(smSteps);
+    const smPx = vw - (Math.floor(smSteps) * smS % smTotal);
+    walkSquare(ctx, smPx, lineY, smS, smFrac, -1);
+
+    requestAnimationFrame(render);
+  }
+  requestAnimationFrame(render);
+})();
+</script>
+
 <!-- Dev Mode: add ?dev to URL for grid editor -->
 <script>
 if (location.search.includes('dev')) {
