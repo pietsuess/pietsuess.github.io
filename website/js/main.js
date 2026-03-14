@@ -570,6 +570,16 @@ document.addEventListener('DOMContentLoaded', () => {
             const main = doc.querySelector('main');
             body.innerHTML = main ? main.innerHTML : '<p style="text-align:center;padding:40px;">Content not available.</p>';
           }
+          // Wrap title + subtitle into a side-by-side row
+          const title = body.querySelector('.project-title');
+          const subtitle = body.querySelector('.project-subtitle');
+          if (title && subtitle) {
+            const row = document.createElement('div');
+            row.className = 'project-header-row';
+            title.parentNode.insertBefore(row, title);
+            row.appendChild(title);
+            row.appendChild(subtitle);
+          }
           // Scroll modal to top
           modalOverlay.querySelector('.project-modal').scrollTop = 0;
         })
