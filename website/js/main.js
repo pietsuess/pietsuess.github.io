@@ -885,7 +885,7 @@ document.addEventListener('DOMContentLoaded', () => {
       dots.push({
         x: Math.random() * 2000,
         y: Math.random() * 2000,
-        r: Math.random() * 1.2 + 0.5,
+        r: Math.random() * 1.5 + 1,
         alpha: 1,
         // Orbital motion
         cx: Math.random() * 2000,  // orbit center
@@ -922,7 +922,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
         ctx.beginPath();
         ctx.arc(screenX, drawY, d.r, 0, Math.PI * 2);
-        ctx.fillStyle = `rgba(255,255,255,${d.alpha})`;
+        // Dark dots for light backgrounds, white for dark
+        const isDark = document.body.classList.contains('design-page');
+        ctx.fillStyle = isDark ? `rgba(0,0,0,${d.alpha})` : `rgba(255,255,255,${d.alpha})`;
         ctx.fill();
       }
 
