@@ -850,33 +850,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   /* -------------------------------------------------------
      WALKING SQUARES — scroll-driven along grid edges
-     Fixed overlay canvas — does NOT touch the grid DOM
+     Adapted directly from working square-walk-test.html
      ------------------------------------------------------- */
   (function() {
     const grid = document.querySelector('.portfolio-grid');
     if (!grid) return;
 
-    // Determine which page: edit = left edge, direct = right edge, otherwise skip
     const page = location.pathname;
     const isEdit = page.includes('edit');
     const isDirect = page.includes('direct');
     if (!isEdit && !isDirect) return;
 
+    const side = isEdit ? 'left' : 'right';
+
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'position:fixed;top:0;left:0;width:100vw;height:100vh;pointer-events:none;z-index:10;';
     document.body.appendChild(canvas);
-
     const ctx = canvas.getContext('2d');
 
-    const walkers = isEdit
-      ? [
-          { side: 'left',  size: 48, speed: 1.2,  offset: 0 },
-          { side: 'left',  size: 38, speed: -0.9, offset: 400 },
-        ]
-      : [
-          { side: 'right', size: 48, speed: 1.2,  offset: 0 },
-          { side: 'right', size: 38, speed: -0.9, offset: 400 },
-        ];
+    const walkers = [
+      { size: 48, speed: 1.2, offset: 0 },
+      { size: 38, speed: -0.9, offset: 400 },
+    ];
 
     function render() {
       const dpr = window.devicePixelRatio || 1;
@@ -891,84 +886,70 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, vw, vh);
 
-      // Grid edges in viewport coords
       const gr = grid.getBoundingClientRect();
-      const scrollY = window.scrollY || 0;
-
-      // Only draw if grid is on screen
       if (gr.bottom < 0 || gr.top > vh) {
         requestAnimationFrame(render);
         return;
       }
 
+      const scrollY = window.scrollY || 0;
+      const edgeX = side === 'left' ? gr.left : gr.right;
+      const totalLen = gr.height;
+
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      const gridH = gr.height;
+      for (const w of walkers) {
+        // Distance — same math as test page, scroll replaces time
+        const dist = scrollY * w.speed + w.offset;
+        const absDist = Math.abs(dist);
+        const loopDist = ((absDist % totalLen) + totalLen) % totalLen;
 
-      for (const wk of walkers) {
-        const edgeX = wk.side === 'left' ? gr.left : gr.right;
-        const totalRange = gridH + wk.size;
-        const dist = scrollY * wk.speed + wk.offset;
-        const absDist = ((dist % totalRange) + totalRange) % totalRange;
-
-        const steps = absDist / wk.size;
+        const steps = loopDist / w.size;
         const stepIdx = Math.floor(steps);
         const frac = steps - stepIdx;
 
+        // Gravity easing — identical to test page
         const eased = frac < 0.5
           ? 0.5 * Math.pow(frac * 2, 0.7)
           : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
         const tipAngle = eased * (Math.PI / 2);
 
-        // Y position along the grid edge (viewport coords)
-        const localY = ((stepIdx + 1) * wk.size) % totalRange;
-        const pivotY = gr.top + localY;
+        // Pivot — same as test page
+        const pivotDist = (stepIdx + 1) * w.size;
+        const signedDist = w.speed > 0 ? pivotDist : totalLen - pivotDist;
+        const pivotLocalY = ((signedDist % totalLen) + totalLen) % totalLen;
+        const pivotY = gr.top + pivotLocalY;
 
-        // Skip if off screen
-        if (pivotY < -wk.size || pivotY > vh + wk.size) continue;
+        if (pivotY < -w.size * 2 || pivotY > vh + w.size * 2) continue;
 
-        const goingDown = wk.speed > 0;
-        const s = wk.size;
-        const r = s * 0.15;
+        // Ground angle — vertical line tangent = PI/2
+        // Same as test page: forward uses angle, backward uses angle + PI
+        const groundAngle = w.speed > 0 ? Math.PI / 2 : Math.PI / 2 + Math.PI;
 
         ctx.save();
         ctx.translate(edgeX, pivotY);
 
-        // Rotate so local X axis points along the edge (downward or upward)
-        // and local Y axis points inward from the edge
-        if (wk.side === 'left') {
-          if (goingDown) {
-            ctx.rotate(Math.PI / 2);
-          } else {
-            ctx.rotate(-Math.PI / 2);
-            ctx.scale(-1, 1);
-          }
-        } else {
-          if (goingDown) {
-            ctx.rotate(-Math.PI / 2);
-            ctx.scale(-1, 1);
-          } else {
-            ctx.rotate(Math.PI / 2);
-          }
-        }
+        // For right edge: mirror so body extends inward (left)
+        if (side === 'right') ctx.scale(-1, 1);
 
-        // Tip: pivot is at origin (leading corner on edge)
-        // Square body extends left (-x) and up (-y)
-        // tipAngle rotates 0→PI/2, tipping it forward
-        // To reverse tip direction: pivot from the OTHER corner
-        // Draw body at (0,-s) to (s,0), pivot bottom-left instead of bottom-right
-        ctx.rotate(-tipAngle);
+        // Rotation — identical to test page
+        ctx.rotate(groundAngle);
+        ctx.rotate(tipAngle);
 
+        // Draw rounded square — identical to test page
+        // Bottom-right corner at origin, body goes left and up
+        const s = w.size;
+        const r = s * 0.15;
         ctx.beginPath();
-        ctx.moveTo(r, -s);
-        ctx.lineTo(s - r, -s);
-        ctx.quadraticCurveTo(s, -s, s, -s + r);
-        ctx.lineTo(s, -r);
-        ctx.quadraticCurveTo(s, 0, s - r, 0);
-        ctx.lineTo(r, 0);
-        ctx.quadraticCurveTo(0, 0, 0, -r);
-        ctx.lineTo(0, -s + r);
-        ctx.quadraticCurveTo(0, -s, r, -s);
+        ctx.moveTo(-s + r, -s);
+        ctx.lineTo(-r, -s);
+        ctx.quadraticCurveTo(0, -s, 0, -s + r);
+        ctx.lineTo(0, -r);
+        ctx.quadraticCurveTo(0, 0, -r, 0);
+        ctx.lineTo(-s + r, 0);
+        ctx.quadraticCurveTo(-s, 0, -s, -r);
+        ctx.lineTo(-s, -s + r);
+        ctx.quadraticCurveTo(-s, -s, -s + r, -s);
         ctx.closePath();
         ctx.fill();
         ctx.restore();
