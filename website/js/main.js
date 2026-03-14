@@ -1090,4 +1090,48 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
+  /* -------------------------------------------------------
+     ARCADE ICON SCROLL FADE
+     Visible at top, fades out on scroll, fades back in near bottom
+     ------------------------------------------------------- */
+  (function() {
+    const arcade = document.querySelector('.arcade-link');
+    if (!arcade) return;
+
+    arcade.style.transition = 'opacity 0.4s ease, transform 0.3s ease';
+
+    let ticking = false;
+    window.addEventListener('scroll', () => {
+      if (!ticking) {
+        requestAnimationFrame(() => {
+          const scrollY = window.scrollY;
+          const docHeight = document.documentElement.scrollHeight - window.innerHeight;
+
+          if (docHeight <= 0) { arcade.style.opacity = '0.6'; ticking = false; return; }
+
+          const scrollPct = scrollY / docHeight;
+
+          // Visible in top 5%, hidden in middle, visible in bottom 10%
+          let opacity;
+          if (scrollPct < 0.05) {
+            opacity = 0.6;
+          } else if (scrollPct < 0.15) {
+            opacity = 0.6 * (1 - (scrollPct - 0.05) / 0.10);
+          } else if (scrollPct < 0.85) {
+            opacity = 0;
+          } else if (scrollPct < 0.95) {
+            opacity = 0.6 * ((scrollPct - 0.85) / 0.10);
+          } else {
+            opacity = 0.6;
+          }
+
+          arcade.style.opacity = String(opacity);
+          arcade.style.pointerEvents = opacity < 0.1 ? 'none' : 'auto';
+          ticking = false;
+        });
+        ticking = true;
+      }
+    });
+  })();
+
 });
