@@ -1058,4 +1058,19 @@ document.addEventListener('DOMContentLoaded', () => {
     render();
   })();
 
+
+  /* -------------------------------------------------------
+     FULLSCREEN TOGGLE
+     ------------------------------------------------------- */
+  const fsBtn = document.querySelector('.fullscreen-btn');
+  if (fsBtn) {
+    fsBtn.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        document.exitFullscreen();
+      }
+    });
+  }
+
 });
