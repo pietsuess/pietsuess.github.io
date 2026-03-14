@@ -868,61 +868,39 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const ctx = canvas.getContext('2d');
 
-    // Walkers along left and right edges
+    // Walkers along left and right edges — big & fast
     const walkers = [
-      { side: 'left',  size: 14, speed: 0.15, offset: 0 },
-      { side: 'left',  size: 10, speed: -0.1, offset: 200 },
-      { side: 'right', size: 12, speed: 0.12, offset: 100 },
-      { side: 'right', size: 16, speed: -0.08, offset: 300 },
+      { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
+      { side: 'left',  size: 20, speed: -0.9, offset: 400 },
+      { side: 'right', size: 24, speed: 1.0,  offset: 200 },
+      { side: 'right', size: 32, speed: -0.7, offset: 600 },
     ];
 
-    function drawRoundedSquare(x, y, s, angle) {
-      ctx.save();
-      ctx.translate(x, y);
-      ctx.rotate(angle);
-      const r = s * 0.2;
-      ctx.beginPath();
-      ctx.moveTo(-s + r, -s);
-      ctx.lineTo(-r, -s);
-      ctx.quadraticCurveTo(0, -s, 0, -s + r);
-      ctx.lineTo(0, -r);
-      ctx.quadraticCurveTo(0, 0, -r, 0);
-      ctx.lineTo(-s + r, 0);
-      ctx.quadraticCurveTo(-s, 0, -s, -r);
-      ctx.lineTo(-s, -s + r);
-      ctx.quadraticCurveTo(-s, -s, -s + r, -s);
-      ctx.closePath();
-      ctx.fill();
-      ctx.restore();
-    }
-
-    let lastScroll = 0;
-    let animId = null;
+    // The scroll container — .site-content has overflow
+    const scrollEl = document.querySelector('.site-content');
 
     function render() {
       const dpr = window.devicePixelRatio || 1;
-      const rect = wrapper.getBoundingClientRect();
-      const w = rect.width;
+      const w = wrapper.offsetWidth;
       const h = grid.scrollHeight;
 
-      if (canvas.width !== w * dpr || canvas.height !== h * dpr) {
-        canvas.width = w * dpr;
-        canvas.height = h * dpr;
+      if (canvas.width !== Math.round(w * dpr) || canvas.height !== Math.round(h * dpr)) {
+        canvas.width = Math.round(w * dpr);
+        canvas.height = Math.round(h * dpr);
         canvas.style.height = h + 'px';
       }
 
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, w, h);
 
-      // Scroll position drives the walk
-      const scrollEl = document.querySelector('.site-content') || document.documentElement;
-      const scrollY = scrollEl.scrollTop || window.scrollY || 0;
+      const scrollY = (scrollEl ? scrollEl.scrollTop : window.scrollY) || 0;
 
-      ctx.fillStyle = 'rgba(255,255,255,0.35)';
+      ctx.fillStyle = 'rgba(255,255,255,0.45)';
 
       for (const wk of walkers) {
-        const edgeX = wk.side === 'left' ? -2 : w + 2;
-        const totalRange = h;
+        // Position on the edge: inset so the square is visible
+        const edgeX = wk.side === 'left' ? wk.size / 2 : w - wk.size / 2;
+        const totalRange = h + wk.size;
         const dist = scrollY * wk.speed + wk.offset;
         const absDist = ((dist % totalRange) + totalRange) % totalRange;
 
@@ -930,34 +908,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const stepIdx = Math.floor(steps);
         const frac = steps - stepIdx;
 
-        // Gravity easing
+        // Gravity easing for tipping
         const eased = frac < 0.5
           ? 0.5 * Math.pow(frac * 2, 0.7)
           : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
         const tipAngle = eased * (Math.PI / 2);
 
-        // Position along the edge (vertical)
+        // Pivot position along the vertical edge
         const pivotY = ((stepIdx + 1) * wk.size) % totalRange;
-
-        // For left edge: square sits to the right of the edge, tips clockwise (downward)
-        // For right edge: square sits to the left, tips counter-clockwise
-        const dir = wk.speed > 0 ? 1 : -1;
+        const goingDown = wk.speed > 0;
 
         ctx.save();
         ctx.translate(edgeX, pivotY);
 
         if (wk.side === 'left') {
-          // Walking downward along left edge
-          ctx.rotate(Math.PI / 2); // rotate so "ground" is to the right (the edge)
-          if (dir < 0) ctx.scale(1, -1);
-          ctx.rotate(tipAngle);
+          // Square walks down along left edge, body extends inward (right)
+          ctx.rotate(Math.PI / 2);
+          if (!goingDown) ctx.scale(1, -1);
         } else {
-          // Walking downward along right edge
+          // Square walks down along right edge, body extends inward (left)
           ctx.rotate(-Math.PI / 2);
-          if (dir > 0) ctx.scale(1, -1);
-          ctx.rotate(tipAngle);
+          if (goingDown) ctx.scale(1, -1);
         }
+        ctx.rotate(tipAngle);
 
+        // Draw rounded square (bottom-right corner at origin)
         const s = wk.size;
         const r = s * 0.2;
         ctx.beginPath();
@@ -976,7 +951,7 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.restore();
       }
 
-      animId = requestAnimationFrame(render);
+      requestAnimationFrame(render);
     }
 
     render();
