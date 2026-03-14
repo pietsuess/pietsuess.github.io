@@ -1105,14 +1105,14 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   /* -------------------------------------------------------
-     ARCADE ICON SCROLL FADE
-     Visible at top, fades out on scroll, fades back in near bottom
+     ARCADE ICON — slides top-right to bottom-right while fading
      ------------------------------------------------------- */
   (function() {
     const arcade = document.querySelector('.arcade-link');
     if (!arcade) return;
 
-    arcade.style.transition = 'opacity 0.4s ease, transform 0.3s ease';
+    // Max travel = viewport height minus icon height minus top/bottom margins
+    const maxTravel = () => window.innerHeight - arcade.offsetHeight - 40;
 
     let ticking = false;
     window.addEventListener('scroll', () => {
@@ -1123,9 +1123,13 @@ document.addEventListener('DOMContentLoaded', () => {
 
           if (docHeight <= 0) { arcade.style.opacity = '0.6'; ticking = false; return; }
 
-          const scrollPct = scrollY / docHeight;
+          const scrollPct = Math.min(1, scrollY / docHeight);
 
-          // Visible in top 5%, hidden in middle, visible in bottom 10%
+          // Slide from top to bottom
+          const slideY = scrollPct * maxTravel();
+          arcade.style.transform = `translateY(${slideY}px)`;
+
+          // Fade: visible at top, fade out through middle, fade back in at bottom
           let opacity;
           if (scrollPct < 0.05) {
             opacity = 0.6;
