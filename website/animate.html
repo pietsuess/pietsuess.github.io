@@ -122,7 +122,7 @@
   <div class="animate-grid animate-grid-mixed entrance entrance-d1">
 
     <!-- Unveil Dot Animation -->
-    <div class="anim-item fade-in">
+    <div class="anim-item wide fade-in">
       <canvas id="unveilCanvas" style="width:100%;height:300px;display:block;"></canvas>
     </div>
 
@@ -153,7 +153,7 @@
     </div>
 
     <!-- 15. Deskovic Imagine -->
-    <div class="anim-item fade-in">
+    <div class="anim-item wide fade-in">
       <video src="videos/DeskovicIMAGINE.mp4" autoplay muted loop playsinline></video>
     </div>
 
@@ -169,7 +169,7 @@
 
 
     <!-- 19. Chasm Concert Sound -->
-    <div class="anim-item fade-in">
+    <div class="anim-item wide fade-in">
       <video src="videos/Chasm_ConcertSound.mp4" autoplay muted loop playsinline></video>
     </div>
 
@@ -345,15 +345,15 @@
 <button class="back-to-top" aria-label="Back to top">&uarr; Back to Top</button>
 <script src="js/main.js"></script>
 
-<!-- Dev Mode: add ?dev to URL to enable drag-and-drop reordering -->
+<!-- Dev Mode: add ?dev to URL to enable drag-and-drop + resize -->
 <script>
 if (location.search.includes('dev')) {
   const toolbar = document.createElement('div');
   toolbar.innerHTML = `
-    <div id="devToolbar" style="position:fixed;bottom:20px;right:20px;z-index:9999;background:rgba(0,0,0,0.85);color:#fff;padding:12px 16px;border-radius:12px;font-family:system-ui;font-size:13px;display:flex;gap:10px;align-items:center;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.2);">
-      <span style="color:#e8735a;font-weight:600;">DEV MODE</span>
-      <span>Drag items to reorder</span>
-      <button id="devCopyOrder" style="background:#e8735a;color:#fff;border:none;padding:6px 14px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">Copy Order</button>
+    <div id="devToolbar" style="position:fixed;bottom:20px;left:50%;transform:translateX(-50%);z-index:9999;background:rgba(0,0,0,0.9);color:#fff;padding:14px 20px;border-radius:14px;font-family:system-ui;font-size:13px;display:flex;gap:14px;align-items:center;backdrop-filter:blur(10px);border:1px solid rgba(255,255,255,0.2);box-shadow:0 8px 32px rgba(0,0,0,0.4);">
+      <span style="color:#e8735a;font-weight:700;font-size:14px;">DEV</span>
+      <span style="opacity:0.7;">Drag to reorder &bull; Click to toggle wide/normal</span>
+      <button id="devCopyLayout" style="background:#e8735a;color:#fff;border:none;padding:8px 16px;border-radius:8px;cursor:pointer;font-size:13px;font-weight:600;">Copy Layout</button>
     </div>
   `;
   document.body.appendChild(toolbar);
@@ -361,55 +361,75 @@ if (location.search.includes('dev')) {
   const mixedGrid = document.querySelector('.animate-grid-mixed');
   if (mixedGrid) {
     let dragItem = null;
-    const items = mixedGrid.querySelectorAll('.anim-item');
-    items.forEach((item, i) => {
-      item.setAttribute('draggable', 'true');
-      item.dataset.devIndex = i;
-      item.style.cursor = 'grab';
-      item.style.border = '2px solid transparent';
-      item.style.borderRadius = '6px';
-      item.style.transition = 'border-color 0.2s';
 
-      item.addEventListener('dragstart', e => {
-        dragItem = item;
-        item.style.opacity = '0.4';
-        e.dataTransfer.effectAllowed = 'move';
-      });
-      item.addEventListener('dragend', () => {
-        dragItem.style.opacity = '1';
-        dragItem = null;
-        items.forEach(el => el.style.borderColor = 'transparent');
-      });
-      item.addEventListener('dragover', e => {
-        e.preventDefault();
-        e.dataTransfer.dropEffect = 'move';
-        item.style.borderColor = '#e8735a';
-      });
-      item.addEventListener('dragleave', () => {
-        item.style.borderColor = 'transparent';
-      });
-      item.addEventListener('drop', e => {
-        e.preventDefault();
-        item.style.borderColor = 'transparent';
-        if (dragItem && dragItem !== item) {
-          const allItems = [...mixedGrid.querySelectorAll('.anim-item')];
-          const dragIdx = allItems.indexOf(dragItem);
-          const dropIdx = allItems.indexOf(item);
-          if (dragIdx < dropIdx) {
-            item.after(dragItem);
-          } else {
-            item.before(dragItem);
-          }
+    function initItems() {
+      const items = mixedGrid.querySelectorAll('.anim-item');
+      items.forEach(item => {
+        item.setAttribute('draggable', 'true');
+        item.style.cursor = 'grab';
+        item.style.outline = '2px dashed rgba(232,115,90,0.3)';
+        item.style.outlineOffset = '-2px';
+        item.style.borderRadius = '6px';
+        item.style.position = 'relative';
+
+        // Size label
+        let badge = item.querySelector('.dev-badge');
+        if (!badge) {
+          badge = document.createElement('div');
+          badge.className = 'dev-badge';
+          badge.style.cssText = 'position:absolute;top:6px;right:6px;background:rgba(0,0,0,0.75);color:#fff;padding:3px 8px;border-radius:6px;font-size:11px;font-family:system-ui;z-index:10;pointer-events:none;';
+          item.appendChild(badge);
         }
-      });
-    });
+        badge.textContent = item.classList.contains('wide') ? 'WIDE' : '1x';
 
-    document.getElementById('devCopyOrder').addEventListener('click', () => {
-      const order = [...mixedGrid.querySelectorAll('.anim-item')].map(el => {
-        const comment = el.previousElementSibling;
+        item.addEventListener('click', e => {
+          if (e.detail === 2) { // double-click to toggle
+            item.classList.toggle('wide');
+            badge.textContent = item.classList.contains('wide') ? 'WIDE' : '1x';
+          }
+        });
+
+        item.addEventListener('dragstart', e => {
+          dragItem = item;
+          item.style.opacity = '0.3';
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => {
+          if (dragItem) dragItem.style.opacity = '1';
+          dragItem = null;
+          mixedGrid.querySelectorAll('.anim-item').forEach(el => {
+            el.style.outline = '2px dashed rgba(232,115,90,0.3)';
+          });
+        });
+        item.addEventListener('dragover', e => {
+          e.preventDefault();
+          e.dataTransfer.dropEffect = 'move';
+          item.style.outline = '2px solid #e8735a';
+        });
+        item.addEventListener('dragleave', () => {
+          item.style.outline = '2px dashed rgba(232,115,90,0.3)';
+        });
+        item.addEventListener('drop', e => {
+          e.preventDefault();
+          item.style.outline = '2px dashed rgba(232,115,90,0.3)';
+          if (dragItem && dragItem !== item) {
+            const allItems = [...mixedGrid.querySelectorAll('.anim-item')];
+            const dragIdx = allItems.indexOf(dragItem);
+            const dropIdx = allItems.indexOf(item);
+            if (dragIdx < dropIdx) {
+              item.after(dragItem);
+            } else {
+              item.before(dragItem);
+            }
+          }
+        });
+      });
+    }
+    initItems();
+
+    document.getElementById('devCopyLayout').addEventListener('click', () => {
+      const layout = [...mixedGrid.querySelectorAll('.anim-item')].map(el => {
         let label = '';
-        const prev = el.previousSibling;
-        // Walk back to find the HTML comment
         let node = el.previousSibling;
         while (node) {
           if (node.nodeType === 8) { label = node.textContent.trim(); break; }
@@ -424,13 +444,14 @@ if (location.search.includes('dev')) {
           else if (img) label = img.alt || img.src.split('/').pop();
           else if (canvas) label = 'Unveil Canvas';
         }
-        return label;
+        const size = el.classList.contains('wide') ? 'WIDE' : '1x';
+        return `${label} [${size}]`;
       });
-      const text = order.map((name, i) => `${i+1}. ${name}`).join('\n');
+      const text = layout.map((l, i) => `${i+1}. ${l}`).join('\n');
       navigator.clipboard.writeText(text).then(() => {
-        const btn = document.getElementById('devCopyOrder');
+        const btn = document.getElementById('devCopyLayout');
         btn.textContent = 'Copied!';
-        setTimeout(() => btn.textContent = 'Copy Order', 2000);
+        setTimeout(() => btn.textContent = 'Copy Layout', 2000);
       });
     });
   }
