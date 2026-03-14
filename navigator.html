@@ -6649,6 +6649,33 @@ function update(){
         // Peanut mode: instant destruction on first hit
         else if(state.cheat==='peanut'){ r.hits = (r.hitsNeeded||4); }
         else { r.hits=(r.hits||0)+1; }
+        // Structured crack progression per hit
+        const _impactAng = Math.atan2(state.y - r.wy, state.x - r.wx);
+        if(!r.zigzags) r.zigzags=[];
+        if(r.hits <= 1){
+          // Hit 1: single crack from impact edge → center
+          r._firstImpactAng = _impactAng;
+          r.zigzags.push(_buildZigzag(_impactAng, 0.85, 0.0));
+        } else if(r.hits === 2){
+          // Hit 2: extend first crack from center → opposite edge (through-line)
+          const _oppAng = (r._firstImpactAng||0) + Math.PI;
+          r.zigzags.push(_buildZigzag(_oppAng, 0.0, 0.85));
+          // + branch off the middle of the first crack
+          if(r.zigzags.length > 0) r.zigzags.push(_buildBranch(r.zigzags[0]));
+        } else {
+          // Hit 3+: add branches off existing cracks + crack in empty zones
+          // Branch off a random existing crack
+          const _src = r.zigzags[Math.floor(Math.random()*r.zigzags.length)];
+          r.zigzags.push(_buildBranch(_src));
+          // New crack in a zone ~90° from existing cracks
+          const _usedAngs = r.zigzags.map(z=>z.angle);
+          let _bestAng = _impactAng, _bestDist = 0;
+          for(let a=0; a<Math.PI*2; a+=0.3){
+            const _minD = Math.min(..._usedAngs.map(ua=>{let d=Math.abs(a-ua);while(d>Math.PI)d=Math.PI*2-d;return d;}));
+            if(_minD > _bestDist){ _bestDist=_minD; _bestAng=a; }
+          }
+          r.zigzags.push(_buildZigzag(_bestAng, 0.85, 0.05));
+        }
         const hn = r.hitsNeeded || 4;
         if(r.hits < hn){
           triggerCollision(state.x,state.y);
@@ -7986,6 +8013,41 @@ function triggerLaunchpadVictory(){
   }
 }
 
+// Zigzag from startR to endR along an angle (fractions of rock radius)
+function _buildZigzag(angle, startR, endR){
+  const pts = [];
+  const segs = 4 + Math.floor(Math.random()*3); // 4-6 segments
+  for(let i=0; i<=segs; i++){
+    const t = i / segs;
+    const frac = startR + (endR - startR) * t;
+    const jitter = (i===0||i===segs) ? 0 : (Math.random()-0.5) * 0.4;
+    const ax = Math.cos(angle) * frac + Math.cos(angle+Math.PI/2) * jitter;
+    const ay = Math.sin(angle) * frac + Math.sin(angle+Math.PI/2) * jitter;
+    pts.push({x:ax, y:ay});
+  }
+  return {pts, angle:angle};
+}
+// Branch off a parent crack at its midpoint, perpendicular, shorter
+function _buildBranch(parentZZ){
+  const pp = parentZZ.pts;
+  const mid = Math.floor(pp.length / 2);
+  const mp = pp[mid];
+  // Branch perpendicular to parent angle
+  const branchAng = parentZZ.angle + (Math.random()<0.5 ? Math.PI/2 : -Math.PI/2) + (Math.random()-0.5)*0.4;
+  const branchLen = 0.25 + Math.random()*0.2; // shorter than main cracks
+  const pts = [{x:mp.x, y:mp.y}];
+  const segs = 3;
+  for(let i=1; i<=segs; i++){
+    const t = i / segs;
+    const frac = branchLen * t;
+    const jitter = i===segs ? 0 : (Math.random()-0.5) * 0.15;
+    const ax = mp.x + Math.cos(branchAng) * frac + Math.cos(branchAng+Math.PI/2) * jitter;
+    const ay = mp.y + Math.sin(branchAng) * frac + Math.sin(branchAng+Math.PI/2) * jitter;
+    pts.push({x:ax, y:ay});
+  }
+  return {pts, angle:branchAng, isBranch:true};
+}
+
 function triggerCollision(wx,wy){
   state.collisionFlash=18;
   addScore(state.cheat==='bubbles' ? 4 : 40);
@@ -8944,11 +9006,11 @@ function drawGame(){
     });
     ctx.closePath();
 
-    // Colour darkens with damage
+    // Colour darkens with damage — more dramatic shift
     const hn2 = r.hitsNeeded||4;
     const hitFrac = Math.min(1,(r.hits||0)/hn2);
-    const dmgBright = Math.floor(136 - hitFrac*80);
-    const dmgTint = `rgb(${dmgBright},${dmgBright-8},${dmgBright-8})`;
+    const dmgBright = Math.floor(136 - hitFrac*40);
+    const dmgTint = `rgb(${dmgBright},${dmgBright-5},${dmgBright-5})`;
     ctx.fillStyle=dmgTint; ctx.shadowBlur=0; ctx.fill();
     ctx.strokeStyle=r.hits>0?'#444':'#555'; ctx.lineWidth=1; ctx.stroke();
 
@@ -8970,31 +9032,21 @@ function drawGame(){
       // Dark bowl
       ctx.beginPath(); ctx.arc(cx3,cy3,cr,0,Math.PI*2);
       ctx.fillStyle='rgba(0,0,0,0.35)'; ctx.fill();
-      // Rim highlight (top-left arc)
-      ctx.beginPath(); ctx.arc(cx3-cr*0.25,cy3-cr*0.25,cr*0.55,Math.PI,Math.PI*1.8);
-      ctx.strokeStyle='rgba(200,190,180,0.4)'; ctx.lineWidth=Math.max(0.5,cr*0.18); ctx.stroke();
     });
     ctx.restore();
 
     // Cracks — start & end both inside body, clipped to shape
-    if((r.hits||0)>=1 && r.cracks){
+    // Zigzag cracks from impact points toward center
+    if(r.zigzags && r.zigzags.length > 0){
       ctx.save(); rebuildPath(); ctx.clip();
-      r.cracks.forEach(ck=>{
-        const sx2=Math.cos(ck.a)*s*ck.s, sy2=Math.sin(ck.a)*s*ck.s;
-        const ex=Math.cos(ck.a)*s*ck.e, ey=Math.sin(ck.a)*s*ck.e;
-        ctx.beginPath(); ctx.moveTo(sx2,sy2); ctx.lineTo(ex,ey);
-        ctx.strokeStyle=r.crackDeep?'#1a1a1a':'#3a3a3a';
-        ctx.lineWidth=r.crackDeep?2.0:1.2; ctx.globalAlpha=0.9;
-        ctx.stroke();
-        if(r.crackDeep){
-          const ba=ck.a+(Math.random()<0.5?0.4:-0.4);
-          const mx=(sx2+ex)*0.5, my=(sy2+ey)*0.5;
-          const brLen=s*(0.1+Math.random()*0.12);
-          ctx.beginPath(); ctx.moveTo(mx,my);
-          ctx.lineTo(mx+Math.cos(ba)*brLen, my+Math.sin(ba)*brLen);
-          ctx.strokeStyle='#2a2a2a'; ctx.lineWidth=1.2; ctx.globalAlpha=0.75;
-          ctx.stroke();
+      r.zigzags.forEach(zz=>{
+        ctx.beginPath();
+        for(let pi=0; pi<zz.pts.length; pi++){
+          const p = zz.pts[pi];
+          if(pi===0) ctx.moveTo(p.x*s, p.y*s); else ctx.lineTo(p.x*s, p.y*s);
         }
+        ctx.strokeStyle='#111'; ctx.lineWidth=Math.max(1.5, s*0.06); ctx.globalAlpha=0.95;
+        ctx.stroke();
         ctx.globalAlpha=1;
       });
       ctx.restore();
