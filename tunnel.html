@@ -524,10 +524,11 @@
         #tr-lightbox {
             display:none; position:fixed; inset:0; z-index:600;
             background:rgba(0,0,0,0.97); flex-direction:column; align-items:center; justify-content:center;
-            touch-action:pan-y; pointer-events:auto;
+            touch-action:none; pointer-events:auto;
         }
         #tr-lb-img {
             max-width:94vw; max-height:80vh; object-fit:contain;
+            transform-origin:center center; transition:transform 0.1s ease-out;
         }
         #tr-lb-caption {
             font-family:'Press Start 2P',monospace; font-size:7px; color:#888;
@@ -2173,12 +2174,26 @@ window.onload = function() {
         lb.style.display = 'flex';
     }
 
+    var _lbZoom = 1, _lbPinchStart = 0, _lbZoomStart = 1, _lbPanX = 0, _lbPanY = 0, _lbPanStartX = 0, _lbPanStartY = 0, _lbMidX = 0, _lbMidY = 0;
+    function _lbResetZoom() {
+        _lbZoom = 1; _lbPanX = 0; _lbPanY = 0;
+        var img = document.getElementById('tr-lb-img');
+        img.style.transform = '';
+    }
+    function _lbApplyTransform() {
+        var img = document.getElementById('tr-lb-img');
+        img.style.transform = _lbZoom > 1.05 ? 'scale(' + _lbZoom + ') translate(' + (_lbPanX/_lbZoom) + 'px,' + (_lbPanY/_lbZoom) + 'px)' : '';
+    }
+    function _pinchDist(t) { var dx=t[0].clientX-t[1].clientX,dy=t[0].clientY-t[1].clientY; return Math.sqrt(dx*dx+dy*dy); }
+
     function trCloseLightbox() {
+        _lbResetZoom();
         document.getElementById('tr-lightbox').style.display = 'none';
         document.getElementById('tr-lb-img').src = '';
     }
 
     function trLightboxNav(dir) {
+        _lbResetZoom();
         trLbIndex = (trLbIndex + dir + trLbImages.length) % trLbImages.length;
         var img = document.getElementById('tr-lb-img');
         var cap = document.getElementById('tr-lb-caption');
@@ -5420,16 +5435,44 @@ window.onload = function() {
     document.getElementById('tr-design-viewer').addEventListener('touchstart', function(e) { e.stopPropagation(); }, {passive:true});
     document.getElementById('tr-design-viewer').addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true});
 
-    // Lightbox swipe
+    // Lightbox swipe + pinch zoom
     (function() {
         var lb = document.getElementById('tr-lightbox');
-        lb.addEventListener('touchstart', function(e) { trLbTouchStartX = e.touches[0].clientX; }, {passive:true});
+        var _isPinching = false;
+        lb.addEventListener('touchstart', function(e) {
+            if (e.touches.length === 2) {
+                _isPinching = true;
+                _lbPinchStart = _pinchDist(e.touches);
+                _lbZoomStart = _lbZoom;
+                _lbMidX = (e.touches[0].clientX + e.touches[1].clientX) / 2;
+                _lbMidY = (e.touches[0].clientY + e.touches[1].clientY) / 2;
+                _lbPanStartX = _lbPanX; _lbPanStartY = _lbPanY;
+            } else if (e.touches.length === 1) {
+                _isPinching = false;
+                trLbTouchStartX = e.touches[0].clientX;
+                _lbMidX = e.touches[0].clientX; _lbMidY = e.touches[0].clientY;
+                _lbPanStartX = _lbPanX; _lbPanStartY = _lbPanY;
+            }
+        }, {passive:true});
+        lb.addEventListener('touchmove', function(e) {
+            if (e.touches.length === 2) {
+                e.preventDefault();
+                var d = _pinchDist(e.touches);
+                _lbZoom = Math.max(1, Math.min(5, _lbZoomStart * (d / _lbPinchStart)));
+                _lbApplyTransform();
+            } else if (e.touches.length === 1 && _lbZoom > 1.05) {
+                e.preventDefault();
+                _lbPanX = _lbPanStartX + (e.touches[0].clientX - _lbMidX);
+                _lbPanY = _lbPanStartY + (e.touches[0].clientY - _lbMidY);
+                _lbApplyTransform();
+            }
+        }, {passive:false});
         lb.addEventListener('touchend', function(e) {
+            if (_isPinching) { _isPinching = false; return; }
+            if (_lbZoom > 1.05) { if (e.touches.length === 0) { _lbPanStartX = _lbPanX; _lbPanStartY = _lbPanY; } return; }
             var dx = e.changedTouches[0].clientX - trLbTouchStartX;
             if (Math.abs(dx) > 50) {
                 trLightboxNav(dx < 0 ? 1 : -1);
-            } else if (e.target === lb || e.target.id === 'tr-lb-img') {
-                // Tap on background or image closes
             }
         }, {passive:true});
     })();
