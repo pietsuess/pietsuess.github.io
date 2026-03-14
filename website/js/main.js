@@ -348,34 +348,32 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
 
 
-  // Bio dot matrix — breathing PS logo in right side of bio sections
+  // Bio walking squares — tumbling in place on right side of bio sections
   (function() {
     const bios = document.querySelectorAll('.edit-bio-inner');
     if (!bios.length) return;
 
-    const dots = [
-      {x:411.75,y:45.75},{x:381.25,y:15.25},{x:381.25,y:-15.25},
-      {x:381.25,y:-45.75},{x:381.25,y:-76.25},{x:381.25,y:-106.75},
-      {x:320.25,y:-106.75},{x:320.25,y:-45.75},{x:320.25,y:-15.25},
-      {x:320.25,y:15.25},{x:320.25,y:45.75},{x:198.25,y:-15.25},
-      {x:228.75,y:-15.25},{x:259.25,y:-15.25},{x:259.25,y:-45.75},
-      {x:228.75,y:-76.25},{x:198.25,y:-76.25},{x:167.75,y:-45.75},
-      {x:167.75,y:-15.25},{x:167.75,y:15.25},{x:198.25,y:45.75},
-      {x:228.75,y:45.75},{x:106.75,y:-76.25},{x:106.75,y:-45.75},
-      {x:106.75,y:-15.25},{x:91.5,y:15.25},{x:61,y:45.75},
-      {x:30.5,y:15.25},{x:15.25,y:-15.25},{x:15.25,y:-45.75},
-      {x:15.25,y:-76.25},{x:-45.75,y:45.75},{x:-45.75,y:15.25},
-      {x:-45.75,y:-15.25},{x:-45.75,y:-45.75},{x:-76.25,y:-76.25},
-      {x:-106.75,y:-76.25},{x:-137.25,y:-45.75},{x:-137.25,y:-15.25},
-      {x:-137.25,y:15.25},{x:-137.25,y:45.75},{x:-198.25,y:-76.25},
-      {x:-198.25,y:-45.75},{x:-198.25,y:-15.25},{x:-198.25,y:15.25},
-      {x:-228.75,y:45.75},{x:-259.25,y:45.75},{x:-289.75,y:15.25},
-      {x:-289.75,y:-15.25},{x:-289.75,y:-45.75},{x:-289.75,y:-76.25}
-    ];
-    const minX = Math.min(...dots.map(d=>d.x)), maxX = Math.max(...dots.map(d=>d.x));
-    const minY = Math.min(...dots.map(d=>d.y)), maxY = Math.max(...dots.map(d=>d.y));
-    const logoW = maxX - minX, logoH = maxY - minY;
-    const cxLogo = (minX+maxX)/2, cyLogo = (minY+maxY)/2;
+    function drawSquare(ctx, cx, cy, size, angle, alpha) {
+      const r = size * 0.15;
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.translate(cx, cy);
+      ctx.rotate(angle);
+      const s = size, hs = s / 2;
+      ctx.beginPath();
+      ctx.moveTo(-hs + r, -hs);
+      ctx.lineTo(hs - r, -hs);
+      ctx.quadraticCurveTo(hs, -hs, hs, -hs + r);
+      ctx.lineTo(hs, hs - r);
+      ctx.quadraticCurveTo(hs, hs, hs - r, hs);
+      ctx.lineTo(-hs + r, hs);
+      ctx.quadraticCurveTo(-hs, hs, -hs, hs - r);
+      ctx.lineTo(-hs, -hs + r);
+      ctx.quadraticCurveTo(-hs, -hs, -hs + r, -hs);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+    }
 
     const canvases = [];
     bios.forEach(bio => {
@@ -385,8 +383,18 @@ document.addEventListener('DOMContentLoaded', () => {
       canvases.push(c);
     });
 
+    // Square configs: different sizes, speeds, vertical positions
+    const squares = [
+      { size: 44, speed: 0.035, yFrac: 0.25, dir: 1 },
+      { size: 32, speed: 0.045, yFrac: 0.55, dir: -1 },
+      { size: 52, speed: 0.025, yFrac: 0.78, dir: 1 },
+    ];
+
+    let startTime = null;
     function render(time) {
-      const t = time * 0.001;
+      if (!startTime) startTime = time;
+      const elapsed = (time - startTime) * 0.001;
+
       canvases.forEach(c => {
         const rect = c.getBoundingClientRect();
         if (rect.bottom < 0 || rect.top > window.innerHeight) return;
@@ -399,25 +407,22 @@ document.addEventListener('DOMContentLoaded', () => {
         const ctx = c.getContext('2d');
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,w,h);
+        ctx.fillStyle = 'rgba(254,249,240,1)';
 
-        const fitScale = Math.min(w*0.7/logoW, h*0.7/logoH);
-        const ox = w*0.5, oy = h*0.5;
-
-        for (let i = 0; i < dots.length; i++) {
-          const d = dots[i];
-          const px = (d.x - cxLogo) * fitScale + ox;
-          const py = (d.y - cyLogo) * fitScale + oy;
-          const baseR = Math.max(3, 12 * fitScale / 6);
-          // Each dot breathes at slightly offset phase
-          const phase = t * 1.2 + i * 0.12;
-          const breath = 0.6 + 0.4 * Math.sin(phase);
-          const r = baseR * breath;
-          const alpha = 0.3 + 0.4 * breath;
-          ctx.fillStyle = 'rgba(254,249,240,' + alpha + ')';
-          ctx.beginPath();
-          ctx.arc(px, py, r, 0, Math.PI*2);
-          ctx.fill();
-        }
+        squares.forEach(sq => {
+          const dist = elapsed * sq.size * sq.speed * 60;
+          const steps = dist / sq.size;
+          const frac = steps - Math.floor(steps);
+          // Gravity easing for tumble
+          const eased = frac < 0.5
+            ? 0.5 * Math.pow(frac * 2, 0.7)
+            : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+          const angle = eased * (Math.PI / 2) * sq.dir;
+          // Fixed position — tumbling in place
+          const cx = w * 0.5;
+          const cy = h * sq.yFrac;
+          drawSquare(ctx, cx, cy, sq.size, angle, 0.4);
+        });
       });
       requestAnimationFrame(render);
     }
