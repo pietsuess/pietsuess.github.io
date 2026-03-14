@@ -561,6 +561,14 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     });
 
+    const closeBtn = document.querySelector('.mobile-nav-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        document.body.classList.remove('menu-open');
+      });
+    }
+
     document.addEventListener('click', (e) => {
       if (!document.body.classList.contains('menu-open')) return;
       const overlay = document.querySelector('.mobile-nav-overlay');
