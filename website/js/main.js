@@ -454,8 +454,8 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.setTransform(dpr,0,0,dpr,0,0);
         ctx.clearRect(0,0,w,h);
 
-        const groundY = h * 0.4;
-        const centerX = w * 0.65;
+        const groundY = h * 0.75;
+        const centerX = w * 0.5;
         const color = 'rgba(254,249,240,0.5)';
 
         // Big square walks right on treadmill
