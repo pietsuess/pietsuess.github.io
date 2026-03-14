@@ -870,12 +870,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const walkers = isEdit
       ? [
-          { side: 'left',  size: 28, speed: 1.2,  offset: 0 },
-          { side: 'left',  size: 20, speed: -0.9, offset: 400 },
+          { side: 'left',  size: 38, speed: 1.2,  offset: 0 },
+          { side: 'left',  size: 30, speed: -0.9, offset: 400 },
         ]
       : [
-          { side: 'right', size: 28, speed: 1.2,  offset: 0 },
-          { side: 'right', size: 20, speed: -0.9, offset: 400 },
+          { side: 'right', size: 38, speed: 1.2,  offset: 0 },
+          { side: 'right', size: 30, speed: -0.9, offset: 400 },
         ];
 
     function render() {
@@ -933,11 +933,19 @@ document.addEventListener('DOMContentLoaded', () => {
         ctx.translate(edgeX, pivotY);
 
         if (wk.side === 'left') {
-          ctx.rotate(Math.PI / 2);
-          if (!goingDown) ctx.scale(1, -1);
+          if (goingDown) {
+            ctx.rotate(Math.PI / 2);
+          } else {
+            ctx.rotate(-Math.PI / 2);
+            ctx.scale(-1, 1);
+          }
         } else {
-          ctx.rotate(-Math.PI / 2);
-          if (goingDown) ctx.scale(1, -1);
+          if (goingDown) {
+            ctx.rotate(-Math.PI / 2);
+            ctx.scale(-1, 1);
+          } else {
+            ctx.rotate(Math.PI / 2);
+          }
         }
         ctx.rotate(tipAngle);
 
