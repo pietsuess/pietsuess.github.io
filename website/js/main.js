@@ -1001,6 +1001,10 @@ document.addEventListener('DOMContentLoaded', () => {
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
       ctx.clearRect(0, 0, vw, vh);
 
+      // Use first thumbnail's edge, not the grid container (which has padding)
+      const firstItem = grid.querySelector('.portfolio-item');
+      if (!firstItem) { requestAnimationFrame(render); return; }
+      const ir = firstItem.getBoundingClientRect();
       const gr = grid.getBoundingClientRect();
       if (gr.bottom < 0 || gr.top > vh) {
         requestAnimationFrame(render);
@@ -1008,12 +1012,20 @@ document.addEventListener('DOMContentLoaded', () => {
       }
 
       const scrollY = window.scrollY || 0;
-      const edgeX = isEdit ? gr.left : gr.right;
+      // Edit: left edge of first thumbnail. Direct: right edge of last thumbnail in row.
+      let edgeX;
+      if (isEdit) {
+        edgeX = ir.left;
+      } else {
+        const allItems = grid.querySelectorAll('.portfolio-item');
+        const lastInRow = allItems.length > 1 ? allItems[1] : allItems[0];
+        edgeX = lastInRow.getBoundingClientRect().right;
+      }
       const totalLen = gr.height;
 
       ctx.fillStyle = 'rgba(255,255,255,0.5)';
 
-      // DEBUG: red line showing grid edge — REMOVE WHEN DONE
+      // DEBUG: red line showing thumbnail edge — REMOVE WHEN DONE
       ctx.strokeStyle = 'red';
       ctx.lineWidth = 2;
       ctx.beginPath();
