@@ -858,7 +858,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const ctx = canvas.getContext('2d');
     let w, h;
     const dots = [];
-    const DOT_COUNT = 80;
+    const DOT_COUNT = 120;
 
     function resize() {
       w = canvas.width = window.innerWidth;
@@ -871,17 +871,17 @@ document.addEventListener('DOMContentLoaded', () => {
       dots.push({
         x: Math.random() * 2000,
         y: Math.random() * 2000,
-        r: Math.random() * 3 + 1,
-        alpha: Math.random() * 0.25 + 0.05,
+        r: Math.random() * 5 + 2,
+        alpha: Math.random() * 0.4 + 0.15,
         // Orbital motion
         cx: Math.random() * 2000,  // orbit center
         cy: Math.random() * 2000,
-        orbitR: Math.random() * 80 + 20,
-        orbitSpeed: (Math.random() - 0.5) * 0.008,
+        orbitR: Math.random() * 100 + 30,
+        orbitSpeed: (Math.random() - 0.5) * 0.01,
         angle: Math.random() * Math.PI * 2,
         // Drift
-        driftX: (Math.random() - 0.5) * 0.15,
-        driftY: (Math.random() - 0.5) * 0.15,
+        driftX: (Math.random() - 0.5) * 0.2,
+        driftY: (Math.random() - 0.5) * 0.2,
       });
     }
 
