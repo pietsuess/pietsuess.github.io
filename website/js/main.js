@@ -849,6 +849,77 @@ document.addEventListener('DOMContentLoaded', () => {
   })();
 
   /* -------------------------------------------------------
+     DESIGN PARTICLES — black swirling dots
+     ------------------------------------------------------- */
+  (function() {
+    const canvas = document.getElementById('designParticles');
+    if (!canvas) return;
+
+    const ctx = canvas.getContext('2d');
+    let w, h;
+    const dots = [];
+    const DOT_COUNT = 80;
+
+    function resize() {
+      w = canvas.width = window.innerWidth;
+      h = canvas.height = window.innerHeight;
+    }
+    resize();
+    window.addEventListener('resize', resize);
+
+    for (let i = 0; i < DOT_COUNT; i++) {
+      dots.push({
+        x: Math.random() * 2000,
+        y: Math.random() * 2000,
+        r: Math.random() * 3 + 1,
+        alpha: Math.random() * 0.25 + 0.05,
+        // Orbital motion
+        cx: Math.random() * 2000,  // orbit center
+        cy: Math.random() * 2000,
+        orbitR: Math.random() * 80 + 20,
+        orbitSpeed: (Math.random() - 0.5) * 0.008,
+        angle: Math.random() * Math.PI * 2,
+        // Drift
+        driftX: (Math.random() - 0.5) * 0.15,
+        driftY: (Math.random() - 0.5) * 0.15,
+      });
+    }
+
+    function draw() {
+      ctx.clearRect(0, 0, w, h);
+      const scrollY = window.scrollY || 0;
+
+      for (const d of dots) {
+        d.angle += d.orbitSpeed;
+        d.cx += d.driftX;
+        d.cy += d.driftY;
+
+        // Wrap drift
+        if (d.cx < -100) d.cx = w + 100;
+        if (d.cx > w + 100) d.cx = -100;
+        if (d.cy < -100) d.cy = h + 100;
+        if (d.cy > h + 100) d.cy = -100;
+
+        const screenX = d.cx + Math.cos(d.angle) * d.orbitR;
+        const screenY = d.cy + Math.sin(d.angle) * d.orbitR - scrollY * 0.05;
+
+        // Wrap vertically with scroll
+        const drawY = ((screenY % h) + h) % h;
+
+        ctx.beginPath();
+        ctx.arc(screenX, drawY, d.r, 0, Math.PI * 2);
+        ctx.fillStyle = `rgba(0,0,0,${d.alpha})`;
+        ctx.fill();
+      }
+
+      requestAnimationFrame(draw);
+    }
+
+    draw();
+  })();
+
+
+  /* -------------------------------------------------------
      WALKING SQUARES — scroll-driven along grid edges
      Uses proven horizontal walk logic, rotated 90° for vertical.
      Edit: right face, left edge (body on grid), walking down
