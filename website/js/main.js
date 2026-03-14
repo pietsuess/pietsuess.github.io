@@ -1060,15 +1060,32 @@ document.addEventListener('DOMContentLoaded', () => {
 
 
   /* -------------------------------------------------------
-     FULLSCREEN TOGGLE
+     FULLSCREEN TOGGLE — persists across page navigation
      ------------------------------------------------------- */
   const fsBtn = document.querySelector('.fullscreen-btn');
   if (fsBtn) {
     fsBtn.addEventListener('click', () => {
       if (!document.fullscreenElement) {
         document.documentElement.requestFullscreen();
+        localStorage.setItem('ps-fullscreen', '1');
       } else {
         document.exitFullscreen();
+        localStorage.removeItem('ps-fullscreen');
+      }
+    });
+
+    // Re-enter fullscreen on first click if it was on before navigation
+    if (localStorage.getItem('ps-fullscreen') === '1' && !document.fullscreenElement) {
+      document.addEventListener('click', function restoreFS() {
+        document.documentElement.requestFullscreen().catch(() => {});
+        document.removeEventListener('click', restoreFS);
+      }, { once: true });
+    }
+
+    // Clear pref if user exits fullscreen via Escape
+    document.addEventListener('fullscreenchange', () => {
+      if (!document.fullscreenElement) {
+        localStorage.removeItem('ps-fullscreen');
       }
     });
   }
