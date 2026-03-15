@@ -25,8 +25,8 @@ document.addEventListener('DOMContentLoaded', () => {
       slice.className = 'name-slice';
       slice.innerHTML = innerHTML;
 
-      const top = (i / NUM_SLICES) * 100;
-      const bottom = ((NUM_SLICES - i - 1) / NUM_SLICES) * 100;
+      const top = Math.max(0, (i / NUM_SLICES) * 100 - 0.5);
+      const bottom = Math.max(0, ((NUM_SLICES - i - 1) / NUM_SLICES) * 100 - 0.5);
       slice.style.clipPath = `inset(${top}% 0 ${bottom}% 0)`;
 
       wrapper.appendChild(slice);
