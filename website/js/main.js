@@ -67,9 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
         gradient.style.backgroundPosition = `${progress * 100}% ${50 + progress * 30}%`;
       }
 
-      // -- Name stretches to full screen width --
+      // -- Name stretches via letter-spacing to full screen width --
       if (nameEl) {
-        nameEl.style.letterSpacing = `${-0.03 + progress * 0.6}em`;
+        nameEl.style.letterSpacing = `${-0.03 + progress * 1.5}em`;
       }
 
       // -- Letter animation --
