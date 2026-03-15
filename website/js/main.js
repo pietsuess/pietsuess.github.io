@@ -42,27 +42,39 @@ document.addEventListener('DOMContentLoaded', () => {
     const nameEl = document.querySelector('.landing-name-source');
     const vh = window.innerHeight;
 
-    // Virtual scroll accumulator (page doesn't actually scroll)
+    // Virtual scroll — starts at midpoint, either direction drives animation
     let virtualScroll = 0;
-    const MAX_SCROLL = 1200;
+    const HALF_CYCLE = 2000; // scroll units for one half (forward)
+    const FULL_CYCLE = HALF_CYCLE * 2; // full ping-pong loop
+    const DEAD_ZONE = 25;
 
     function updatePortfolio() {
-      const progress = Math.min(Math.max(virtualScroll / MAX_SCROLL, 0), 1);
+      const absScroll = Math.abs(virtualScroll);
+      // Remove dead zone
+      const active = Math.max(0, absScroll - DEAD_ZONE);
+      // Ping-pong: wrap into a cycle, reverse on second half
+      const inCycle = active % FULL_CYCLE;
+      const raw = inCycle <= HALF_CYCLE
+        ? inCycle / HALF_CYCLE
+        : 1 - (inCycle - HALF_CYCLE) / HALF_CYCLE;
+      // Ease in-out: smooth at both ends
+      const progress = raw < 0.5
+        ? 4 * raw * raw * raw
+        : 1 - Math.pow(-2 * raw + 2, 3) / 2;
 
       // -- Gradient morph --
       if (gradient) {
         gradient.style.backgroundPosition = `${progress * 100}% ${50 + progress * 30}%`;
       }
 
-      // -- Name slowly stretches wider --
+      // -- Name stretches to full screen width --
       if (nameEl) {
-        const stretch = 100 + progress * 60; // 100% → 160% letter-spacing
-        nameEl.style.letterSpacing = `${-0.03 + progress * 0.25}em`;
+        nameEl.style.letterSpacing = `${-0.03 + progress * 0.6}em`;
       }
 
       // -- Letter animation --
       for (const L of letters) {
-        if (progress <= 0.005) {
+        if (progress <= 0.001) {
           L.el.style.transform = 'none';
           continue;
         }
@@ -70,7 +82,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (L.falls) {
           // FALLING letters: big physical drop, wild tumble, lateral drift
           const p = Math.min(1, progress * L.fallSpeed);
-          const eased = p * p; // accelerating fall
+          const eased = p * p;
           const dropY = eased * vh * 1.5;
           const rotation = p * L.rotateMax * L.rotateDir;
           const driftX = L.driftX * eased;
@@ -88,10 +100,10 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
 
-    // Use wheel event as input — page stays locked
+    // Wheel drives scroll position — scroll down or up from zero, reverse to return
     window.addEventListener('wheel', (e) => {
       e.preventDefault();
-      virtualScroll = Math.max(0, virtualScroll + e.deltaY);
+      virtualScroll += e.deltaY;
       requestAnimationFrame(updatePortfolio);
     }, { passive: false });
 
