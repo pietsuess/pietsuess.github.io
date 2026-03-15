@@ -7,9 +7,114 @@
 document.addEventListener('DOMContentLoaded', () => {
 
   /* -------------------------------------------------------
+     0. PORTFOLIO KINETIC TYPOGRAPHY — splash page wheel-driven
+     ------------------------------------------------------- */
+  (function() {
+    if (!document.body.classList.contains('splash-page')) return;
+
+    const label = document.getElementById('bgZoneLabel');
+    if (!label) return;
+
+    // Split "PORTFOLIO" into individual spans
+    const text = label.textContent.trim();
+    label.textContent = '';
+    const letters = [];
+
+    for (let i = 0; i < text.length; i++) {
+      const span = document.createElement('span');
+      span.className = 'portfolio-letter';
+      span.textContent = text[i];
+      label.appendChild(span);
+
+      letters.push({
+        el: span,
+        index: i,
+        falls: (i % 3 !== 0),
+        fallSpeed: 0.6 + Math.random() * 1.2,
+        rotateMax: 40 + Math.random() * 140,
+        rotateDir: (i % 2 === 0) ? 1 : -1,
+        driftX: (Math.random() - 0.5) * 120,
+        swingFreq: 2 + Math.random() * 4
+      });
+    }
+
+    const gradient = document.querySelector('.bg-gradient');
+    const nameEl = document.querySelector('.landing-name-source');
+    const vh = window.innerHeight;
+
+    // Virtual scroll accumulator (page doesn't actually scroll)
+    let virtualScroll = 0;
+    const MAX_SCROLL = 1200;
+
+    function updatePortfolio() {
+      const progress = Math.min(Math.max(virtualScroll / MAX_SCROLL, 0), 1);
+
+      // -- Gradient morph --
+      if (gradient) {
+        gradient.style.backgroundPosition = `${progress * 100}% ${50 + progress * 30}%`;
+      }
+
+      // -- Name slowly stretches wider --
+      if (nameEl) {
+        const stretch = 100 + progress * 60; // 100% → 160% letter-spacing
+        nameEl.style.letterSpacing = `${-0.03 + progress * 0.25}em`;
+      }
+
+      // -- Letter animation --
+      for (const L of letters) {
+        if (progress <= 0.005) {
+          L.el.style.transform = 'none';
+          continue;
+        }
+
+        if (L.falls) {
+          // FALLING letters: big physical drop, wild tumble, lateral drift
+          const p = Math.min(1, progress * L.fallSpeed);
+          const eased = p * p; // accelerating fall
+          const dropY = eased * vh * 1.5;
+          const rotation = p * L.rotateMax * L.rotateDir;
+          const driftX = L.driftX * eased;
+          const swing = Math.sin(p * L.swingFreq * Math.PI) * 50;
+
+          L.el.style.transform = `translateY(${dropY}px) translateX(${driftX + swing}px) rotate(${rotation}deg)`;
+        } else {
+          // STAYING letters: spin in place, scale up
+          const p = Math.min(1, progress * 1.3);
+          const rotation = p * L.rotateMax * L.rotateDir * 0.6;
+          const scale = 1 + p * 0.5;
+
+          L.el.style.transform = `rotate(${rotation}deg) scale(${scale})`;
+        }
+      }
+    }
+
+    // Use wheel event as input — page stays locked
+    window.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      virtualScroll = Math.max(0, virtualScroll + e.deltaY);
+      requestAnimationFrame(updatePortfolio);
+    }, { passive: false });
+
+    // Touch support for mobile
+    let touchStartY = 0;
+    window.addEventListener('touchstart', (e) => {
+      touchStartY = e.touches[0].clientY;
+    }, { passive: true });
+    window.addEventListener('touchmove', (e) => {
+      const dy = touchStartY - e.touches[0].clientY;
+      touchStartY = e.touches[0].clientY;
+      virtualScroll = Math.max(0, virtualScroll + dy);
+      requestAnimationFrame(updatePortfolio);
+    }, { passive: true });
+
+    updatePortfolio();
+  })();
+
+  /* -------------------------------------------------------
      1. NAME SLICE SYSTEM — hero name splits on scroll
      ------------------------------------------------------- */
   (function() {
+    if (document.body.classList.contains('splash-page')) return; // name stays fixed on splash
     const NUM_SLICES = 12;
     const wrapper = document.getElementById('heroNameWrapper');
     if (!wrapper) return;
@@ -25,8 +130,8 @@ document.addEventListener('DOMContentLoaded', () => {
       slice.className = 'name-slice';
       slice.innerHTML = innerHTML;
 
-      const top = Math.max(0, (i / NUM_SLICES) * 100 - 0.5);
-      const bottom = Math.max(0, ((NUM_SLICES - i - 1) / NUM_SLICES) * 100 - 0.5);
+      const top = Math.max(0, (i / NUM_SLICES) * 100 - 1);
+      const bottom = Math.max(0, ((NUM_SLICES - i - 1) / NUM_SLICES) * 100 - 1);
       slice.style.clipPath = `inset(${top}% 0 ${bottom}% 0)`;
 
       wrapper.appendChild(slice);
