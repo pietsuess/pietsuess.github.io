@@ -1,0 +1,2671 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Victory Walk</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap');
+  *{margin:0;padding:0;box-sizing:border-box;}
+  body{background:#000;overflow:hidden;touch-action:none;}
+  canvas{display:block;image-rendering:pixelated;image-rendering:crisp-edges;}
+
+  #popup{
+    position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);
+    display:none;z-index:100;
+    background:rgba(0,0,20,0.95);
+    border:3px solid #44ddff;
+    box-shadow:0 0 40px #44ddff, inset 0 0 20px rgba(0,0,0,0.5);
+    width:620px;max-width:92vw;max-height:80vh;padding:40px;
+    font-family:'Press Start 2P',monospace;
+    color:#fff;text-align:center;
+    overflow-y:auto;
+  }
+  #popup.open{display:block;}
+  #popup-title{font-size:13px;color:#44ddff;letter-spacing:3px;margin-bottom:24px;}
+  #popup-close{
+    background:none;border:2px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:9px;padding:14px 28px;cursor:pointer;
+    letter-spacing:2px;margin-top:24px;
+  }
+  #popup-close:hover{background:rgba(68,221,255,0.15);}
+  #prompt{
+    position:fixed;bottom:25%;left:50%;transform:translateX(-50%);
+    font-family:'Press Start 2P',monospace;font-size:16px;
+    color:#ffe000;letter-spacing:3px;
+    text-shadow:0 0 14px #ffe000;
+    opacity:0;transition:opacity 0.2s;pointer-events:none;
+    white-space:nowrap;
+  }
+  #prompt.show{opacity:1;}
+
+  /* Editor panel */
+  #editor-panel{
+    display:none; position:fixed; top:10px; right:10px; z-index:200;
+    background:rgba(0,0,20,0.92); border:2px solid #ffe000;
+    box-shadow:0 0 20px rgba(255,224,0,0.3);
+    padding:14px 16px; min-width:260px;
+    font-family:'Press Start 2P',monospace; font-size:7px; color:#fff;
+    line-height:2.4; user-select:none;
+  }
+  #editor-panel.open{display:block;}
+  #editor-panel .label{color:#888;font-size:6px;}
+  #editor-panel .val{color:#44ddff;}
+  #editor-panel .obj-name{color:#ffe000;font-size:8px;margin-bottom:6px;}
+  #editor-panel button{
+    background:none;border:1px solid #44ddff;color:#44ddff;
+    font-family:'Press Start 2P',monospace;font-size:6px;
+    padding:5px 8px;cursor:pointer;margin:3px 2px;letter-spacing:1px;
+  }
+  #editor-panel button:hover{background:rgba(68,221,255,0.15);}
+  #editor-panel button.warn{border-color:#ff4444;color:#ff4444;}
+  #editor-panel button.warn:hover{background:rgba(255,68,68,0.15);}
+  #editor-panel button.export{border-color:#00ff88;color:#00ff88;}
+  #editor-panel button.export:hover{background:rgba(0,255,136,0.15);}
+  #editor-hint{
+    position:fixed;top:10px;left:50%;transform:translateX(-50%);z-index:200;
+    font-family:'Press Start 2P',monospace;font-size:7px;
+    color:#ffe000;letter-spacing:2px;text-shadow:0 0 10px #ffe000;
+    pointer-events:none;opacity:0;transition:opacity 0.3s;
+  }
+  #editor-hint.show{opacity:1;}
+
+  /* Content overlay — full viewer for video/gallery/design */
+  #content-overlay{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:120;
+    background:rgba(0,0,10,0.97);display:none;overflow-y:auto;
+  }
+  #content-overlay.open{display:block;}
+  #content-box{
+    max-width:960px;margin:40px auto;padding:0;
+    font-family:'Press Start 2P',monospace;
+    background:#000;border:3px solid #ff69b4;
+    box-shadow:0 0 30px #ff69b4, 0 0 60px rgba(255,105,180,0.3);
+  }
+  #content-header{
+    background:#ff69b4;padding:14px 20px;
+    display:flex;justify-content:space-between;align-items:center;
+  }
+  #content-title{font-size:8px;color:#000;letter-spacing:2px;}
+  #content-close-x{
+    background:none;border:none;color:#000;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:12px;padding:0 4px;
+  }
+  #content-video{
+    position:relative;width:100%;padding-top:56.25%;display:none;
+    background:#000;
+  }
+  #content-video iframe{
+    position:absolute;top:0;left:0;width:100%;height:100%;border:none;
+  }
+  #content-body{padding:20px;}
+  #content-text{
+    font-size:6px;color:#aaa;line-height:2.2;white-space:pre-wrap;
+    margin-bottom:16px;
+  }
+  #gallery-label{font-size:7px;color:#888;letter-spacing:2px;margin-bottom:10px;}
+  #gallery-grid{display:flex;flex-wrap:wrap;gap:6px;}
+  .gallery-thumb{
+    cursor:pointer;overflow:hidden;position:relative;
+  }
+  .gallery-thumb img{
+    width:100%;display:block;aspect-ratio:auto;object-fit:contain;height:auto;
+  }
+  .gallery-thumb:hover{opacity:0.8;}
+  .gallery-thumb-label{
+    position:absolute;bottom:0;left:0;right:0;
+    font-size:5px;color:#fff;background:rgba(0,0,0,0.7);
+    padding:4px 6px;letter-spacing:1px;
+    font-family:'Press Start 2P',monospace;
+  }
+  .design-thumb img{background:transparent;object-fit:contain;aspect-ratio:auto;}
+
+  /* Design theme */
+  .design-theme{background:#FAFFA5 !important;border-color:#c8a000 !important;
+    box-shadow:0 0 30px rgba(250,255,165,0.4), 0 0 60px rgba(250,255,165,0.15) !important;}
+  .design-theme #content-header{background:#c8a000 !important;}
+  .design-theme #content-text{color:#333 !important;text-shadow:none !important;}
+  .design-theme #gallery-label{color:#666 !important;}
+
+  /* Lightbox */
+  #lightbox{
+    position:fixed;top:0;left:0;width:100%;height:100%;z-index:250;
+    background:rgba(0,0,0,0.95);display:none;
+    align-items:center;justify-content:center;flex-direction:column;
+  }
+  #lightbox.open{display:flex;}
+  #lightbox-img{max-width:90vw;max-height:80vh;object-fit:contain;}
+  #lightbox-caption{
+    font-family:'Press Start 2P',monospace;font-size:6px;
+    color:#aaa;margin-top:12px;letter-spacing:2px;
+  }
+  #lightbox-close{
+    position:absolute;top:20px;right:20px;
+    background:none;border:none;color:#fff;cursor:pointer;
+    font-family:'Press Start 2P',monospace;font-size:14px;
+  }
+  .lb-nav{
+    position:absolute;top:50%;transform:translateY(-50%);
+    background:none;border:none;color:#fff;cursor:pointer;
+    font-size:24px;padding:20px;opacity:0.6;
+  }
+  .lb-nav:hover{opacity:1;}
+  #lightbox-prev{left:10px;}
+  #lightbox-next{right:10px;}
+
+
+  /* Responsive */
+  @media(max-width:600px){
+    #popup{width:92vw;max-height:80vh;padding:20px;}
+    #popup-title{font-size:8px;}
+    #content-box{margin:10px auto;max-width:95vw;}
+    #content-body{padding:14px;}
+    .gallery-thumb{flex:0 0 calc(50% - 3px);}
+    .lb-nav{padding:10px;}
+    #lightbox-prev{left:2px;}
+    #lightbox-next{right:2px;}
+  }
+
+  /* Music mute button */
+  #mute-btn{
+    position:fixed;bottom:20px;left:20px;z-index:250;
+    cursor:pointer;font-size:44px;color:#44ddff;
+    background:none;border:none;padding:8px;
+    line-height:1;opacity:0.7;transition:opacity 0.15s;
+  }
+  #mute-btn:hover{opacity:1;}
+  #mute-btn::before{
+    content:'';position:absolute;
+    width:130%;height:3px;
+    background:#ff2222;border-radius:2px;
+    top:50%;left:-15%;
+    transform:translateY(-50%) rotate(-45deg);
+    display:none;
+  }
+  #mute-btn.muted::before{display:block;}
+  #dpad{
+    display:none; position:fixed; bottom:16px; right:16px;
+    width:130px; height:130px; z-index:50; touch-action:none;
+  }
+  #dpad canvas{ width:130px; height:130px; }
+</style>
+</head>
+<body>
+<div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
+<div id="dpad"><canvas id="dpad-c" width="260" height="260"></canvas></div>
+<canvas id="c"></canvas>
+<div id="popup">
+  <div id="popup-title">OBJECT</div>
+  <div id="popup-body" style="font-size:9px;color:#aaa;line-height:2.2;min-height:60px;"></div>
+  <button id="popup-close" onclick="closePopup()">[ CLOSE ]</button>
+</div>
+<div id="prompt">&#9654; <span id="prompt-text">SPACE TO INTERACT</span></div>
+<div id="editor-hint">EDITOR MODE — click hitzones to edit</div>
+<div id="editor-panel">
+  <div id="ep-content">Press E to toggle editor<br>Click a hitzone to select</div>
+  <hr style="border-color:#333;margin:8px 0;">
+  <button id="label-mode-btn" onclick="toggleEditorLabelMode()" style="border-color:#ffe000;color:#ffe000;">LABELS</button>
+  <button id="contour-mode-btn" onclick="toggleEditorContourMode()" style="border-color:#00ff88;color:#00ff88;">CONTOURS</button>
+  <button id="hitpoly-mode-btn" onclick="toggleEditorHitPolyMode()" style="border-color:#ff4444;color:#ff4444;">HIT POLY</button>
+  <button id="depthpoly-mode-btn" onclick="toggleEditorDepthPolyMode()" style="border-color:#ff8800;color:#ff8800;">DEPTH POLY</button>
+  <button onclick="editorUndo()">UNDO (⌘Z)</button>
+  <button class="export" onclick="editorExport()">EXPORT ALL</button>
+  <div id="contour-panel" style="display:none;margin-top:8px;border-top:1px solid #333;padding-top:8px;"></div>
+</div>
+<div id="content-overlay">
+  <div id="content-box">
+    <div id="content-header">
+      <span id="content-title">TITLE</span>
+      <button id="content-close-x" onclick="closeContentView()">✕</button>
+    </div>
+    <div id="content-video"></div>
+    <div id="content-body">
+      <div id="gallery-label"></div>
+      <div id="gallery-grid"></div>
+      <div id="content-text"></div>
+    </div>
+  </div>
+</div>
+<div id="lightbox">
+  <button id="lightbox-close" onclick="closeLightbox()">✕</button>
+  <button class="lb-nav" id="lightbox-prev" onclick="lbNav(-1)">◀</button>
+  <img id="lightbox-img" src="">
+  <div id="lightbox-caption"></div>
+  <button class="lb-nav" id="lightbox-next" onclick="lbNav(1)">▶</button>
+</div>
+<script>
+function returnToNavigator(){
+  if(document.fullscreenElement || document.webkitFullscreenElement){
+    sessionStorage.setItem('returnFullscreen', '1');
+  }
+  sessionStorage.setItem('returnFromVictory', Date.now().toString());
+  sessionStorage.setItem('returnToMoon', '1');
+  window.location.href = 'navigator.html';
+}
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const offscreen = document.createElement('canvas');
+offscreen.style.imageRendering = 'pixelated';
+const octx = offscreen.getContext('2d', {willReadFrequently: false});
+octx.imageSmoothingEnabled = false;
+const RENDER_SCALE = 1;
+
+const WORLD_W = 5198.39;
+const WORLD_H = 1695.6;
+
+const PILOT_H = 120;
+const PILOT_W = PILOT_H * (300/360);
+const FRAME_W = 300;
+const FRAME_H = 360;
+const ANIM_FPS = 16;
+
+// Original-mode animation definitions: { row, start, count, fps, loop }
+const ORIG_ANIMS = {
+  idle:     { row:0, start:0, count:1,  fps:1,  loop:false },
+  walk:     { row:0, start:0, count:10, fps:16, loop:true },
+  kneel:    { row:1, start:0, count:8,  fps:12, loop:false },
+  jump:     { row:2, frames:[0, 5,6,7,8,9,10,11,12,13], fps:20, loop:false },
+};
+let origAnim = 'idle';
+let origFrame = 0;
+let origAnimTimer = 0;
+
+function setOrigAnim(name){
+  if(origAnim === name) return;
+  origAnim = name;
+  origFrame = 0;
+  origAnimTimer = 0;
+}
+
+function tickOrigAnim(dt){
+  const a = ORIG_ANIMS[origAnim];
+  if(!a) return;
+  const frameCount = a.frames ? a.frames.length : a.count;
+  origAnimTimer += dt;
+  if(origAnimTimer >= 1/a.fps){
+    origAnimTimer = 0;
+    origFrame++;
+    if(origFrame >= frameCount){
+      if(a.loop){ origFrame = 0; }
+      else { origFrame = frameCount - 1; }
+    }
+  }
+}
+
+const WALK_SPEED = 6;
+const TARMAC_TOP = 1405;
+const TARMAC_BOTTOM = 1650;
+const TARMAC_LEFT = 0;
+const TARMAC_RIGHT = 5198;
+const VISIBLE_H = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent) ? 480 : 300;
+
+let camX = 0, camY = 0;
+
+// Hitzone format: box = {x, y, w, h, rot?}, circle = {cx, cy, r}
+// rot = rotation in radians around box center, default 0
+function isCircle(b){ return b.r !== undefined; }
+function boxRot(b){ return b.rot || 0; }
+function cloneZone(b){ return isCircle(b) ? {cx:b.cx, cy:b.cy, r:b.r} : {x:b.x, y:b.y, w:b.w, h:b.h, rot:b.rot||0}; }
+
+// Get box center
+function boxCenter(b){ return {x: b.x + b.w/2, y: b.y + b.h/2}; }
+
+// Rotate point (px,py) around (ox,oy) by angle
+function rotPt(px, py, ox, oy, a){
+  const c = Math.cos(a), s = Math.sin(a);
+  const dx = px - ox, dy = py - oy;
+  return {x: ox + dx*c - dy*s, y: oy + dx*s + dy*c};
+}
+
+// Get 4 corners of a rotated box in world space
+function boxCorners(b){
+  const cx = b.x + b.w/2, cy = b.y + b.h/2, a = boxRot(b);
+  return [
+    rotPt(b.x, b.y, cx, cy, a),
+    rotPt(b.x+b.w, b.y, cx, cy, a),
+    rotPt(b.x+b.w, b.y+b.h, cx, cy, a),
+    rotPt(b.x, b.y+b.h, cx, cy, a),
+  ];
+}
+
+// SAT axes for a rotated box
+function boxAxes(a){
+  const c = Math.cos(a), s = Math.sin(a);
+  return [{x:c, y:s}, {x:-s, y:c}];
+}
+
+// Project corners onto axis, return [min, max]
+function projectCorners(corners, axis){
+  let mn = Infinity, mx = -Infinity;
+  for(const p of corners){
+    const d = p.x*axis.x + p.y*axis.y;
+    if(d < mn) mn = d;
+    if(d > mx) mx = d;
+  }
+  return [mn, mx];
+}
+
+// AABB corners helper
+function aabbCorners(l, t, w, h){
+  return [{x:l,y:t},{x:l+w,y:t},{x:l+w,y:t+h},{x:l,y:t+h}];
+}
+
+// SAT collision: rotated box vs AABB pilot. Returns push vector or null.
+function rotBoxCollide(b, pL, pT, pW, pH){
+  const a = boxRot(b);
+  if(a === 0){
+    // Fast AABB path
+    const oL = b.x, oR = b.x+b.w, oT = b.y, oB = b.y+b.h;
+    const pR = pL+pW, pB = pT+pH;
+    if(pR<=oL || pL>=oR || pB<=oT || pT>=oB) return null;
+    const ol = pR-oL, or2 = oR-pL, ot = pB-oT, ob = oB-pT;
+    const m = Math.min(ol, or2, ot, ob);
+    if(m===ol) return {px:-ol, py:0};
+    if(m===or2) return {px:or2, py:0};
+    if(m===ot) return {px:0, py:-ot};
+    return {px:0, py:ob};
+  }
+  const cornersA = boxCorners(b);
+  const cornersB = aabbCorners(pL, pT, pW, pH);
+  // 4 axes: 2 from rotated box, 2 from AABB (always x,y)
+  const axes = [...boxAxes(a), {x:1,y:0}, {x:0,y:1}];
+  let minOverlap = Infinity, minAxis = null;
+  for(const ax of axes){
+    const [minA, maxA] = projectCorners(cornersA, ax);
+    const [minB, maxB] = projectCorners(cornersB, ax);
+    if(maxA <= minB || maxB <= minA) return null; // gap
+    const overlap = Math.min(maxA - minB, maxB - minA);
+    if(overlap < minOverlap){
+      minOverlap = overlap;
+      // Direction: push pilot (B) away from box (A)
+      const cA = (minA+maxA)/2, cB = (minB+maxB)/2;
+      const sign = cB > cA ? 1 : -1;
+      minAxis = {x: ax.x*sign, y: ax.y*sign};
+    }
+  }
+  return {px: minAxis.x * minOverlap, py: minAxis.y * minOverlap};
+}
+
+// Objects
+const objects = [
+  {name:'DELTA WING', key:'deltawing', zone:null, zoneColor:null, wx:786.06, wy:1307.74, ww:648, wh:201, depthY:1505, collide:true, interact:true,
+    hitPoly:[{x:1070,y:1469},{x:1105,y:1472},{x:1145,y:1474},{x:1247,y:1469},{x:1284,y:1456},{x:1318,y:1452},{x:1341,y:1474},{x:1357,y:1486},{x:1369,y:1502},{x:1275,y:1510},{x:1237,y:1497},{x:1123,y:1502},{x:1049,y:1504},{x:1048,y:1488}]},
+  {name:'HANGER', key:'hanger', zone:null, zoneColor:null, wx:8.37, wy:1189.93, ww:608, wh:481, depthY:1609, collide:true, interact:false,
+    hitboxes:[
+      {x:7, y:1358, w:705, h:43},
+      {x:629, y:1223, w:100, h:145},
+      {x:698, y:1368, w:30, h:19, rot:-1.133},
+      {x:549, y:1625, w:77, h:10, rot:-1.093},
+      {x:7, y:1594, w:594, h:20},
+    ]},
+  {name:'SQUARE', key:'square', zone:'EDITING', contentZone:'EDIT', zoneColor:'#00ffff', wx:2546.08, wy:1411.13, ww:227, wh:98, depthY:1464, labelX:2529, labelY:1419, collide:true, interact:true, platform:true,
+    platformPoly:[{x:2576,y:1414},{x:2719,y:1411},{x:2772,y:1458},{x:2608,y:1461}],
+    hitPoly:[{x:2574,y:1461},{x:2720,y:1458},{x:2772,y:1507},{x:2608,y:1509}],
+    depthPoly:[{x:2574,y:1395},{x:2721,y:1403},{x:2802,y:1457},{x:2802,y:1514},{x:2586,y:1478},{x:2538,y:1452}]},
+  {name:'HEXAGRAM', key:'hexagram', zone:'DIRECTION', contentZone:'DIRECT', zoneColor:'#ff69b4', wx:2985.72, wy:1351.93, ww:204, wh:93, depthY:1422, labelX:2956, labelY:1395, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3014,y:1386},{x:3059,y:1353},{x:3149,y:1353},{x:3192,y:1387},{x:3147,y:1421},{x:3059,y:1419}],
+    hitPoly:[{x:3060,y:1372},{x:3148,y:1373},{x:3192,y:1412},{x:3145,y:1445},{x:3054,y:1444},{x:3011,y:1411}]},
+  {name:'TRIANGLE', key:'triangle', zone:'DESIGN', zoneColor:'#ff8c00', wx:3274.91, wy:1449.22, ww:227, wh:164, depthY:1586, labelX:3352, labelY:1461, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3333,y:1607},{x:3394,y:1449},{x:3433,y:1457},{x:3371,y:1613}],
+    hitPoly:[{x:3455,y:1571},{x:3503,y:1581},{x:3372,y:1613},{x:3334,y:1606}],
+    depthPoly:[{x:3353,y:1434},{x:3486,y:1440},{x:3525,y:1578},{x:3353,y:1629},{x:3209,y:1556}]},
+  {name:'PENTAGRAM', key:'pentagram', zone:'PHOTO', zoneColor:'#ffcc00', wx:3634.91, wy:1337.29, ww:224, wh:120, depthY:1438, labelX:3632, labelY:1431, collide:true, interact:true, platform:true,
+    platformPoly:[{x:3666,y:1388},{x:3682,y:1346},{x:3801,y:1338},{x:3858,y:1375},{x:3773,y:1406}],
+    hitPoly:[{x:3798,y:1376},{x:3858,y:1426},{x:3774,y:1459},{x:3665,y:1440},{x:3684,y:1384}]},
+  {name:'SPHERE', key:'sphere', zone:'ANIMATE', zoneColor:'#00ff88', wx:4047.94, wy:1354.01, ww:290, wh:251, depthY:1603, labelX:4038, labelY:1474, collide:true, interact:true, platform:false,
+    hitboxes:[
+      {cx:4184, cy:1537, r:59},
+      {cx:4231, cy:1542, r:58},
+      {cx:4209, cy:1544, r:59},
+      {cx:4206, cy:1530, r:56},
+    ]},
+];
+
+const CONTENT_DATA = {
+  DIRECT:[
+    {title:'SACRIFICE \u2014 KALE BEAUDRY', text:'Produced by Kale Beaudry\nDirected, Filmed, Edited & Animated by Piet Suess\nStarring Alexandra-Jane Lang & Kale Beaudry\nTitle illustration by Alice Forde', youtubeId:'aT1ijvxxxwo'},
+    {title:'JUNIPER AND THE ALCHEMIST', text:'Promotional film\nConcept, Direction, Camera & Post: Piet Suess\nStarring: Natalie Lisa Moore, Eric Niehe, Tanner Graeburn, Kali Nevada\nMusic: Matt Robertson', youtubeId:'Q8fgz-aMMto'},
+    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel', youtubeId:'OuesN29J-t0'},
+    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess', vimeoId:'679859456'},
+    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze', vimeoId:'647509675'},
+    {title:"WE'LL BURY HIM IN THE DESERT", text:'Short Film\nDirection, Camera & Post: Piet Suess\nStarring: Chris Lovick & Jeremy Schuetze\nMusic: The Tailor', vimeoId:'21099202'},
+    {title:"LEAVIN' ALONE \u2014 ADRIAN GLYNN", text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn', vimeoId:'33372184'},
+    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser', vimeoId:'49118961'},
+    {title:'INTO THE WILD \u2014 LP', text:'Direction & Post: Piet Suess\nMusic: LP', vimeoId:'25889225'},
+    {title:'BALLAD OF A CHRISTIAN MAN \u2014 ADRIAN GLYNN', text:'Direction & Post: Piet Suess\nMusic: Adrian Glynn', vimeoId:'5433807'},
+    {title:'SNACK SMART WITH CHEF LENA', text:'Educational\nDirected by Piet Suess\nWritten by Piet Suess & Maya Suess\nArt & Animation by Maya Suess', youtubeId:'hqpzVS1nbeg'},
+  ],
+  EDIT:[
+    {title:'THE LEGEND OF OTTO DES\u0106INSKI', text:'Client: Autodesk\nRole: Editor / Post', youtubeId:'h2nrvx2ZrqQ'},
+    {title:'BETWEEN THE MOUNTAIN AND THE SKY', text:'Client: MPWR Content / Duplass Brothers\nRole: Feature Film Editor', youtubeId:'efgqePhb7is'},
+    {title:'PACIFIC WILD ALLIANCE \u2014 F*#K OFF FISH FARMS', text:'Client: Pacific Wild Alliance\nRole: On-Set Editor / Editor / Post', youtubeId:'DMtI2rtiQ-Q'},
+    {title:'BETTY BOOZE', text:'Client: Betty Booze\nRole: Editor / Post', youtubeId:'MVbWV237B9U'},
+    {title:'AVIATION GIN \u2014 FRIENDSGIVING', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'kia6jjnFZBY'},
+    {title:'BOLT \u2014 ABANDONED CARTS', text:'Client: Bolt\nRole: Editor / Post', youtubeId:'QCL9z25N4m8'},
+    {title:'ADIMVERSE \u2014 WELCOME TO ADIM', text:'Client: Adim\nRole: Editor / Post', youtubeId:'ZX2aiXPD2JU'},
+    {title:'WREXHAM FC \u2014 STAND UP, WREXHAM', text:'Client: Wrexham FC\nRole: Editor / Post', youtubeId:'rtQN-maifVk'},
+    {title:'FUBO TV \u2014 FUBOOOOOOOOOOOOOO', text:'3 spots\nClient: Fubo\nRole: Editor / Post', youtubeId:'sVg7fqapikU'},
+    {title:'LEAD FROM BEHIND \u2014 $H!T TALKING WITH DAK PRESCOTT', text:'Client: Lead From Behind\nRole: Editor / Post', youtubeId:'OKmQ4Tf8n9U'},
+    {title:'AVIATION GIN \u2014 THE OTHER ROB', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'1dsWl2DuUNo'},
+    {title:'AVIATION GIN \u2014 PUMPKIN SPICE SEASON', text:'Client: Aviation Gin\nRole: Editor / Post', youtubeId:'LaXPxnntOOk'},
+    {title:'MINT MOBILE \u2014 DEFLATES PRICES', text:'Client: Mint Mobile\nRole: Editor / Post', youtubeId:'bgIXiljcuVo'},
+    {title:'MINT MOBILE \u2014 JURY DUTY', text:'Client: Mint Mobile\nRole: Editor / Post', youtubeId:'LQakmDqQtpM'},
+    {title:'DELOITTE \u2014 WALKING DEAD', text:'Client: Deloitte\nRole: Editor / Post', youtubeId:'_a3PYMptU7Y'},
+    {title:'DAVE VS BUSTA', text:"Client: Dave N Buster's\nRole: Editor / Post", youtubeId:'6IN7a9mLVzM'},
+  ],
+  ANIMATE:[
+    {title:'MAKE ANYTHING \u2014 AUTODESK', text:'Direction & Post by Piet Suess\nAnimation by Omid Pakbin\nTexture and Mesh refinement by Piet Suess\nClient: Autodesk / Maximum Effort Channel', youtubeId:'OuesN29J-t0'},
+    {title:'GROUNDED SHOES', text:'Written by: Kate Nash and Piet Suess\nStarring: Natalie Moore\nDirected by: Piet Suess\nAnimated by: Lisa LaBracio & Piet Suess', vimeoId:'679859456'},
+    {title:'BEN AFFLECK ON THE MEANING OF LIFE \u2014 ECI', text:'Direction: Piet Suess\nAnimated by: Diego Maclean & Maya Suess\nMusic: Michael Fraser', vimeoId:'49118961'},
+    {title:'BETTERMOO(D) ORIGIN STORY', text:'Concept and Script: Piet Suess & Kate Nash\nDirection: Piet Suess\nCharacter Design and Animation: Dylan Assed\nSets and Backgrounds: Winnie Wu\nAdditional Animation: Jimau Tao\nMusic: Benjamin Schuetze', vimeoId:'647509675'},
+    {title:'ANTHEMS TRAILER', text:'A trailer for an entire show made for Maximum Effort Channel.\nAnthems of the world \u2014 a flag from every country, animated.\nAnthems remade for every nation.', youtubeId:'k5vgJGejPV8'},
+    {title:'MAXIMUM EFFORT CHANNEL STATION ID', text:'Station ID animated for the Maximum Effort Channel.\nA throwback to the MTV station IDs.', youtubeId:'wSFeKj96vy0'},
+  ],
+  PHOTO:[
+    {title:'Photography', text:'Photography portfolio \u2014 available on the main site.'},
+  ],
+  DESIGN:[
+    {title:'VAN SOLO', subtitle:'Logo & Font', text:'For Van Solo the task was to create a mark incorporating the idea of a bird with the specific drum kit used in his one man show. He came with some sketches and some ideas, and we landed on this primary logo and minimalist bird face which is also the shape of foot pedal drum set.\n\nThe font was informed by the logo and done by hand giving it an organic feel. In addition we created a support element of the three feathers, symbolism that was meaningful to the client.',
+      gallery:[{url:'https://picsum.photos/seed/vs1/800/600',caption:'VAN SOLO 01'},{url:'https://picsum.photos/seed/vs2/800/600',caption:'VAN SOLO 02'},{url:'https://picsum.photos/seed/vs3/800/600',caption:'VAN SOLO 03'}]},
+    {title:'CONVERGENCE FEST', subtitle:'Branding', text:'This multi-year local festival came to me with a rebrand challenge. The task was to integrate the concept of converging, in a font logo. It came as a delightful undertaking, drawing upon several concept inspirations, coming to spring forth with this pairing of bold distorted main font, and the hand drawn sub-title FESTIVAL, which I then developed into its own unique font set.\n\nThe result is this funky, retro inspired and bold mark to immediately convey the concepts within the title.',
+      gallery:[{url:'https://picsum.photos/seed/cf1/800/600',caption:'CONVERGENCE 01'},{url:'https://picsum.photos/seed/cf2/800/600',caption:'CONVERGENCE 02'},{url:'https://picsum.photos/seed/cf3/800/600',caption:'CONVERGENCE 03'},{url:'https://picsum.photos/seed/cf4/800/600',caption:'CONVERGENCE 04'}]},
+    {title:'HAYAN COLLECTION', subtitle:'Apparel Logo', text:'The task to create a brand logo for this eclectic world inspired clothing company was a welcome challenge. The client wanted something that gave a nod to its Somali roots and would work well on clothing tags while feeling international.\n\nThe result we arrived at is this long legged traveller, which has a very boxy profile, ideal for tags.',
+      gallery:[{url:'https://picsum.photos/seed/hc1/800/600',caption:'HAYAN 01'},{url:'https://picsum.photos/seed/hc2/800/600',caption:'HAYAN 02'}]},
+    {title:'CHASM AUDIO', subtitle:'Identity', text:'The client had a very specific vision of a blend between a clean classical stamp logo and an 80s arcade game, with a timeless feel that you might see in the corner of an amp from the manufacturer.\n\nStarting from a basic serif font and fully reworking it into this upward flowing stamp, with a custom built Audio nestled underneath.',
+      gallery:[{url:'https://picsum.photos/seed/ca1/800/600',caption:'CHASM 01'},{url:'https://picsum.photos/seed/ca2/800/600',caption:'CHASM 02'}]},
+    {title:'GAIA FOODS', subtitle:'Label Design', text:'Before I designed a series of miso labels for this client, I first was invited to make a house call and lunch visit to get let in on the level of artistry that they employ for their products. The Koji for this miso, is hand fermented, making it a one of a kind product.',
+      gallery:[{url:'https://picsum.photos/seed/gf1/800/600',caption:'GAIA 01'},{url:'https://picsum.photos/seed/gf2/800/600',caption:'GAIA 02'}]},
+    {title:'TRUE LOVE PIZZA', subtitle:'Illustration', text:'This client wanted a fun pizza sticker and hat illustration to add to their existing brand. The challenge was to create something that could be embroidered as well as coloured in for a pop-sticker.',
+      gallery:[{url:'https://picsum.photos/seed/tp1/800/600',caption:'PIZZA 01'},{url:'https://picsum.photos/seed/tp2/800/600',caption:'PIZZA 02'}]},
+    {title:'MORGAN FRY CONST.', subtitle:'Logo', text:'Morgan came to me with the idea that the structures he builds are puzzles. His clients know him to be able to pull off the impossible. He wanted something very structural as well as a letter mark. We played around with many variations of this idea of the M that is also triangles, trusses and beams.\n\nThis impossibly constructed shape contains all the letters of his name, though they are not overly accentuated, and tells the story of what Morgan can do.',
+      gallery:[{url:'https://picsum.photos/seed/mf1/800/600',caption:'MORGAN 01'},{url:'https://picsum.photos/seed/mf2/800/600',caption:'MORGAN 02'}]},
+    {title:'MICK BROMLEY PTG', subtitle:'Identity', text:'When Mick saw what I had come up with, he was giddy, he loved it because it was what he spent all his working time immersed in; edges and colours and shapes.\n\nI wanted to create something using simple geometry and lots of colour, and landed here with delight.',
+      gallery:[{url:'https://picsum.photos/seed/mb1/800/600',caption:'BROMLEY 01'},{url:'https://picsum.photos/seed/mb2/800/600',caption:'BROMLEY 02'}]},
+  ],
+};
+
+// \u2500\u2500 Dynamic content manifest loader (PHOTO + DESIGN from GitHub repos) \u2500\u2500
+(function loadContentManifests(){
+  const PHOTO_MANIFEST = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/manifest.json';
+  const DESIGN_MANIFEST = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/manifest.json';
+  const PHOTO_BASE = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/photos/';
+  const DESIGN_BASE = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/';
+
+  function mapPhoto(item, base){
+    const o = {title:item.title, text:item.text||''};
+    if(item.subtitle) o.subtitle = item.subtitle;
+    if(item.displayTitle) o.displayTitle = item.displayTitle;
+    if(item.type === 'single'){
+      o.isSinglePhoto = true;
+      o.singleUrl = base + item.file;
+    } else {
+      o.gallery = (item.files||[]).map(f => {
+        const g = {url:base+f.file, caption:f.caption||''};
+        if(f.wide) g.wide = true;
+        return g;
+      });
+    }
+    return o;
+  }
+
+  function mapDesign(item, base){
+    const allFiles = item.rows
+      ? item.rows.flat().map(f=>({url:base+f.file, caption:f.caption||''}))
+      : (item.files||[]).map(f=>({url:base+f.file, caption:f.caption||''}));
+    const o = {title:item.title, subtitle:item.subtitle||'', text:item.text||'', gallery:allFiles};
+    if(item.rows){
+      o._rows = item.rows.map(row=>row.map(f=>({url:base+f.file, caption:f.caption||''})));
+    }
+    if(item.heroWidth) o._heroWidth = item.heroWidth;
+    return o;
+  }
+
+  function load(url, zone, fallback, mapper, baseFallback){
+    return fetch(url+'?_t='+Date.now(), {cache:'no-cache'})
+      .then(r=>{ if(!r.ok) throw new Error(r.status); return r.json(); })
+      .then(data=>{
+        if(!data.items||!data.items.length) throw new Error('empty');
+        const base = data.baseUrl || baseFallback;
+        CONTENT_DATA[zone] = data.items.map(it=>mapper(it, base));
+        console.log('[MANIFEST] '+zone+': loaded '+CONTENT_DATA[zone].length+' items');
+      })
+      .catch(err=>{
+        console.warn('[MANIFEST] '+zone+' fetch failed, using fallback:', err);
+        CONTENT_DATA[zone] = fallback;
+      });
+  }
+
+  const _pf = [...CONTENT_DATA.PHOTO];
+  const _df = [...CONTENT_DATA.DESIGN];
+  Promise.all([
+    load(PHOTO_MANIFEST, 'PHOTO', _pf, mapPhoto, PHOTO_BASE),
+    load(DESIGN_MANIFEST, 'DESIGN', _df, mapDesign, DESIGN_BASE)
+  ]).then(()=>console.log('[MANIFEST] All resolved. PHOTO='+CONTENT_DATA.PHOTO.length+', DESIGN='+CONTENT_DATA.DESIGN.length));
+})();
+
+// Normalize: ensure every collidable object has hitboxes[]
+for(const obj of objects){
+  if(obj.collide && !obj.hitboxes){
+    obj.hitboxes = [{x:obj.cx - obj.cw/2, y:obj.cy - obj.ch/2, w:obj.cw, h:obj.ch}];
+  }
+}
+
+// Platform polygon helpers
+
+// Point-in-polygon (ray casting)
+function pointInPoly(poly, px, py){
+  let inside = false;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const xi=poly[i].x, yi=poly[i].y, xj=poly[j].x, yj=poly[j].y;
+    if((yi > py) !== (yj > py) && px < (xj-xi)*(py-yi)/(yj-yi)+xi) inside = !inside;
+  }
+  return inside;
+}
+
+// Get top surface Y at a given X by finding the topmost (min Y) edge intersection
+// Only considers edges where the Y values span above and could be a "top" surface
+function getPolyTopY(poly, px){
+  if(!poly || poly.length < 3) return null;
+  // Find X bounds
+  let minX = Infinity, maxX = -Infinity;
+  for(const p of poly){ if(p.x < minX) minX = p.x; if(p.x > maxX) maxX = p.x; }
+  if(px < minX || px > maxX) return null;
+  // Cast ray down at px, find topmost (minimum Y) intersection
+  let topY = Infinity;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const x1=poly[j].x, y1=poly[j].y, x2=poly[i].x, y2=poly[i].y;
+    if((x1 <= px && x2 >= px) || (x2 <= px && x1 >= px)){
+      const dx = x2-x1;
+      if(Math.abs(dx) < 0.001) continue;
+      const t = (px-x1)/dx;
+      const iy = y1 + t*(y2-y1);
+      if(iy < topY) topY = iy;
+    }
+  }
+  return topY < Infinity ? topY : null;
+}
+
+// Get slope of the top surface at px (for sliding)
+function getPolySlope(poly, px){
+  if(!poly || poly.length < 3) return 0;
+  // Find the top-edge segment at px
+  let topY = Infinity, topDy = 0, topDx = 1;
+  for(let i=0, j=poly.length-1; i<poly.length; j=i++){
+    const x1=poly[j].x, y1=poly[j].y, x2=poly[i].x, y2=poly[i].y;
+    if((x1 <= px && x2 >= px) || (x2 <= px && x1 >= px)){
+      const dx = x2-x1;
+      if(Math.abs(dx) < 0.001) continue;
+      const t = (px-x1)/dx;
+      const iy = y1 + t*(y2-y1);
+      if(iy < topY){ topY = iy; topDy = y2-y1; topDx = dx; }
+    }
+  }
+  return Math.abs(topDx) > 0.001 ? topDy/topDx : 0;
+}
+
+const pilot = { x:1100, y:1540, facing:1, frame:0, animTimer:0, walking:false, nearObj:null, jumpOffY:0, onPlatform:null };
+const keys = {};
+let popupOpen = false;
+
+// Load images (all modes)
+const imgs = {};
+const bgImg = new Image();
+bgImg.src = 'pilot-game/Victory-Background.png';
+const sprite = new Image();
+sprite.src = 'pilot-game/spritesheet.png';
+imgs['deltawing'] = new Image(); imgs['deltawing'].src = 'pilot-game/Victory-Background_DeltaWing.png';
+imgs['square']    = new Image(); imgs['square'].src    = 'pilot-game/Victory-Background_Square.png';
+imgs['hexagram']  = new Image(); imgs['hexagram'].src  = 'pilot-game/Victory-Background_Hexagon.png';
+imgs['triangle']  = new Image(); imgs['triangle'].src  = 'pilot-game/Victory-Background_Triangle.png';
+imgs['pentagram'] = new Image(); imgs['pentagram'].src = 'pilot-game/Victory-Background_Pentagon.png';
+imgs['sphere']    = new Image(); imgs['sphere'].src    = 'pilot-game/Victory-Background_Sphere.png';
+imgs['hanger']    = new Image(); imgs['hanger'].src    = 'pilot-game/Victory-Background_Hangar.png';
+
+// Pixel art mode removed — see pilot-game-pixel.html
+
+
+
+let gameMode = "original";
+let gameStarted = true;
+const tileEdMode = false;
+let _loopStarted = false;
+
+let W, H, renderW, renderH, screenScale;
+function resize(){
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+  renderW = Math.ceil(W * RENDER_SCALE);
+  renderH = Math.ceil(H * RENDER_SCALE);
+  offscreen.width = renderW;
+  offscreen.height = renderH;
+  screenScale = renderH / VISIBLE_H;
+}
+window.addEventListener('resize', resize);
+resize();
+
+window.addEventListener('keydown', e => {
+  tryStartMusic();
+  keys[e.code] = true;
+  if(e.code === 'Space'){
+    e.preventDefault();
+    if(!editorMode && !contentViewOpen && !popupOpen && !_kneelPending && !e.repeat){
+      if(pilot.nearObj !== null){
+        // Near an interactable object — kneel + popup
+        _kneelPending = pilot.nearObj;
+        setOrigAnim('kneel');
+      } else {
+        _jumpPressed = true;
+      }
+    }
+  }
+  if(e.code === 'ArrowLeft' && document.getElementById('lightbox').classList.contains('open')){ lbNav(-1); e.preventDefault(); }
+  if(e.code === 'ArrowRight' && document.getElementById('lightbox').classList.contains('open')){ lbNav(1); e.preventDefault(); }
+  if(e.code === 'Escape'){
+    if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
+    else if(contentViewOpen){ closeContentView(); }
+    else { closePopup(); }
+    if(editorMode) editorDeselect();
+  }
+      });
+window.addEventListener('keyup', e => { keys[e.code] = false; });
+
+let _currentPopupZone = null;
+let _kneelPending = null; // object index waiting for kneel to finish
+let _jumpPressed = false;
+let lightboxItems = [];
+let lightboxIdx = 0;
+let contentViewOpen = false;
+
+function openPopup(idx){
+  const obj = objects[idx];
+  const zone = obj.zone;
+  const dataZone = obj.contentZone || zone;
+  const color = obj.zoneColor || '#44ddff';
+  _currentPopupZone = dataZone;
+  const popup = document.getElementById('popup');
+  popup.style.borderColor = color;
+  popup.style.boxShadow = '0 0 40px ' + color + ', inset 0 0 20px rgba(0,0,0,0.5)';
+  document.getElementById('popup-title').textContent = '\u2500\u2500 ' + (zone || obj.name) + ' \u2500\u2500';
+  document.getElementById('popup-title').style.color = color;
+  document.getElementById('popup-close').style.borderColor = color;
+  document.getElementById('popup-close').style.color = color;
+
+  const body = document.getElementById('popup-body');
+
+  // Special case: Delta Wing — return to NAVIGATOR
+  if(obj.key === 'deltawing'){
+    body.innerHTML = '<div style="margin:20px 0 16px;">' +
+      '<img src="pilot-game/DeltaWing-Schematic.png" style="width:100%;border-radius:4px;image-rendering:auto;" alt="Delta Wing Schematic">' +
+      '</div>' +
+      '<div style="margin:0 0 30px;">' +
+      '<div style="color:#aaa;font-size:9px;line-height:2.4;letter-spacing:2px;">Explorer Vehicle</div>' +
+      '</div>' +
+      '<button onclick="returnToNavigator()" style="' +
+        'background:none;border:2px solid #00ffcc;color:#00ffcc;' +
+        'font-family:\'Press Start 2P\',monospace;font-size:9px;' +
+        'padding:16px 32px;cursor:pointer;letter-spacing:2px;' +
+        'text-shadow:0 0 10px #00ffcc;' +
+      '">[ RETURN TO SPACE ]</button>';
+  } else {
+    const items = dataZone ? (CONTENT_DATA[dataZone] || []) : [];
+    if(!items.length){
+      body.innerHTML = '<span style="color:#666;">No content yet</span>';
+    } else {
+      let html = '';
+      items.forEach((item, i) => {
+        const hasMedia = item.youtubeId || item.vimeoId || item.gallery || item.isSinglePhoto;
+        const cursor = hasMedia ? 'cursor:pointer;' : '';
+        const hover = hasMedia ? ` onmouseover="this.style.background='${color}11'" onmouseout="this.style.background=''"` : '';
+        const click = hasMedia ? ` onclick="openContentView('${dataZone}',${i})"` : '';
+        html += '<div style="margin-bottom:2px;text-align:left;padding:12px 18px;border-bottom:1px solid #1a1a1a;border-left:3px solid transparent;'+cursor+'"'+hover+click+'>';
+        html += '<div style="color:'+color+';font-size:9px;margin-bottom:8px;letter-spacing:1px;">'+item.title;
+        if(hasMedia) html += ' <span style="font-size:6px;opacity:0.5;">\u25B6</span>';
+        html += '</div>';
+        if(item.subtitle) html += '<div style="color:#888;font-size:8px;margin-bottom:6px;">'+item.subtitle+'</div>';
+        html += '<div style="color:#aaa;font-size:8px;line-height:2;white-space:pre-wrap;">'+item.text+'</div>';
+        html += '</div>';
+      });
+      body.innerHTML = html;
+    }
+  }
+  popup.classList.add('open');
+  popupOpen = true;
+}
+
+function closePopup(){
+  document.getElementById('popup').classList.remove('open');
+  document.getElementById('content-video').innerHTML = '';
+  document.getElementById('content-video').style.display = 'none';
+  popupOpen = false;
+  contentViewOpen = false;
+  _currentPopupZone = null;
+  if(origAnim === 'kneel') setOrigAnim('idle');
+}
+
+function openContentView(zone, itemIdx){
+  const items = CONTENT_DATA[zone] || [];
+  const item = items[itemIdx];
+  if(!item) return;
+
+  const isDesign = zone === 'DESIGN';
+  const box = document.getElementById('content-box');
+  const header = document.getElementById('content-header');
+
+  // Design theme
+  if(isDesign){
+    box.classList.add('design-theme');
+    header.style.background = '#c8a000';
+  } else {
+    box.classList.remove('design-theme');
+    header.style.background = '#ff69b4';
+  }
+
+  document.getElementById('content-title').textContent = item.displayTitle || item.title;
+
+  // Video
+  const vEl = document.getElementById('content-video');
+  if(item.vimeoId){
+    vEl.style.display = 'block';
+    vEl.innerHTML = '<iframe src="https://player.vimeo.com/video/'+item.vimeoId+'?autoplay=1&color=ff69b4&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
+    // Pause music while video plays
+    stopMusic(); if(audioCtx) audioCtx.suspend();
+  } else if(item.youtubeId){
+    vEl.style.display = 'block';
+    vEl.innerHTML = '<iframe src="https://www.youtube.com/embed/'+item.youtubeId+'?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture; accelerometer; encrypted-media; gyroscope; web-share" allowfullscreen></iframe>';
+    // Pause music while video plays
+    stopMusic(); if(audioCtx) audioCtx.suspend();
+  } else {
+    vEl.style.display = 'none';
+    vEl.innerHTML = '';
+  }
+
+  // Gallery
+  const galGrid = document.getElementById('gallery-grid');
+  const galLabel = document.getElementById('gallery-label');
+  galLabel.textContent = item.subtitle || '';
+
+  if(item.isSinglePhoto && item.singleUrl){
+    lightboxItems = [{url:item.singleUrl, caption:item.title}];
+    galGrid.innerHTML = '<div class="gallery-thumb" onclick="openLightbox(0)" style="flex:0 0 100%;"><img src="'+item.singleUrl+'" loading="lazy"><div class="gallery-thumb-label">CLICK TO EXPAND</div></div>';
+  } else if(item.gallery && item.gallery.length > 0){
+    lightboxItems = item.gallery;
+    if(isDesign && item._rows){
+      let lbIdx = 0;
+      function renderRow(row){
+        return '<div style="display:flex;gap:6px;">'+row.map(img => {
+          const idx = lbIdx++;
+          return '<div class="gallery-thumb design-thumb" onclick="openLightbox('+idx+')" style="flex:1;min-width:0;"><img src="'+img.url+'" alt="'+img.caption+'" loading="lazy" style="background:transparent;"><div class="gallery-thumb-label">'+img.caption+'</div></div>';
+        }).join('')+'</div>';
+      }
+      const heroCount = item._rows[0].length;
+      const hw = item._heroWidth || (heroCount===1?'50%':'100%');
+      const heroRow = '<div style="display:flex;gap:6px;justify-content:center;max-width:'+hw+';margin:0 auto;">'+item._rows[0].map(img => {
+        const idx = lbIdx++;
+        return '<div class="gallery-thumb design-thumb" onclick="openLightbox('+idx+')" style="flex:1;min-width:0;"><img src="'+img.url+'" alt="'+img.caption+'" loading="lazy" style="background:transparent;"><div class="gallery-thumb-label">'+img.caption+'</div></div>';
+      }).join('')+'</div>';
+      const designText = item.text ? '<div style="color:#333;font-size:6px;line-height:2.4;white-space:pre-line;margin:16px 0;font-family:\'Press Start 2P\',monospace;">'+item.text.replace(/</g,'&lt;')+'</div>' : '';
+      const restRows = item._rows.slice(1).map(r=>renderRow(r)).join('');
+      galGrid.style.display = 'flex';
+      galGrid.style.flexDirection = 'column';
+      galGrid.style.gap = '6px';
+      galGrid.innerHTML = heroRow + designText + restRows;
+    } else {
+      var thumbCls = isDesign ? 'gallery-thumb design-thumb' : 'gallery-thumb';
+      if(!isDesign && item.gallery.length > 0){
+        galGrid.style.display = 'grid';
+        galGrid.style.gridTemplateColumns = 'repeat(6, 1fr)';
+        galGrid.style.flexWrap = '';
+        galGrid.style.flexDirection = '';
+      } else {
+        galGrid.style.display = 'flex';
+        galGrid.style.flexWrap = 'wrap';
+        galGrid.style.flexDirection = '';
+      }
+      galGrid.style.gap = '6px';
+      galGrid.innerHTML = item.gallery.map(function(img, i){
+        var span = !isDesign ? (img.wide ? 'grid-column:1/-1;' : 'grid-column:span 2;') : '';
+        var prt = img.portrait;
+        var divStyle = span + (prt ? 'align-self:stretch;overflow:hidden;' : '');
+        var imgStyle = isDesign ? 'background:transparent;' : (prt ? 'object-fit:cover;width:100%;height:100%;' : '');
+        var cap = img.caption || '';
+        return '<div class="'+thumbCls+'" onclick="openLightbox('+i+')" style="'+divStyle+'"><img src="'+img.url+'" alt="'+cap+'" loading="lazy"'+(imgStyle?' style="'+imgStyle+'"':'')+'><div class="gallery-thumb-label">'+cap+'</div></div>';
+      }).join('');
+      if(!isDesign && item.gallery.length > 3){
+        var nonWide = item.gallery.filter(function(g){ return !g.wide; }).length;
+        if(nonWide % 3 === 2){
+          var thumbs = Array.from(galGrid.children).filter(function(t){ return t.style.gridColumn === 'span 2'; });
+          thumbs.slice(-2).forEach(function(t){ t.style.gridColumn = 'span 3'; });
+        }
+      }
+    }
+  } else {
+    lightboxItems = [];
+    galGrid.innerHTML = '';
+  }
+
+  // Text (skip if design rows already rendered it inline)
+  const txtEl = document.getElementById('content-text');
+  if(isDesign && item._rows){
+    txtEl.textContent = '';
+    txtEl.style.display = 'none';
+  } else {
+    txtEl.textContent = item.text || '';
+    txtEl.style.display = '';
+  }
+
+  document.getElementById('content-overlay').classList.add('open');
+  contentViewOpen = true;
+}
+
+function closeContentView(){
+  document.getElementById('content-overlay').classList.remove('open');
+  document.getElementById('content-video').innerHTML = '';
+  document.getElementById('content-video').style.display = 'none';
+  contentViewOpen = false;
+  // Resume music after video closes (if not muted)
+  if(!_musicMuted && audioCtx){ audioCtx.resume(); startMusic(); }
+}
+
+function openLightbox(idx){
+  if(!lightboxItems.length) return;
+  lightboxIdx = idx;
+  const item = lightboxItems[idx];
+  document.getElementById('lightbox-img').src = item.url;
+  document.getElementById('lightbox-caption').textContent = item.caption || '';
+  document.getElementById('lightbox').classList.add('open');
+}
+
+function closeLightbox(){
+  document.getElementById('lightbox').classList.remove('open');
+  document.getElementById('lightbox-img').src = '';
+}
+
+function lbNav(dir){
+  if(!lightboxItems.length) return;
+  lightboxIdx = (lightboxIdx + dir + lightboxItems.length) % lightboxItems.length;
+  const item = lightboxItems[lightboxIdx];
+  document.getElementById('lightbox-img').src = item.url;
+  document.getElementById('lightbox-caption').textContent = item.caption || '';
+}
+
+// Lightbox swipe (mobile)
+(function(){
+  const lb = document.getElementById('lightbox');
+  let _sx = 0;
+  lb.addEventListener('touchstart', e => { _sx = e.changedTouches[0].clientX; }, {passive:true});
+  lb.addEventListener('touchend', e => {
+    const dx = e.changedTouches[0].clientX - _sx;
+    if(Math.abs(dx) > 40){ lbNav(dx < 0 ? 1 : -1); }
+  }, {passive:true});
+})();
+
+// Prevent content overlay & lightbox touches from reaching game canvas
+document.getElementById('content-overlay').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
+document.getElementById('lightbox').addEventListener('touchstart', e => e.stopPropagation(), {passive:true});
+
+const INTERACT_R = 60;
+const promptEl = document.getElementById('prompt');
+
+const drawList = [];
+let behindCount = 0;
+function sortCompare(a,b){ return a.depthY - b.depthY; }
+
+function renderObjects(list, start, end, scale){
+  for(let i=start; i<end; i++){
+    const obj = list[i];
+    ctx.drawImage(objBitmaps[obj.key], obj.wx, obj.wy, obj.ww, obj.wh);
+    // Zone label — only show when pilot is close enough (or in editor)
+    const LABEL_SHOW_R = 200;
+    const objCX = obj.wx + obj.ww/2, objCY = obj.wy + obj.wh/2;
+    const distToPilot = Math.sqrt((pilot.x - objCX)**2 + (pilot.y - objCY)**2);
+    if(obj.zone && (editorMode || distToPilot < LABEL_SHOW_R)){
+      const labelX = (obj.labelX !== undefined) ? obj.labelX : obj.wx + obj.ww / 2;
+      const labelY = (obj.labelY !== undefined) ? obj.labelY : obj.wy + obj.wh / 2;
+      const fontSize = Math.round(28 / scale);
+      const LABEL_FADE_START = 150; // full opacity inside this range
+      const labelAlpha = editorMode ? 1 : distToPilot < LABEL_FADE_START ? 1 : Math.max(0, 1 - ((distToPilot - LABEL_FADE_START) / (LABEL_SHOW_R - LABEL_FADE_START)));
+      ctx.save();
+      ctx.globalAlpha = labelAlpha;
+      ctx.font = fontSize + 'px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#ffffff';
+      ctx.fillText(obj.zone, labelX, labelY);
+      // Editor: draw label drag handle
+      if(editorMode){
+        ctx.strokeStyle = '#ffe000';
+        ctx.lineWidth = 1/scale;
+        ctx.setLineDash([4/scale, 4/scale]);
+        const tw = ctx.measureText(obj.zone).width;
+        const th = fontSize;
+        ctx.strokeRect(labelX - tw/2 - 4/scale, labelY - th/2 - 2/scale, tw + 8/scale, th + 4/scale);
+        ctx.setLineDash([]);
+      }
+      ctx.restore();
+    }
+  }
+}
+
+// ===================== COLLISION HELPERS =====================
+
+// Rect (pilot feet) vs circle collision. Returns push vector or null.
+function rectCircleCollide(pL, pT, pW, pH, cx, cy, r){
+  // Closest point on rect to circle center
+  const closestX = Math.max(pL, Math.min(cx, pL + pW));
+  const closestY = Math.max(pT, Math.min(cy, pT + pH));
+  const dx = cx - closestX, dy = cy - closestY;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  if(dist >= r) return null;
+  if(dist === 0){
+    // Center inside rect — push out along shortest axis
+    const overlapL = cx - pL, overlapR = (pL+pW) - cx;
+    const overlapT = cy - pT, overlapB = (pT+pH) - cy;
+    const m = Math.min(overlapL, overlapR, overlapT, overlapB);
+    if(m===overlapL) return {px: -(overlapL+r), py:0};
+    if(m===overlapR) return {px: overlapR+r, py:0};
+    if(m===overlapT) return {px:0, py: -(overlapT+r)};
+    return {px:0, py: overlapB+r};
+  }
+  const overlap = r - dist;
+  // Push rect AWAY from circle center (so push pilot, not circle)
+  return {px: -(dx/dist)*overlap, py: -(dy/dist)*overlap};
+}
+
+// Distance from point to nearest edge of a hitzone
+function distToZone(px, py, b){
+  if(isCircle(b)){
+    return Math.sqrt((px-b.cx)**2 + (py-b.cy)**2) - b.r;
+  }
+  // Box: distance to center
+  return Math.sqrt((px - (b.x+b.w/2))**2 + (py - (b.y+b.h/2))**2);
+}
+
+// ===================== EDITOR =====================
+let editorMode = false;
+let edLabelMode = false;
+let edContourMode = false;
+let edHitPolyMode = false;
+let edDepthPolyMode = false;
+let edSelContourObj = null;  // index into objects[]
+let edSelContourPt = null;   // index into platformPoly[]
+let edSelObj = null;
+let edSelBox = null;
+let edDrag = null;
+
+const undoStack = [];
+const MAX_UNDO = 2;
+
+function snapshotState(){
+  const snap = [];
+  for(const obj of objects){
+    snap.push({
+      depthY: obj.depthY,
+      labelX: obj.labelX,
+      labelY: obj.labelY,
+      hitboxes: obj.hitboxes ? obj.hitboxes.map(cloneZone) : null,
+      platformPoly: obj.platformPoly ? obj.platformPoly.map(p => ({x:p.x, y:p.y})) : null,
+      hitPoly: obj.hitPoly ? obj.hitPoly.map(p => ({x:p.x, y:p.y})) : null,
+      depthPoly: obj.depthPoly ? obj.depthPoly.map(p => ({x:p.x, y:p.y})) : null
+    });
+  }
+  return snap;
+}
+
+function pushUndo(){
+  undoStack.push(snapshotState());
+  if(undoStack.length > MAX_UNDO) undoStack.shift();
+}
+
+function editorUndo(){
+  if(!undoStack.length) return;
+  const snap = undoStack.pop();
+  for(let i=0; i<objects.length; i++){
+    objects[i].depthY = snap[i].depthY;
+    objects[i].labelX = snap[i].labelX;
+    objects[i].labelY = snap[i].labelY;
+    if(snap[i].hitboxes) objects[i].hitboxes = snap[i].hitboxes;
+    if(snap[i].platformPoly) objects[i].platformPoly = snap[i].platformPoly;
+    if(snap[i].hitPoly) objects[i].hitPoly = snap[i].hitPoly; else delete objects[i].hitPoly;
+    if(snap[i].depthPoly) objects[i].depthPoly = snap[i].depthPoly; else delete objects[i].depthPoly;
+  }
+  updateEditorPanel();
+}
+
+const editorPanelEl = document.getElementById('editor-panel');
+const editorHintEl = document.getElementById('editor-hint');
+const epContentEl = document.getElementById('ep-content');
+const EDGE_GRAB = 6;
+
+function toggleEditor(){
+  editorMode = !editorMode;
+  edLabelMode = false;
+  edContourMode = false;
+  edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorPanelEl.classList.toggle('open', editorMode);
+  editorHintEl.classList.toggle('show', editorMode);
+  if(editorMode){ debugHitboxes = true; editorDeselect(); updateEditorHint(); updateEditorModeButtons(); }
+  if(!editorMode){ editorHintEl.classList.remove('show'); document.getElementById('contour-panel').style.display = 'none'; }
+}
+
+function toggleEditorLabelMode(){
+  edLabelMode = !edLabelMode;
+  edContourMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint();
+  updateEditorModeButtons();
+}
+
+function toggleEditorContourMode(){
+  edContourMode = !edContourMode;
+  edLabelMode = false; edHitPolyMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function toggleEditorHitPolyMode(){
+  edHitPolyMode = !edHitPolyMode;
+  edLabelMode = false; edContourMode = false; edDepthPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function toggleEditorDepthPolyMode(){
+  edDepthPolyMode = !edDepthPolyMode;
+  edLabelMode = false; edContourMode = false; edHitPolyMode = false;
+  edSelContourObj = null; edSelContourPt = null;
+  editorDeselect();
+  updateEditorHint(); updateEditorModeButtons(); updateContourPanel();
+}
+
+function updateEditorModeButtons(){
+  const lBtn = document.getElementById('label-mode-btn');
+  const cBtn = document.getElementById('contour-mode-btn');
+  const hBtn = document.getElementById('hitpoly-mode-btn');
+  const dBtn = document.getElementById('depthpoly-mode-btn');
+  lBtn.textContent = edLabelMode ? 'HITZONES' : 'LABELS';
+  lBtn.style.background = edLabelMode ? 'rgba(255,224,0,0.15)' : 'none';
+  cBtn.textContent = edContourMode ? 'HITZONES' : 'CONTOURS';
+  cBtn.style.background = edContourMode ? 'rgba(0,255,136,0.15)' : 'none';
+  hBtn.textContent = edHitPolyMode ? 'HITZONES' : 'HIT POLY';
+  hBtn.style.background = edHitPolyMode ? 'rgba(255,68,68,0.15)' : 'none';
+  dBtn.textContent = edDepthPolyMode ? 'HITZONES' : 'DEPTH POLY';
+  dBtn.style.background = edDepthPolyMode ? 'rgba(255,136,0,0.15)' : 'none';
+}
+
+function updateEditorHint(){
+  editorHintEl.textContent = edDepthPolyMode ? 'DEPTH POLY MODE — draw region where pilot is BEHIND object'
+    : edHitPolyMode ? 'HIT POLY MODE — drag points to reshape collision polygons'
+    : edContourMode ? 'CONTOUR MODE — drag points to reshape platforms'
+    : edLabelMode ? 'LABEL MODE — drag labels to reposition'
+    : 'EDITOR MODE — click hitzones to edit';
+}
+
+function _getActivePolyArray(obj){
+  if(edDepthPolyMode) return obj.depthPoly;
+  if(edHitPolyMode) return obj.hitPoly;
+  if(edContourMode) return obj.platformPoly;
+  return null;
+}
+
+function updateContourPanel(){
+  const cpEl = document.getElementById('contour-panel');
+  if(!edContourMode && !edHitPolyMode && !edDepthPolyMode){ cpEl.style.display = 'none'; return; }
+  cpEl.style.display = 'block';
+  const color = edDepthPolyMode ? '#ff8800' : edHitPolyMode ? '#ff4444' : '#00ff88';
+  const modeName = edDepthPolyMode ? 'DEPTH POLY' : edHitPolyMode ? 'HIT POLY' : 'CONTOUR';
+  let html = '';
+  if(edSelContourObj !== null){
+    const obj = objects[edSelContourObj];
+    const poly = _getActivePolyArray(obj);
+    html += '<div class="obj-name" style="color:'+color+';">' + obj.name + '</div>';
+    if(!poly || poly.length === 0){
+      html += '<button style="border-color:'+color+';color:'+color+';" onclick="contourInitPoly()">CREATE '+modeName+'</button>';
+    } else if(edSelContourPt !== null){
+      const pt = poly[edSelContourPt];
+      html += '<span class="label">point ' + edSelContourPt + ':</span> ';
+      html += '<span class="val">' + Math.round(pt.x) + ', ' + Math.round(pt.y) + '</span><br>';
+      html += '<button style="border-color:'+color+';color:'+color+';" onclick="contourAddPoint()">+ POINT</button> ';
+      html += '<button class="warn" onclick="contourDeletePoint()">- POINT</button>';
+    } else {
+      html += '<span class="label">click a point to select</span>';
+    }
+  } else {
+    html += '<span class="label">click a point to select</span>';
+  }
+  cpEl.innerHTML = html;
+}
+
+function contourInitPoly(){
+  if(edSelContourObj === null) return;
+  pushUndo();
+  const obj = objects[edSelContourObj];
+  const cx = obj.wx + obj.ww/2, cy = obj.wy + obj.wh/2;
+  const poly = [{x:cx-40,y:cy-30},{x:cx+40,y:cy-30},{x:cx+40,y:cy+30},{x:cx-40,y:cy+30}];
+  if(edDepthPolyMode) obj.depthPoly = poly;
+  else if(edHitPolyMode) obj.hitPoly = poly;
+  else obj.platformPoly = poly;
+  updateContourPanel();
+}
+
+function contourAddPoint(){
+  if(edSelContourObj === null || edSelContourPt === null) return;
+  pushUndo();
+  const c = _getActivePolyArray(objects[edSelContourObj]);
+  if(!c) return;
+  const i = edSelContourPt;
+  if(i < c.length - 1){
+    c.splice(i+1, 0, {x:(c[i].x+c[i+1].x)/2, y:(c[i].y+c[i+1].y)/2});
+    edSelContourPt = i+1;
+  } else {
+    c.push({x: c[i].x + 30, y: c[i].y});
+    edSelContourPt = c.length - 1;
+  }
+  updateContourPanel();
+}
+
+function contourDeletePoint(){
+  if(edSelContourObj === null || edSelContourPt === null) return;
+  const c = _getActivePolyArray(objects[edSelContourObj]);
+  if(!c || c.length <= 3) return;
+  pushUndo();
+  c.splice(edSelContourPt, 1);
+  edSelContourPt = Math.min(edSelContourPt, c.length - 1);
+  updateContourPanel();
+}
+
+function editorDeselect(){
+  edSelObj = null; edSelBox = null; edDrag = null;
+  updateEditorPanel();
+}
+
+function getScale(){ return H / VISIBLE_H; }
+
+function screenToWorld(sx, sy){
+  const s = getScale();
+  return { x: sx / s + camX, y: sy / s + camY };
+}
+
+function updateEditorPanel(){
+  if(edSelObj === null){
+    let html = '<span class="label">Select object:</span><br>';
+    for(let i=0; i<objects.length; i++){
+      html += '<button style="display:block;width:100%;margin:2px 0;font-size:9px;padding:2px 4px;" onclick="edSelObj='+i+';edSelBox=null;updateEditorPanel();">'+objects[i].name+'</button>';
+    }
+    epContentEl.innerHTML = html;
+    return;
+  }
+  const obj = objects[edSelObj];
+  const b = (edSelBox !== null && obj.hitboxes) ? obj.hitboxes[edSelBox] : null;
+  let html = '<div class="obj-name">' + obj.name + '</div>';
+  html += '<span class="label">depthY:</span> <span class="val">' + Math.round(obj.depthY) + '</span><br>';
+  if(obj.labelX !== undefined){
+    html += '<span class="label">label:</span> <span class="val">' + Math.round(obj.labelX) + ', ' + Math.round(obj.labelY) + '</span><br>';
+  }
+  if(b){
+    if(isCircle(b)){
+      html += '<span class="label">circle ' + edSelBox + ':</span><br>';
+      html += '<span class="label">cx:</span><span class="val">' + Math.round(b.cx) + '</span> ';
+      html += '<span class="label">cy:</span><span class="val">' + Math.round(b.cy) + '</span><br>';
+      html += '<span class="label">r:</span><span class="val">' + Math.round(b.r) + '</span><br>';
+    } else {
+      html += '<span class="label">box ' + edSelBox + ':</span><br>';
+      html += '<span class="label">x:</span><span class="val">' + Math.round(b.x) + '</span> ';
+      html += '<span class="label">y:</span><span class="val">' + Math.round(b.y) + '</span><br>';
+      html += '<span class="label">w:</span><span class="val">' + Math.round(b.w) + '</span> ';
+      html += '<span class="label">h:</span><span class="val">' + Math.round(b.h) + '</span><br>';
+      const deg = Math.round(boxRot(b) * 180 / Math.PI);
+      if(deg !== 0) html += '<span class="label">rot:</span><span class="val">' + deg + '°</span><br>';
+    }
+  }
+  html += '<br>';
+  html += '<button onclick="editorAddBox()">+ BOX</button> ';
+  html += '<button onclick="editorAddCircle()">+ CIRCLE</button> ';
+  if(b) html += '<button class="warn" onclick="editorDeleteZone()">- DELETE</button>';
+  epContentEl.innerHTML = html;
+}
+
+function editorAddBox(){
+  if(edSelObj === null) return;
+  pushUndo();
+  const obj = objects[edSelObj];
+  if(!obj.hitboxes) obj.hitboxes = [];
+  obj.hitboxes.push({x:pilot.x - 50, y:pilot.y - 10, w:100, h:20});
+  obj.collide = true;
+  edSelBox = obj.hitboxes.length - 1;
+  updateEditorPanel();
+}
+
+function editorAddCircle(){
+  if(edSelObj === null) return;
+  pushUndo();
+  const obj = objects[edSelObj];
+  if(!obj.hitboxes) obj.hitboxes = [];
+  obj.hitboxes.push({cx:pilot.x, cy:pilot.y, r:40});
+  obj.collide = true;
+  edSelBox = obj.hitboxes.length - 1;
+  updateEditorPanel();
+}
+
+function editorDeleteZone(){
+  if(edSelObj === null || edSelBox === null) return;
+  pushUndo();
+  const obj = objects[edSelObj];
+  if(!obj.hitboxes || obj.hitboxes.length <= 1) return;
+  obj.hitboxes.splice(edSelBox, 1);
+  edSelBox = Math.min(edSelBox, obj.hitboxes.length - 1);
+  updateEditorPanel();
+}
+
+function editorExport(){
+  let out = '// Exported hitzone + depthY config\n';
+  for(const obj of objects){
+    if(!obj.hitboxes && !obj.hitPoly && !obj.depthPoly) continue;
+    out += '// ' + obj.name + '\n';
+    out += '//   wx: ' + Math.round(obj.wx*100)/100 + ', wy: ' + Math.round(obj.wy*100)/100 + '\n';
+    out += '//   depthY: ' + Math.round(obj.depthY) + '\n';
+    if(obj.labelX !== undefined) out += '//   labelX: ' + Math.round(obj.labelX) + ', labelY: ' + Math.round(obj.labelY) + '\n';
+    if(obj.hitboxes){
+    out += '//   hitboxes: [\n';
+    for(const b of obj.hitboxes){
+      if(isCircle(b)){
+        out += '//     {cx:' + Math.round(b.cx) + ', cy:' + Math.round(b.cy) + ', r:' + Math.round(b.r) + '},\n';
+      } else {
+        const rd = boxRot(b);
+        const rotStr = rd ? ', rot:' + (Math.round(rd*1000)/1000) : '';
+        out += '//     {x:' + Math.round(b.x) + ', y:' + Math.round(b.y) + ', w:' + Math.round(b.w) + ', h:' + Math.round(b.h) + rotStr + '},\n';
+      }
+    }
+    out += '//   ]\n';
+    } // end if(obj.hitboxes)
+    if(obj.hitPoly){
+      out += '//   hitPoly: [';
+      out += obj.hitPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    if(obj.platformPoly){
+      out += '//   platformPoly: [';
+      out += obj.platformPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    if(obj.depthPoly){
+      out += '//   depthPoly: [';
+      out += obj.depthPoly.map(p => '{x:'+Math.round(p.x)+',y:'+Math.round(p.y)+'}').join(',');
+      out += ']\n';
+    }
+    out += '\n';
+  }
+  navigator.clipboard.writeText(out).then(() => {
+    editorHintEl.textContent = 'COPIED TO CLIPBOARD';
+    setTimeout(() => { editorHintEl.textContent = 'EDITOR MODE \u2014 click hitzones to edit'; }, 2000);
+  });
+  console.log(out);
+}
+
+// Point inside zone test (handles rotation)
+function pointInZone(wx, wy, b){
+  if(isCircle(b)){
+    return Math.sqrt((wx-b.cx)**2 + (wy-b.cy)**2) <= b.r;
+  }
+  // Rotate point into box's local space
+  const c = boxCenter(b), a = boxRot(b);
+  const lp = rotPt(wx, wy, c.x, c.y, -a);
+  return lp.x >= b.x && lp.x <= b.x+b.w && lp.y >= b.y && lp.y <= b.y+b.h;
+}
+
+// Distance from point to zone center (for pick priority)
+function distToCenter(wx, wy, b){
+  if(isCircle(b)) return Math.sqrt((wx-b.cx)**2 + (wy-b.cy)**2);
+  const c = boxCenter(b);
+  return Math.sqrt((wx-c.x)**2 + (wy-c.y)**2);
+}
+
+// Mouse handling for editor
+canvas.addEventListener('mousedown', e => {
+  if(!editorMode) return;
+  const w = screenToWorld(e.clientX, e.clientY);
+
+  // LABEL MODE: only drag labels
+  if(edLabelMode){
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.zone) continue;
+      const lx = (obj.labelX !== undefined) ? obj.labelX : obj.wx + obj.ww / 2;
+      const ly = (obj.labelY !== undefined) ? obj.labelY : obj.wy + obj.wh / 2;
+      const s = getScale();
+      const fontSize = Math.round(28 / s);
+      const hitW = fontSize * obj.zone.length * 0.9 + 20/s;
+      const hitH = fontSize + 20/s;
+      if(Math.abs(w.x - lx) < hitW/2 && Math.abs(w.y - ly) < hitH/2){
+        pushUndo();
+        edSelObj = oi; edSelBox = null;
+        edDrag = {type:'label', origLX:lx, origLY:ly, startMX:e.clientX, startMY:e.clientY};
+        updateEditorPanel();
+        return;
+      }
+    }
+    return; // label mode ignores hitzones
+  }
+
+  // CONTOUR / HIT POLY MODE: drag polygon points
+  if(edContourMode || edHitPolyMode || edDepthPolyMode){
+    const grabR = 8 / getScale();
+    let bestDist = Infinity, bestOi = null, bestPi = null;
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      const poly = _getActivePolyArray(obj);
+      if(!poly) continue;
+      for(let pi=0; pi<poly.length; pi++){
+        const pt = poly[pi];
+        const d = Math.sqrt((w.x-pt.x)**2 + (w.y-pt.y)**2);
+        if(d < grabR && d < bestDist){ bestDist = d; bestOi = oi; bestPi = pi; }
+      }
+    }
+    if(bestOi !== null){
+      pushUndo();
+      edSelContourObj = bestOi;
+      edSelContourPt = bestPi;
+      const poly = _getActivePolyArray(objects[bestOi]);
+      const pt = poly[bestPi];
+      edDrag = {type:'contour', origX:pt.x, origY:pt.y, startMX:e.clientX, startMY:e.clientY};
+    } else {
+      // Clicked empty space — select nearest object for CREATE button
+      let nearOi = null, nearD = Infinity;
+      for(let oi=0; oi<objects.length; oi++){
+        const obj = objects[oi];
+        const cx = obj.wx+obj.ww/2, cy = obj.wy+obj.wh/2;
+        const d = Math.sqrt((w.x-cx)**2+(w.y-cy)**2);
+        if(d < nearD){ nearD = d; nearOi = oi; }
+      }
+      edSelContourObj = nearOi; edSelContourPt = null;
+    }
+    updateContourPanel();
+    return;
+  }
+
+  // Check rotation handle on currently selected box
+  if(edSelObj !== null && edSelBox !== null){
+    const selB = objects[edSelObj].hitboxes[edSelBox];
+    if(!isCircle(selB)){
+      const bc = boxCenter(selB), ba = boxRot(selB);
+      const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba);
+      const ds = getScale();
+      const rhDist = 25/ds;
+      const rhX = selB.x + selB.w/2, rhY = selB.y - rhDist;
+      if(Math.sqrt((lp.x-rhX)**2 + (lp.y-rhY)**2) < 10/ds){
+        pushUndo();
+        edDrag = {type:'rotate', origRot:ba, cx:bc.x, cy:bc.y, startAngle:Math.atan2(w.y-bc.y, w.x-bc.x)};
+        return;
+      }
+    }
+  }
+
+  // Check depthY line
+  if(edSelObj !== null){
+    const obj = objects[edSelObj];
+    const lineScreenY = (obj.depthY - camY) * getScale();
+    if(Math.abs(e.clientY - lineScreenY) < 8){
+      pushUndo();
+      edDrag = {type:'depthY', origDepthY:obj.depthY, startMY:e.clientY};
+      return;
+    }
+  }
+
+  // Check all hitzones
+  let bestObj = null, bestBox = null, bestDist = Infinity;
+  for(let oi=0; oi<objects.length; oi++){
+    const obj = objects[oi];
+    if(!obj.hitboxes) continue;
+    for(let bi=0; bi<obj.hitboxes.length; bi++){
+      const b = obj.hitboxes[bi];
+      if(pointInZone(w.x, w.y, b)){
+        const d = distToCenter(w.x, w.y, b);
+        if(d < bestDist){ bestDist = d; bestObj = oi; bestBox = bi; }
+      }
+    }
+  }
+
+  // If no hitbox clicked, check hitPolys
+  if(bestObj === null){
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(obj.hitPoly && obj.hitPoly.length >= 3 && pointInPoly(obj.hitPoly, w.x, w.y)){
+        bestObj = oi; bestBox = null; break;
+      }
+    }
+  }
+  // If still nothing, check image bounds
+  if(bestObj === null){
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(w.x >= obj.wx && w.x <= obj.wx+obj.ww && w.y >= obj.wy && w.y <= obj.wy+obj.wh){
+        bestObj = oi; bestBox = null; break;
+      }
+    }
+  }
+
+  if(bestObj !== null){
+    edSelObj = bestObj;
+    edSelBox = bestBox;
+    const b = (edSelBox !== null && objects[edSelObj].hitboxes) ? objects[edSelObj].hitboxes[edSelBox] : null;
+
+    // ALT+drag: move just the image (wx/wy) without hitboxes
+    if(e.altKey){
+      pushUndo();
+      const obj = objects[edSelObj];
+      edDrag = {type:'moveImage', startMX:e.clientX, startMY:e.clientY, origWX:obj.wx, origWY:obj.wy};
+      updateEditorPanel();
+      return;
+    }
+
+    // SHIFT+drag: move entire object (image, all hitboxes, polygon, depthY, labels)
+    if(e.shiftKey){
+      pushUndo();
+      const obj = objects[edSelObj];
+      edDrag = {type:'moveAll', startMX:e.clientX, startMY:e.clientY,
+        origWX:obj.wx, origWY:obj.wy, origDepthY:obj.depthY,
+        origLabelX: obj.labelX, origLabelY: obj.labelY,
+        origHitboxes: obj.hitboxes ? obj.hitboxes.map(h => isCircle(h) ? {cx:h.cx, cy:h.cy} : {x:h.x, y:h.y}) : [],
+        origPoly: obj.platformPoly ? obj.platformPoly.map(p => ({x:p.x, y:p.y})) : null,
+        origHitPoly: obj.hitPoly ? obj.hitPoly.map(p => ({x:p.x, y:p.y})) : null,
+        origDepthPoly: obj.depthPoly ? obj.depthPoly.map(p => ({x:p.x, y:p.y})) : null
+      };
+      updateEditorPanel();
+      return;
+    }
+
+    let type = 'move';
+    if(isCircle(b)){
+      // Near edge = resize radius
+      const distFromCenter = Math.sqrt((w.x-b.cx)**2 + (w.y-b.cy)**2);
+      if(Math.abs(distFromCenter - b.r) < EDGE_GRAB) type = 'resizeRadius';
+      pushUndo();
+      edDrag = {type, startMX:e.clientX, startMY:e.clientY, origCX:b.cx, origCY:b.cy, origR:b.r};
+    } else {
+      const bc = boxCenter(b), ba = boxRot(b);
+      const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba); // local space point
+      // Check rotation handle first (above top edge in local space)
+      const ds = getScale();
+      const rotHandleDist = 25/ds;
+      const rotHandleY = b.y - rotHandleDist;
+      const rotHandleX = b.x + b.w/2;
+      if(Math.sqrt((lp.x-rotHandleX)**2 + (lp.y-rotHandleY)**2) < 10/ds){
+        type = 'rotate';
+        pushUndo();
+        edDrag = {type, origRot:ba, cx:bc.x, cy:bc.y, startAngle:Math.atan2(w.y-bc.y, w.x-bc.x)};
+        updateEditorPanel();
+        return;
+      }
+      const eL = Math.abs(lp.x - b.x);
+      const eR = Math.abs(lp.x - (b.x + b.w));
+      const eT = Math.abs(lp.y - b.y);
+      const eB = Math.abs(lp.y - (b.y + b.h));
+      const minE = Math.min(eL, eR, eT, eB);
+      if(minE < EDGE_GRAB){
+        if(minE === eL) type = 'resizeL';
+        else if(minE === eR) type = 'resizeR';
+        else if(minE === eT) type = 'resizeT';
+        else type = 'resizeB';
+      }
+      pushUndo();
+      edDrag = {type, startMX:e.clientX, startMY:e.clientY, origX:b.x, origY:b.y, origW:b.w, origH:b.h, origRot:ba};
+    }
+    updateEditorPanel();
+  } else {
+    editorDeselect();
+  }
+});
+
+canvas.addEventListener('mousemove', e => {
+  if(!editorMode || !edDrag) return;
+  const s = getScale();
+  const dx = (e.clientX - edDrag.startMX) / s;
+  const dy = (e.clientY - edDrag.startMY) / s;
+
+  if(edDrag.type === 'moveImage'){
+    const obj = objects[edSelObj];
+    obj.wx = edDrag.origWX + dx;
+    obj.wy = edDrag.origWY + dy;
+    updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'moveAll'){
+    const obj = objects[edSelObj];
+    obj.wx = edDrag.origWX + dx;
+    obj.wy = edDrag.origWY + dy;
+    obj.depthY = edDrag.origDepthY + dy;
+    if(edDrag.origLabelX !== undefined){ obj.labelX = edDrag.origLabelX + dx; obj.labelY = edDrag.origLabelY + dy; }
+    for(let hi=0; obj.hitboxes && hi<obj.hitboxes.length; hi++){
+      const h = obj.hitboxes[hi];
+      const orig = edDrag.origHitboxes[hi];
+      if(isCircle(h)){ h.cx = orig.cx + dx; h.cy = orig.cy + dy; }
+      else { h.x = orig.x + dx; h.y = orig.y + dy; }
+    }
+    if(obj.platformPoly && edDrag.origPoly){
+      for(let pi=0; pi<obj.platformPoly.length; pi++){
+        obj.platformPoly[pi].x = edDrag.origPoly[pi].x + dx;
+        obj.platformPoly[pi].y = edDrag.origPoly[pi].y + dy;
+      }
+    }
+    if(obj.hitPoly && edDrag.origHitPoly){
+      for(let pi=0; pi<obj.hitPoly.length; pi++){
+        obj.hitPoly[pi].x = edDrag.origHitPoly[pi].x + dx;
+        obj.hitPoly[pi].y = edDrag.origHitPoly[pi].y + dy;
+      }
+    }
+    if(obj.depthPoly && edDrag.origDepthPoly){
+      for(let pi=0; pi<obj.depthPoly.length; pi++){
+        obj.depthPoly[pi].x = edDrag.origDepthPoly[pi].x + dx;
+        obj.depthPoly[pi].y = edDrag.origDepthPoly[pi].y + dy;
+      }
+    }
+    updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'depthY'){
+    objects[edSelObj].depthY = edDrag.origDepthY + dy;
+    updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'label'){
+    objects[edSelObj].labelX = edDrag.origLX + dx;
+    objects[edSelObj].labelY = edDrag.origLY + dy;
+    updateEditorPanel();
+    return;
+  }
+
+  if(edDrag.type === 'contour'){
+    if(edSelContourObj !== null && edSelContourPt !== null){
+      const poly = _getActivePolyArray(objects[edSelContourObj]);
+      if(poly){
+        const pt = poly[edSelContourPt];
+        pt.x = edDrag.origX + dx;
+        pt.y = edDrag.origY + dy;
+        updateContourPanel();
+      }
+    }
+    return;
+  }
+
+  const b = objects[edSelObj].hitboxes[edSelBox];
+
+  if(isCircle(b)){
+    if(edDrag.type === 'resizeRadius'){
+      const distNow = Math.sqrt((e.clientX/s + camX - edDrag.origCX)**2 + (e.clientY/s + camY - edDrag.origCY)**2);
+      b.r = Math.max(5, distNow);
+    } else {
+      b.cx = edDrag.origCX + dx;
+      b.cy = edDrag.origCY + dy;
+    }
+  } else {
+    if(edDrag.type === 'rotate'){
+      const w = screenToWorld(e.clientX, e.clientY);
+      const curAngle = Math.atan2(w.y - edDrag.cy, w.x - edDrag.cx);
+      b.rot = edDrag.origRot + (curAngle - edDrag.startAngle);
+    } else {
+      // Transform mouse delta into box's local axes for move/resize
+      const a = boxRot(b);
+      const ca = Math.cos(-a), sa = Math.sin(-a);
+      const ldx = dx*ca - dy*sa, ldy = dx*sa + dy*ca;
+      switch(edDrag.type){
+        case 'move':
+          b.x = edDrag.origX + dx;
+          b.y = edDrag.origY + dy;
+          break;
+        case 'resizeL':
+          b.x = edDrag.origX + ldx;
+          b.w = edDrag.origW - ldx;
+          break;
+        case 'resizeR':
+          b.w = edDrag.origW + ldx;
+          break;
+        case 'resizeT':
+          b.y = edDrag.origY + ldy;
+          b.h = edDrag.origH - ldy;
+          break;
+        case 'resizeB':
+          b.h = edDrag.origH + ldy;
+          break;
+      }
+      if(b.w < 5) b.w = 5;
+      if(b.h < 5) b.h = 5;
+    }
+  }
+  updateEditorPanel();
+});
+
+canvas.addEventListener('mouseup', () => { edDrag = null; });
+
+// Cursor hints
+canvas.addEventListener('mousemove', e => {
+  if(!editorMode){ canvas.style.cursor = 'default'; return; }
+  if(edDrag) return;
+  const w = screenToWorld(e.clientX, e.clientY);
+
+  // depthY line
+  if(edSelObj !== null){
+    const lineScreenY = (objects[edSelObj].depthY - camY) * getScale();
+    if(Math.abs(e.clientY - lineScreenY) < 8){ canvas.style.cursor = 'ns-resize'; return; }
+  }
+
+  for(const obj of objects){
+    if(!obj.hitboxes) continue;
+    for(const b of obj.hitboxes){
+      if(isCircle(b)){
+        const d = Math.sqrt((w.x-b.cx)**2 + (w.y-b.cy)**2);
+        if(d <= b.r){
+          canvas.style.cursor = Math.abs(d - b.r) < EDGE_GRAB ? 'nwse-resize' : 'grab';
+          return;
+        }
+      } else {
+        const bc = boxCenter(b), ba = boxRot(b);
+        const lp = rotPt(w.x, w.y, bc.x, bc.y, -ba);
+        // Check rotation handle
+        const ds2 = getScale();
+        const rhDist = 25/ds2;
+        const rhX = b.x+b.w/2, rhY = b.y - rhDist;
+        if(Math.sqrt((lp.x-rhX)**2 + (lp.y-rhY)**2) < 10/ds2){
+          canvas.style.cursor = 'crosshair'; return;
+        }
+        if(lp.x >= b.x && lp.x <= b.x+b.w && lp.y >= b.y && lp.y <= b.y+b.h){
+          const eL = Math.abs(lp.x - b.x), eR = Math.abs(lp.x - (b.x+b.w));
+          const eT = Math.abs(lp.y - b.y), eB = Math.abs(lp.y - (b.y+b.h));
+          const minE = Math.min(eL, eR, eT, eB);
+          if(minE < EDGE_GRAB){
+            canvas.style.cursor = (minE===eL||minE===eR) ? 'ew-resize' : 'ns-resize';
+          } else {
+            canvas.style.cursor = 'grab';
+          }
+          return;
+        }
+      }
+    }
+  }
+  canvas.style.cursor = 'default';
+});
+
+// ===================== TOUCH CONTROLS =====================
+const isMobile = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
+if(isMobile){
+  document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
+  document.getElementById('dpad').style.display = 'block';
+}
+let touchJoyDx = 0, touchJoyDy = 0;
+
+// Circular D-pad — 8 directions (4 cardinal big arrows, 4 diagonal small arrows)
+// Pie slices at 45° intervals, divider lines converge at center
+const _dpadCanvas = document.getElementById('dpad-c');
+const _dpadCtx = _dpadCanvas.getContext('2d');
+const _dpadEl = document.getElementById('dpad');
+const _dpadR = 130; // canvas pixels (2x CSS for retina)
+const _dpadCx = _dpadR, _dpadCy = _dpadR;
+// 8 directions: index 0=right, going counter-clockwise
+// Angles: each slice is 45°. Slice i covers angle (i*45 - 22.5) to (i*45 + 22.5)
+const _dpadDirs = [
+  {name:'right',    dx:1,    dy:0},     // 0°
+  {name:'downright', dx:0.707, dy:0.707}, // 45°
+  {name:'down',     dx:0,    dy:1},     // 90°
+  {name:'downleft', dx:-0.707,dy:0.707}, // 135°
+  {name:'left',     dx:-1,   dy:0},     // 180°
+  {name:'upleft',   dx:-0.707,dy:-0.707},// 225°
+  {name:'up',       dx:0,    dy:-1},    // 270°
+  {name:'upright',  dx:0.707, dy:-0.707} // 315°
+];
+let _dpadTouchId = null;
+let _dpadActiveIdx = -1;
+
+function drawDpad(){
+  const c = _dpadCtx, cx = _dpadCx, cy = _dpadCy, r = _dpadR - 4;
+  c.clearRect(0, 0, _dpadR*2, _dpadR*2);
+
+  // Base disc — off-white plastic with bevel
+  // Outer shadow (dark edge bottom-right)
+  c.beginPath(); c.arc(cx+2, cy+2, r, 0, Math.PI*2);
+  c.fillStyle = 'rgba(0,0,0,0.4)';
+  c.fill();
+  // Main disc
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
+  const discGrad = c.createRadialGradient(cx - r*0.3, cy - r*0.3, 0, cx, cy, r);
+  discGrad.addColorStop(0, '#e8e4dc');
+  discGrad.addColorStop(0.7, '#d4d0c8');
+  discGrad.addColorStop(1, '#b8b4ac');
+  c.fillStyle = discGrad;
+  c.fill();
+  // Top-left highlight rim
+  c.beginPath(); c.arc(cx, cy, r, 0, Math.PI*2);
+  c.strokeStyle = 'rgba(255,255,255,0.5)';
+  c.lineWidth = 2;
+  c.stroke();
+  // Bottom-right shadow rim
+  c.beginPath(); c.arc(cx, cy, r - 1, Math.PI * 0.15, Math.PI * 0.85);
+  c.strokeStyle = 'rgba(0,0,0,0.15)';
+  c.lineWidth = 3;
+  c.stroke();
+
+  // Divider grooves — subtle engraved lines
+  for(let i = 0; i < 8; i++){
+    const a = (i * 45 - 22.5) * Math.PI / 180;
+    const innerR = 18;
+    // Shadow line (engraved look)
+    c.beginPath();
+    c.moveTo(cx + Math.cos(a) * innerR, cy + Math.sin(a) * innerR);
+    c.lineTo(cx + Math.cos(a) * (r - 6), cy + Math.sin(a) * (r - 6));
+    c.strokeStyle = 'rgba(0,0,0,0.15)';
+    c.lineWidth = 2;
+    c.stroke();
+    // Highlight line (bottom edge of groove)
+    c.beginPath();
+    c.moveTo(cx + Math.cos(a) * innerR + 1, cy + Math.sin(a) * innerR + 1);
+    c.lineTo(cx + Math.cos(a) * (r - 6) + 1, cy + Math.sin(a) * (r - 6) + 1);
+    c.strokeStyle = 'rgba(255,255,255,0.3)';
+    c.lineWidth = 1;
+    c.stroke();
+  }
+
+  // Embossed arrows
+  for(let i = 0; i < 8; i++){
+    const a = i * 45 * Math.PI / 180;
+    const isCardinal = i % 2 === 0;
+    const dist = isCardinal ? r * 0.55 : r * 0.55;
+    const size = isCardinal ? 28 : 20;
+    const ax = cx + Math.cos(a) * dist;
+    const ay = cy + Math.sin(a) * dist;
+    const active = i === _dpadActiveIdx;
+
+    function drawArrow(ox, oy, fillStyle){
+      c.save();
+      c.translate(ax + ox, ay + oy);
+      c.rotate(a + Math.PI/2); // point arrow outward
+      c.beginPath();
+      c.moveTo(0, -size);
+      c.lineTo(-size * 0.65, size * 0.4);
+      c.lineTo(size * 0.65, size * 0.4);
+      c.closePath();
+      c.fillStyle = fillStyle;
+      c.fill();
+      c.restore();
+    }
+
+    if(active){
+      drawArrow(0, -1, 'rgba(0,0,0,0.2)');
+      drawArrow(0, 1.5, 'rgba(255,255,255,0.4)');
+      drawArrow(0, 0, isCardinal ? '#6a6860' : 'rgba(106,104,96,0.3)');
+    } else {
+      drawArrow(0, 1.5, isCardinal ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.08)');
+      drawArrow(0, -1, isCardinal ? 'rgba(255,255,255,0.6)' : 'rgba(255,255,255,0.2)');
+      drawArrow(0, 0, isCardinal ? '#8a8680' : 'rgba(138,134,128,0.25)');
+    }
+  }
+
+  // Center dot
+  c.beginPath(); c.arc(cx, cy, 6, 0, Math.PI*2);
+  const dotGrad = c.createRadialGradient(cx-1, cy-1, 0, cx, cy, 6);
+  dotGrad.addColorStop(0, '#d0ccc4');
+  dotGrad.addColorStop(1, '#a8a49c');
+  c.fillStyle = dotGrad;
+  c.fill();
+  c.strokeStyle = 'rgba(0,0,0,0.15)';
+  c.lineWidth = 1;
+  c.stroke();
+}
+drawDpad();
+
+function dpadAngleToIdx(tx, ty){
+  const rect = _dpadCanvas.getBoundingClientRect();
+  const x = tx - rect.left - rect.width/2;
+  const y = ty - rect.top - rect.height/2;
+  const dist = Math.sqrt(x*x + y*y);
+  if(dist < 8) return -1; // dead zone at center
+  let ang = Math.atan2(y, x) * 180 / Math.PI;
+  if(ang < 0) ang += 360;
+  // Each slice is 45° wide, centered on i*45
+  return Math.round(ang / 45) % 8;
+}
+function setDpadIdx(idx){
+  if(idx === _dpadActiveIdx) return;
+  _dpadActiveIdx = idx;
+  if(idx >= 0){
+    touchJoyDx = _dpadDirs[idx].dx;
+    touchJoyDy = _dpadDirs[idx].dy;
+  } else {
+    touchJoyDx = 0; touchJoyDy = 0;
+  }
+  drawDpad();
+}
+function clearDpad(){
+  _dpadTouchId = null;
+  setDpadIdx(-1);
+}
+
+_dpadEl.addEventListener('touchstart', e => {
+  e.preventDefault(); e.stopPropagation(); tryStartMusic();
+  const t = e.changedTouches[0];
+  _dpadTouchId = t.identifier;
+  setDpadIdx(dpadAngleToIdx(t.clientX, t.clientY));
+}, {passive:false});
+_dpadEl.addEventListener('touchmove', e => {
+  e.preventDefault(); e.stopPropagation();
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId){
+      setDpadIdx(dpadAngleToIdx(t.clientX, t.clientY));
+    }
+  }
+}, {passive:false});
+_dpadEl.addEventListener('touchend', e => {
+  e.preventDefault(); e.stopPropagation();
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId) clearDpad();
+  }
+}, {passive:false});
+_dpadEl.addEventListener('touchcancel', e => {
+  for(const t of e.changedTouches){
+    if(t.identifier === _dpadTouchId) clearDpad();
+  }
+});
+// Canvas tap = interact (close overlays or kneel+popup)
+canvas.addEventListener('touchstart', e => {
+  tryStartMusic();
+  if(editorMode) return;
+  e.preventDefault();
+  if(document.getElementById('lightbox').classList.contains('open')){ closeLightbox(); }
+  else if(contentViewOpen){ closeContentView(); }
+  else if(popupOpen){ closePopup(); }
+  else if(pilot.nearObj !== null && !_kneelPending){ _kneelPending = pilot.nearObj; setOrigAnim('kneel'); }
+}, {passive:false});
+
+// ===================== GAME LOOP =====================
+let lastTime = 0;
+function loop(time){
+  requestAnimationFrame(loop);
+  const dt = (time - lastTime) / 1000;
+  lastTime = time;
+  if(dt > 0.1 || dt <= 0) return;
+
+  if(!popupOpen && !edDrag && !contentViewOpen){
+    {
+      // ===== ORIGINAL: Free roam =====
+      pilot.walking = false;
+      const isJumping = _jumpPressed && !popupOpen;
+      _jumpPressed = false;
+
+      // Save position before movement for hitPoly collision rollback
+      const _preMovX = pilot.x, _preMovY = pilot.y;
+
+      if(origAnim !== 'kneel'){
+        if(keys['ArrowRight']){ pilot.x += WALK_SPEED; pilot.facing = 1; pilot.walking = true; }
+        if(keys['ArrowLeft']){ pilot.x -= WALK_SPEED; pilot.facing = -1; pilot.walking = true; }
+        if(keys['ArrowUp']){ pilot.y -= WALK_SPEED; pilot.walking = true; }
+        if(keys['ArrowDown']){ pilot.y += WALK_SPEED; pilot.walking = true; }
+        if(touchJoyDx !== 0 || touchJoyDy !== 0){
+          pilot.x += touchJoyDx * WALK_SPEED;
+          pilot.y += touchJoyDy * WALK_SPEED;
+          if(Math.abs(touchJoyDx) > 0.1 || Math.abs(touchJoyDy) > 0.1){
+            pilot.walking = true;
+          }
+          if(Math.abs(touchJoyDx) > 0.1) pilot.facing = touchJoyDx > 0 ? 1 : -1;
+        }
+      }
+
+      if(pilot.onPlatform === null){
+        if(pilot.x < TARMAC_LEFT) pilot.x = TARMAC_LEFT;
+        if(pilot.x > TARMAC_RIGHT) pilot.x = TARMAC_RIGHT;
+        if(pilot.y < TARMAC_TOP) pilot.y = TARMAC_TOP;
+        if(pilot.y > TARMAC_BOTTOM) pilot.y = TARMAC_BOTTOM;
+      }
+
+      // Collision (skip in editor, skip when on platform, skip when jumping high)
+      if(!editorMode && pilot.onPlatform === null && pilot.jumpOffY > -20){
+        for(let oi2=0; oi2<objects.length; oi2++){
+          const obj = objects[oi2];
+          if(!obj.collide) continue;
+          // hitPoly collision — circle vs polygon with edge sliding
+          // Only collide when pilot is in front of (below) the object's top edge
+          if(obj.hitPoly && obj.hitPoly.length >= 3){
+            const feetOff = pilot.jumpOffY - 18;
+            const feetY = pilot.y + feetOff;
+            const prX = 20, prY = 10; // ellipse radii (wider than tall)
+            const poly = obj.hitPoly;
+            const polyTopY = Math.min(...poly.map(p => p.y));
+            // Skip collision if pilot is behind the object (above the hitPoly top)
+            if(pilot.y < polyTopY - prY){
+              continue;
+            }
+
+            // Ellipse collision: scale Y by prX/prY to work in circle-space
+            const yScale = prX / prY;
+            const sFeetY = feetY * yScale; // scaled feet Y
+            // Scale polygon points
+            const sPoly = poly.map(p => ({x: p.x, y: p.y * yScale}));
+
+            // Find closest point on any scaled polygon edge to scaled circle center
+            let bestDist = Infinity, bestSCX = 0, bestSCY = 0, bestEi = 0, bestEj = 0;
+            for(let i=0,j=sPoly.length-1; i<sPoly.length; j=i++){
+              const ex = sPoly[i].x-sPoly[j].x, ey = sPoly[i].y-sPoly[j].y;
+              const len2 = ex*ex+ey*ey;
+              if(len2 < 0.001) continue;
+              const t = Math.max(0, Math.min(1, ((pilot.x-sPoly[j].x)*ex + (sFeetY-sPoly[j].y)*ey) / len2));
+              const cx = sPoly[j].x + t*ex, cy = sPoly[j].y + t*ey;
+              const dx = pilot.x-cx, dy = sFeetY-cy;
+              const d = dx*dx+dy*dy;
+              if(d < bestDist){ bestDist = d; bestSCX = cx; bestSCY = cy; bestEi = i; bestEj = j; }
+            }
+            bestDist = Math.sqrt(bestDist);
+
+            const inside = pointInPoly(poly, pilot.x, feetY);
+
+            if(inside || bestDist < prX){
+              if(inside && bestDist < 0.001){
+                pilot.x = _preMovX; pilot.y = _preMovY;
+              } else if(inside){
+                // Push along outward edge normal (in scaled space)
+                const ex = sPoly[bestEi].x-sPoly[bestEj].x, ey = sPoly[bestEi].y-sPoly[bestEj].y;
+                const len = Math.sqrt(ex*ex+ey*ey);
+                const n1x = -ey/len, n1y = ex/len;
+                const pcx = sPoly.reduce((s,p)=>s+p.x,0)/sPoly.length;
+                const pcy = sPoly.reduce((s,p)=>s+p.y,0)/sPoly.length;
+                const dot = (bestSCX+n1x-pcx)*n1x + (bestSCY+n1y-pcy)*n1y;
+                const nx = dot > 0 ? n1x : -n1x;
+                const ny = dot > 0 ? n1y : -n1y;
+                // Push in scaled space, then unscale Y
+                pilot.x = bestSCX + nx * (prX + 1);
+                pilot.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+              } else {
+                // Outside but ellipse overlaps — push away from closest point
+                const nx = (pilot.x-bestSCX)/bestDist, ny = (sFeetY-bestSCY)/bestDist;
+                pilot.x = bestSCX + nx * (prX + 1);
+                pilot.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+              }
+            }
+            continue; // skip old hitboxes if hitPoly exists
+          }
+          if(!obj.hitboxes) continue;
+          for(const b of obj.hitboxes){
+            const feetY = pilot.y + pilot.jumpOffY;
+            const pL = pilot.x - PILOT_W*0.15, pR = pilot.x + PILOT_W*0.15;
+            const pT = feetY - 15, pB = feetY - 5;
+            const pW = pR - pL, pH = pB - pT;
+
+            let push;
+            if(isCircle(b)){
+              push = rectCircleCollide(pL, pT, pW, pH, b.cx, b.cy, b.r);
+            } else {
+              push = rotBoxCollide(b, pL, pT, pW, pH);
+            }
+            if(push){ pilot.x += push.px; pilot.y += push.py; }
+          }
+        }
+      }
+
+      // Jump arc
+      const JUMP_HEIGHT = 80;
+      const JUMP_DURATION = 0.5;
+      if(origAnim === 'jump'){
+        pilot.jumpTime = (pilot.jumpTime || 0) + dt;
+        const t = Math.min(pilot.jumpTime / JUMP_DURATION, 1);
+        pilot.jumpOffY = -JUMP_HEIGHT * Math.sin(Math.PI * t);
+        if(t >= 1){
+          pilot.jumpOffY = 0;
+          pilot.jumpTime = 0;
+          setOrigAnim('idle');
+        }
+      } else if(pilot.onPlatform === null){
+        pilot.jumpTime = 0;
+        pilot.jumpOffY = 0;
+      } else {
+        pilot.jumpTime = 0;
+      }
+
+      // Platform zone detection
+      // The polygon = the walkable top face of the object.
+      // Inside polygon: pilot walks freely within it, drawn in front of object.
+      // Outside polygon: back to tarmac.
+      if(pilot.onPlatform !== null){
+        // ON a platform — check if still inside polygon
+        const poly = objects[pilot.onPlatform].platformPoly;
+        if(!pointInPoly(poly, pilot.x, pilot.y)){
+          // Walked off the platform edge — back to tarmac
+          pilot.onPlatform = null;
+        }
+      } else {
+        // NOT on platform — check if jumping feet entered a polygon
+        if(origAnim === 'jump' && pilot.jumpOffY < -10){
+          const jumpFeetY = pilot.y + pilot.jumpOffY;
+          for(let pi=0; pi<objects.length; pi++){
+            const pobj = objects[pi];
+            if(!pobj.platform || !pobj.platformPoly) continue;
+            if(pointInPoly(pobj.platformPoly, pilot.x, jumpFeetY)){
+              // Land on platform — move pilot.y into the polygon
+              pilot.onPlatform = pi;
+              pilot.y = jumpFeetY;
+              pilot.jumpOffY = 0;
+              pilot.jumpTime = 0;
+              setOrigAnim('idle');
+              break;
+            }
+          }
+        }
+      }
+
+      // Animation state machine
+      if(origAnim === 'kneel'){
+        if(origFrame >= ORIG_ANIMS.kneel.count - 1){
+          // Kneel finished — open popup if pending, or stay kneeled while popup open
+          if(_kneelPending !== null){
+            openPopup(_kneelPending);
+            _kneelPending = null;
+          }
+          if(!popupOpen && !contentViewOpen) setOrigAnim('idle');
+          // else: hold last kneel frame while popup/content is open
+        }
+      } else if(isJumping && origAnim !== 'jump'){
+        setOrigAnim('jump');
+      } else if(origAnim === 'jump'){
+        if(pilot.jumpTime >= JUMP_DURATION){
+          setOrigAnim('idle');
+        }
+      } else if(pilot.walking){
+        setOrigAnim('walk');
+      } else {
+        setOrigAnim('idle');
+      }
+      tickOrigAnim(dt);
+    }
+  }
+
+  // Nearest interactable
+  pilot.nearObj = null;
+  const pInteractY = pilot.y;
+  if(!editorMode){
+    let nd = Infinity;
+    for(let i=0; i<objects.length; i++){
+      const obj = objects[i];
+      if(!obj.interact) continue;
+      let d = Infinity;
+      if(obj.hitPoly && obj.hitPoly.length >= 3){
+        // Distance to nearest edge of hitPoly
+        for(let j=0, k=obj.hitPoly.length-1; j<obj.hitPoly.length; k=j++){
+          const ax=obj.hitPoly[k].x, ay=obj.hitPoly[k].y, bx=obj.hitPoly[j].x, by=obj.hitPoly[j].y;
+          const ex=bx-ax, ey=by-ay, len2=ex*ex+ey*ey;
+          const t = len2<0.001 ? 0 : Math.max(0,Math.min(1,((pilot.x-ax)*ex+(pInteractY-ay)*ey)/len2));
+          const cx=ax+t*ex, cy=ay+t*ey;
+          const dd=Math.sqrt((pilot.x-cx)**2+(pInteractY-cy)**2);
+          if(dd<d) d=dd;
+        }
+      } else if(obj.hitboxes){
+        for(const b of obj.hitboxes){
+          let dd;
+          if(isCircle(b)){
+            dd = Math.sqrt((pilot.x-b.cx)**2 + (pInteractY-b.cy)**2) - b.r;
+          } else {
+            const bc2 = boxCenter(b);
+            dd = Math.sqrt((pilot.x-bc2.x)**2 + (pInteractY-bc2.y)**2);
+          }
+          if(dd < d) d = dd;
+        }
+      } else continue;
+      if(d<INTERACT_R && d<nd){ nd=d; pilot.nearObj=i; }
+    }
+  }
+  promptEl.classList.toggle('show', pilot.nearObj!==null && !popupOpen);
+
+  // Camera
+  const mainScale = getScale();
+  const visH = VISIBLE_H;
+  const vww = W / mainScale;
+  camX = pilot.x - vww/2;
+  const camPH = PILOT_H;
+  camY = (pilot.y - camPH/2) - visH/2;
+  if(camX<0) camX=0; if(camX>WORLD_W-vww) camX=WORLD_W-vww;
+  if(camY<0) camY=0; if(camY>WORLD_H-visH) camY=WORLD_H-visH;
+
+  // === RENDER ===
+  ctx.clearRect(0,0,W,H);
+
+  drawList.length = 0;
+  for(const obj of objects){
+    if(objBitmaps[obj.key]) drawList.push(obj);
+  }
+  // Depth sorting — depthPoly defines the "behind" region per object
+  const pilotDepthY = (pilot.onPlatform !== null) ? objects[pilot.onPlatform].depthY + 1 : pilot.y;
+  for(const obj of drawList){
+    if(obj.depthPoly && obj.depthPoly.length >= 3){
+      // Pilot inside depthPoly = behind object (object draws in front)
+      const behind = pointInPoly(obj.depthPoly, pilot.x, pilot.y);
+      obj._effectiveDepthY = behind ? pilotDepthY + 1 : pilotDepthY - 1;
+    } else {
+      obj._effectiveDepthY = obj.depthY;
+    }
+  }
+
+  drawList.sort((a,b) => a._effectiveDepthY - b._effectiveDepthY);
+
+  behindCount = 0;
+  for(let i=0; i<drawList.length; i++){
+    if(drawList[i]._effectiveDepthY <= pilotDepthY) behindCount = i+1;
+  }
+
+  // All rendering direct on main canvas
+  // mainScale already computed above with camera
+
+  {
+    // ===== ORIGINAL SVG MODE =====
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-camX, -camY);
+
+    // 1) Background
+    if(bgBitmap){
+      const sx = Math.max(0, Math.floor(camX));
+      const sy = Math.max(0, Math.floor(camY));
+      const sw = Math.min(WORLD_W - sx, Math.ceil(vww) + 2);
+      const sh = Math.min(WORLD_H - sy, Math.ceil(visH) + 2);
+      ctx.drawImage(bgBitmap, sx, sy, sw, sh, sx, sy, sw, sh);
+    }
+
+    // 2) Behind-pilot objects
+    renderObjects(drawList, 0, behindCount, mainScale);
+    ctx.restore();
+  }
+
+  // 3) Pilot — anchored at feet
+  const pilotScreenX = (pilot.x - camX) * mainScale;
+  const pilotFeetScreenY = (pilot.y - camY) * mainScale;
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  {
+    const a = ORIG_ANIMS[origAnim];
+    const col = a.frames ? a.frames[origFrame] : (a.start + origFrame);
+    const srcX = col * FRAME_W;
+    const srcY = a.row * FRAME_H;
+    const pilotDrawW = PILOT_W * mainScale;
+    const pilotDrawH = PILOT_H * mainScale;
+    const jumpOffset = pilot.jumpOffY * mainScale;
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH + jumpOffset);
+    if(pilot.facing<0) ctx.scale(-1,1);
+    ctx.drawImage(sprite, srcX, srcY, FRAME_W, FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+  }
+  ctx.restore();
+
+  // 4) In-front-of-pilot objects
+  if(behindCount < drawList.length){
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-camX, -camY);
+    renderObjects(drawList, behindCount, drawList.length, mainScale);
+    ctx.restore();
+  }
+
+  // Hanger hint arrow + return-to-game trigger
+  {
+    const HANGER_HINT_X = 700; // show arrow when pilot x < this
+    const HANGER_ENTER_X = 80; // far back wall triggers return
+
+    if(pilot.x < HANGER_ENTER_X){
+      returnToNavigator();
+    } else if(pilot.x < HANGER_HINT_X && !popupOpen && !contentViewOpen){
+      // Arrow + text at pilot's Y level, pointing straight left into hanger
+      const pilotMidY = pilot.y - PILOT_H / 2;
+      const bounce = Math.sin(Date.now() / 300) * 6;
+
+      ctx.save();
+      ctx.scale(mainScale, mainScale);
+      ctx.translate(-camX, -camY);
+
+      // Text above arrow
+      ctx.font = '10px "Press Start 2P", monospace';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'middle';
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 10;
+      ctx.fillText('RETURN TO GAME', pilot.x - 100, pilotMidY - 20);
+
+      // Arrow — fixed pointing left, at pilot height, with bounce
+      const ax = pilot.x - 140 + bounce;
+      ctx.save();
+      ctx.translate(ax, pilotMidY);
+      ctx.rotate(Math.PI); // point left
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc';
+      ctx.shadowBlur = 16;
+      ctx.beginPath();
+      ctx.moveTo(18, 0);
+      ctx.lineTo(-14, -14);
+      ctx.lineTo(-14, 14);
+      ctx.closePath();
+      ctx.fill();
+      ctx.restore();
+
+      ctx.restore();
+    }
+  }
+
+  // Debug / Editor overlay
+  if(debugHitboxes || editorMode){
+    const ds = mainScale;
+    ctx.save();
+    ctx.scale(ds,ds);
+    ctx.translate(-camX,-camY);
+    ctx.lineWidth = 2/ds;
+
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.hitboxes || edContourMode) continue;
+      for(let bi=0; bi<obj.hitboxes.length; bi++){
+        const b = obj.hitboxes[bi];
+        const selected = editorMode && oi === edSelObj && bi === edSelBox;
+
+        if(selected){
+          ctx.strokeStyle = '#ffe000';
+          ctx.fillStyle = 'rgba(255,224,0,0.25)';
+          ctx.lineWidth = 3/ds;
+        } else {
+          ctx.strokeStyle = 'rgba(255,0,0,0.8)';
+          ctx.fillStyle = 'rgba(255,0,0,0.15)';
+          ctx.lineWidth = 2/ds;
+        }
+
+        if(isCircle(b)){
+          ctx.beginPath();
+          ctx.arc(b.cx, b.cy, b.r, 0, Math.PI*2);
+          ctx.fill();
+          ctx.stroke();
+          // Crosshair at center
+          if(selected){
+            ctx.strokeStyle = 'rgba(255,224,0,0.5)';
+            ctx.lineWidth = 1/ds;
+            const ch = 6/ds;
+            ctx.beginPath();
+            ctx.moveTo(b.cx - ch, b.cy); ctx.lineTo(b.cx + ch, b.cy);
+            ctx.moveTo(b.cx, b.cy - ch); ctx.lineTo(b.cx, b.cy + ch);
+            ctx.stroke();
+            // Radius handle
+            ctx.fillStyle = '#ffe000';
+            const hs = 4/ds;
+            ctx.fillRect(b.cx + b.r - hs/2, b.cy - hs/2, hs, hs);
+          }
+        } else {
+          const bc = boxCenter(b), ba = boxRot(b);
+          ctx.save();
+          ctx.translate(bc.x, bc.y);
+          ctx.rotate(ba);
+          ctx.fillRect(-b.w/2, -b.h/2, b.w, b.h);
+          ctx.strokeRect(-b.w/2, -b.h/2, b.w, b.h);
+          if(selected){
+            ctx.fillStyle = '#ffe000';
+            const hs = 4/ds;
+            // Edge handles
+            ctx.fillRect(-b.w/2 - hs/2, -hs/2, hs, hs);
+            ctx.fillRect(b.w/2 - hs/2, -hs/2, hs, hs);
+            ctx.fillRect(-hs/2, -b.h/2 - hs/2, hs, hs);
+            ctx.fillRect(-hs/2, b.h/2 - hs/2, hs, hs);
+            // Rotation handle — line + circle above top edge
+            const rotHandleDist = 25/ds;
+            ctx.strokeStyle = '#ff88ff';
+            ctx.lineWidth = 2/ds;
+            ctx.beginPath();
+            ctx.moveTo(0, -b.h/2);
+            ctx.lineTo(0, -b.h/2 - rotHandleDist);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(0, -b.h/2 - rotHandleDist, 5/ds, 0, Math.PI*2);
+            ctx.fillStyle = '#ff88ff';
+            ctx.fill();
+            ctx.stroke();
+          }
+          ctx.restore();
+        }
+      }
+    }
+
+    // depthY line for selected object (drawn outside hitbox loop so it shows even without hitboxes)
+    if(editorMode && !edContourMode && edSelObj !== null){
+      const dObj = objects[edSelObj];
+      ctx.strokeStyle = 'rgba(0,255,255,0.7)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([8/ds, 4/ds]);
+      ctx.beginPath();
+      ctx.moveTo(dObj.wx - 50, dObj.depthY);
+      ctx.lineTo(dObj.wx + dObj.ww + 50, dObj.depthY);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0,255,255,0.9)';
+      ctx.font = (10/ds) + 'px monospace';
+      ctx.fillText('depthY: ' + Math.round(dObj.depthY), dObj.wx + dObj.ww + 55, dObj.depthY + 4/ds);
+    }
+
+    // Hit polygons (red)
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.hitPoly || obj.hitPoly.length < 3) continue;
+      const hp = obj.hitPoly;
+      ctx.fillStyle = 'rgba(255,68,68,0.1)';
+      ctx.strokeStyle = 'rgba(255,68,68,0.8)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(hp[0].x, hp[0].y);
+      for(let i=1; i<hp.length; i++) ctx.lineTo(hp[i].x, hp[i].y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      for(let i=0; i<hp.length; i++){
+        const isSel = edHitPolyMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : '#ff4444';
+        ctx.beginPath();
+        ctx.arc(hp[i].x, hp[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+      }
+    }
+    // Platform polygons
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.platformPoly || obj.platformPoly.length < 3) continue;
+      const c = obj.platformPoly;
+      const isOn = pilot.onPlatform === oi;
+      // Filled polygon
+      ctx.fillStyle = isOn ? 'rgba(0,255,0,0.15)' : 'rgba(0,255,136,0.08)';
+      ctx.strokeStyle = isOn ? '#00ff00' : 'rgba(0,255,136,0.8)';
+      ctx.lineWidth = (isOn ? 3 : 2)/ds;
+      ctx.setLineDash([]);
+      ctx.beginPath();
+      ctx.moveTo(c[0].x, c[0].y);
+      for(let i=1; i<c.length; i++) ctx.lineTo(c[i].x, c[i].y);
+      ctx.closePath();
+      ctx.fill();
+      ctx.stroke();
+      // Vertex points
+      for(let i=0; i<c.length; i++){
+        const isSel = edContourMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : isOn ? '#00ff00' : '#00ff88';
+        ctx.beginPath();
+        ctx.arc(c[i].x, c[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+        if(isSel){
+          ctx.strokeStyle = '#ffe000';
+          ctx.lineWidth = 2/ds;
+          ctx.stroke();
+        }
+      }
+      // Label
+      ctx.fillStyle = isOn ? '#00ff00' : 'rgba(0,255,136,0.7)';
+      ctx.font = (9/ds) + 'px monospace';
+      const minY = Math.min(...c.map(p=>p.y));
+      ctx.fillText(obj.name, c[0].x, minY - 10/ds);
+    }
+
+    // Depth polygons (orange)
+    for(let oi=0; oi<objects.length; oi++){
+      const obj = objects[oi];
+      if(!obj.depthPoly || obj.depthPoly.length < 3) continue;
+      const dp = obj.depthPoly;
+      const pilotInside = pointInPoly(dp, pilot.x, pilot.y);
+      ctx.fillStyle = pilotInside ? 'rgba(255,136,0,0.2)' : 'rgba(255,136,0,0.08)';
+      ctx.strokeStyle = pilotInside ? '#ffaa00' : 'rgba(255,136,0,0.8)';
+      ctx.lineWidth = 2/ds;
+      ctx.setLineDash([6/ds, 3/ds]);
+      ctx.beginPath();
+      ctx.moveTo(dp[0].x, dp[0].y);
+      for(let i=1; i<dp.length; i++) ctx.lineTo(dp[i].x, dp[i].y);
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+      ctx.setLineDash([]);
+      for(let i=0; i<dp.length; i++){
+        const isSel = edDepthPolyMode && edSelContourObj === oi && edSelContourPt === i;
+        ctx.fillStyle = isSel ? '#ffe000' : '#ff8800';
+        ctx.beginPath();
+        ctx.arc(dp[i].x, dp[i].y, (isSel ? 6 : 4)/ds, 0, Math.PI*2);
+        ctx.fill();
+      }
+      // Label
+      ctx.fillStyle = 'rgba(255,136,0,0.7)';
+      ctx.font = (9/ds) + 'px monospace';
+      const minY = Math.min(...dp.map(p=>p.y));
+      ctx.fillText('DEPTH: ' + obj.name, dp[0].x, minY - 10/ds);
+    }
+
+    // Pilot platform state readout
+    ctx.save();
+    ctx.scale(1/ds, 1/ds);
+    ctx.fillStyle = '#00ff88';
+    ctx.font = '11px monospace';
+    const stateText = 'onPlatform: ' + (pilot.onPlatform !== null ? objects[pilot.onPlatform].name : 'null')
+      + '  x: ' + Math.round(pilot.x) + '  y: ' + Math.round(pilot.y);
+    ctx.fillText(stateText, 10, 20);
+    ctx.restore();
+
+    // Pilot feet ellipse
+    const feetCX = pilot.x, feetCY = pilot.y + pilot.jumpOffY - 18;
+    const feetRX = 20, feetRY = 10;
+    ctx.strokeStyle = 'rgba(0,255,0,0.8)';
+    ctx.fillStyle = 'rgba(0,255,0,0.15)';
+    ctx.lineWidth = 2/ds;
+    ctx.beginPath();
+    ctx.ellipse(feetCX, feetCY, feetRX, feetRY, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.stroke();
+
+    // Pilot Y reference line in editor
+    if(editorMode && !edContourMode){
+      ctx.strokeStyle = 'rgba(0,255,0,0.4)';
+      ctx.lineWidth = 1/ds;
+      ctx.setLineDash([6/ds, 3/ds]);
+      ctx.beginPath();
+      ctx.moveTo(camX, pilot.y);
+      ctx.lineTo(camX + vww, pilot.y);
+      ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(0,255,0,0.7)';
+      ctx.font = (10/ds) + 'px monospace';
+      ctx.fillText('pilot.y: ' + Math.round(pilot.y), camX + 10/ds, pilot.y - 6/ds);
+    }
+
+    ctx.restore();
+  }
+
+  // Hide d-pad during overlays (mobile)
+  if(isMobile){
+    document.getElementById('dpad').style.display = (popupOpen || contentViewOpen) ? 'none' : 'block';
+  }
+}
+
+// ===================== PROCEDURAL MUSIC — HOME VORTEX =====================
+// Relaxed, post-mission D major. Gentle pulse, warm pads, unhurried melody.
+let audioCtx = null;
+let musicPlaying = false;
+let musicBar = 0;
+let musicTimer = null;
+
+function fr(s){ return Math.pow(2, s/12); }
+const SCALE_DMAJ = [0,2,4,5,7,9,11];
+
+function _voice(hz, t, att, dur, rel, vol, type, detune){
+  const o = audioCtx.createOscillator();
+  const g = audioCtx.createGain();
+  o.type = type || 'sine';
+  o.frequency.value = hz;
+  if(detune) o.detune.value = detune;
+  g.gain.setValueAtTime(0, t);
+  g.gain.linearRampToValueAtTime(vol, t + att);
+  g.gain.setValueAtTime(vol, t + dur);
+  g.gain.linearRampToValueAtTime(0, t + dur + rel);
+  o.connect(g); g.connect(audioCtx.destination);
+  o.start(t); o.stop(t + dur + rel + 0.1);
+}
+function _pad(hz,t,dur,vol){ _voice(hz,t,0.8,dur,1.5,vol*0.4,'sine',0); _voice(hz*1.002,t,0.9,dur,1.5,vol*0.3,'sine',8); }
+function _mel(hz,t,dur,vol){ _voice(hz,t,0.05,dur,0.4,vol,'triangle',0); }
+function _bass(hz,t,dur,vol){ _voice(hz,t,0.02,dur,0.15,vol*0.7,'sine',0); }
+function _str(hz,t,dur,vol){ _voice(hz,t,0.3,dur,0.6,vol*0.5,'sawtooth',0); const f=audioCtx.createBiquadFilter();f.type='lowpass';f.frequency.value=800; }
+function _plk(hz,t,vol){ _voice(hz,t,0.005,0.08,0.3,vol,'triangle',0); }
+
+function genBar(t0, bar){
+  const B = bar;
+  const root = 146.83; // D3
+  const sc = SCALE_DMAJ;
+  const bl = 60/80; // 80 BPM — relaxed tempo
+  const barLen = 8 * bl;
+  // Gentle 3-phase cycle
+  const phase = B <= 6 ? 'drift' : B <= 18 ? 'warmth' : B <= 30 ? 'glow' : 'drift';
+  const vol = phase === 'drift' ? 0.35 : phase === 'warmth' ? 0.55 : 0.7;
+
+  // Soft kick — every other beat, gentle
+  [0, 4].forEach(i => { _bass(55, t0 + i*bl, bl*0.2, 0.06*vol); });
+
+  // Bass — slow, warm, root-fifth movement
+  const bassP = [[0,7],[7,5],[5,0],[4,7]];
+  const bp = bassP[Math.floor(B/2) % 4];
+  _bass(root/2 * fr(bp[0]), t0, barLen*0.5, 0.06*vol);
+  _bass(root/2 * fr(bp[1]), t0 + 4*bl, barLen*0.4, 0.05*vol);
+
+  // Warm pads — D major: D-Bm-G-A (I-vi-IV-V)
+  if(phase !== 'drift' || B % 2 === 0){
+    const prog = [[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const ch = prog[Math.floor(B/2) % 4];
+    ch.forEach((s, i) => {
+      _pad(root * fr(s), t0 + i*0.3, barLen + 2.0, 0.04*vol * (1 - i*0.1));
+    });
+  }
+
+  // Gentle strings in warmth/glow
+  if(phase === 'warmth' || phase === 'glow'){
+    const prog = [[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const ch = prog[Math.floor(B/2) % 4];
+    ch.slice(0,2).forEach((s,i) => {
+      _str(root * fr(s), t0 + i*0.15, barLen*0.7, 0.025*vol);
+    });
+  }
+
+  // Melody — unhurried, gentle, wide intervals
+  const melNotes = [0,4,7,12,9,7,4,7,5,4,2,0,4,7,9,12];
+  const mi = B % melNotes.length;
+  if(phase !== 'drift'){
+    [0, 3, 5].forEach((beat, i) => {
+      const step = melNotes[(mi + i) % melNotes.length];
+      const noteHz = root * 2 * fr(step <= 12 ? step : step - 12) * (step > 12 ? 2 : 1);
+      _mel(noteHz, t0 + beat*bl, bl*2.5, 0.035*vol);
+    });
+  } else {
+    // Drift: single sparse note
+    if(B % 2 === 0){
+      _mel(root * 2 * fr(melNotes[mi]), t0 + 2*bl, barLen*0.5, 0.025*vol);
+    }
+  }
+
+  // Glow: gentle plucked arpeggios
+  if(phase === 'glow'){
+    const arp = [0, 4, 7, 12, 7, 4];
+    arp.forEach((s, i) => {
+      if(i % 2 === B % 2) _plk(root * 2 * fr(s), t0 + i*bl*1.2, 0.025*vol);
+    });
+  }
+}
+
+function startMusic(){
+  if(musicPlaying) return;
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  musicPlaying = true;
+  musicBar = 0;
+  scheduleBar();
+}
+
+function scheduleBar(){
+  if(!musicPlaying) return;
+  const bl = 60/80;
+  const barLen = 8 * bl;
+  const t0 = audioCtx.currentTime + 0.1;
+  genBar(t0, musicBar);
+  musicBar++;
+  if(musicBar > 36) musicBar = 0; // loop cycle
+  musicTimer = setTimeout(scheduleBar, barLen * 1000 * 0.95);
+}
+
+function stopMusic(){
+  musicPlaying = false;
+  if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
+}
+
+let _musicMuted = localStorage.getItem('victoryMusicMuted') === '1';
+function toggleMusicMute(){
+  _musicMuted = !_musicMuted;
+  localStorage.setItem('victoryMusicMuted', _musicMuted ? '1' : '0');
+  const btn = document.getElementById('mute-btn');
+  btn.classList.toggle('muted', _musicMuted);
+  btn.textContent = _musicMuted ? '🔇' : '🔊';
+  if(_musicMuted){
+    stopMusic();
+    if(audioCtx) audioCtx.suspend();
+  } else {
+    if(audioCtx) audioCtx.resume();
+    startMusic();
+  }
+}
+// Apply saved mute state on load
+if(_musicMuted){
+  const btn = document.getElementById('mute-btn');
+  btn.classList.add('muted');
+  btn.textContent = '🔇';
+}
+
+// Start music on first user interaction
+let _musicStarted = false;
+function tryStartMusic(){
+  if(_musicStarted) return;
+  _musicStarted = true;
+  if(!_musicMuted) startMusic();
+}
+window.addEventListener('click', tryStartMusic, {once:false});
+window.addEventListener('keydown', tryStartMusic, {once:false});
+window.addEventListener('touchstart', tryStartMusic, {once:false});
+
+// Pause/resume music on page visibility change (tab switch, browser close)
+document.addEventListener('visibilitychange', () => {
+  if(document.hidden){
+    stopMusic(); if(audioCtx) audioCtx.suspend();
+  } else {
+    if(!_musicMuted && _musicStarted && audioCtx){ audioCtx.resume(); startMusic(); }
+  }
+});
+
+let loaded = 0;
+const totalImgs = 2 + Object.keys(imgs).length;
+let bgBitmap;
+const objBitmaps = {};
+function checkStart(){
+  loaded++;
+  if(loaded >= totalImgs){
+    // Rasterize bg SVG — offset draw so tarmac region aligns with world canvas
+    // The tarmac/scene sits at SVG coords (834, 2843) within the 6645×7529 background
+    bgBitmap = document.createElement('canvas');
+    bgBitmap.width = WORLD_W; bgBitmap.height = WORLD_H;
+    const bgc = bgBitmap.getContext('2d');
+    // Bottom-align: PNG is 5207×1574, world is 5198×1696
+    const bgNatW = bgImg.naturalWidth, bgNatH = bgImg.naturalHeight;
+    bgc.drawImage(bgImg, 0, WORLD_H - bgNatH, bgNatW, bgNatH);
+    console.log('[BG] rasterized '+bgNatW+'x'+bgNatH+' bottom-aligned in '+WORLD_W+'x'+WORLD_H);
+    for(const obj of objects){
+      const img = imgs[obj.key];
+      if(!img) continue;
+      const c = document.createElement('canvas');
+      c.width = Math.ceil(obj.ww); c.height = Math.ceil(obj.wh);
+      const cx2 = c.getContext('2d');
+      cx2.drawImage(img, 0, 0, obj.ww, obj.wh);
+      objBitmaps[obj.key] = c;
+    }
+    if(!_loopStarted){
+      _loopStarted = true;
+      requestAnimationFrame(loop);
+    }
+  }
+}
+bgImg.onload = checkStart; bgImg.onerror = checkStart;
+sprite.onload = checkStart; sprite.onerror = checkStart;
+for(const k in imgs){ imgs[k].onload = checkStart; imgs[k].onerror = checkStart; }
+</script>
+</body>
+</html>
