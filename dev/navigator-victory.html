@@ -278,6 +278,33 @@ function setOrigAnim(name){
   origAnimTimer = 0;
 }
 
+function _playFootstep(){
+  if(!audioCtx || _musicMuted) return;
+  try {
+    var t = audioCtx.currentTime;
+    var hz = 80 + Math.random() * 40; // low thud, slight variation
+    var o = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = hz;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.06, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g); g.connect(audioCtx.destination);
+    o.start(t); o.stop(t + 0.1);
+    // Soft noise click layer
+    var b = audioCtx.createBufferSource();
+    var buf = audioCtx.createBuffer(1, 800, audioCtx.sampleRate);
+    var d = buf.getChannelData(0);
+    for(var i = 0; i < 800; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / 120);
+    b.buffer = buf;
+    var g2 = audioCtx.createGain();
+    g2.gain.setValueAtTime(0.03, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    b.connect(g2); g2.connect(audioCtx.destination);
+    b.start(t); b.stop(t + 0.08);
+  } catch(e){}
+}
 function tickOrigAnim(dt){
   const a = ORIG_ANIMS[origAnim];
   if(!a) return;
@@ -285,10 +312,15 @@ function tickOrigAnim(dt){
   origAnimTimer += dt;
   if(origAnimTimer >= 1/a.fps){
     origAnimTimer = 0;
+    var prevFrame = origFrame;
     origFrame++;
     if(origFrame >= frameCount){
       if(a.loop){ origFrame = 0; }
       else { origFrame = frameCount - 1; }
+    }
+    // Footstep on frames 2 and 7 of walk cycle (foot-down moments)
+    if(origAnim === 'walk' && (origFrame === 2 || origFrame === 7)){
+      _playFootstep();
     }
   }
 }
