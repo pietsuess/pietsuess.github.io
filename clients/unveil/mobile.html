@@ -50,18 +50,24 @@
 
   // Each tap spawns a logo animation centered at the tap point
   const spawns = [];
-  const loopLen = 2.0 + 2.5 * 0.95 + 1.2 + 0.2;
+  const loopLen = (2.0 + 2.5 * 0.95 + 1.2 + 0.2) / 2;
+
+  function randomOrigin() {
+    const angle = Math.random() * Math.PI * 2;
+    const r = 0.3 + Math.random() * 0.7;
+    return { ox: Math.cos(angle) * r, oy: Math.sin(angle) * r };
+  }
 
   document.addEventListener('touchstart', (e) => {
     e.preventDefault();
     for (let i = 0; i < e.changedTouches.length; i++) {
       const t = e.changedTouches[i];
-      spawns.push({ x: t.clientX, y: t.clientY, time: performance.now() });
+      spawns.push({ x: t.clientX, y: t.clientY, time: performance.now(), ...randomOrigin() });
     }
   }, { passive: false });
 
   document.addEventListener('mousedown', (e) => {
-    spawns.push({ x: e.clientX, y: e.clientY, time: performance.now() });
+    spawns.push({ x: e.clientX, y: e.clientY, time: performance.now(), ...randomOrigin() });
   });
 
   function animate(time) {
@@ -93,15 +99,19 @@
       const centerX = spawn.x;
       const centerY = spawn.y;
 
-      // Compute screen positions relative to tap point
+      // Random origin point within the logo bounds
+      const originPx = (spawn.ox * logoW / 2) * scale + centerX;
+      const originPy = (spawn.oy * logoH / 2) * scale + centerY;
+
+      // Compute screen positions relative to random origin
       let maxDist = 0;
       const sdots = [];
       for (let i = 0; i < dots.length; i++) {
         const d = dots[i];
         const px = (d.x - cxLogo) * scale + centerX;
         const py = (d.y - cyLogo) * scale + centerY;
-        const dx = (px - centerX) * 0.4;
-        const dy = (py - centerY) * 1.8;
+        const dx = (px - originPx) * 0.4;
+        const dy = (py - originPy) * 1.8;
         const dist = Math.sqrt(dx * dx + dy * dy);
         if (dist > maxDist) maxDist = dist;
         sdots.push({ px, py, dist });
@@ -111,8 +121,8 @@
         const sd = sdots[i];
         const pressNorm = maxDist > 0 ? sd.dist / maxDist : 0;
 
-        const growDur = 2.5, dotGrow = 1.2;
-        const shrinkDelay = 2.0, shrinkDur = 2.5, dotShrink = 1.2;
+        const growDur = 1.25, dotGrow = 0.6;
+        const shrinkDelay = 1.0, shrinkDur = 1.25, dotShrink = 0.6;
         const pt = Math.min(elapsed, loopLen);
 
         const pressGrowDelay = pressNorm * growDur * 0.95;
