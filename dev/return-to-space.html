@@ -1760,8 +1760,10 @@ const EARTH_WX          = OUTER_TARGET_WX + Math.round(62500/8 * 5.175);
 const EARTH_WY          = 0;
 const HOMEWARD_THRESHOLD = OUTER_TARGET_WX + 2000;
 const EARTH_ZONE_R      = 750;   // radial no-rock zone — just outside debris rings (~700px)
-const MOON_ORBIT_R      = 1300;  // 600px outside debris rings (700 + 600)
+let   MOON_ORBIT_R      = 1300;  // 600px outside debris rings (700 + 600)
 let   _moonOrbitAng     = Math.PI;  // start to the left of Earth (approach side)
+let   _moonVr           = 0;    // radial velocity (orbit radius change from ship impacts)
+let   _moonVa           = 0;    // angular velocity offset from ship impacts
 
 // 2D zone lookup: returns level index (0-4) or -1 for asteroid belt
 // LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','DESIGN']
@@ -4312,25 +4314,33 @@ function update(){
 
   // Zone crossing detection disabled for Return to Space
 
-  // ── Moon collision — solid body, bounce off ──
+  // ── Moon collision — solid body, soft bounce, nudges orbit ──
   {
     const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
     const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
     const MOON_R = 80;
     const mdx = state.x - moonWX, mdy = state.y - moonWY;
     const mDist = Math.sqrt(mdx*mdx + mdy*mdy);
-    const collR = MOON_R + 8; // ship radius ~8
+    const collR = MOON_R + 8;
     if(mDist < collR && mDist > 0.1){
-      // Push ship out
       const mnx = mdx/mDist, mny = mdy/mDist;
       state.x = moonWX + mnx * (collR + 2);
       state.y = moonWY + mny * (collR + 2);
-      // Bounce: reflect velocity off surface normal
+      // Soft bounce — absorb most energy
       const vDot = state.vx*mnx + state.vy*mny;
       if(vDot < 0){
-        state.vx -= 1.8 * vDot * mnx;
-        state.vy -= 1.8 * vDot * mny;
+        state.vx -= 1.2 * vDot * mnx;
+        state.vy -= 1.2 * vDot * mny;
       }
+      // Transfer tiny impulse to moon orbit
+      const impactSpeed = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
+      // Radial component: push orbit outward/inward
+      const radialDir = (mdx * -mnx + mdy * -mny) > 0 ? -1 : 1; // hitting toward Earth = push out
+      _moonVr += radialDir * impactSpeed * 0.008;
+      // Tangential component: nudge angular velocity
+      const tanx = -mny, tany = mnx; // tangent to orbit
+      const tanDot = state.vx*tanx + state.vy*tany;
+      _moonVa += tanDot * 0.000003;
       state.collisionFlash = 6;
       if(audioCtx && !state.sfxMuted){
         const _t = audioCtx.currentTime;
@@ -4338,6 +4348,14 @@ function update(){
         playBeep(80, _t+0.05, 0.08, 'square', 0.06);
       }
     }
+    // Apply moon orbit perturbation + slow decay back to stable
+    MOON_ORBIT_R += _moonVr;
+    _moonOrbitAng += _moonVa;
+    _moonVr *= 0.995;  // gentle radial decay
+    _moonVa *= 0.998;  // angular nudge persists longer
+    // Soft clamp — don't let it drift too crazy
+    if(MOON_ORBIT_R < 800) { MOON_ORBIT_R = 800; _moonVr = Math.abs(_moonVr); }
+    if(MOON_ORBIT_R > 2500) { MOON_ORBIT_R = 2500; _moonVr = -Math.abs(_moonVr); }
   }
 
   if(!state.inSecretLevel){
