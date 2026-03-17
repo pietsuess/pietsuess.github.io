@@ -4312,6 +4312,34 @@ function update(){
 
   // Zone crossing detection disabled for Return to Space
 
+  // ── Moon collision — solid body, bounce off ──
+  {
+    const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+    const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+    const MOON_R = 80;
+    const mdx = state.x - moonWX, mdy = state.y - moonWY;
+    const mDist = Math.sqrt(mdx*mdx + mdy*mdy);
+    const collR = MOON_R + 8; // ship radius ~8
+    if(mDist < collR && mDist > 0.1){
+      // Push ship out
+      const mnx = mdx/mDist, mny = mdy/mDist;
+      state.x = moonWX + mnx * (collR + 2);
+      state.y = moonWY + mny * (collR + 2);
+      // Bounce: reflect velocity off surface normal
+      const vDot = state.vx*mnx + state.vy*mny;
+      if(vDot < 0){
+        state.vx -= 1.8 * vDot * mnx;
+        state.vy -= 1.8 * vDot * mny;
+      }
+      state.collisionFlash = 6;
+      if(audioCtx && !state.sfxMuted){
+        const _t = audioCtx.currentTime;
+        playBeep(120, _t, 0.1, 'sawtooth', 0.12);
+        playBeep(80, _t+0.05, 0.08, 'square', 0.06);
+      }
+    }
+  }
+
   if(!state.inSecretLevel){
     // Outer barrier — solid ring, passable only at east gap
     const PLASMA_WALL_R = BELT_OUTER;
