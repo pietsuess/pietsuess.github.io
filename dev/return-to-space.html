@@ -5870,6 +5870,7 @@ function update(){
   // Wave beams
   updateWaveBeams();
   updateDebrisWall();
+  updateRace();
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -8552,6 +8553,7 @@ function drawGame(){
   drawMoon(ctx, cx, cy);
   // drawMars(ctx, cx, cy);  // HIDDEN FOR NOW
   drawDebrisWall(ctx, cx, cy);
+  drawRaceCourse(ctx, cx, cy);
 
   if(state._victoryPhase==='zoom'){
     ctx.restore();
@@ -10555,6 +10557,300 @@ function loop(timestamp) {
   requestAnimationFrame(loop);
 }
 initLeaderboard();
+
+// ══════════════════════════════════════════════════════════════
+//  RACE BEACONS — slalom courses with countdown start gate
+// ══════════════════════════════════════════════════════════════
+
+const RACE_COURSES = [
+  {
+    name: 'DEBRIS RUN',
+    // Start gate position (approach to trigger countdown)
+    startWX: EARTH_WX + 1400, startWY: EARTH_WY,
+    startAngle: 0, // gate faces east
+    // Beacons: wx, wy, side ('L' or 'R' — which side to pass on)
+    beacons: [
+      { wx: EARTH_WX + 1600, wy: EARTH_WY - 120, side: 'L' },
+      { wx: EARTH_WX + 1800, wy: EARTH_WY + 140, side: 'R' },
+      { wx: EARTH_WX + 2050, wy: EARTH_WY - 100, side: 'L' },
+      { wx: EARTH_WX + 2300, wy: EARTH_WY + 160, side: 'R' },
+      { wx: EARTH_WX + 2550, wy: EARTH_WY - 80,  side: 'L' },
+      { wx: EARTH_WX + 2800, wy: EARTH_WY + 120, side: 'R' },
+      { wx: EARTH_WX + 3100, wy: EARTH_WY - 140, side: 'L' },
+      { wx: EARTH_WX + 3400, wy: EARTH_WY + 100, side: 'R' },
+    ]
+  }
+];
+
+// Race state
+const _race = {
+  active: false,
+  courseIdx: 0,
+  countdown: 0,       // frames remaining in countdown (180 = 3s)
+  countdownPhase: 0,   // 3, 2, 1, GO
+  started: false,
+  timer: 0,            // race frames elapsed
+  nextBeacon: 0,       // index of next beacon to pass
+  bestTime: null,
+  finished: false,
+  finishTimer: 0,
+  nearStart: false,    // tracking proximity to start gate
+};
+
+function initRaceCourse(idx){
+  _race.courseIdx = idx;
+  _race.active = false;
+  _race.countdown = 0;
+  _race.started = false;
+  _race.timer = 0;
+  _race.nextBeacon = 0;
+  _race.finished = false;
+  _race.finishTimer = 0;
+  _race.nearStart = false;
+}
+initRaceCourse(0);
+
+function updateRace(){
+  if(!state.started || state.paused || state.gameOver) return;
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+
+  const dx = state.x - course.startWX, dy = state.y - course.startWY;
+  const distToStart = Math.sqrt(dx*dx + dy*dy);
+
+  // Approach start gate — trigger countdown
+  if(!_race.active && !_race.finished && distToStart < 150){
+    if(!_race.nearStart){
+      _race.nearStart = true;
+      _race.active = true;
+      _race.countdown = 180; // 3 seconds at 60fps
+      _race.countdownPhase = 3;
+      _race.started = false;
+      _race.timer = 0;
+      _race.nextBeacon = 0;
+    }
+  }
+  if(distToStart > 300) _race.nearStart = false;
+
+  // Countdown
+  if(_race.active && _race.countdown > 0){
+    _race.countdown--;
+    _race.countdownPhase = Math.ceil(_race.countdown / 60);
+    if(_race.countdown <= 0){
+      _race.started = true;
+      _race.countdownPhase = 0; // GO
+    }
+    return;
+  }
+
+  // Race in progress — check beacon passage
+  if(_race.started && !_race.finished){
+    _race.timer++;
+    const bi = _race.nextBeacon;
+    if(bi < course.beacons.length){
+      const b = course.beacons[bi];
+      const bDx = state.x - b.wx, bDy = state.y - b.wy;
+      const bDist = Math.sqrt(bDx*bDx + bDy*bDy);
+      // Pass within 120px — check correct side
+      if(bDist < 120){
+        // Determine which side ship is on relative to course direction
+        // Use cross product with direction to next beacon
+        const nextB = course.beacons[bi + 1] || { wx: b.wx + 200, wy: b.wy };
+        const dirX = nextB.wx - b.wx, dirY = nextB.wy - b.wy;
+        const cross = dirX * bDy - dirY * bDx;
+        const shipSide = cross > 0 ? 'L' : 'R';
+        // Accept passage (lenient — just need to get close)
+        _race.nextBeacon++;
+        if(audioCtx && !state.sfxMuted){
+          const _t = audioCtx.currentTime;
+          playBeep(880, _t, 0.06, 'sine', 0.08);
+          playBeep(1100, _t + 0.06, 0.06, 'sine', 0.06);
+        }
+        // Check if course complete
+        if(_race.nextBeacon >= course.beacons.length){
+          _race.finished = true;
+          _race.finishTimer = 240; // show result for 4s
+          const timeMs = Math.round(_race.timer / 60 * 1000);
+          if(!_race.bestTime || timeMs < _race.bestTime) _race.bestTime = timeMs;
+          if(audioCtx && !state.sfxMuted){
+            const _t2 = audioCtx.currentTime;
+            playBeep(660, _t2, 0.1, 'sine', 0.1);
+            playBeep(880, _t2+0.1, 0.1, 'sine', 0.1);
+            playBeep(1100, _t2+0.2, 0.15, 'sine', 0.12);
+          }
+        }
+      }
+    }
+  }
+
+  // Finish display countdown
+  if(_race.finished){
+    _race.finishTimer--;
+    if(_race.finishTimer <= 0){
+      _race.active = false;
+      _race.finished = false;
+      _race.started = false;
+    }
+  }
+}
+
+function drawBeacon(ctx, cx, cy, b, isNext, isPassed){
+  const sx = b.wx - state.x + cx, sy = b.wy - state.y + cy;
+  if(sx < -200 || sx > canvas.width+200 || sy < -200 || sy > canvas.height+200) return;
+
+  const pulse = 0.5 + Math.sin(state.frameCount * 0.08) * 0.3;
+  const armLen = 22;
+  const bodyR = 6;
+
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Body — small circle
+  ctx.beginPath(); ctx.arc(0, 0, bodyR, 0, Math.PI*2);
+  ctx.fillStyle = isPassed ? 'rgba(0,255,136,0.3)' : 'rgba(100,120,140,0.6)';
+  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#667788');
+  ctx.lineWidth = 1.5;
+  ctx.fill(); ctx.stroke();
+
+  // Two arms — extending up and down
+  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#556677');
+  ctx.lineWidth = 2;
+  ctx.beginPath(); ctx.moveTo(0, -bodyR); ctx.lineTo(0, -bodyR - armLen); ctx.stroke();
+  ctx.beginPath(); ctx.moveTo(0, bodyR); ctx.lineTo(0, bodyR + armLen); ctx.stroke();
+
+  // Lights at arm tips
+  const lightR = isNext ? 4 : 3;
+  const lightCol = isPassed ? '#00ff88' : (isNext ? '#ff4400' : '#aa4400');
+  const glowAlpha = isNext ? pulse : 0.5;
+
+  ctx.globalAlpha = glowAlpha;
+  ctx.shadowColor = lightCol; ctx.shadowBlur = isNext ? 12 : 6;
+  // Top light
+  ctx.beginPath(); ctx.arc(0, -bodyR - armLen, lightR, 0, Math.PI*2);
+  ctx.fillStyle = lightCol; ctx.fill();
+  // Bottom light
+  ctx.beginPath(); ctx.arc(0, bodyR + armLen, lightR, 0, Math.PI*2);
+  ctx.fillStyle = lightCol; ctx.fill();
+  ctx.shadowBlur = 0;
+
+  ctx.restore();
+}
+
+function drawStartGate(ctx, cx, cy, course){
+  const sx = course.startWX - state.x + cx, sy = course.startWY - state.y + cy;
+  if(sx < -300 || sx > canvas.width+300 || sy < -300 || sy > canvas.height+300) return;
+
+  const gateW = 8, gateH = 80;
+  ctx.save();
+  ctx.translate(sx, sy);
+
+  // Two vertical posts
+  ctx.fillStyle = '#334455';
+  ctx.fillRect(-gateW/2, -gateH/2, gateW, gateH);
+
+  // Dashed line between posts (start line)
+  ctx.strokeStyle = _race.started ? '#00ff88' : '#ffcc00';
+  ctx.lineWidth = 2;
+  ctx.setLineDash([6, 4]);
+  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
+  ctx.setLineDash([]);
+
+  // Label
+  if(!_race.active && !_race.finished){
+    ctx.font = '8px "Press Start 2P",monospace';
+    ctx.fillStyle = '#ffcc00';
+    ctx.textAlign = 'center';
+    ctx.fillText('START', 0, -gateH/2 - 10);
+  }
+
+  ctx.restore();
+}
+
+function drawRaceHUD(ctx){
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+
+  // Countdown overlay
+  if(_race.active && _race.countdown > 0){
+    const num = _race.countdownPhase;
+    ctx.save();
+    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = num > 0 ? '#ff4400' : '#00ff88';
+    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20;
+    ctx.fillText(num > 0 ? String(num) : 'GO!', canvas.width/2, canvas.height * 0.3);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+    return;
+  }
+
+  // "GO!" flash for a moment after countdown ends
+  if(_race.started && _race.timer < 40){
+    ctx.save();
+    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 1 - _race.timer/40;
+    ctx.fillStyle = '#00ff88';
+    ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 20;
+    ctx.fillText('GO!', canvas.width/2, canvas.height * 0.3);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
+  // Race timer
+  if(_race.started && !_race.finished){
+    const secs = (_race.timer / 60).toFixed(2);
+    ctx.save();
+    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#00ffcc';
+    ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
+    ctx.fillText(secs + 's', canvas.width/2, 30);
+    // Beacon progress
+    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+    ctx.fillStyle = '#889999';
+    ctx.shadowBlur = 0;
+    ctx.fillText(_race.nextBeacon + '/' + course.beacons.length, canvas.width/2, 48);
+    ctx.restore();
+  }
+
+  // Finish result
+  if(_race.finished){
+    const secs = (_race.timer / 60).toFixed(2);
+    const bestSecs = _race.bestTime ? (_race.bestTime / 1000).toFixed(2) : secs;
+    ctx.save();
+    ctx.font = '20px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = '#00ff88';
+    ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 16;
+    ctx.fillText('FINISH!', canvas.width/2, canvas.height * 0.28);
+    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
+    ctx.shadowBlur = 6;
+    ctx.fillText(secs + 's', canvas.width/2, canvas.height * 0.28 + 36);
+    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+    ctx.fillStyle = '#889999'; ctx.shadowBlur = 0;
+    ctx.fillText('BEST: ' + bestSecs + 's', canvas.width/2, canvas.height * 0.28 + 58);
+    ctx.restore();
+  }
+}
+
+function drawRaceCourse(ctx, cx, cy){
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+
+  // Draw start gate
+  drawStartGate(ctx, cx, cy, course);
+
+  // Draw beacons
+  for(let i = 0; i < course.beacons.length; i++){
+    const isPassed = i < _race.nextBeacon;
+    const isNext = i === _race.nextBeacon && _race.started;
+    drawBeacon(ctx, cx, cy, course.beacons[i], isNext, isPassed);
+  }
+
+  // Draw race HUD (countdown, timer, finish)
+  drawRaceHUD(ctx);
+}
 
 // Wait for Press Start 2P before starting loop — fixes canvas font on Android
 (function startWhenReady(){
