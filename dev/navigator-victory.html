@@ -283,10 +283,10 @@ function setOrigAnim(name){
 }
 
 function _playFootstep(){
-  if(!audioCtx || _sfxMuted) return;
+  if(!audioCtx || !sfxGain) return;
   try {
     var t = audioCtx.currentTime;
-    var hz = 80 + Math.random() * 40; // low thud, slight variation
+    var hz = 80 + Math.random() * 40;
     var o = audioCtx.createOscillator();
     var g = audioCtx.createGain();
     o.type = 'sine';
@@ -294,9 +294,8 @@ function _playFootstep(){
     g.gain.setValueAtTime(0, t);
     g.gain.linearRampToValueAtTime(0.06, t + 0.01);
     g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
-    o.connect(g); g.connect(audioCtx.destination);
+    o.connect(g); g.connect(sfxGain);
     o.start(t); o.stop(t + 0.1);
-    // Soft noise click layer
     var b = audioCtx.createBufferSource();
     var buf = audioCtx.createBuffer(1, 800, audioCtx.sampleRate);
     var d = buf.getChannelData(0);
@@ -305,7 +304,7 @@ function _playFootstep(){
     var g2 = audioCtx.createGain();
     g2.gain.setValueAtTime(0.03, t);
     g2.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
-    b.connect(g2); g2.connect(audioCtx.destination);
+    b.connect(g2); g2.connect(sfxGain);
     b.start(t); b.stop(t + 0.08);
   } catch(e){}
 }
@@ -804,13 +803,13 @@ function openContentView(zone, itemIdx){
   if(item.vimeoId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://player.vimeo.com/video/'+item.vimeoId+'?autoplay=1&color=ff69b4&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
-    // Kill music completely while video plays
-    stopMusic(); if(audioCtx){ audioCtx.close().catch(function(){}); audioCtx = null; }
+    // Kill music while video plays
+    stopMusic(); if(masterGain) masterGain.gain.value = 0;
   } else if(item.youtubeId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://www.youtube.com/embed/'+item.youtubeId+'?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture; accelerometer; encrypted-media; gyroscope; web-share" allowfullscreen></iframe>';
-    // Kill music completely while video plays
-    stopMusic(); if(audioCtx){ audioCtx.close().catch(function(){}); audioCtx = null; }
+    // Kill music while video plays
+    stopMusic(); if(masterGain) masterGain.gain.value = 0;
   } else {
     vEl.style.display = 'none';
     vEl.innerHTML = '';
@@ -880,8 +879,11 @@ function closeContentView(){
   document.getElementById('content-video').innerHTML = '';
   document.getElementById('content-video').style.display = 'none';
   contentViewOpen = false;
-  // Resume music after video closes (if not muted)
-  if(!_musicMuted){ startMusic(); }
+  // Resume audio after video closes
+  if(masterGain) masterGain.gain.value = 1;
+  if(_musicMuted && musicGain) musicGain.gain.value = 0;
+  if(_sfxMuted && sfxGain) sfxGain.gain.value = 0;
+  if(!_musicMuted) startMusic();
 }
 
 function openLightbox(idx){
@@ -2495,6 +2497,16 @@ function loop(time){
 // ===================== PROCEDURAL MUSIC — HOME VORTEX =====================
 // Relaxed, post-mission D major. Gentle pulse, warm pads, unhurried melody.
 let audioCtx = null;
+let masterGain = null;
+let musicGain = null;
+let sfxGain = null;
+function _ensureAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(!masterGain){ masterGain = audioCtx.createGain(); masterGain.connect(audioCtx.destination); }
+  if(!musicGain){ musicGain = audioCtx.createGain(); musicGain.connect(masterGain); musicGain.gain.value = _musicMuted ? 0 : 1; }
+  if(!sfxGain){ sfxGain = audioCtx.createGain(); sfxGain.connect(masterGain); sfxGain.gain.value = _sfxMuted ? 0 : 1; }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
 let musicPlaying = false;
 let musicBar = 0;
 let musicTimer = null;
@@ -2512,7 +2524,7 @@ function _voice(hz, t, att, dur, rel, vol, type, detune){
   g.gain.linearRampToValueAtTime(vol, t + att);
   g.gain.setValueAtTime(vol, t + dur);
   g.gain.linearRampToValueAtTime(0, t + dur + rel);
-  o.connect(g); g.connect(audioCtx.destination);
+  o.connect(g); g.connect(musicGain || audioCtx.destination);
   o.start(t); o.stop(t + dur + rel + 0.1);
 }
 function _pad(hz,t,dur,vol){ _voice(hz,t,0.8,dur,1.5,vol*0.4,'sine',0); _voice(hz*1.002,t,0.9,dur,1.5,vol*0.3,'sine',8); }
@@ -2585,8 +2597,7 @@ function genBar(t0, bar){
 
 function startMusic(){
   if(musicPlaying) return;
-  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if(audioCtx.state === 'suspended') audioCtx.resume();
+  _ensureAudio();
   musicPlaying = true;
   musicBar = 0;
   scheduleBar();
@@ -2614,13 +2625,16 @@ let _sfxMuted = localStorage.getItem('victorySfxMuted') === '1';
 function toggleMute(){
   if(!_musicMuted && !_sfxMuted){
     _musicMuted = true;
+    if(musicGain) musicGain.gain.value = 0;
     stopMusic();
   } else if(_musicMuted && !_sfxMuted){
     _sfxMuted = true;
+    if(sfxGain) sfxGain.gain.value = 0;
   } else {
     _musicMuted = false; _sfxMuted = false;
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
+    if(musicGain) musicGain.gain.value = 1;
+    if(sfxGain) sfxGain.gain.value = 1;
+    _ensureAudio();
     startMusic();
   }
   localStorage.setItem('victoryMusicMuted', _musicMuted ? '1' : '0');
