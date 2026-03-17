@@ -4338,11 +4338,13 @@ function update(){
       const _emDist = Math.sqrt(_emx*_emx + _emy*_emy) || 1;
       const _ernx = _emx/_emDist, _erny = _emy/_emDist; // unit vector Earth→Moon
       const radialDot = state.vx*_ernx + state.vy*_erny; // positive = pushing moon away from Earth
-      _moonVr += radialDot * 0.15;
+      // Asymmetric: easier to push inward than outward (moon resists leaving orbit)
+      const _radialMult = radialDot > 0 ? 0.04 : 0.08;
+      _moonVr += radialDot * _radialMult;
       // Tangential component: nudge angular velocity
       const tanx = -mny, tany = mnx; // tangent to orbit
       const tanDot = state.vx*tanx + state.vy*tany;
-      _moonVa += tanDot * 0.00006;
+      _moonVa += tanDot * 0.00002;
       state.collisionFlash = 6;
       if(audioCtx && !state.sfxMuted){
         const _t = audioCtx.currentTime;
@@ -4353,8 +4355,8 @@ function update(){
     // Apply moon orbit perturbation + slow decay back to stable
     MOON_ORBIT_R += _moonVr;
     _moonOrbitAng += _moonVa;
-    _moonVr *= 0.999;  // slow radial decay — momentum carries
-    _moonVa *= 0.9995; // angular nudge persists
+    _moonVr *= 0.997;  // radial decay
+    _moonVa *= 0.999;  // angular decay
     // Soft clamp — don't let it drift too crazy
     if(MOON_ORBIT_R < 100) { MOON_ORBIT_R = 100; _moonVr = Math.abs(_moonVr); }
     if(MOON_ORBIT_R > 2500) { MOON_ORBIT_R = 2500; _moonVr = -Math.abs(_moonVr); }
