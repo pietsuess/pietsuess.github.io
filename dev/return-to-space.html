@@ -10562,28 +10562,36 @@ initLeaderboard();
 //  RACE BEACONS — slalom courses with countdown start gate
 // ══════════════════════════════════════════════════════════════
 
-const RACE_COURSES = [
-  {
-    name: 'DEBRIS RUN',
-    startWX: EARTH_WX + 2500, startWY: EARTH_WY,
-    finishWX: EARTH_WX + 10500, finishWY: EARTH_WY + 200,
-    // Beacons: pass BETWEEN each pair — weave left/right of the beacon
-    // Spaced 500-600px apart for boost 2x speed
-    beacons: [
-      { wx: EARTH_WX + 3100, wy: EARTH_WY - 200 },
-      { wx: EARTH_WX + 3700, wy: EARTH_WY + 250 },
-      { wx: EARTH_WX + 4400, wy: EARTH_WY - 280 },
-      { wx: EARTH_WX + 5100, wy: EARTH_WY + 220 },
-      { wx: EARTH_WX + 5700, wy: EARTH_WY - 180 },
-      { wx: EARTH_WX + 6400, wy: EARTH_WY + 300 },
-      { wx: EARTH_WX + 7100, wy: EARTH_WY - 260 },
-      { wx: EARTH_WX + 7700, wy: EARTH_WY + 200 },
-      { wx: EARTH_WX + 8400, wy: EARTH_WY - 320 },
-      { wx: EARTH_WX + 9100, wy: EARTH_WY + 280 },
-      { wx: EARTH_WX + 9800, wy: EARTH_WY - 200 },
-    ]
+// Generate arc-based course — smooth sweeping curves
+function _buildArcCourse(){
+  const sx = EARTH_WX + 2800, sy = EARTH_WY;
+  const beacons = [];
+  // Smooth S-curves: sine wave with increasing amplitude, wide spacing
+  const count = 10;
+  const spacing = 1000; // px between beacons along X
+  const amplitude = 400; // Y swing
+  for(let i = 0; i < count; i++){
+    const t = i / (count - 1);
+    const bx = sx + 800 + i * spacing;
+    // Sweeping sine — two full S-curves across the course
+    const by = sy + Math.sin(t * Math.PI * 3.5) * amplitude * (0.6 + t * 0.5);
+    beacons.push({ wx: bx, wy: by });
   }
-];
+  return {
+    name: 'ORBITAL ARC',
+    startWX: sx, startWY: sy,
+    finishWX: sx + 800 + count * spacing + 600, finishWY: sy + Math.sin(1 * Math.PI * 3.5) * amplitude * 0.3,
+    // Entry zone beacons — flanking the start gate
+    entryBeacons: [
+      { wx: sx - 200, wy: sy - 160 },
+      { wx: sx - 200, wy: sy + 160 },
+      { wx: sx + 200, wy: sy - 120 },
+      { wx: sx + 200, wy: sy + 120 },
+    ],
+    beacons: beacons
+  };
+}
+const RACE_COURSES = [ _buildArcCourse() ];
 
 // Race state
 const _race = {
@@ -10721,61 +10729,66 @@ function updateRace(){
   }
 }
 
-function drawBeacon(ctx, cx, cy, b, idx, isNext, isPassed){
+function drawBeacon(ctx, cx, cy, b, idx, isNext, isPassed, isEntry){
   const sx = b.wx - state.x + cx, sy = b.wy - state.y + cy;
-  if(sx < -200 || sx > canvas.width+200 || sy < -200 || sy > canvas.height+200) return;
+  if(sx < -300 || sx > canvas.width+300 || sy < -300 || sy > canvas.height+300) return;
 
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.08 + idx) * 0.4;
-  const armLen = 28;
-  const bodyR = 8;
+  const pulse = 0.5 + Math.sin(state.frameCount * 0.08 + idx * 1.3) * 0.4;
+  const armLen = 36;
+  const bodyR = 10;
+  // Spin — each beacon rotates at its own speed
+  const spinAngle = state.frameCount * (0.012 + idx * 0.003);
 
   ctx.save();
   ctx.translate(sx, sy);
+  ctx.rotate(spinAngle);
 
-  // Body — small circle
+  // Body — circle
   ctx.beginPath(); ctx.arc(0, 0, bodyR, 0, Math.PI*2);
-  ctx.fillStyle = isPassed ? 'rgba(0,255,136,0.3)' : 'rgba(60,80,100,0.7)';
-  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#556677');
+  ctx.fillStyle = isPassed ? 'rgba(0,255,136,0.25)' : 'rgba(50,70,90,0.7)';
+  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#445566');
   ctx.lineWidth = 2;
   ctx.fill(); ctx.stroke();
 
-  // Two arms — extending up and down
-  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#445566');
-  ctx.lineWidth = 2.5;
+  // Two arms — spinning
+  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00cccc' : '#3a4a5a');
+  ctx.lineWidth = 3;
   ctx.beginPath(); ctx.moveTo(0, -bodyR); ctx.lineTo(0, -bodyR - armLen); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, bodyR); ctx.lineTo(0, bodyR + armLen); ctx.stroke();
 
   // Lights at arm tips
-  const lightR = isNext ? 5 : 3.5;
+  const lightR = isNext ? 6 : 4;
   const lightCol = isPassed ? '#00ff88' : (isNext ? '#ff4400' : '#884400');
-  const glowAlpha = isNext ? 0.6 + pulse * 0.4 : 0.5;
+  const glowAlpha = isNext ? 0.6 + pulse * 0.4 : (isEntry ? 0.6 : 0.45);
 
   ctx.globalAlpha = glowAlpha;
-  ctx.shadowColor = lightCol; ctx.shadowBlur = isNext ? 16 : 8;
+  ctx.shadowColor = lightCol; ctx.shadowBlur = isNext ? 18 : 8;
   ctx.beginPath(); ctx.arc(0, -bodyR - armLen, lightR, 0, Math.PI*2);
   ctx.fillStyle = lightCol; ctx.fill();
   ctx.beginPath(); ctx.arc(0, bodyR + armLen, lightR, 0, Math.PI*2);
   ctx.fillStyle = lightCol; ctx.fill();
   ctx.shadowBlur = 0;
 
-  // Beacon number
-  if(!isPassed){
-    ctx.globalAlpha = isNext ? 0.9 : 0.4;
-    ctx.font = '7px "Press Start 2P",monospace';
-    ctx.fillStyle = isNext ? '#00ffcc' : '#667788';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(idx + 1), 0, 0);
-  }
+  ctx.restore(); // undo rotation
 
-  ctx.restore();
+  // Beacon number (not rotated, stays readable)
+  if(!isPassed && !isEntry){
+    ctx.save();
+    ctx.globalAlpha = isNext ? 0.9 : 0.35;
+    ctx.font = '8px "Press Start 2P",monospace';
+    ctx.fillStyle = isNext ? '#00ffcc' : '#556677';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(idx + 1), sx, sy);
+    ctx.restore();
+  }
 }
 
 function drawGate(ctx, cx, cy, wx, wy, label, isActive){
   const sx = wx - state.x + cx, sy = wy - state.y + cy;
   if(sx < -300 || sx > canvas.width+300 || sy < -300 || sy > canvas.height+300) return;
 
-  const gateH = 120;
-  const postW = 6;
+  const gateH = 260;
+  const postW = 8;
   const pulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
   const col = isActive ? '#00ff88' : '#ffcc00';
 
@@ -10905,37 +10918,53 @@ function drawRaceCourse(ctx, cx, cy){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
 
-  // Guide line connecting beacons (faint dashed path)
+  // Smooth guide curve through beacons (catmull-rom style)
   ctx.save();
-  ctx.strokeStyle = 'rgba(100,150,180,0.15)';
-  ctx.lineWidth = 1;
-  ctx.setLineDash([12, 12]);
+  ctx.strokeStyle = 'rgba(100,160,200,0.12)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([16, 10]);
+  const pts = [
+    { wx: course.startWX, wy: course.startWY },
+    ...course.beacons,
+    { wx: course.finishWX, wy: course.finishWY }
+  ];
   ctx.beginPath();
-  const s0x = course.startWX - state.x + cx, s0y = course.startWY - state.y + cy;
-  ctx.moveTo(s0x, s0y);
-  for(let i = 0; i < course.beacons.length; i++){
-    const bsx = course.beacons[i].wx - state.x + cx, bsy = course.beacons[i].wy - state.y + cy;
-    ctx.lineTo(bsx, bsy);
+  for(let i = 0; i < pts.length; i++){
+    const px = pts[i].wx - state.x + cx, py = pts[i].wy - state.y + cy;
+    if(i === 0) ctx.moveTo(px, py);
+    else if(i < pts.length - 1){
+      // Smooth curve using midpoints
+      const nx = pts[i+1].wx - state.x + cx, ny = pts[i+1].wy - state.y + cy;
+      const cpx = (px + nx) / 2, cpy = (py + ny) / 2;
+      ctx.quadraticCurveTo(px, py, cpx, cpy);
+    } else {
+      ctx.lineTo(px, py);
+    }
   }
-  const fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
-  ctx.lineTo(fsx, fsy);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.restore();
 
-  // Draw start and finish gates
+  // Entry zone beacons (flanking start)
+  if(course.entryBeacons){
+    for(let i = 0; i < course.entryBeacons.length; i++){
+      drawBeacon(ctx, cx, cy, course.entryBeacons[i], i + 100, false, false, true);
+    }
+  }
+
+  // Start and finish gates
   drawGate(ctx, cx, cy, course.startWX, course.startWY, 'START', _race.started);
   const allPassed = _race.nextBeacon >= course.beacons.length;
   drawGate(ctx, cx, cy, course.finishWX, course.finishWY, 'FINISH', allPassed && _race.started);
 
-  // Draw beacons
+  // Course beacons
   for(let i = 0; i < course.beacons.length; i++){
     const isPassed = i < _race.nextBeacon;
     const isNext = i === _race.nextBeacon && _race.started;
-    drawBeacon(ctx, cx, cy, course.beacons[i], i, isNext, isPassed);
+    drawBeacon(ctx, cx, cy, course.beacons[i], i, isNext, isPassed, false);
   }
 
-  // Draw race HUD
+  // Race HUD
   drawRaceHUD(ctx);
 }
 
