@@ -5871,6 +5871,7 @@ function update(){
   updateWaveBeams();
   updateDebrisWall();
   updateRace();
+  updateRaceBumpers();
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -10625,6 +10626,79 @@ function initRaceCourse(idx){
 }
 initRaceCourse(0);
 
+const RACE_CHANNEL_HALF = 350; // half-width of the bumper channel
+
+// Build wall points along course edges
+function _buildRaceWalls(course){
+  const pts = [
+    { wx: course.startWX, wy: course.startWY },
+    ...course.beacons,
+    { wx: course.finishWX, wy: course.finishWY }
+  ];
+  const north = [], south = [];
+  for(let i = 0; i < pts.length; i++){
+    // Tangent direction
+    const prev = pts[Math.max(0, i-1)], next = pts[Math.min(pts.length-1, i+1)];
+    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
+    const len = Math.sqrt(dx*dx + dy*dy) || 1;
+    // Perpendicular (normal) — left = north wall, right = south wall
+    const nx = -dy/len, ny = dx/len;
+    north.push({ wx: pts[i].wx + nx * RACE_CHANNEL_HALF, wy: pts[i].wy + ny * RACE_CHANNEL_HALF });
+    south.push({ wx: pts[i].wx - nx * RACE_CHANNEL_HALF, wy: pts[i].wy - ny * RACE_CHANNEL_HALF });
+  }
+  return { north, south, center: pts };
+}
+
+let _raceWalls = _buildRaceWalls(RACE_COURSES[0]);
+
+function updateRaceBumpers(){
+  // Only active during race or when near the course
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+  // Check if ship is within course X range
+  if(state.x < course.startWX - 500 || state.x > course.finishWX + 500) return;
+
+  // Find nearest center point on course
+  const cPts = _raceWalls.center;
+  let bestIdx = 0, bestDist2 = Infinity;
+  for(let i = 0; i < cPts.length; i++){
+    const dx = state.x - cPts[i].wx, dy = state.y - cPts[i].wy;
+    const d2 = dx*dx + dy*dy;
+    if(d2 < bestDist2){ bestDist2 = d2; bestIdx = i; }
+  }
+
+  // Interpolate between nearest and adjacent center points for smooth wall
+  const prev = cPts[Math.max(0, bestIdx-1)], cur = cPts[bestIdx], next = cPts[Math.min(cPts.length-1, bestIdx+1)];
+  // Tangent at this point
+  const tdx = next.wx - prev.wx, tdy = next.wy - prev.wy;
+  const tLen = Math.sqrt(tdx*tdx + tdy*tdy) || 1;
+  const nx = -tdy/tLen, ny = tdx/tLen; // perpendicular
+
+  // Signed distance from centerline (positive = north side)
+  const shipDx = state.x - cur.wx, shipDy = state.y - cur.wy;
+  const perpDist = shipDx * nx + shipDy * ny;
+
+  if(Math.abs(perpDist) > RACE_CHANNEL_HALF - 8){
+    // Ship is hitting the wall — bounce back
+    const sign = perpDist > 0 ? 1 : -1;
+    // Push back inside
+    const pushDist = Math.abs(perpDist) - (RACE_CHANNEL_HALF - 8);
+    state.x -= sign * nx * (pushDist + 4);
+    state.y -= sign * ny * (pushDist + 4);
+    // Reflect velocity off wall normal
+    const vDot = state.vx * nx * sign + state.vy * ny * sign;
+    if(vDot > 0){
+      state.vx -= 1.4 * vDot * nx * sign;
+      state.vy -= 1.4 * vDot * ny * sign;
+    }
+    state.collisionFlash = 4;
+    if(audioCtx && !state.sfxMuted){
+      const _t = audioCtx.currentTime;
+      playBeep(100, _t, 0.06, 'sawtooth', 0.08);
+    }
+  }
+}
+
 function updateRace(){
   if(!state.started || state.paused || state.gameOver) return;
   const course = RACE_COURSES[_race.courseIdx];
@@ -10917,6 +10991,28 @@ function drawRaceHUD(ctx){
 function drawRaceCourse(ctx, cx, cy){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
+
+  // Bumper walls — north and south edges
+  ctx.save();
+  ctx.lineWidth = 2;
+  ctx.setLineDash([20, 15]);
+  // North wall
+  ctx.strokeStyle = 'rgba(255,100,50,0.18)';
+  ctx.beginPath();
+  for(let i = 0; i < _raceWalls.north.length; i++){
+    const px = _raceWalls.north[i].wx - state.x + cx, py = _raceWalls.north[i].wy - state.y + cy;
+    if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  // South wall
+  ctx.beginPath();
+  for(let i = 0; i < _raceWalls.south.length; i++){
+    const px = _raceWalls.south[i].wx - state.x + cx, py = _raceWalls.south[i].wy - state.y + cy;
+    if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.restore();
 
   // Smooth guide curve through beacons (catmull-rom style)
   ctx.save();
