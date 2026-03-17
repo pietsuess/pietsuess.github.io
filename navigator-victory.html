@@ -77,7 +77,7 @@
   }
   #content-overlay.open{display:block;}
   #content-box{
-    max-width:680px;margin:40px auto;padding:0;
+    max-width:94vw;margin:20px auto;padding:0;
     font-family:'Press Start 2P',monospace;
     background:#000;border:3px solid #ff69b4;
     box-shadow:0 0 30px #ff69b4, 0 0 60px rgba(255,105,180,0.3);
@@ -86,7 +86,7 @@
     background:#ff69b4;padding:14px 20px;
     display:flex;justify-content:space-between;align-items:center;
   }
-  #content-title{font-size:8px;color:#000;letter-spacing:2px;}
+  #content-title{font-size:13px;color:#000;letter-spacing:2px;}
   #content-close-x{
     background:none;border:none;color:#000;cursor:pointer;
     font-family:'Press Start 2P',monospace;font-size:12px;padding:0 4px;
@@ -100,7 +100,7 @@
   }
   #content-body{padding:20px;}
   #content-text{
-    font-size:6px;color:#aaa;line-height:2.2;white-space:pre-wrap;
+    font-size:9px;color:#aaa;line-height:2.2;white-space:pre-wrap;
     margin-bottom:16px;
   }
   #gallery-label{font-size:7px;color:#888;letter-spacing:2px;margin-bottom:10px;}
@@ -175,15 +175,19 @@
     line-height:1;opacity:0.7;transition:opacity 0.15s;
   }
   #mute-btn:hover{opacity:1;}
-  #mute-btn::before{
+  #mute-btn::before, #mute-btn::after{
     content:'';position:absolute;
-    width:130%;height:3px;
+    width:100%;height:2.5px;
     background:#ff2222;border-radius:2px;
-    top:50%;left:-15%;
-    transform:translateY(-50%) rotate(-45deg);
+    top:50%;left:0;
+    transform-origin:center;
     display:none;
   }
-  #mute-btn.muted::before{display:block;}
+  #mute-btn::before{transform:translateY(-50%) rotate(-45deg);}
+  #mute-btn::after{transform:translateY(-50%) rotate(45deg);}
+  #mute-btn.music-muted::before{display:block;}
+  #mute-btn.both-muted::before{display:block;}
+  #mute-btn.both-muted::after{display:block;}
   #dpad{
     display:none; position:fixed; bottom:16px; right:16px;
     width:130px; height:130px; z-index:50; touch-action:none;
@@ -192,7 +196,7 @@
 </style>
 </head>
 <body>
-<div id="mute-btn" onclick="toggleMusicMute()" title="Toggle Music">🔊</div>
+<div id="mute-btn" onclick="toggleMute();event.stopPropagation()" title="Toggle Audio">🔊</div>
 <div id="dpad"><canvas id="dpad-c" width="260" height="260"></canvas></div>
 <canvas id="c"></canvas>
 <div id="popup">
@@ -278,6 +282,59 @@ function setOrigAnim(name){
   origAnimTimer = 0;
 }
 
+function _playLandThud(){
+  if(!audioCtx || !sfxGain) return;
+  try {
+    var t = audioCtx.currentTime;
+    // Deep thud
+    var o = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.setValueAtTime(120, t);
+    o.frequency.exponentialRampToValueAtTime(40, t + 0.12);
+    g.gain.setValueAtTime(0.12, t);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + 0.18);
+    // Impact noise burst
+    var b = audioCtx.createBufferSource();
+    var buf = audioCtx.createBuffer(1, 2000, audioCtx.sampleRate);
+    var d = buf.getChannelData(0);
+    for(var i = 0; i < 2000; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / 200);
+    b.buffer = buf;
+    var g2 = audioCtx.createGain();
+    g2.gain.setValueAtTime(0.07, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.1);
+    b.connect(g2); g2.connect(sfxGain);
+    b.start(t); b.stop(t + 0.12);
+  } catch(e){}
+}
+function _playFootstep(){
+  if(!audioCtx || !sfxGain) return;
+  try {
+    var t = audioCtx.currentTime;
+    var hz = 80 + Math.random() * 40;
+    var o = audioCtx.createOscillator();
+    var g = audioCtx.createGain();
+    o.type = 'sine';
+    o.frequency.value = hz;
+    g.gain.setValueAtTime(0, t);
+    g.gain.linearRampToValueAtTime(0.06, t + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.001, t + 0.08);
+    o.connect(g); g.connect(sfxGain);
+    o.start(t); o.stop(t + 0.1);
+    var b = audioCtx.createBufferSource();
+    var buf = audioCtx.createBuffer(1, 800, audioCtx.sampleRate);
+    var d = buf.getChannelData(0);
+    for(var i = 0; i < 800; i++) d[i] = (Math.random() * 2 - 1) * Math.exp(-i / 120);
+    b.buffer = buf;
+    var g2 = audioCtx.createGain();
+    g2.gain.setValueAtTime(0.03, t);
+    g2.gain.exponentialRampToValueAtTime(0.001, t + 0.06);
+    b.connect(g2); g2.connect(sfxGain);
+    b.start(t); b.stop(t + 0.08);
+  } catch(e){}
+}
 function tickOrigAnim(dt){
   const a = ORIG_ANIMS[origAnim];
   if(!a) return;
@@ -285,10 +342,15 @@ function tickOrigAnim(dt){
   origAnimTimer += dt;
   if(origAnimTimer >= 1/a.fps){
     origAnimTimer = 0;
+    var prevFrame = origFrame;
     origFrame++;
     if(origFrame >= frameCount){
       if(a.loop){ origFrame = 0; }
       else { origFrame = frameCount - 1; }
+    }
+    // Footstep on frames 2 and 7 of walk cycle (foot-down moments)
+    if(origAnim === 'walk' && (origFrame === 2 || origFrame === 7)){
+      _playFootstep();
     }
   }
 }
@@ -768,13 +830,13 @@ function openContentView(zone, itemIdx){
   if(item.vimeoId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://player.vimeo.com/video/'+item.vimeoId+'?autoplay=1&color=ff69b4&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>';
-    // Pause music while video plays
-    stopMusic(); if(audioCtx) audioCtx.suspend();
+    // Kill music while video plays
+    stopMusic(); if(masterGain) masterGain.gain.value = 0;
   } else if(item.youtubeId){
     vEl.style.display = 'block';
     vEl.innerHTML = '<iframe src="https://www.youtube.com/embed/'+item.youtubeId+'?autoplay=1&rel=0&modestbranding=1&playsinline=1" allow="autoplay; fullscreen; picture-in-picture; accelerometer; encrypted-media; gyroscope; web-share" allowfullscreen></iframe>';
-    // Pause music while video plays
-    stopMusic(); if(audioCtx) audioCtx.suspend();
+    // Kill music while video plays
+    stopMusic(); if(masterGain) masterGain.gain.value = 0;
   } else {
     vEl.style.display = 'none';
     vEl.innerHTML = '';
@@ -844,8 +906,11 @@ function closeContentView(){
   document.getElementById('content-video').innerHTML = '';
   document.getElementById('content-video').style.display = 'none';
   contentViewOpen = false;
-  // Resume music after video closes (if not muted)
-  if(!_musicMuted && audioCtx){ audioCtx.resume(); startMusic(); }
+  // Resume audio after video closes
+  if(masterGain) masterGain.gain.value = 1;
+  if(_musicMuted && musicGain) musicGain.gain.value = 0;
+  if(_sfxMuted && sfxGain) sfxGain.gain.value = 0;
+  if(!_musicMuted) startMusic();
 }
 
 function openLightbox(idx){
@@ -1995,6 +2060,7 @@ function loop(time){
           pilot.jumpOffY = 0;
           pilot.jumpTime = 0;
           setOrigAnim('idle');
+          _playLandThud();
         }
       } else if(pilot.onPlatform === null){
         pilot.jumpTime = 0;
@@ -2459,6 +2525,16 @@ function loop(time){
 // ===================== PROCEDURAL MUSIC — HOME VORTEX =====================
 // Relaxed, post-mission D major. Gentle pulse, warm pads, unhurried melody.
 let audioCtx = null;
+let masterGain = null;
+let musicGain = null;
+let sfxGain = null;
+function _ensureAudio(){
+  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if(!masterGain){ masterGain = audioCtx.createGain(); masterGain.connect(audioCtx.destination); }
+  if(!musicGain){ musicGain = audioCtx.createGain(); musicGain.connect(masterGain); musicGain.gain.value = _musicMuted ? 0 : 1; }
+  if(!sfxGain){ sfxGain = audioCtx.createGain(); sfxGain.connect(masterGain); sfxGain.gain.value = _sfxMuted ? 0 : 1; }
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+}
 let musicPlaying = false;
 let musicBar = 0;
 let musicTimer = null;
@@ -2476,7 +2552,7 @@ function _voice(hz, t, att, dur, rel, vol, type, detune){
   g.gain.linearRampToValueAtTime(vol, t + att);
   g.gain.setValueAtTime(vol, t + dur);
   g.gain.linearRampToValueAtTime(0, t + dur + rel);
-  o.connect(g); g.connect(audioCtx.destination);
+  o.connect(g); g.connect(musicGain || audioCtx.destination);
   o.start(t); o.stop(t + dur + rel + 0.1);
 }
 function _pad(hz,t,dur,vol){ _voice(hz,t,0.8,dur,1.5,vol*0.4,'sine',0); _voice(hz*1.002,t,0.9,dur,1.5,vol*0.3,'sine',8); }
@@ -2549,8 +2625,7 @@ function genBar(t0, bar){
 
 function startMusic(){
   if(musicPlaying) return;
-  if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-  if(audioCtx.state === 'suspended') audioCtx.resume();
+  _ensureAudio();
   musicPlaying = true;
   musicBar = 0;
   scheduleBar();
@@ -2572,27 +2647,36 @@ function stopMusic(){
   if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
 }
 
+// Three-state mute matching NAVIGATOR: all on → music muted → both muted → all on
 let _musicMuted = localStorage.getItem('victoryMusicMuted') === '1';
-function toggleMusicMute(){
-  _musicMuted = !_musicMuted;
-  localStorage.setItem('victoryMusicMuted', _musicMuted ? '1' : '0');
-  const btn = document.getElementById('mute-btn');
-  btn.classList.toggle('muted', _musicMuted);
-  btn.textContent = _musicMuted ? '🔇' : '🔊';
-  if(_musicMuted){
+let _sfxMuted = localStorage.getItem('victorySfxMuted') === '1';
+function toggleMute(){
+  if(!_musicMuted && !_sfxMuted){
+    _musicMuted = true;
+    if(musicGain) musicGain.gain.value = 0;
     stopMusic();
-    if(audioCtx) audioCtx.suspend();
+  } else if(_musicMuted && !_sfxMuted){
+    _sfxMuted = true;
+    if(sfxGain) sfxGain.gain.value = 0;
   } else {
-    if(audioCtx) audioCtx.resume();
+    _musicMuted = false; _sfxMuted = false;
+    if(musicGain) musicGain.gain.value = 1;
+    if(sfxGain) sfxGain.gain.value = 1;
+    _ensureAudio();
     startMusic();
   }
+  localStorage.setItem('victoryMusicMuted', _musicMuted ? '1' : '0');
+  localStorage.setItem('victorySfxMuted', _sfxMuted ? '1' : '0');
+  _updateMuteUI();
 }
-// Apply saved mute state on load
-if(_musicMuted){
-  const btn = document.getElementById('mute-btn');
-  btn.classList.add('muted');
-  btn.textContent = '🔇';
+function _updateMuteUI(){
+  var btn = document.getElementById('mute-btn');
+  if(!btn) return;
+  btn.classList.toggle('music-muted', _musicMuted && !_sfxMuted);
+  btn.classList.toggle('both-muted', _musicMuted && _sfxMuted);
+  btn.textContent = (!_musicMuted && !_sfxMuted) ? '🔊' : (_musicMuted && _sfxMuted) ? '🔇' : '🔉';
 }
+_updateMuteUI();
 
 // Start music on first user interaction
 let _musicStarted = false;
