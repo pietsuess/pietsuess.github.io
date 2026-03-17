@@ -1238,7 +1238,7 @@ let state = {
   tracers:[], stars:[], objects:[], fuelObjects:[], waveOrbs:[],
   waveBeams:[],
   wormholes:[], wormholeFlash:0,
-  currentLevel: 1,  // which level zone the player is currently in (1=EDIT at origin)
+  currentLevel: -99,  // no zones in Return to Space
   keys:{}, muted:false, songIndex:3, // 0=PULSAR 1=CASCADE 2=SOLSTICE 3=VORTEX 4=NOVA
   hyperspace:false, hsTimer:0, hsTail:[],
   tronTrail:[],
@@ -2258,10 +2258,10 @@ function finishHullImplosion(){
     var _hwIdx = (typeof MOODS!=='undefined') ? MOODS.findIndex(function(m){ return m.name==='HOMEWARD'; }) : -1;
     if(_hwIdx>=0){ state.songIndex=_hwIdx; playSong(_hwIdx); } else { resumeMusic(); }
   } else {
-    // Auto-respawn at EDIT zone centre (launchpad), no choice screen
-    state.x=0; state.y=0; state.vx=0; state.vy=0; resetEnclosure();
-    state.fuel=1.0; state.outsideBarrier=false; state._committedInside=true;
-    state._prevX=0; state._prevY=0;
+    // Respawn at launchpad near Earth
+    state.x=OUTER_TARGET_WX; state.y=OUTER_TARGET_WY; state.vx=0; state.vy=0; resetEnclosure();
+    state.fuel=1.0; state.outsideBarrier=true; state._committedInside=false;
+    state._prevX=OUTER_TARGET_WX; state._prevY=OUTER_TARGET_WY;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -2270,8 +2270,8 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-title').textContent='⚠ FUEL CRITICAL';
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
-    state.currentLevel=1;
-    populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
+    state.currentLevel=-99;
+    populatedCells.clear(); state.spaceRocks=[]; state.wormholes=[]; state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
     updateLevelDisplay(LEVELS[1]); updateFuelBar();
@@ -6089,7 +6089,7 @@ function hardRestart(){
   _dismissWavePopup();
   Object.assign(state,{gameOver:false,fuel:1.0,score:0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
     tracers:[],hyperspace:false,cheat:null,hasWaveBeam:true,fireMode:'boost',
-    waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
+    waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:-99,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
     _victoryPhase:null,_victoryTimer:0,_victoryZoom:1,x2BoostStar:null,_x2StarSpawned:false,
     passageHatch:{hits:0,broken:false,hitCooldown:0,fragments:[
@@ -6105,7 +6105,7 @@ function hardRestart(){
   wormholeCooldown=0; wormholeTransition=null; state.wormholeZoneSet=new Set();
   document.getElementById('score').textContent=String(state.score).padStart(6,'0');
   updateFireModeUI();
-  updateLevelDisplay('EDITING'); updateFuelBar();
+  updateLevelDisplay(''); updateFuelBar();
   initStars(); initObjects(); initBarrierObjects(); _spawnPostInterzoneContent(); updateCollectedList();
   resumeMusic();
 }
@@ -10526,7 +10526,11 @@ function startGame(){
   window._holdMusicForInstructions = true;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
   state.collectedItems = [];
-  state._prevX=0; state._prevY=0;
+  // Start at launchpad near Earth, inside debris ring
+  state.x = OUTER_TARGET_WX; state.y = OUTER_TARGET_WY;
+  state._prevX = OUTER_TARGET_WX; state._prevY = OUTER_TARGET_WY;
+  state.outsideBarrier = true; state._committedInside = false;
+  state.currentLevel = -99; // no zone
   // Teleport to Moon if returning from victory walk — restore full post-victory state
   if(window._teleportToMoonOnStart){
     window._teleportToMoonOnStart = false;
@@ -10548,7 +10552,7 @@ function startGame(){
     state.x = moonX; state.y = moonY; state.vx = 0; state.vy = 0;
     state._prevX = moonX; state._prevY = moonY;
   }
-  updateLevelDisplay('EDITING');updateFuelBar();updateFireModeUI();
+  updateLevelDisplay('');updateFuelBar();updateFireModeUI();
   updateAllObjectsList(); updateMusicDrawer(); _updateMuteUI();
   // Show mission briefing on first launch; open menu drawer
   setTimeout(()=>{
