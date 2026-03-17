@@ -1750,7 +1750,7 @@ const OUTER_TARGET_WY   = 0;
 const EARTH_WX          = OUTER_TARGET_WX + Math.round(62500/8 * 5.175);
 const EARTH_WY          = 0;
 const HOMEWARD_THRESHOLD = OUTER_TARGET_WX + 2000;
-const EARTH_ZONE_R      = 800;   // radial no-rock zone — just outside debris rings (~700px)
+const EARTH_ZONE_R      = 750;   // radial no-rock zone — just outside debris rings (~700px)
 const MOON_ORBIT_R      = 1300;  // 600px outside debris rings (700 + 600)
 let   _moonOrbitAng     = Math.PI;  // start to the left of Earth (approach side)
 
@@ -2257,10 +2257,10 @@ function finishHullImplosion(){
     var _hwIdx = (typeof MOODS!=='undefined') ? MOODS.findIndex(function(m){ return m.name==='HOMEWARD'; }) : -1;
     if(_hwIdx>=0){ state.songIndex=_hwIdx; playSong(_hwIdx); } else { resumeMusic(); }
   } else {
-    // Respawn inside Earth's debris ring
-    state.x=EARTH_WX+900; state.y=EARTH_WY; state.vx=0; state.vy=0;
+    // Respawn just outside Earth, inside debris field
+    state.x=EARTH_WX+320; state.y=EARTH_WY; state.vx=0; state.vy=0;
     state.fuel=1.0; state.outsideBarrier=true; state._committedInside=false;
-    state._prevX=EARTH_WX+400; state._prevY=EARTH_WY;
+    state._prevX=EARTH_WX+320; state._prevY=EARTH_WY;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -6106,7 +6106,7 @@ function continueAfterDeath(){
   // Close gameover screen and respawn at center — collected items preserved
   document.getElementById('gameover').classList.remove('open');
   state._pendingRespawn = false;
-  state.x=EARTH_WX+400; state.y=EARTH_WY; state.vx=0; state.vy=0;
+  state.x=EARTH_WX+320; state.y=EARTH_WY; state.vx=0; state.vy=0;
   state.fuel=1.0; state.outsideBarrier=true; state._committedInside=false;
   state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
   state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
@@ -8552,39 +8552,7 @@ function drawGame(){
 
   }
 
-  // Earth indicator — visible whenever player is past the launchpad heading toward Earth
-  const _showEarthIndicator = !state.inSecretLevel && !state._victoryPhase && state.x > HOMEWARD_THRESHOLD;
-  if(_showEarthIndicator){
-    const _etx = EARTH_WX - state.x + cx;
-    const _ety = EARTH_WY - state.y + cy;
-    const _ep = 0.5 + Math.sin(state.frameCount*0.05)*0.5;
-    // On-screen: pulsing blue diamond (no label)
-    if(_etx > -300 && _etx < canvas.width+300 && _ety > -300 && _ety < canvas.height+300){
-      ctx.save();
-      ctx.strokeStyle = `rgba(80,160,255,${0.4+_ep*0.5})`;
-      ctx.fillStyle   = `rgba(60,130,255,${0.12+_ep*0.15})`;
-      ctx.lineWidth = 2.5;
-      const _ed = 28;
-      ctx.beginPath();
-      ctx.moveTo(_etx,_ety-_ed); ctx.lineTo(_etx+_ed,_ety);
-      ctx.lineTo(_etx,_ety+_ed); ctx.lineTo(_etx-_ed,_ety);
-      ctx.closePath(); ctx.fill(); ctx.stroke();
-      ctx.beginPath(); ctx.arc(_etx,_ety,5,0,Math.PI*2);
-      ctx.fillStyle=`rgba(100,180,255,${0.7+_ep*0.3})`; ctx.fill();
-      ctx.restore();
-    }
-    // Off-screen: blue arrow
-    if(_etx > canvas.width+50 || _etx < -50 || _ety > canvas.height+50 || _ety < -50){
-      const _eta = Math.atan2(EARTH_WY - state.y, EARTH_WX - state.x);
-      const _eir = Math.min(canvas.width, canvas.height)*0.38;
-      const _eax = cx + Math.cos(_eta)*_eir, _eay = cy + Math.sin(_eta)*_eir;
-      ctx.save(); ctx.translate(_eax,_eay); ctx.rotate(_eta);
-      ctx.globalAlpha=0.5+0.4*Math.sin(state.frameCount*0.06);
-      ctx.fillStyle='#4499ff'; ctx.shadowBlur=12; ctx.shadowColor='#4499ff';
-      ctx.beginPath(); ctx.moveTo(24,0); ctx.lineTo(-12,-10); ctx.lineTo(-12,10); ctx.closePath(); ctx.fill();
-      ctx.restore();
-    }
-  }
+  // Earth indicator removed for Return to Space
 
   // Moon & Earth inside zoom transform
   drawMoon(ctx, cx, cy);
@@ -10518,8 +10486,8 @@ function startGame(){
   window._holdMusicForInstructions = false;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
   state.collectedItems = [];
-  // Start inside Earth's debris ring (400px from Earth center)
-  state.x = EARTH_WX + 900; state.y = EARTH_WY;
+  // Start just outside Earth's surface, inside debris field
+  state.x = EARTH_WX + 320; state.y = EARTH_WY;
   state._prevX = state.x; state._prevY = state.y;
   state.outsideBarrier = true; state._committedInside = false;
   state.currentLevel = -99; // no zone
@@ -10908,11 +10876,24 @@ let _marsLastRender = -999;
 // Very small objects, varying speeds, mixed CW/CCW.
 
 const DEBRIS_RINGS = [
-  // [radius, speed, count, dotOnly?] — thinned out, no dots
-  [620, +0.00110, 8, false],
-  [645, -0.00072, 10, false],
-  [670, +0.00052, 8, false],
-  [690, -0.00090, 6, false],
+  // [radius, speed, count, dotOnly?] — dense orbital debris field
+  [380, +0.00130, 10, false],
+  [410, -0.00095, 14, false],
+  [440, +0.00075, 16, false],
+  [470, -0.00110, 14, false],
+  [500, +0.00060, 18, false],
+  [530, -0.00085, 16, false],
+  [560, +0.00100, 14, false],
+  [590, -0.00070, 18, false],
+  [620, +0.00110, 16, false],
+  [645, -0.00072, 18, false],
+  [670, +0.00052, 14, false],
+  [690, -0.00090, 12, false],
+  // Small dot debris fill
+  [400, +0.00050, 20, true],
+  [480, -0.00065, 24, true],
+  [560, +0.00045, 20, true],
+  [640, -0.00055, 22, true],
 ];
 
 function initDebrisWall(){
