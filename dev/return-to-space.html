@@ -189,7 +189,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   #fuel-hud {
     position:fixed; bottom:0; z-index:100;
     left:66.67%; right:0;
-    height:48px; display:flex; flex-direction:column; align-items:stretch; justify-content:center; gap:2px;
+    height:68px; display:flex; flex-direction:column; align-items:stretch; justify-content:center; gap:3px;
     padding:0 12px;
     background:rgba(0,0,0,0.6);
     border:2px solid rgba(0,255,136,0.4);
@@ -204,6 +204,13 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     direction:rtl;
   }
   #fuel-bar-inner { height:100%; background:#00ff88; width:100%; transition:width 0.1s; box-shadow:0 0 10px #00ff88; }
+  #speed-label { color:#4499ff; font-size:10px; text-shadow:0 0 8px #4499ff; white-space:nowrap; text-align:left; }
+  #speed-bar-outer {
+    flex:1; max-height:20px; border:2px solid #4499ff;
+    background:rgba(0,0,0,0.6); overflow:hidden;
+    box-shadow:0 0 8px rgba(68,153,255,0.4), inset 0 0 4px rgba(0,0,0,0.5);
+  }
+  #speed-bar-inner { height:100%; background:#4499ff; width:0%; transition:width 0.05s; box-shadow:0 0 10px #4499ff; }
 
   .sound-btn { display:none; } /* kept for compat */
 
@@ -1029,6 +1036,8 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 
 <!-- Fuel -->
 <div id="fuel-hud">
+  <div id="speed-label">SPEED</div>
+  <div id="speed-bar-outer"><div id="speed-bar-inner"></div></div>
   <div id="fuel-label">FUEL</div>
   <div id="fuel-bar-outer"><div id="fuel-bar-inner"></div></div>
 </div>
@@ -4040,6 +4049,19 @@ function updateFuelBar(){
   lbl.style.color=c; lbl.style.textShadow=`0 0 6px ${c}`;
 }
 
+function updateSpeedBar(){
+  const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
+  const maxDisplay = 36; // boost 2x max
+  const pct = Math.min(100, (spd/maxDisplay)*100);
+  const bar = document.getElementById('speed-bar-inner');
+  if(!bar) return;
+  bar.style.width = pct+'%';
+  const c = spd > 18 ? '#ff4400' : spd > 8 ? '#ffe000' : '#4499ff';
+  bar.style.background = c; bar.style.boxShadow = `0 0 6px ${c}`;
+  const lbl = document.getElementById('speed-label');
+  if(lbl){ lbl.style.color = c; lbl.style.textShadow = `0 0 6px ${c}`; }
+}
+
 function updateBossHP(){
   const hud = document.getElementById('boss-hp-hud');
   if(!hud) return;
@@ -4138,22 +4160,7 @@ function update(){
       }
     }
 
-    // One-shot auto-kill boosters (Earth / Boss)
-    // Earth: 1130px (400px outside outermost debris ring ~730px)
-    // Boss: 800px — only on FIRST approach
-    const _nearBoss = _camBoss && !_camBoss.dead && Math.sqrt((_camBoss.wx-state.x)**2+(_camBoss.wy-state.y)**2) < 800;
-    if(state.hyperspace && !_camBoostKilled){
-      if(eDist < 1130 || (_nearBoss && !state._bossBoostKillDone)){
-        state.hyperspace = false;
-        state.hsTail = [];
-        _camBoostKilled = true;
-        if(_nearBoss) state._bossBoostKillDone = true;
-      }
-    }
-    // Reset one-shot flag when outside all kill zones
-    if(eDist >= 1130 && !(_nearBoss && !state._bossBoostKillDone)){
-      _camBoostKilled = false;
-    }
+    // Auto-kill boosters removed for Return to Space — free boost everywhere
 
     // Pick strongest influence
     if(bodies.length > 0){
@@ -4277,7 +4284,7 @@ function update(){
   if((state.keys['ArrowUp']||state.keys['ArrowDown'])&&!state.hyperspace&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
     if(!state.inSecretLevel) state.fuel=Math.max(0,state.fuel-0.0001425);
   }
-  if(state.inSecretLevel){ state.fuel=1.0; } updateFuelBar(); updateBossHP();
+  if(state.inSecretLevel){ state.fuel=1.0; } updateFuelBar(); updateSpeedBar(); updateBossHP();
   if(!state.inSecretLevel && state.fuel<=0&&!state.gameOver&&!state.refuelShip&&!state.refuelRequested&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){triggerFuelEmpty();}
   // Block all normal physics/input during victory sequence
   if(state._victoryPhase) return;
@@ -10876,24 +10883,24 @@ let _marsLastRender = -999;
 // Very small objects, varying speeds, mixed CW/CCW.
 
 const DEBRIS_RINGS = [
-  // [radius, speed, count, dotOnly?] — dense orbital debris field
-  [380, +0.00130, 10, false],
-  [410, -0.00095, 14, false],
-  [440, +0.00075, 16, false],
-  [470, -0.00110, 14, false],
-  [500, +0.00060, 18, false],
-  [530, -0.00085, 16, false],
-  [560, +0.00100, 14, false],
-  [590, -0.00070, 18, false],
-  [620, +0.00110, 16, false],
-  [645, -0.00072, 18, false],
-  [670, +0.00052, 14, false],
-  [690, -0.00090, 12, false],
+  // [radius, speed, count, dotOnly?] — tight dense orbital debris belt
+  [520, +0.00130, 14, false],
+  [540, -0.00095, 16, false],
+  [555, +0.00075, 18, false],
+  [570, -0.00110, 16, false],
+  [585, +0.00060, 18, false],
+  [600, -0.00085, 18, false],
+  [615, +0.00100, 16, false],
+  [630, -0.00070, 18, false],
+  [645, +0.00110, 16, false],
+  [660, -0.00072, 18, false],
+  [675, +0.00052, 14, false],
+  [690, -0.00090, 14, false],
   // Small dot debris fill
-  [400, +0.00050, 20, true],
-  [480, -0.00065, 24, true],
-  [560, +0.00045, 20, true],
-  [640, -0.00055, 22, true],
+  [530, +0.00050, 22, true],
+  [575, -0.00065, 26, true],
+  [620, +0.00045, 22, true],
+  [665, -0.00055, 24, true],
 ];
 
 function initDebrisWall(){
