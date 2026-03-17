@@ -10761,6 +10761,9 @@ function updateRace(){
         document.getElementById('score').textContent = String(state.score).padStart(6,'0');
         // Score popup
         state.zoneCrossFlash = { lvl:-3, timer:50, msg:'+' + beaconScore, _col:'#00ffcc' };
+        // Shockwave ring effect
+        if(!state._raceRings) state._raceRings = [];
+        state._raceRings.push({ wx: b.wx, wy: b.wy, r: 0, maxR: 100, age: 0 });
         if(audioCtx && !state.sfxMuted){
           const _t = audioCtx.currentTime;
           playBeep(880, _t, 0.06, 'sine', 0.08);
@@ -10807,93 +10810,132 @@ function drawBeacon(ctx, cx, cy, b, idx, isNext, isPassed, isEntry){
   const sx = b.wx - state.x + cx, sy = b.wy - state.y + cy;
   if(sx < -300 || sx > canvas.width+300 || sy < -300 || sy > canvas.height+300) return;
 
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.08 + idx * 1.3) * 0.4;
-  const armLen = 36;
+  const pulse = 0.5 + Math.sin(state.frameCount * 0.06 + idx * 1.7) * 0.45;
+  const armLen = 38;
   const bodyR = 10;
-  // Spin — each beacon rotates at its own speed
-  const spinAngle = state.frameCount * (0.012 + idx * 0.003);
+  const spinAngle = state.frameCount * (0.015 + idx * 0.004);
+
+  const beaconCol = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#3388aa');
+  const lightCol = isPassed ? '#00ff88' : (isNext ? '#ff4400' : '#885522');
 
   ctx.save();
   ctx.translate(sx, sy);
+
+  // Outer atmospheric halo (large, very faint)
+  ctx.globalAlpha = (isNext ? 0.12 : 0.05) + pulse * 0.04;
+  ctx.beginPath(); ctx.arc(0, 0, 50, 0, Math.PI*2);
+  ctx.fillStyle = beaconCol; ctx.fill();
+
+  // Mid glow ring
+  ctx.globalAlpha = isNext ? 0.25 + pulse * 0.2 : 0.1;
+  ctx.shadowColor = beaconCol; ctx.shadowBlur = 15;
+  ctx.beginPath(); ctx.arc(0, 0, 24, 0, Math.PI*2);
+  ctx.strokeStyle = beaconCol; ctx.lineWidth = 1.5; ctx.stroke();
+  ctx.shadowBlur = 0;
+
+  // Spinning arms + body
+  ctx.save();
   ctx.rotate(spinAngle);
 
-  // Body — circle
+  // Body — hot core
+  ctx.globalAlpha = 0.9;
   ctx.beginPath(); ctx.arc(0, 0, bodyR, 0, Math.PI*2);
-  ctx.fillStyle = isPassed ? 'rgba(0,255,136,0.25)' : 'rgba(50,70,90,0.7)';
-  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#445566');
-  ctx.lineWidth = 2;
-  ctx.fill(); ctx.stroke();
+  ctx.fillStyle = isPassed ? 'rgba(0,255,136,0.4)' : 'rgba(40,60,80,0.8)';
+  ctx.strokeStyle = beaconCol; ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
 
-  // Two arms — spinning
-  ctx.strokeStyle = isPassed ? '#00ff88' : (isNext ? '#00cccc' : '#3a4a5a');
-  ctx.lineWidth = 3;
+  // Arms
+  ctx.strokeStyle = beaconCol; ctx.lineWidth = 2.5; ctx.globalAlpha = 0.8;
   ctx.beginPath(); ctx.moveTo(0, -bodyR); ctx.lineTo(0, -bodyR - armLen); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(0, bodyR); ctx.lineTo(0, bodyR + armLen); ctx.stroke();
 
+  // Energy beam between arm tips (3-pass: bloom, core, hot center)
+  const tipY1 = -bodyR - armLen, tipY2 = bodyR + armLen;
+  // Bloom
+  ctx.globalAlpha = 0.06 + pulse * 0.04;
+  ctx.lineWidth = 12; ctx.strokeStyle = beaconCol;
+  ctx.beginPath(); ctx.moveTo(0, tipY1); ctx.lineTo(0, tipY2); ctx.stroke();
+  // Core
+  ctx.globalAlpha = 0.5 + pulse * 0.3;
+  ctx.shadowColor = beaconCol; ctx.shadowBlur = 20;
+  ctx.lineWidth = 3; ctx.strokeStyle = beaconCol;
+  ctx.beginPath(); ctx.moveTo(0, tipY1); ctx.lineTo(0, tipY2); ctx.stroke();
+  // Hot center
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.6)';
+  ctx.beginPath(); ctx.moveTo(0, tipY1); ctx.lineTo(0, tipY2); ctx.stroke();
+  ctx.shadowBlur = 0;
+
   // Lights at arm tips
   const lightR = isNext ? 6 : 4;
-  const lightCol = isPassed ? '#00ff88' : (isNext ? '#ff4400' : '#884400');
-  const glowAlpha = isNext ? 0.6 + pulse * 0.4 : (isEntry ? 0.6 : 0.45);
-
-  ctx.globalAlpha = glowAlpha;
-  ctx.shadowColor = lightCol; ctx.shadowBlur = isNext ? 18 : 8;
-  ctx.beginPath(); ctx.arc(0, -bodyR - armLen, lightR, 0, Math.PI*2);
+  ctx.globalAlpha = isNext ? 0.7 + pulse * 0.3 : (isEntry ? 0.6 : 0.5);
+  ctx.shadowColor = lightCol; ctx.shadowBlur = isNext ? 20 : 10;
+  ctx.beginPath(); ctx.arc(0, tipY1, lightR, 0, Math.PI*2);
   ctx.fillStyle = lightCol; ctx.fill();
-  ctx.beginPath(); ctx.arc(0, bodyR + armLen, lightR, 0, Math.PI*2);
+  ctx.beginPath(); ctx.arc(0, tipY2, lightR, 0, Math.PI*2);
   ctx.fillStyle = lightCol; ctx.fill();
   ctx.shadowBlur = 0;
 
   ctx.restore(); // undo rotation
 
-  // Beacon number (not rotated, stays readable)
+  // Beacon number (not rotated)
   if(!isPassed && !isEntry){
-    ctx.save();
-    ctx.globalAlpha = isNext ? 0.9 : 0.35;
+    ctx.globalAlpha = isNext ? 0.9 : 0.3;
     ctx.font = '8px "Press Start 2P",monospace';
-    ctx.fillStyle = isNext ? '#00ffcc' : '#556677';
+    ctx.fillStyle = isNext ? '#ffffff' : '#556677';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(idx + 1), sx, sy);
-    ctx.restore();
+    ctx.fillText(String(idx + 1), 0, 0);
   }
+
+  ctx.restore();
 }
 
 function drawGate(ctx, cx, cy, wx, wy, label, isActive){
   const sx = wx - state.x + cx, sy = wy - state.y + cy;
-  if(sx < -300 || sx > canvas.width+300 || sy < -300 || sy > canvas.height+300) return;
+  if(sx < -400 || sx > canvas.width+400 || sy < -400 || sy > canvas.height+400) return;
 
-  const gateH = 260;
-  const postW = 8;
+  const gateH = 300;
+  const postW = 6;
   const pulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
   const col = isActive ? '#00ff88' : '#ffcc00';
 
   ctx.save();
   ctx.translate(sx, sy);
 
-  // Two posts
-  ctx.fillStyle = '#334455';
-  ctx.fillRect(-postW/2, -gateH/2, postW, gateH);
+  // Wide atmospheric glow behind gate
+  ctx.globalAlpha = 0.04 + pulse * 0.02;
+  ctx.fillStyle = col;
+  ctx.fillRect(-30, -gateH/2 - 10, 60, gateH + 20);
 
-  // Post lights top and bottom
-  ctx.shadowColor = col; ctx.shadowBlur = 10;
-  ctx.fillStyle = col; ctx.globalAlpha = 0.6 + pulse * 0.4;
-  ctx.beginPath(); ctx.arc(0, -gateH/2, 5, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(0, gateH/2, 5, 0, Math.PI*2); ctx.fill();
+  // Energy beam between posts (3-pass like beacons)
+  // Bloom
+  ctx.globalAlpha = 0.06 + pulse * 0.04;
+  ctx.lineWidth = 16; ctx.strokeStyle = col;
+  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
+  // Core
+  ctx.globalAlpha = 0.4 + pulse * 0.3;
+  ctx.shadowColor = col; ctx.shadowBlur = 25;
+  ctx.lineWidth = 3; ctx.strokeStyle = col;
+  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
+  // Hot center
+  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
   ctx.shadowBlur = 0;
 
-  // Dashed line between posts
-  ctx.globalAlpha = 0.5 + pulse * 0.3;
-  ctx.strokeStyle = col;
-  ctx.lineWidth = 2;
-  ctx.setLineDash([8, 6]);
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-  ctx.setLineDash([]);
+  // Post caps — glowing orbs top and bottom
+  ctx.globalAlpha = 0.7 + pulse * 0.3;
+  ctx.shadowColor = col; ctx.shadowBlur = 18;
+  ctx.fillStyle = col;
+  ctx.beginPath(); ctx.arc(0, -gateH/2, 7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, gateH/2, 7, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
 
   // Label
-  ctx.globalAlpha = 0.8;
-  ctx.font = '10px "Press Start 2P",monospace';
+  ctx.globalAlpha = 0.85;
+  ctx.font = '12px "Press Start 2P",monospace';
   ctx.fillStyle = col;
   ctx.textAlign = 'center';
-  ctx.fillText(label, 0, -gateH/2 - 14);
+  ctx.shadowColor = col; ctx.shadowBlur = 10;
+  ctx.fillText(label, 0, -gateH/2 - 20);
+  ctx.shadowBlur = 0;
 
   ctx.restore();
 }
@@ -10992,26 +11034,39 @@ function drawRaceCourse(ctx, cx, cy){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
 
-  // Bumper walls — north and south edges
+  // Bumper walls — glowing energy corridors
   ctx.save();
-  ctx.lineWidth = 2;
-  ctx.setLineDash([20, 15]);
-  // North wall
-  ctx.strokeStyle = 'rgba(255,100,50,0.18)';
+  const _wallCol = 'rgba(0,180,255,';
+  // Glow spill (wide, very faint)
+  ctx.lineWidth = 18; ctx.strokeStyle = _wallCol + '0.03)';
   ctx.beginPath();
   for(let i = 0; i < _raceWalls.north.length; i++){
     const px = _raceWalls.north[i].wx - state.x + cx, py = _raceWalls.north[i].wy - state.y + cy;
     if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
-  // South wall
   ctx.beginPath();
   for(let i = 0; i < _raceWalls.south.length; i++){
     const px = _raceWalls.south[i].wx - state.x + cx, py = _raceWalls.south[i].wy - state.y + cy;
     if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
   }
   ctx.stroke();
-  ctx.setLineDash([]);
+  // Core line
+  ctx.shadowColor = '#0088cc'; ctx.shadowBlur = 12;
+  ctx.lineWidth = 1.5; ctx.strokeStyle = _wallCol + '0.2)';
+  ctx.beginPath();
+  for(let i = 0; i < _raceWalls.north.length; i++){
+    const px = _raceWalls.north[i].wx - state.x + cx, py = _raceWalls.north[i].wy - state.y + cy;
+    if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.beginPath();
+  for(let i = 0; i < _raceWalls.south.length; i++){
+    const px = _raceWalls.south[i].wx - state.x + cx, py = _raceWalls.south[i].wy - state.y + cy;
+    if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.stroke();
+  ctx.shadowBlur = 0;
   ctx.restore();
 
   // Smooth guide curve through beacons (catmull-rom style)
@@ -11058,6 +11113,55 @@ function drawRaceCourse(ctx, cx, cy){
     const isPassed = i < _race.nextBeacon;
     const isNext = i === _race.nextBeacon && _race.started;
     drawBeacon(ctx, cx, cy, course.beacons[i], i, isNext, isPassed, false);
+  }
+
+  // Shockwave rings from beacon passes
+  if(state._raceRings){
+    for(let i = state._raceRings.length - 1; i >= 0; i--){
+      const ring = state._raceRings[i];
+      ring.age++;
+      ring.r = ring.age * 4;
+      if(ring.r > ring.maxR){ state._raceRings.splice(i, 1); continue; }
+      const rsx = ring.wx - state.x + cx, rsy = ring.wy - state.y + cy;
+      const alpha = 1 - ring.r / ring.maxR;
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.6;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
+      ctx.lineWidth = 3 * alpha;
+      ctx.beginPath(); ctx.arc(rsx, rsy, ring.r, 0, Math.PI*2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
+  // Chevron direction arrows between beacons
+  if(_race.started && !_race.finished){
+    const bi = _race.nextBeacon;
+    if(bi < course.beacons.length){
+      const target = course.beacons[bi];
+      const prev = bi > 0 ? course.beacons[bi-1] : { wx: course.startWX, wy: course.startWY };
+      // Draw 3 chevrons between prev and target
+      for(let c = 1; c <= 3; c++){
+        const t = c / 4;
+        const chx = prev.wx + (target.wx - prev.wx) * t;
+        const chy = prev.wy + (target.wy - prev.wy) * t;
+        const csx = chx - state.x + cx, csy = chy - state.y + cy;
+        if(csx < -50 || csx > canvas.width+50 || csy < -50 || csy > canvas.height+50) continue;
+        const ang = Math.atan2(target.wy - prev.wy, target.wx - prev.wx);
+        // Animated fade wave
+        const wave = (state.frameCount * 0.04 + c * 0.8) % 1;
+        const chAlpha = 0.15 + wave * 0.15;
+        ctx.save();
+        ctx.translate(csx, csy); ctx.rotate(ang);
+        ctx.globalAlpha = chAlpha;
+        ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
+        ctx.beginPath();
+        ctx.moveTo(-8, -6); ctx.lineTo(4, 0); ctx.lineTo(-8, 6);
+        ctx.stroke();
+        ctx.restore();
+      }
+    }
   }
 
   // Race HUD
