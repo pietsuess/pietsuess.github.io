@@ -175,15 +175,19 @@
     line-height:1;opacity:0.7;transition:opacity 0.15s;
   }
   #mute-btn:hover{opacity:1;}
-  #mute-btn::before{
+  #mute-btn::before, #mute-btn::after{
     content:'';position:absolute;
     width:130%;height:3px;
     background:#ff2222;border-radius:2px;
     top:50%;left:-15%;
-    transform:translateY(-50%) rotate(-45deg);
+    transform-origin:center;
     display:none;
   }
-  #mute-btn.muted::before{display:block;}
+  #mute-btn::before{transform:translateY(-50%) rotate(-45deg);}
+  #mute-btn::after{transform:translateY(-50%) rotate(45deg);}
+  #mute-btn.music-muted::before{display:block;}
+  #mute-btn.both-muted::before{display:block;}
+  #mute-btn.both-muted::after{display:block;}
   #dpad{
     display:none; position:fixed; bottom:16px; right:16px;
     width:130px; height:130px; z-index:50; touch-action:none;
@@ -192,7 +196,7 @@
 </style>
 </head>
 <body>
-<div id="mute-btn" onclick="toggleAudioState()" title="Toggle Audio">🔊</div>
+<div id="mute-btn" onclick="toggleMute();event.stopPropagation()" title="Toggle Audio">🔊</div>
 <div id="dpad"><canvas id="dpad-c" width="260" height="260"></canvas></div>
 <canvas id="c"></canvas>
 <div id="popup">
@@ -2604,39 +2608,33 @@ function stopMusic(){
   if(musicTimer){ clearTimeout(musicTimer); musicTimer = null; }
 }
 
-// Three-state audio: 0=ALL ON, 1=MUSIC OFF (SFX on), 2=ALL OFF
-let _audioState = parseInt(localStorage.getItem('victoryAudioState') || '0') || 0;
-let _musicMuted = _audioState >= 1;
-let _sfxMuted = _audioState >= 2;
-const _audioIcons = ['🔊', '🔈', '🔇'];
-function toggleAudioState(){
-  _audioState = (_audioState + 1) % 3;
-  _musicMuted = _audioState >= 1;
-  _sfxMuted = _audioState >= 2;
-  localStorage.setItem('victoryAudioState', String(_audioState));
-  var btn = document.getElementById('mute-btn');
-  btn.textContent = _audioIcons[_audioState];
-  btn.classList.toggle('muted', _audioState === 2);
-  if(_musicMuted){
+// Three-state mute matching NAVIGATOR: all on → music muted → both muted → all on
+let _musicMuted = localStorage.getItem('victoryMusicMuted') === '1';
+let _sfxMuted = localStorage.getItem('victorySfxMuted') === '1';
+function toggleMute(){
+  if(!_musicMuted && !_sfxMuted){
+    _musicMuted = true;
     stopMusic();
+  } else if(_musicMuted && !_sfxMuted){
+    _sfxMuted = true;
   } else {
+    _musicMuted = false; _sfxMuted = false;
     if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
     if(audioCtx.state === 'suspended') audioCtx.resume();
     startMusic();
   }
-  if(_sfxMuted){
-    if(audioCtx) audioCtx.suspend();
-  } else {
-    if(!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    if(audioCtx.state === 'suspended') audioCtx.resume();
-  }
+  localStorage.setItem('victoryMusicMuted', _musicMuted ? '1' : '0');
+  localStorage.setItem('victorySfxMuted', _sfxMuted ? '1' : '0');
+  _updateMuteUI();
 }
-// Apply saved state on load
-(function(){
+function _updateMuteUI(){
   var btn = document.getElementById('mute-btn');
-  btn.textContent = _audioIcons[_audioState];
-  if(_audioState === 2) btn.classList.add('muted');
-})();
+  if(!btn) return;
+  btn.classList.toggle('music-muted', _musicMuted && !_sfxMuted);
+  btn.classList.toggle('both-muted', _musicMuted && _sfxMuted);
+  btn.textContent = (!_musicMuted && !_sfxMuted) ? '🔊' : (_musicMuted && _sfxMuted) ? '🔇' : '🔉';
+}
+_updateMuteUI();
 
 // Start music on first user interaction
 let _musicStarted = false;
