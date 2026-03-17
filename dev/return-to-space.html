@@ -4324,6 +4324,8 @@ function update(){
     const collR = MOON_R + 8;
     if(mDist < collR && mDist > 0.1){
       const mnx = mdx/mDist, mny = mdy/mDist;
+      // Capture pre-bounce velocity for impulse transfer
+      const _preVx = state.vx, _preVy = state.vy;
       state.x = moonWX + mnx * (collR + 2);
       state.y = moonWY + mny * (collR + 2);
       // Soft bounce — absorb most energy
@@ -4332,18 +4334,16 @@ function update(){
         state.vx -= 1.2 * vDot * mnx;
         state.vy -= 1.2 * vDot * mny;
       }
-      // Transfer impulse to moon orbit
-      // Radial: project ship velocity onto Earth→Moon axis
+      // Transfer impulse to moon orbit using PRE-BOUNCE velocity
       const _emx = moonWX - EARTH_WX, _emy = moonWY - EARTH_WY;
       const _emDist = Math.sqrt(_emx*_emx + _emy*_emy) || 1;
-      const _ernx = _emx/_emDist, _erny = _emy/_emDist; // unit vector Earth→Moon
-      const radialDot = state.vx*_ernx + state.vy*_erny; // positive = pushing moon away from Earth
-      // Asymmetric: easier to push inward than outward (moon resists leaving orbit)
+      const _ernx = _emx/_emDist, _erny = _emy/_emDist;
+      const radialDot = _preVx*_ernx + _preVy*_erny;
       const _radialMult = radialDot > 0 ? 0.04 : 0.08;
       _moonVr += radialDot * _radialMult;
-      // Tangential component: nudge angular velocity
-      const tanx = -mny, tany = mnx; // tangent to orbit
-      const tanDot = state.vx*tanx + state.vy*tany;
+      // Tangential component
+      const tanx = -_erny, tany = _ernx;
+      const tanDot = _preVx*tanx + _preVy*tany;
       _moonVa += tanDot * 0.00002;
       state.collisionFlash = 6;
       if(audioCtx && !state.sfxMuted){
