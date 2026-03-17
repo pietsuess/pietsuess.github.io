@@ -2273,8 +2273,8 @@ function finishHullImplosion(){
     populatedCells.clear(); state.spaceRocks=[]; state.wormholes=[]; state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
-    updateLevelDisplay(LEVELS[1]); updateFuelBar();
-    state.zoneCrossFlash={lvl:-3,timer:220,msg:'HULL RECONSTRUCTED — RETURNED TO BASE',_col:'#00ffcc'};
+    updateFuelBar();
+    state.zoneCrossFlash={lvl:-3,timer:220,msg:'HULL RECONSTRUCTED',_col:'#00ffcc'};
     resumeMusic();
   }
 }
@@ -4310,113 +4310,7 @@ function update(){
   state.x+=state.vx; state.y+=state.vy;
   }
 
-  // ── Zone crossing detection — virtual barrier, no impedance ──
-  if(!state.inSecretLevel){
-    // Outer zones: OUTER BARRIER (outside belt) and HOMEWARD (past launchpad)
-    const _inHomeward = state.x > HOMEWARD_THRESHOLD;
-    const _inOuterBarrier = state.outsideBarrier && !_inHomeward;
-    // Delay outer barrier zone text until player exits the tube passage
-    const _inTubePassage = state.x >= BELT_OUTER && state.x <= BELT_OUTER + 300 && Math.abs(state.y) <= BARRIER_GAP_WIDTH;
-    const _outerZoneKey = _inHomeward ? 'HOMEWARD' : (_inOuterBarrier && !_inTubePassage ? 'OUTER BARRIER' : null);
-    const _prevOuterZone = state._outerZoneKey || null;
-    state._outerZoneKey = _outerZoneKey;
-
-    // Detect outer zone crossing — suppress in secret level, wormhole, or active Kessler flash
-    if(_outerZoneKey && _outerZoneKey !== _prevOuterZone && !state.inSecretLevel && !wormholeTransition
-       && !(state.zoneCrossFlash && state.zoneCrossFlash.pre)){
-      updateLevelDisplay(_outerZoneKey);
-      const _col = _inHomeward ? '#4488ff' : '#ff8800';
-      state.zoneCrossFlash = { lvl:-3, timer:160, msg:'ZONE: ' + _outerZoneKey, _col };
-      _sendAnalytics('zone_enter', { zone: _outerZoneKey });
-    }
-
-    const nowZone = _outerZoneKey ? -99 : zoneAt(state.x, state.y);
-    // Keep currentLevel in sync with outer zones so fuel-guarantee doesn't fire out here
-    if(_outerZoneKey) state.currentLevel = -99;
-    const _prevZone = state.currentLevel;
-    if(nowZone !== _prevZone && nowZone !== -99){
-      state.currentLevel = nowZone;
-      if(!state.visitedLevels) state.visitedLevels = new Set([1]);
-      if(nowZone >= 0) state.visitedLevels.add(nowZone);
-      _sendAnalytics('zone_enter', { zone: nowZone >= 0 ? LEVELS[nowZone] : 'BELT' });
-      const _zLabel = nowZone >= 0 ? LEVELS[nowZone] : 'ASTEROID BELT';
-      updateLevelDisplay(_zLabel);
-      // Show EDIT flash only when actually inside the pen barrier; intermediary shows INTER
-      if(nowZone === 1){
-        const _pDist2 = state.x*state.x + state.y*state.y;
-        if(_pDist2 < PEN_BARRIER_R*PEN_BARRIER_R){
-          state.zoneCrossFlash = { lvl: nowZone, timer: 150 };
-          // Show mission reminder if EDIT not yet complete
-          if(!state.editMissionComplete){
-            setTimeout(function(){
-              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 1:', msg: 'COLLECT ALL OBJECTS IN THE EDITING ZONE', _col: '#00ffcc' };
-            }, 1400);
-          }
-        } else {
-          updateLevelDisplay('INTER');
-        }
-      } else if(nowZone >= 0 && nowZone !== 1 && state._interzoneComplete){
-        // Outer zone entry — zone name flash first, then mission briefing
-        state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
-        const _mZone = nowZone;
-        const _zoneName = LEVELS[_mZone];
-        const _zoneEntryKey = '_zoneEntries_'+_mZone;
-        if(!state[_zoneEntryKey]) state[_zoneEntryKey] = 0;
-        state[_zoneEntryKey]++;
-        const _zoneItems = CONTENT_DATA[_zoneName] || [];
-        const _zoneTotal = _zoneItems.length;
-        const _permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
-        const _zoneCollected = _zoneItems.filter(it=>_permCollected.has(it.title)).length;
-        // Catch-up: if all items collected but flag was never set (e.g. drifted zones during checkLevelComplete timeout)
-        if(!state['completedLevel_'+_mZone] && _zoneTotal > 0 && _zoneCollected >= _zoneTotal){
-          state['completedLevel_'+_mZone] = true;
-        }
-        // Show mission text — skip if zone already completed, or if fighting boss
-        if(!state['completedLevel_'+_mZone] && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
-          if(_zoneTotal > 0 && _zoneCollected >= Math.ceil(_zoneTotal * 0.8)){
-            setTimeout(function(){
-              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
-            }, 1400);
-          } else {
-            setTimeout(function(){
-              state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
-            }, 1400);
-          }
-        }
-      } else if(nowZone === -1 && !state.outsideBarrier && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
-        // Entering asteroid belt — Mission 4: discover the secret level (only if never visited, not outside barrier)
-        state.zoneCrossFlash = { lvl: nowZone, timer: 80 };
-        state._beltMissionShown = true;
-        setTimeout(function(){
-          if(state.mainWorldBoss && !state.mainWorldBoss.dead) return; // suppress if boss appeared
-          if(state.outsideBarrier) return; // suppress outside barrier
-          state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 4:', msg: 'DISCOVER THE SECRET LEVEL', _col: '#00ffcc' };
-        }, 1400);
-      } else {
-        state.zoneCrossFlash = { lvl: nowZone, timer: 150 };
-      }
-      // Belt cells populate naturally via tickGrid — no need to force-clear
-    }
-
-    // Pen barrier crossing — entering/leaving EDIT from intermediary zone
-    // Only detect crossings when barrier is open (prevents flicker on closed-barrier bounces)
-    const _penOpen = state.penBarrier && (!state.penBarrier.closed || state.penBarrier.opening);
-    const _nowInPen = (state.x*state.x + state.y*state.y) < PEN_BARRIER_R*PEN_BARRIER_R;
-    if(_penOpen){
-      if(_nowInPen && !state._wasInPen && !wormholeTransition){
-        state.zoneCrossFlash = { lvl: 1, timer: 150 };
-        updateLevelDisplay('EDITING');
-      } else if(!_nowInPen && state._wasInPen && !wormholeTransition){
-        // Leaving pen into interzone — show MISSION 2 text + force-clear left HUD hint
-        updateLevelDisplay('INTER');
-        state._hudHintAt = 0;
-        if(!state._mission2Shown){
-          state._mission2Shown = true;
-          state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 2:', msg: 'NAVIGATE THE INTERZONE RINGS', _col: '#00ffcc' };
-        }
-      }
-    }
-    state._wasInPen = _nowInPen;
+  // Zone crossing detection disabled for Return to Space
 
     // Outer barrier — solid ring, passable only at east gap
     const PLASMA_WALL_R = BELT_OUTER;
@@ -9692,12 +9586,7 @@ function addScore(pts){
   }
 }
 function updateLevelDisplay(label){
-  if(label) document.getElementById('level-name').textContent=label;
-  else {
-    const _l = state.currentLevel >= 0 ? (LEVELS[state.currentLevel]||'EXPLORE') : 'ASTEROID BELT';
-    document.getElementById('level-name').textContent=_l;
-  }
-  // Refresh bottom bar whenever zone changes
+  // Zone display disabled for Return to Space
 }
 
 // Determine which level/category an item belongs to
