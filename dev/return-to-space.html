@@ -10862,14 +10862,31 @@ function updateDebrisWall(){
   if(!state.debrisWall||!state.debrisWall.length) return;
   if(!state.outsideBarrier) return;
 
+  // Moon world position for gravitational pull on debris
+  const _mGravWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+  const _mGravWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+  const _moonGravR = 500; // influence radius — debris within this feels the pull
+  const _moonGravStr = 0.12; // gravitational strength
+
   for(const p of state.debrisWall){
     if(p.exploding){ p._expTimer++; continue; }
     p.ang += DEBRIS_RINGS[p.ring][1];
     p.rot += p.rotSpd;
+    // Moon gravitational perturbation — inverse-square pull
+    const _pr = DEBRIS_RINGS[p.ring][0] + (p.rJitter||0);
+    const _pwx = EARTH_WX + Math.cos(p.ang)*_pr + p.ox;
+    const _pwy = EARTH_WY + Math.sin(p.ang)*_pr + p.oy;
+    const _mgdx = _mGravWX - _pwx, _mgdy = _mGravWY - _pwy;
+    const _mgDist2 = _mgdx*_mgdx + _mgdy*_mgdy;
+    const _mgDist = Math.sqrt(_mgDist2);
+    if(_mgDist < _moonGravR && _mgDist > 20){
+      const _gForce = _moonGravStr / (_mgDist2 / 10000 + 1); // soft inverse-square
+      p.vx += (_mgdx/_mgDist) * _gForce;
+      p.vy += (_mgdy/_mgDist) * _gForce;
+    }
     p.ox += p.vx; p.oy += p.vy;
     p.vx *= 0.94; p.vy *= 0.94;
     p.ox *= 0.997; p.oy *= 0.997;
-    const _pr = DEBRIS_RINGS[p.ring][0] + (p.rJitter||0);
     p._wx = EARTH_WX + Math.cos(p.ang)*_pr + p.ox;
     p._wy = EARTH_WY + Math.sin(p.ang)*_pr + p.oy;
     if(p._hitCooldown>0) p._hitCooldown--;
