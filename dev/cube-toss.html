@@ -1,0 +1,1620 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Cube Toss</title>
+  <link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;500;600;700;800&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { background: #1a0e2e; overflow: hidden; font-family: 'Urbanist', sans-serif; }
+    canvas { display: block; cursor: default; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+let W, H;
+
+function resize() {
+  W = canvas.width = window.innerWidth;
+  H = canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// ─── DESIGN SYSTEM (PietSuess.com tokens) ───
+const COL = {
+  gold: '#f4c542',
+  coral: '#e8735a',
+  rose: '#d4547a',
+  magenta: '#b83d8e',
+  deep: '#2a1a3e',
+  ink: '#1a0e2e',
+  cream: '#fef9f0',
+  glass: 'rgba(255,255,255,0.08)',
+  glassBorder: 'rgba(255,255,255,0.12)',
+};
+
+// ─── CONSTANTS ───
+const GRAVITY = 900;
+const BOUNCE = 0.85;
+const FRICTION = 0.985;
+const ANG_FRICTION = 0.96;
+const CUBE_SIZE = 36;
+const THROW_LINE_X = 420;
+const WALK_LINE_X = 60;
+const WALK_LINE_Y_START = 200;
+const WALK_LINE_LEN = 300;
+
+// ─── CAMERA ───
+let camX = 0;
+let camTargetX = 0;
+
+// ─── GAME STATE ───
+let state = 'ready';
+let cube = null;
+let level = 0;
+let attempts = 0;
+let showMessage = '';
+let messageTimer = 0;
+
+// ─── WALKING CUBES (size = club choice) ───
+// Big: heavy, low bounce, high momentum — punches through bumpers, rolls far
+// Small: light, high bounce, less momentum — trick shots, fits tight gaps
+const walkCubes = [
+  // Effective bounce = BOUNCE(0.85) * multiplier
+  // DRIVER: 0.50  IRON: 0.65  WEDGE: 0.75  PUTTER: 0.85
+  { size: 36, speed: 40, offset: 0,   color: COL.gold,    bounce: 0.59, gravMult: 1.25, label: 'DRIVER' },
+  { size: 32, speed: -55, offset: 80,  color: COL.coral,   bounce: 0.76, gravMult: 1.1, label: 'IRON' },
+  { size: 28, speed: 70, offset: 160, color: COL.rose,    bounce: 0.88, gravMult: 0.95, label: 'WEDGE' },
+  { size: 24, speed: -85, offset: 240, color: COL.magenta, bounce: 1.0, gravMult: 0.8, label: 'PUTTER' },
+];
+
+// ─── HINTS ───
+let showHints = false;
+
+// ─── LEVEL DEFINITIONS ───
+// backWall: flush with goal right edge, full height, seals the end
+const LEVELS = [
+  {
+    name: 'THE GAP',
+    par: 2,
+    walls: [
+      { x: 740, y: 0, w: 30, h: H * 0.4 },
+      { x: 740, y: H * 0.6, w: 30, h: H * 0.4 },
+    ],
+    platforms: [{ x: 500, y: H * 0.7, w: 250 }],
+    bumpers: [],
+    // Gap: H*0.4 to H*0.6 → goal must cover exactly that
+    goal: { x: 775, y: H * 0.4, w: 90, h: H * 0.2 },
+    backWall: { x: 865, y: 0, w: 25, h: H },
+    width: 1000,
+    // Hint: straight shot through the gap
+    hints: [
+      { x: 420, y: H*0.5, type: 'aim' },
+      { x: 740, y: H*0.5, type: 'through' },
+      { x: 810, y: H*0.5, type: 'goal' },
+    ],
+    tip: 'Any cube. Straight shot through the gap.',
+  },
+  {
+    name: 'UP AND OVER',
+    par: 3,
+    walls: [
+      { x: 640, y: H * 0.35, w: 25, h: H * 0.65 },
+      { x: 940, y: 0, w: 25, h: H * 0.5 },
+      { x: 940, y: H * 0.7, w: 25, h: H * 0.3 },
+    ],
+    platforms: [{ x: 790, y: H * 0.7, w: 120 }],
+    bumpers: [],
+    // Gap: H*0.5 to H*0.7 → goal covers exactly
+    goal: { x: 970, y: H * 0.5, w: 90, h: H * 0.2 },
+    backWall: { x: 1060, y: 0, w: 25, h: H },
+    width: 1200,
+    hints: [
+      { x: 420, y: H*0.28, type: 'aim' },
+      { x: 640, y: H*0.32, type: 'over' },
+      { x: 790, y: H*0.5, type: 'bounce', surface: 'platform' },
+      { x: 940, y: H*0.6, type: 'through' },
+      { x: 1010, y: H*0.6, type: 'goal' },
+    ],
+    tip: 'Arc over wall 1, bounce off platform, through wall 2 gap.',
+  },
+  {
+    name: 'PINBALL',
+    par: 3,
+    walls: [
+      { x: 690, y: H * 0.6, w: 20, h: H * 0.4 },
+      { x: 1040, y: 0, w: 20, h: H * 0.4 },
+    ],
+    platforms: [
+      { x: 590, y: H * 0.55, w: 80 },
+      { x: 840, y: H * 0.45, w: 100 },
+      { x: 1090, y: H * 0.65, w: 80 },
+    ],
+    bumpers: [
+      { x: 790, y: H * 0.3, r: 30 },
+      { x: 890, y: H * 0.55, r: 25 },
+      { x: 740, y: H * 0.75, r: 28 },
+      { x: 990, y: H * 0.35, r: 25 },
+    ],
+    // Last wall gap: H*0.4 to H → goal covers exactly
+    goal: { x: 1060, y: H * 0.4, w: 80, h: H * 0.6 },
+    backWall: { x: 1140, y: 0, w: 25, h: H },
+    width: 1260,
+    hints: [
+      { x: 420, y: H*0.45, type: 'aim' },
+      { x: 790, y: H*0.3, type: 'bounce', surface: 'bumper' },
+      { x: 890, y: H*0.55, type: 'bounce', surface: 'bumper' },
+      { x: 1190, y: H*0.55, type: 'goal' },
+    ],
+    tip: 'Use bumpers to redirect. Small cube bounces more.',
+  },
+  {
+    name: 'THE TUNNEL',
+    par: 2,
+    walls: [
+      { x: 640, y: 0, w: 600, h: H * 0.35 },
+      { x: 640, y: H * 0.6, w: 250, h: H * 0.4 },
+      { x: 990, y: H * 0.55, w: 250, h: H * 0.45 },
+      { x: 840, y: H * 0.5, w: 80, h: H * 0.1 },
+    ],
+    platforms: [],
+    bumpers: [
+      { x: 740, y: H * 0.5, r: 20 },
+      { x: 1090, y: H * 0.45, r: 22 },
+    ],
+    // Tunnel exit gap: H*0.35 to H*0.55 → goal covers exactly
+    goal: { x: 1240, y: H * 0.35, w: 80, h: H * 0.2 },
+    backWall: { x: 1320, y: 0, w: 25, h: H },
+    width: 1490,
+    hints: [
+      { x: 420, y: H*0.45, type: 'aim' },
+      { x: 640, y: H*0.45, type: 'through' },
+      { x: 1090, y: H*0.45, type: 'bounce', surface: 'bumper' },
+      { x: 1290, y: H*0.42, type: 'goal' },
+    ],
+    tip: 'Thread the tunnel. Big cube punches through bumpers.',
+  },
+  // ═══════════════════════════════════════════════════════
+  // LEVEL DESIGN — trajectory-first thinking
+  //
+  // Physics: cube thrown rightward, gravity pulls down.
+  // Natural arc is a parabola going RIGHT and DOWN.
+  // Floor bounce sends it back UP (diminishing).
+  // Platforms only matter if they're WHERE THE CUBE LANDS.
+  //
+  // Design method: describe the intended throw, then place
+  // geometry to make ONLY that throw work.
+  // ═══════════════════════════════════════════════════════
+
+  // Level 5: THE SHELF
+  // Trajectory: throw mid-height → hit wall → cube drops onto a shelf
+  // (platform jutting LEFT from the wall) → bounces up-right into goal
+  // above the shelf. One wall, one shelf, one redirect.
+  //
+  // Wall at x=700, full height except a gap at H*0.35-H*0.55.
+  // Shelf juts LEFT from wall at H*0.7 (cube lands on it after falling).
+  // Goal is in the gap. You can't throw straight through because
+  // gravity pulls you below the gap. You need the shelf bounce.
+  {
+    name: 'THE SHELF',
+    par: 2,
+    walls: [
+      { x: 700, y: 0, w: 25, h: H * 0.35 },        // wall top (blocks 0-0.35)
+      { x: 700, y: H * 0.55, w: 25, h: H * 0.45 },  // wall bottom (blocks 0.55-1.0)
+      // Gap: H*0.35 to H*0.55
+    ],
+    platforms: [
+      // Shelf jutting LEFT from wall — cube falls onto this after hitting wall
+      { x: 580, y: H * 0.7, w: 120 },
+    ],
+    bumpers: [],
+    // Goal exactly covers the gap
+    goal: { x: 725, y: H * 0.35, w: 80, h: H * 0.2 },
+    backWall: { x: 805, y: 0, w: 25, h: H },
+    width: 950,
+  },
+
+  // Level 6: FLOOR BOUNCE
+  // Trajectory: throw low → go under a half-wall → hit the floor →
+  // bounce up into a high goal on the other side.
+  //
+  // Half-wall blocks the top 65%. Gap at bottom (H*0.65-H).
+  // You throw low through the gap. Gravity + forward motion means
+  // the cube hits the floor around x=750. It bounces up.
+  // Back wall at x=900 stops it. Goal is high (H*0.1-H*0.4)
+  // on the back wall — only reachable via floor bounce.
+  // Can't throw straight to goal because the wall blocks high paths.
+  {
+    name: 'FLOOR BOUNCE',
+    par: 2,
+    walls: [
+      { x: 650, y: 0, w: 25, h: H * 0.65 },  // blocks top 65%, gap at bottom
+    ],
+    platforms: [],
+    bumpers: [],
+    // Goal is high — only reachable by bouncing off floor past the wall
+    goal: { x: 800, y: H * 0.1, w: 80, h: H * 0.3 },
+    backWall: { x: 880, y: 0, w: 25, h: H },
+    width: 1000,
+  },
+
+  // Level 7: THE L-BEND
+  // Trajectory: throw into an L-shaped corridor. Cube enters mid-height,
+  // hits the right wall of the corridor, drops down, exits through
+  // a bottom opening into the goal.
+  //
+  // Ceiling block + right wall form an L-shape.
+  // Entrance on the left at mid height. Exit at bottom right.
+  {
+    name: 'THE L-BEND',
+    par: 3,
+    walls: [
+      // Ceiling over the play area
+      { x: 550, y: 0, w: 350, h: H * 0.3 },
+      // Right wall of the L (stops forward motion, cube drops)
+      { x: 880, y: H * 0.3, w: 25, h: H * 0.4 },
+      // Floor of upper corridor (cube walks on this then falls off right edge)
+      { x: 550, y: H * 0.7, w: 200, h: H * 0.3 },
+    ],
+    platforms: [
+      // Ledge to catch the drop and redirect right
+      { x: 780, y: H * 0.65, w: 100 },
+    ],
+    bumpers: [],
+    // Goal at the bottom of the drop, past the right wall
+    goal: { x: 905, y: H * 0.55, w: 80, h: H * 0.45 },
+    backWall: { x: 985, y: 0, w: 25, h: H },
+    width: 1100,
+  },
+
+  // Level 8: CEILING BOUNCE
+  // Trajectory: throw upward at an angle → hit the ceiling →
+  // bounce down-right past a wall into the goal below.
+  //
+  // Wall blocks everything except the top 20%.
+  // But the goal is at the BOTTOM on the other side.
+  // You throw up, bounce off ceiling, the bounce sends you
+  // rightward and downward past the wall into the low goal.
+  {
+    name: 'CEILING BOUNCE',
+    par: 2,
+    walls: [
+      { x: 700, y: H * 0.2, w: 25, h: H * 0.8 },  // blocks 0.2-1.0, gap at top
+    ],
+    platforms: [],
+    bumpers: [],
+    // Goal is low on the far side — ceiling bounce drops you into it
+    goal: { x: 750, y: H * 0.65, w: 80, h: H * 0.35 },
+    backWall: { x: 830, y: 0, w: 25, h: H },
+    width: 950,
+  },
+
+  // Level 9: DOUBLE REDIRECT
+  // Trajectory: throw mid → hit wall1 shelf → bounce up through
+  // wall1 gap → arc over → drop onto wall2 shelf → bounce into goal.
+  // Two shelves, two redirects. Shelves jut from alternating sides.
+  //
+  // Wall1: gap at top (0-0.35). Shelf at H*0.55 juts LEFT.
+  // Wall2: gap at bottom (0.65-1.0). Shelf at H*0.45 juts LEFT.
+  // Path: throw at H*0.5 → hits wall1 → drops to shelf at 0.55 →
+  // bounces up through top gap → arcs right → drops to wall2 shelf
+  // at 0.45 → bounces down-right through bottom gap → goal.
+  {
+    name: 'DOUBLE REDIRECT',
+    par: 4,
+    walls: [
+      // Wall 1: gap at top (0-0.35)
+      { x: 650, y: H * 0.35, w: 25, h: H * 0.65 },
+      // Wall 2: gap at bottom (0.65-1.0)
+      { x: 900, y: 0, w: 25, h: H * 0.65 },
+    ],
+    platforms: [
+      // Shelf 1: juts left from wall1, catches falling cube
+      { x: 530, y: H * 0.6, w: 120 },
+      // Shelf 2: between walls, catches cube arcing over from gap1
+      { x: 750, y: H * 0.5, w: 130 },
+    ],
+    bumpers: [],
+    // Goal covers wall2's bottom gap
+    goal: { x: 925, y: H * 0.65, w: 80, h: H * 0.35 },
+    backWall: { x: 1005, y: 0, w: 25, h: H },
+    width: 1100,
+  },
+
+  // Level 10: THE MAZE
+  // Three walls creating a zigzag. Each gap is on the opposite
+  // side from the previous. Shelves at each wall catch the cube
+  // and redirect it. Gaps are wide (35%) so it's achievable.
+  //
+  // Wall1 gap: bottom (0.65-1.0). Wall2 gap: top (0-0.35). Wall3 gap: bottom (0.65-1.0).
+  // Shelf on wall1 (left side, mid height) redirects cube down to gap.
+  // Floor bounce between wall1 and wall2 sends cube up to wall2 gap.
+  // Shelf on wall2 (right side) catches and redirects down to wall3 gap.
+  {
+    name: 'THE MAZE',
+    par: 4,
+    walls: [
+      // Wall 1: gap at bottom (0.65-1.0)
+      { x: 620, y: 0, w: 25, h: H * 0.65 },
+      // Wall 2: gap at top (0-0.35)
+      { x: 820, y: H * 0.35, w: 25, h: H * 0.65 },
+      // Wall 3: gap at bottom (0.65-1.0)
+      { x: 1020, y: 0, w: 25, h: H * 0.65 },
+    ],
+    platforms: [
+      // Shelf before wall1: helps angle cube down toward bottom gap
+      { x: 500, y: H * 0.6, w: 120 },
+      // Shelf between wall1 and wall2: cube bounces off floor, lands here, redirects up
+      { x: 680, y: H * 0.5, w: 120 },
+      // Shelf between wall2 and wall3: catches cube after top gap, redirects down
+      { x: 880, y: H * 0.55, w: 120 },
+    ],
+    bumpers: [],
+    // Goal covers wall3's bottom gap
+    goal: { x: 1045, y: H * 0.65, w: 80, h: H * 0.35 },
+    backWall: { x: 1125, y: 0, w: 25, h: H },
+    width: 1250,
+  },
+];
+
+function getCurrentLevel() { return LEVELS[level % LEVELS.length]; }
+
+function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; }
+
+// ─── TRAJECTORY SIMULATOR — finds a real path using actual physics ───
+let hintCache = {}; // level index → {path:[], vx, vy, startY}
+
+function simulateTrajectory(lv, startX, startY, vx, vy, cubeSize, bounceMult, gravMult) {
+  const path = [{x: startX, y: startY}];
+  let cx = startX, cy = startY, cvx = vx, cvy = vy;
+  const half = cubeSize / 2;
+  const B = BOUNCE * bounceMult;
+  const G = GRAVITY * gravMult;
+  const dt = 1/60;
+  const g = lv.goal;
+
+  for (let step = 0; step < 600; step++) {
+    cvy += G * dt;
+    cx += cvx * dt;
+    cy += cvy * dt;
+    cvx *= 0.998;
+
+    // Walls
+    if (cy + half > H) { cy = H - half; cvy = -Math.abs(cvy) * B; }
+    if (cy - half < 0) { cy = half; cvy = Math.abs(cvy) * B; }
+    if (cx - half < THROW_LINE_X) { cx = THROW_LINE_X + half; cvx = Math.abs(cvx) * B; }
+
+    if (lv.backWall) {
+      const bw = lv.backWall;
+      if (cx + half > bw.x && cx - half < bw.x + bw.w) {
+        if (cvx > 0) { cx = bw.x - half; cvx *= -B; }
+        else { cx = bw.x + bw.w + half; cvx *= -B; }
+      }
+    }
+
+    for (const w of lv.walls) {
+      const simC = {x:cx,y:cy,vx:cvx,vy:cvy,angVel:0};
+      collideRotatedRect(simC, half, B, w.x, w.y, w.w, w.h, w.rot||0);
+      cx=simC.x;cy=simC.y;cvx=simC.vx;cvy=simC.vy;
+    }
+
+    for (const p of lv.platforms) {
+      if (cx+half>p.x && cx-half<p.x+p.w) {
+        if (cy+half>p.y && cy+half<p.y+10 && cvy>0) { cy=p.y-half; cvy=-Math.abs(cvy)*B; }
+        if (cy-half<p.y+6 && cy-half>p.y-4 && cvy<0) { cy=p.y+6+half; cvy=Math.abs(cvy)*B; }
+      }
+    }
+
+    for (const b of lv.bumpers) {
+      const dx=cx-b.x, dy=cy-b.y, dist=Math.sqrt(dx*dx+dy*dy);
+      if (dist<half+b.r && dist>0) {
+        const nx=dx/dist, ny=dy/dist;
+        cx=b.x+nx*(half+b.r); cy=b.y+ny*(half+b.r);
+        const dot=cvx*nx+cvy*ny;
+        cvx-=2*dot*nx*0.75; cvy-=2*dot*ny*0.75;
+      }
+    }
+
+    // Sample path every N steps
+    if (step % 3 === 0) path.push({x: cx, y: cy});
+
+    // Check goal
+    if (cx+half>g.x && cx-half<g.x+g.w && cy+half>g.y && cy-half<g.y+g.h) {
+      path.push({x: cx, y: cy});
+      return path; // found a winning trajectory
+    }
+
+    // Stopped
+    if (Math.sqrt(cvx*cvx+cvy*cvy) < 5) break;
+  }
+  return null; // no solution found with these params
+}
+
+// Async hint finder — runs in chunks so it doesn't freeze gameplay
+let hintSearching = false;
+
+function findHintPath(lvIdx) {
+  if (hintCache[lvIdx]) return hintCache[lvIdx];
+  if (hintSearching) return null; // already searching
+  hintSearching = true;
+
+  const lv = LEVELS[lvIdx % LEVELS.length];
+  const cubeSize = 24;
+  const bounceMult = 1.0;  // matches putter
+  const gravMult = 0.8;
+
+  const speeds = [300, 400, 500, 600, 700, 800, 900, 1000, 1100, 1200];
+  const startYs = [];
+  for (let y = H * 0.05; y < H * 0.95; y += H * 0.05) startYs.push(y);
+  const angles = [];
+  for (let a = -0.8; a <= 0.8; a += 0.04) angles.push(a);
+
+  // Build work queue
+  const queue = [];
+  for (const spd of speeds)
+    for (const sy of startYs)
+      for (const angle of angles)
+        queue.push({spd, sy, angle});
+
+  let bestPath = null;
+  let idx = 0;
+  const chunkSize = 200;
+
+  function processChunk() {
+    const end = Math.min(idx + chunkSize, queue.length);
+    for (; idx < end; idx++) {
+      const {spd, sy, angle} = queue[idx];
+      const vx = spd * Math.cos(angle);
+      const vy = spd * Math.sin(angle);
+      const path = simulateTrajectory(lv, THROW_LINE_X, sy, vx, vy, cubeSize, bounceMult, gravMult);
+      if (path && (!bestPath || path.length < bestPath.length)) {
+        bestPath = path;
+        if (path.length < 30) { // very direct — done
+          hintCache[lvIdx] = bestPath;
+          hintSearching = false;
+          return;
+        }
+      }
+    }
+    if (idx < queue.length && !bestPath) {
+      requestAnimationFrame(processChunk); // keep searching next frame
+    } else {
+      if (bestPath) hintCache[lvIdx] = bestPath;
+      hintSearching = false;
+    }
+  }
+
+  processChunk();
+  return null; // will be available next frame
+}
+
+function spawnCube(x, y, wk) {
+  return { x, y, size: wk.size, color: wk.color, bounce: wk.bounce, gravMult: wk.gravMult,
+    vx: 0, vy: 0, angle: 0, angVel: 0, trail: [] };
+}
+
+// ─── DRAW HELPERS ───
+function roundRectPath(x, y, w, h, radius) {
+  const r = Math.min(radius, w / 2, h / 2);
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+  ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+  ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+}
+
+// ─── DRAW METALLIC CUBE ───
+function drawCubeAt(x, y, size, angle, color) {
+  const s = size, r = s * 0.15;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+
+  function cubePath() {
+    ctx.beginPath();
+    ctx.moveTo(-s/2+r, -s/2); ctx.lineTo(s/2-r, -s/2);
+    ctx.quadraticCurveTo(s/2, -s/2, s/2, -s/2+r);
+    ctx.lineTo(s/2, s/2-r); ctx.quadraticCurveTo(s/2, s/2, s/2-r, s/2);
+    ctx.lineTo(-s/2+r, s/2); ctx.quadraticCurveTo(-s/2, s/2, -s/2, s/2-r);
+    ctx.lineTo(-s/2, -s/2+r); ctx.quadraticCurveTo(-s/2, -s/2, -s/2+r, -s/2);
+    ctx.closePath();
+  }
+
+  cubePath(); ctx.fillStyle = color; ctx.fill();
+
+  // Metallic shimmer band
+  const shimmer = (elapsed * 1.5 + x * 0.01 + y * 0.01) % (Math.PI * 2);
+  const off = Math.sin(shimmer) * s * 0.3;
+  const mg = ctx.createLinearGradient(-s/2+off, -s/2, s/2+off, s/2);
+  mg.addColorStop(0, 'rgba(255,255,255,0)');
+  mg.addColorStop(0.35, 'rgba(255,255,255,0.06)');
+  mg.addColorStop(0.45, 'rgba(255,255,255,0.28)');
+  mg.addColorStop(0.55, 'rgba(255,255,255,0.28)');
+  mg.addColorStop(0.65, 'rgba(255,255,255,0.06)');
+  mg.addColorStop(1, 'rgba(255,255,255,0)');
+  cubePath(); ctx.fillStyle = mg; ctx.fill();
+
+  // Highlight + shadow
+  cubePath(); ctx.clip();
+  ctx.fillStyle = 'rgba(255,255,255,0.15)';
+  ctx.fillRect(-s/2, -s/2, s, s * 0.35);
+  ctx.fillStyle = 'rgba(0,0,0,0.15)';
+  ctx.fillRect(-s/2, s * 0.1, s, s * 0.4);
+
+  // Glass border
+  ctx.restore();
+  ctx.save();
+  ctx.translate(x, y); ctx.rotate(angle);
+  cubePath();
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.restore();
+}
+
+// ─── PHYSICS ───
+function collideCubeWalls(c, lv) {
+  const half = c.size / 2;
+  const B = BOUNCE * (c.bounce || 1); // per-cube bounce
+  if (c.y + half > H) { c.y = H - half; c.vy *= -B; c.angVel += c.vx * 0.008; }
+  if (c.y - half < 0) { c.y = half; c.vy *= -B; }
+  if (c.x - half < THROW_LINE_X) { c.x = THROW_LINE_X + half; c.vx = Math.abs(c.vx) * B; }
+  if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
+
+  // Back wall — full height seal behind goal
+  if (lv.backWall) {
+    const bw = lv.backWall;
+    if (rectOverlap(c.x - half, c.y - half, c.size, c.size, bw.x, bw.y, bw.w, bw.h)) {
+      if (c.vx > 0) { c.x = bw.x - half; c.vx *= -B; c.angVel -= c.vy * 0.005; }
+      else { c.x = bw.x + bw.w + half; c.vx *= -B; c.angVel += c.vy * 0.005; }
+    }
+  }
+
+  for (const w of lv.walls) {
+    collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot || 0);
+  }
+
+  // Platforms as thin solid walls (6px thick, full collision both sides)
+  for (const p of lv.platforms) {
+    collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot || 0);
+  }
+
+  for (const b of lv.bumpers) {
+    const dx=c.x-b.x, dy=c.y-b.y, dist=Math.sqrt(dx*dx+dy*dy), md=half+b.r;
+    if (dist<md && dist>0) {
+      const nx=dx/dist, ny=dy/dist;
+      c.x=b.x+nx*md; c.y=b.y+ny*md;
+      const dot=c.vx*nx+c.vy*ny;
+      c.vx-=2*dot*nx*0.75; c.vy-=2*dot*ny*0.75;
+      const spd=Math.sqrt(c.vx*c.vx+c.vy*c.vy);
+      if(spd<200){c.vx*=1.3;c.vy*=1.3;}
+      c.angVel+=(nx*c.vy-ny*c.vx)*0.02;
+    }
+  }
+}
+
+function rectOverlap(ax,ay,aw,ah,bx,by,bw,bh) {
+  return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
+}
+
+// Rotated rectangle collision: transforms cube into wall's local space
+function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
+  if (!rot) {
+    // No rotation — use fast AABB
+    if (!rectOverlap(c.x-half, c.y-half, half*2, half*2, rx, ry, rw, rh)) return;
+    const ol=(c.x+half)-rx, or2=(rx+rw)-(c.x-half);
+    const ot=(c.y+half)-ry, ob=(ry+rh)-(c.y-half);
+    const m=Math.min(ol,or2,ot,ob);
+    if(m===ol&&c.vx>0){c.x=rx-half;c.vx*=-B;c.angVel-=c.vy*0.005;}
+    else if(m===or2&&c.vx<0){c.x=rx+rw+half;c.vx*=-B;c.angVel+=c.vy*0.005;}
+    else if(m===ot&&c.vy>0){c.y=ry-half;c.vy*=-B;c.angVel+=c.vx*0.008;}
+    else if(m===ob&&c.vy<0){c.y=ry+rh+half;c.vy*=-B;}
+    return;
+  }
+
+  // Rotated: transform cube into rect's local coordinate space
+  const cx = rx + rw/2, cy = ry + rh/2; // rect center
+  const cos = Math.cos(-rot), sin = Math.sin(-rot);
+  // Cube position in local space
+  const dx = c.x - cx, dy = c.y - cy;
+  const lx = dx * cos - dy * sin;
+  const ly = dx * sin + dy * cos;
+
+  // AABB check in local space (rect is centered at origin, half-extents rw/2, rh/2)
+  const hw = rw/2 + half, hh = rh/2 + half;
+  if (Math.abs(lx) > hw || Math.abs(ly) > hh) return; // no overlap
+
+  // Find penetration axis in local space
+  const penL = hw + lx, penR = hw - lx;
+  const penT = hh + ly, penB = hh - ly;
+  const minPen = Math.min(penL, penR, penT, penB);
+
+  let pushLX = 0, pushLY = 0;
+  if (minPen === penL) pushLX = -(penL);
+  else if (minPen === penR) pushLX = penR;
+  else if (minPen === penT) pushLY = -(penT);
+  else pushLY = penB;
+
+  // Transform push vector back to world space
+  const cosR = Math.cos(rot), sinR = Math.sin(rot);
+  const pushWX = pushLX * cosR - pushLY * sinR;
+  const pushWY = pushLX * sinR + pushLY * cosR;
+
+  c.x += pushWX;
+  c.y += pushWY;
+
+  // Reflect velocity along the push direction
+  const pushLen = Math.sqrt(pushWX*pushWX + pushWY*pushWY);
+  if (pushLen > 0) {
+    const nx = pushWX/pushLen, ny = pushWY/pushLen;
+    const dot = c.vx*nx + c.vy*ny;
+    if (dot < 0) { // only if moving into the wall
+      c.vx -= 2 * dot * nx;
+      c.vy -= 2 * dot * ny;
+      c.vx *= B; c.vy *= B;
+      c.angVel += (c.vx * ny - c.vy * nx) * 0.005;
+    }
+  }
+}
+
+function updateCube(c, dt) {
+  // Substep physics — max 4px movement per step so nothing tunnels through
+  const speed = Math.sqrt(c.vx * c.vx + c.vy * c.vy);
+  const maxStep = 4;
+  const steps = Math.max(1, Math.ceil(speed * dt / maxStep));
+  const subDt = dt / steps;
+
+  for (let i = 0; i < steps; i++) {
+    if (i === 0) c.vy += GRAVITY * (c.gravMult || 1) * dt; // per-cube gravity
+    c.x += c.vx * subDt;
+    c.y += c.vy * subDt;
+    collideCubeWalls(c, getCurrentLevel());
+
+    // Check goal each substep
+    const lv = getCurrentLevel(), g = lv.goal, halfG = c.size / 2;
+    if (c.x+halfG>g.x && c.x-halfG<g.x+g.w && c.y+halfG>g.y && c.y-halfG<g.y+g.h) {
+      state = 'won'; showMsg('LEVEL CLEAR!', 2.5); break;
+    }
+  }
+
+  c.angle += c.angVel * dt;
+  c.vx *= FRICTION; c.angVel *= ANG_FRICTION;
+
+  // Trail
+  if (c.trail.length===0 || Math.abs(c.x-c.trail[c.trail.length-1].x)>8 || Math.abs(c.y-c.trail[c.trail.length-1].y)>8) {
+    c.trail.push({x:c.x,y:c.y,t:1});
+    if(c.trail.length>60)c.trail.shift();
+  }
+  for(const t of c.trail) t.t*=0.97;
+
+  // Settle check
+  const finalSpeed = Math.sqrt(c.vx*c.vx+c.vy*c.vy);
+  if(finalSpeed<12&&Math.abs(c.angVel)<0.3&&state==='thrown'){
+    c._settleTime=(c._settleTime||0)+dt;
+    if(c._settleTime>0.5){state='lost';showMsg('MISSED! TAP TO RETRY',99);}
+  }else{c._settleTime=0;}
+}
+
+function showMsg(text,dur){showMessage=text;messageTimer=dur;}
+
+// ─── INPUT ───
+let mouseX=0,mouseY=0,prevMX=0,prevMY=0,grabbing=false;
+function getPos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX,y:t.clientY};}
+function worldX(sx){return sx+camX;}
+
+canvas.addEventListener('mousedown',onDown);
+canvas.addEventListener('mousemove',onMove);
+canvas.addEventListener('mouseup',onUp);
+canvas.addEventListener('touchstart',(e)=>{e.preventDefault();onDown(e);},{passive:false});
+canvas.addEventListener('touchmove',(e)=>{e.preventDefault();onMove(e);},{passive:false});
+canvas.addEventListener('touchend',(e)=>{onUp(e);});
+
+// Button bounds
+function resetBtnBounds(){
+  const rbw=160,rbh=50;
+  return {x:(W-rbw)/2, y:H*0.72, w:rbw, h:rbh};
+}
+function nextBtnBounds(){
+  const nbw=220,nbh=56;
+  return {x:(W-nbw)/2, y:H*0.52, w:nbw, h:nbh};
+}
+
+function onDown(e){
+  const p=getPos(e); mouseX=prevMX=p.x; mouseY=prevMY=p.y;
+
+  // Level jumper arrows
+  const ljy = 22;
+  if (p.y > ljy - 15 && p.y < ljy + 15) {
+    if (p.x > 200 && p.x < 225 && level > 0) {
+      level--; attempts = 0; resetCube(); return;
+    }
+    if (p.x > 230 && p.x < 255 && level < LEVELS.length - 1) {
+      level++; attempts = 0; resetCube(); return;
+    }
+  }
+
+  // Editor toggle button (top right, next to hints)
+  const ebw=80,ebh=32,ebx=W-ebw-105,eby=15;
+  if(p.x>=ebx&&p.x<=ebx+ebw&&p.y>=eby&&p.y<=eby+ebh){
+    editorMode=!editorMode;
+    if(editorMode){state='ready';cube=null;camX=0;camTargetX=0;edSel=null;edAddMode=null;}
+    else{edSel=null;edAddMode=null;}
+    return;
+  }
+
+  // Editor mode input
+  if (editorMode) {
+    const wx = p.x + camX, wy = p.y;
+
+    // Toolbar hit
+    const tbAction = edToolbarHit(p.x, p.y);
+    if (tbAction) {
+      if (tbAction === 'dupe' && edSel) {
+        const lv = getCurrentLevel();
+        edPushUndo();
+        const clone = JSON.parse(JSON.stringify(edSel.obj));
+        clone.x += 30; clone.y += 30; // offset so it's visible
+        if (edSel.type==='wall') { lv.walls.push(clone); edSel={type:'wall',index:lv.walls.length-1,obj:clone}; }
+        else if (edSel.type==='platform') { lv.platforms.push(clone); edSel={type:'platform',index:lv.platforms.length-1,obj:clone}; }
+        else if (edSel.type==='bumper') { lv.bumpers.push(clone); edSel={type:'bumper',index:lv.bumpers.length-1,obj:clone}; }
+      } else if (tbAction === 'delete' && edSel) {
+        const lv = getCurrentLevel();
+        edPushUndo();
+        if (edSel.type==='wall') lv.walls.splice(edSel.index,1);
+        else if (edSel.type==='platform') lv.platforms.splice(edSel.index,1);
+        else if (edSel.type==='bumper') lv.bumpers.splice(edSel.index,1);
+        edSel = null;
+      } else if (tbAction === 'export') { edExport(); }
+      else if (tbAction === 'undo') { edPopUndo(); }
+      else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper') {
+        edAddMode = edAddMode === tbAction ? null : tbAction;
+      }
+      return;
+    }
+
+    // Add mode — place new object
+    if (edAddMode) {
+      const lv = getCurrentLevel();
+      edPushUndo();
+      if (edAddMode === 'wall') {
+        const nw = { x: wx, y: wy - 50, w: 25, h: 100 };
+        lv.walls.push(nw);
+        edSel = { type: 'wall', index: lv.walls.length-1, obj: nw };
+      } else if (edAddMode === 'platform') {
+        const np = { x: wx - 60, y: wy, w: 120 };
+        lv.platforms.push(np);
+        edSel = { type: 'platform', index: lv.platforms.length-1, obj: np };
+      } else if (edAddMode === 'bumper') {
+        const nb = { x: wx, y: wy, r: 25 };
+        lv.bumpers.push(nb);
+        edSel = { type: 'bumper', index: lv.bumpers.length-1, obj: nb };
+      }
+      edAddMode = null;
+      return;
+    }
+
+    // Check resize handles on selected object first
+    if (edSel) {
+      const handle = edGetHandle(wx, wy);
+      if (handle) {
+        edPushUndo();
+        edHandle = handle;
+        edDragging = true;
+        const o = edSel.obj;
+        edDragStart = { mx: wx, my: wy, ox: o.x, oy: o.y, ow: o.w || 0, oh: o.h || 0, or: o.r || 0 };
+        canvas.style.cursor = handle === 'move' ? 'grabbing' : 'nwse-resize';
+        return;
+      }
+    }
+
+    // Hit test for selection
+    const hit = edHitTest(wx, wy);
+    if (hit) {
+      edSel = hit;
+      edPushUndo();
+      edHandle = 'move';
+      edDragging = true;
+      const o = hit.obj;
+      edDragStart = { mx: wx, my: wy, ox: o.x, oy: o.y, ow: o.w || 0, oh: o.h || 0, or: o.r || 0 };
+      canvas.style.cursor = 'grabbing';
+    } else {
+      // Deselect, start panning
+      edSel = null;
+      edPanning = true;
+      edPanStart = { mx: p.x, camX: camX };
+      canvas.style.cursor = 'move';
+    }
+    return;
+  }
+
+  // Hints toggle button (top right)
+  const hbw=80,hbh=32,hbx=W-hbw-15,hby=15;
+  if(p.x>=hbx&&p.x<=hbx+hbw&&p.y>=hby&&p.y<=hby+hbh){showHints=!showHints;return;}
+
+  if(state==='thrown'||state==='lost'||state==='won'||state==='aiming'){
+    const rb=resetBtnBounds();
+    if(p.x>=rb.x&&p.x<=rb.x+rb.w&&p.y>=rb.y&&p.y<=rb.y+rb.h){resetCube();return;}
+  }
+  if(state==='won'){
+    const nb=nextBtnBounds();
+    if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){level++;attempts=0;resetCube();return;}
+    return; // only next button works in won state
+  }
+  if(state==='lost'){resetCube();return;}
+  if(state!=='ready')return;
+  const wx=worldX(p.x);
+  if(wx<THROW_LINE_X+100){
+    // Find the nearest walking cube to click position
+    let bestWk=walkCubes[0], bestDist=Infinity;
+    for(const wk of walkCubes){
+      const dist=wk.speed*elapsed+wk.offset;
+      const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
+      const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
+      const eased=frac<0.5?0.5*Math.pow(frac*2,0.7):1-0.5*Math.pow((1-frac)*2,0.7);
+      const tipAngle=eased*(Math.PI/2);
+      const pivotLocalX=((stepIdx+1)*wk.size)%WALK_LINE_LEN;
+      const cosT=Math.cos(tipAngle),sinT=Math.sin(tipAngle);
+      const lcx=-wk.size/2,lcy=-wk.size/2;
+      // After PI/2 rotation: screenX = WALK_LINE_X - (lcx*sinT+lcy*cosT), screenY = WALK_LINE_Y_START + pivotLocalX + lcx*cosT - lcy*sinT
+      const cubeScreenY = WALK_LINE_Y_START + pivotLocalX + lcx*cosT - lcy*sinT;
+      const cubeScreenX = WALK_LINE_X;
+      const d = Math.abs(p.y - cubeScreenY) + Math.abs(p.x - (cubeScreenX - camX));
+      if(d<bestDist){bestDist=d;bestWk=wk;}
+    }
+    grabbing=true;velSamples=[];lastMoveTime=performance.now();
+    cube=spawnCube(wx,p.y,bestWk);
+    state='aiming';canvas.style.cursor='grabbing';
+  }
+}
+
+let lastMoveTime=0;
+function onMove(e){
+  const p=getPos(e),now=performance.now(),moveDt=(now-(lastMoveTime||now))/1000;
+  lastMoveTime=now; prevMX=mouseX;prevMY=mouseY; mouseX=p.x;mouseY=p.y;
+
+  if (editorMode) {
+    const wx = p.x + camX, wy = p.y;
+    if (edDragging && edSel) {
+      edApplyDrag(wx, wy);
+    } else if (edPanning && edPanStart) {
+      camX = edPanStart.camX - (p.x - edPanStart.mx);
+      camX = Math.max(0, camX);
+    } else {
+      // Cursor feedback
+      if (edSel) {
+        const h = edGetHandle(wx, wy);
+        if (h === 'move') canvas.style.cursor = 'grab';
+        else if (h) canvas.style.cursor = 'nwse-resize';
+        else canvas.style.cursor = 'default';
+      } else {
+        const hit = edHitTest(wx, wy);
+        canvas.style.cursor = hit ? 'grab' : 'default';
+      }
+    }
+    return;
+  }
+
+  if(state==='aiming'&&cube&&grabbing){
+    cube.x=worldX(mouseX);cube.y=mouseY;
+    if(moveDt>0&&moveDt<0.2){
+      velSamples.push({vx:(mouseX-prevMX)/moveDt,vy:(mouseY-prevMY)/moveDt});
+      if(velSamples.length>5)velSamples.shift();
+    }
+    if(cube.x>THROW_LINE_X)doThrow();
+  }
+  if(state==='ready'&&!grabbing){
+    canvas.style.cursor=worldX(p.x)<THROW_LINE_X+100?'grab':'default';
+  }
+}
+
+function onUp(e){
+  if (editorMode) { edDragging=false; edPanning=false; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
+  if(state==='aiming'&&cube&&grabbing)doThrow();grabbing=false;
+}
+
+let velSamples=[];
+function doThrow(){
+  if(state!=='aiming')return;
+  grabbing=false;state='thrown';attempts++;
+  let ax=0,ay=0;
+  if(velSamples.length>0){for(const s of velSamples){ax+=s.vx;ay+=s.vy;}ax/=velSamples.length;ay/=velSamples.length;}
+  else{ax=(mouseX-prevMX)*60;ay=(mouseY-prevMY)*60;}
+  cube.vx=ax;cube.vy=ay;cube.angVel=cube.vx*0.02;velSamples=[];canvas.style.cursor='default';
+}
+
+// ═══════════════════════════════════════════════════════
+// ─── LEVEL EDITOR (Dev Pane) ───
+// Toggle: backtick key (`) or EDIT button
+// ═══════════════════════════════════════════════════════
+let editorMode = false;
+let edSel = null;       // {type:'wall'|'platform'|'bumper'|'goal'|'backWall', index:number, obj:ref}
+let edDragging = false;
+let edDragStart = null;  // {mx, my, ox, oy, ow, oh, or}
+let edHandle = null;     // 'move'|'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw'|'radius'
+let edPanning = false;
+let edPanStart = null;
+let edAddMode = null;    // null|'wall'|'platform'|'bumper'
+let edUndo = [];
+const ED_HANDLE_SIZE = 8;
+const ED_GRAB_MARGIN = 15;
+
+function edPushUndo() {
+  const lv = getCurrentLevel();
+  edUndo.push(JSON.parse(JSON.stringify({
+    walls: lv.walls, platforms: lv.platforms, bumpers: lv.bumpers,
+    goal: lv.goal, backWall: lv.backWall, width: lv.width
+  })));
+  if (edUndo.length > 5) edUndo.shift();
+}
+
+function edPopUndo() {
+  if (!edUndo.length) return;
+  const prev = edUndo.pop();
+  const lv = getCurrentLevel();
+  lv.walls = prev.walls; lv.platforms = prev.platforms; lv.bumpers = prev.bumpers;
+  lv.goal = prev.goal; lv.backWall = prev.backWall; lv.width = prev.width;
+  edSel = null;
+}
+
+function edHitTest(wx, wy) {
+  const lv = getCurrentLevel();
+  const m = ED_GRAB_MARGIN;
+  // Goal
+  const g = lv.goal;
+  if (wx > g.x - m && wx < g.x + g.w + m && wy > g.y - m && wy < g.y + g.h + m)
+    return { type: 'goal', index: 0, obj: g };
+  // BackWall
+  if (lv.backWall) {
+    const bw = lv.backWall;
+    if (wx > bw.x - m && wx < bw.x + bw.w + m && wy > bw.y - m && wy < bw.y + bw.h + m)
+      return { type: 'backWall', index: 0, obj: bw };
+  }
+  // Bumpers
+  for (let i = lv.bumpers.length - 1; i >= 0; i--) {
+    const b = lv.bumpers[i];
+    const dx = wx - b.x, dy = wy - b.y;
+    if (Math.sqrt(dx*dx + dy*dy) < b.r + m) return { type: 'bumper', index: i, obj: b };
+  }
+  // Platforms
+  for (let i = lv.platforms.length - 1; i >= 0; i--) {
+    const p = lv.platforms[i];
+    if (wx > p.x - m && wx < p.x + p.w + m && wy > p.y - m && wy < p.y + 6 + m)
+      return { type: 'platform', index: i, obj: p };
+  }
+  // Walls
+  for (let i = lv.walls.length - 1; i >= 0; i--) {
+    const w = lv.walls[i];
+    if (wx > w.x - m && wx < w.x + w.w + m && wy > w.y - m && wy < w.y + w.h + m)
+      return { type: 'wall', index: i, obj: w };
+  }
+  return null;
+}
+
+function edGetHandle(wx, wy) {
+  if (!edSel) return null;
+  const o = edSel.obj;
+  const hs = ED_HANDLE_SIZE + 4;
+
+  if (edSel.type === 'bumper') {
+    const hx = o.x + o.r, hy = o.y;
+    if (Math.abs(wx - hx) < hs && Math.abs(wy - hy) < hs) return 'radius';
+    if (Math.sqrt((wx-o.x)**2 + (wy-o.y)**2) < o.r + ED_GRAB_MARGIN) return 'move';
+    return null;
+  }
+
+  // Rotation handle — circle above the object center
+  const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
+  const rotHandleDist = Math.max(40, (o.h||6)/2 + 25);
+  const rhx = cx, rhy = cy - rotHandleDist;
+  if (Math.sqrt((wx-rhx)**2 + (wy-rhy)**2) < 10) return 'rotate';
+
+  // Rectangle handles
+  const x = o.x, y = o.y, w = o.w, h = o.h || 6;
+  if (Math.abs(wx - x) < hs && Math.abs(wy - y) < hs) return 'nw';
+  if (Math.abs(wx - (x+w)) < hs && Math.abs(wy - y) < hs) return 'ne';
+  if (Math.abs(wx - x) < hs && Math.abs(wy - (y+h)) < hs) return 'sw';
+  if (Math.abs(wx - (x+w)) < hs && Math.abs(wy - (y+h)) < hs) return 'se';
+  if (Math.abs(wx - x) < hs && wy > y && wy < y+h) return 'w';
+  if (Math.abs(wx - (x+w)) < hs && wy > y && wy < y+h) return 'e';
+  if (Math.abs(wy - y) < hs && wx > x && wx < x+w) return 'n';
+  if (Math.abs(wy - (y+h)) < hs && wx > x && wx < x+w) return 's';
+  if (wx > x - ED_GRAB_MARGIN && wx < x+w+ED_GRAB_MARGIN && wy > y-ED_GRAB_MARGIN && wy < y+h+ED_GRAB_MARGIN) return 'move';
+  return null;
+}
+
+function edApplyDrag(wx, wy) {
+  if (!edSel || !edDragStart) return;
+  const o = edSel.obj;
+  const ds = edDragStart;
+  const dx = wx - ds.mx, dy = wy - ds.my;
+
+  if (edHandle === 'rotate') {
+    // Rotate around object center
+    const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
+    o.rot = Math.atan2(wx - cx, -(wy - cy)); // angle from center to mouse
+  } else if (edHandle === 'move') {
+    o.x = ds.ox + dx; o.y = ds.oy + dy;
+  } else if (edHandle === 'radius') {
+    o.r = Math.max(10, Math.abs(wx - o.x));
+  } else {
+    if (edHandle.includes('w')) { o.x = ds.ox + dx; o.w = Math.max(10, ds.ow - dx); }
+    if (edHandle.includes('e')) { o.w = Math.max(10, ds.ow + dx); }
+    if (edHandle.includes('n')) { o.y = ds.oy + dy; o.h = Math.max(10, ds.oh - dy); }
+    if (edHandle.includes('s')) { o.h = Math.max(10, ds.oh + dy); }
+  }
+}
+
+function edDrawHandles() {
+  if (!edSel) return;
+  const o = edSel.obj;
+
+  if (edSel.type === 'bumper') {
+    // Circle highlight
+    ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.arc(o.x - camX, o.y, o.r + 4, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    // Radius handle
+    ctx.fillStyle = 'rgba(0,255,255,0.8)';
+    ctx.fillRect(o.x + o.r - camX - 4, o.y - 4, 8, 8);
+  } else {
+    const x = o.x - camX, y = o.y, w = o.w, h = o.h || 6;
+    // Dashed border
+    ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+    ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
+    ctx.setLineDash([]);
+    // Handles
+    ctx.fillStyle = 'rgba(0,255,255,0.8)';
+    const hs = ED_HANDLE_SIZE;
+    const handles = [
+      [x, y], [x+w/2, y], [x+w, y],
+      [x, y+h/2], [x+w, y+h/2],
+      [x, y+h], [x+w/2, y+h], [x+w, y+h],
+    ];
+    for (const [hx, hy] of handles) {
+      ctx.fillRect(hx - hs/2, hy - hs/2, hs, hs);
+    }
+  }
+
+  // Rotation handle (not for bumpers)
+  if (edSel.type !== 'bumper') {
+    const cx = o.x + o.w/2 - camX, cy = o.y + (o.h||6)/2;
+    const rotDist = Math.max(40, (o.h||6)/2 + 25);
+    const rhx = cx, rhy = cy - rotDist;
+    // Line from center to handle
+    ctx.strokeStyle = 'rgba(0,255,255,0.3)'; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(rhx, rhy); ctx.stroke();
+    // Handle circle
+    ctx.fillStyle = 'rgba(0,255,255,0.8)';
+    ctx.beginPath(); ctx.arc(rhx, rhy, 7, 0, Math.PI*2); ctx.fill();
+    // Rotation arrow icon
+    ctx.strokeStyle = 'rgba(26,14,46,0.8)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(rhx, rhy, 4, -Math.PI*0.7, Math.PI*0.5); ctx.stroke();
+    // Show angle
+    if (o.rot) {
+      ctx.fillStyle = 'rgba(0,255,255,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
+      ctx.fillText(Math.round((o.rot||0) * 180/Math.PI) + '°', rhx, rhy - 12);
+    }
+  }
+
+  // Type label
+  ctx.fillStyle = 'rgba(0,255,255,0.7)'; ctx.font = '600 11px Urbanist'; ctx.textAlign = 'left';
+  const lx = edSel.type === 'bumper' ? o.x - camX + o.r + 10 : o.x - camX;
+  const ly = edSel.type === 'bumper' ? o.y - o.r - 8 : o.y - 8;
+  ctx.fillText(edSel.type.toUpperCase() + (o.rot ? ' ' + Math.round(o.rot*180/Math.PI) + '°' : ''), lx, ly);
+}
+
+function edDrawToolbar() {
+  const tw = 700, th = 44;
+  const tx = (W - tw) / 2, ty = H - th - 10;
+
+  // Background
+  roundRectPath(tx, ty, tw, th, 12);
+  ctx.fillStyle = 'rgba(26,14,46,0.85)'; ctx.fill();
+  ctx.strokeStyle = 'rgba(254,249,240,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+
+  ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
+
+  // Buttons
+  const btns = [
+    { label: '+ WALL', x: tx + 50, action: 'wall' },
+    { label: '+ PLATFORM', x: tx + 155, action: 'platform' },
+    { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
+    { label: 'DUPE', x: tx + 360, action: 'dupe' },
+    { label: 'DELETE', x: tx + 445, action: 'delete' },
+    { label: 'EXPORT', x: tx + 540, action: 'export' },
+    { label: 'UNDO', x: tx + 635, action: 'undo' },
+  ];
+
+  for (const btn of btns) {
+    const bw = 80, bh = 28, bx = btn.x - bw/2, by = ty + 8;
+    const active = edAddMode === btn.action;
+    roundRectPath(bx, by, bw, bh, 6);
+    ctx.fillStyle = active ? 'rgba(244,197,66,0.25)' : 'rgba(255,255,255,0.06)';
+    ctx.fill();
+    ctx.strokeStyle = active ? 'rgba(244,197,66,0.5)' : 'rgba(255,255,255,0.12)';
+    ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = active ? COL.gold : 'rgba(254,249,240,0.6)';
+    ctx.fillText(btn.label, btn.x, by + bh/2 + 4);
+  }
+}
+
+function edToolbarHit(px, py) {
+  const tw = 700, th = 44;
+  const tx = (W - tw) / 2, ty = H - th - 10;
+  if (py < ty || py > ty + th || px < tx || px > tx + tw) return null;
+
+  const btns = [
+    { label: '+ WALL', x: tx + 50, action: 'wall' },
+    { label: '+ PLATFORM', x: tx + 155, action: 'platform' },
+    { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
+    { label: 'DUPE', x: tx + 360, action: 'dupe' },
+    { label: 'DELETE', x: tx + 445, action: 'delete' },
+    { label: 'EXPORT', x: tx + 540, action: 'export' },
+    { label: 'UNDO', x: tx + 635, action: 'undo' },
+  ];
+
+  for (const btn of btns) {
+    if (Math.abs(px - btn.x) < 45) return btn.action;
+  }
+  return null;
+}
+
+function edExport() {
+  const lv = getCurrentLevel();
+  const lines = ['{'];
+  lines.push(`  name: '${lv.name}',`);
+  lines.push(`  par: ${lv.par},`);
+  lines.push('  walls: [');
+  for (const w of lv.walls) {
+    const rot = w.rot ? `, rot: ${w.rot.toFixed(3)}` : '';
+    lines.push(`    { x: ${Math.round(w.x)}, y: H * ${(w.y/H).toFixed(3)}, w: ${Math.round(w.w)}, h: H * ${(w.h/H).toFixed(3)}${rot} },`);
+  }
+  lines.push('  ],');
+  lines.push('  platforms: [');
+  for (const p of lv.platforms) {
+    const rot = p.rot ? `, rot: ${p.rot.toFixed(3)}` : '';
+    lines.push(`    { x: ${Math.round(p.x)}, y: H * ${(p.y/H).toFixed(3)}, w: ${Math.round(p.w)}${rot} },`);
+  }
+  lines.push('  ],');
+  lines.push('  bumpers: [');
+  for (const b of lv.bumpers)
+    lines.push(`    { x: ${Math.round(b.x)}, y: H * ${(b.y/H).toFixed(3)}, r: ${Math.round(b.r)} },`);
+  lines.push('  ],');
+  const g = lv.goal;
+  lines.push(`  goal: { x: ${Math.round(g.x)}, y: H * ${(g.y/H).toFixed(3)}, w: ${Math.round(g.w)}, h: H * ${(g.h/H).toFixed(3)} },`);
+  if (lv.backWall) {
+    const bw = lv.backWall;
+    lines.push(`  backWall: { x: ${Math.round(bw.x)}, y: ${Math.round(bw.y)}, w: ${Math.round(bw.w)}, h: H },`);
+  }
+  lines.push(`  width: ${Math.round(lv.width)},`);
+  lines.push('}');
+  const text = lines.join('\n');
+  navigator.clipboard.writeText(text).then(() => {
+    showMsg('LEVEL EXPORTED TO CLIPBOARD', 1.5);
+  });
+}
+
+// Keyboard shortcuts
+window.addEventListener('keydown', (e) => {
+  if (e.key === '`' || e.key === '~') {
+    editorMode = !editorMode;
+    if (editorMode) { state = 'ready'; cube = null; camX = 0; camTargetX = 0; edSel = null; edAddMode = null; }
+    else { edSel = null; edAddMode = null; }
+    e.preventDefault();
+  }
+  if (editorMode && (e.key === 'Delete' || e.key === 'Backspace') && edSel) {
+    const lv = getCurrentLevel();
+    edPushUndo();
+    if (edSel.type === 'wall') lv.walls.splice(edSel.index, 1);
+    else if (edSel.type === 'platform') lv.platforms.splice(edSel.index, 1);
+    else if (edSel.type === 'bumper') lv.bumpers.splice(edSel.index, 1);
+    edSel = null;
+    e.preventDefault();
+  }
+  if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey)) {
+    edPopUndo(); e.preventDefault();
+  }
+});
+
+// ─── ANIMATED GRADIENT BG (matches PietSuess site) ───
+let gradPhase = 0;
+
+// ─── RENDER ───
+let lastTime=0, elapsed=0;
+
+function animate(time){
+  const dt=Math.min(1/20,(time-(lastTime||time))/1000);
+  lastTime=time; elapsed+=dt; gradPhase+=dt*0.05;
+
+  if (!editorMode) {
+    if(state==='thrown'&&cube){
+      const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
+      camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
+    } else if(state!=='won'&&state!=='lost'){camTargetX=0;}
+    camX+=(camTargetX-camX)*0.08;
+  }
+
+  if(state==='thrown'&&cube)updateCube(cube,dt);
+  if(messageTimer>0)messageTimer-=dt;
+
+  ctx.clearRect(0,0,W,H);
+
+  // ─── ANIMATED GRADIENT BACKGROUND (PietSuess dark gradient) ───
+  const shift = (Math.sin(gradPhase) + 1) * 0.5; // 0-1 oscillation
+  const bg = ctx.createLinearGradient(
+    W * shift * 0.3, 0,
+    W * (0.7 + shift * 0.3), H
+  );
+  bg.addColorStop(0, '#1a0e2e');
+  bg.addColorStop(0.2, '#2d1640');
+  bg.addColorStop(0.35, '#4a1942');
+  bg.addColorStop(0.5, '#7a2848');
+  bg.addColorStop(0.65, '#b8475a');
+  bg.addColorStop(0.78, '#d4766a');
+  bg.addColorStop(0.9, '#e8a555');
+  bg.addColorStop(1, '#f4c542');
+  ctx.globalAlpha = 1;
+  ctx.fillStyle = bg;
+  ctx.fillRect(0,0,W,H);
+
+  // Darken overlay for playability
+  ctx.fillStyle = 'rgba(26,14,46,0.65)';
+  ctx.fillRect(0,0,W,H);
+
+  // Noise texture (subtle grain)
+  ctx.fillStyle = 'rgba(255,255,255,0.015)';
+  for(let i=0;i<80;i++){
+    const nx=Math.random()*W, ny=Math.random()*H;
+    ctx.fillRect(nx,ny,1,1);
+  }
+
+  const lv=getCurrentLevel();
+
+  // Grid — subtle crosshair
+  const gridSpace=60, offG=-(camX*0.3)%gridSpace;
+  ctx.fillStyle='rgba(254,249,240,0.03)';
+  for(let gx=offG;gx<W+gridSpace;gx+=gridSpace){
+    for(let gy=0;gy<H;gy+=gridSpace){
+      ctx.fillRect(gx-3,gy,7,1);ctx.fillRect(gx,gy-3,1,7);
+    }
+  }
+
+  // ─── WALK ZONE ───
+  if(camX<W){
+    ctx.strokeStyle='rgba(254,249,240,0.12)';ctx.lineWidth=1;
+    const wlX=WALK_LINE_X-camX;
+    ctx.beginPath();ctx.moveTo(wlX,WALK_LINE_Y_START);ctx.lineTo(wlX,WALK_LINE_Y_START+WALK_LINE_LEN);ctx.stroke();
+
+    if(state==='ready'){
+      for(const wk of walkCubes){
+        const dist=wk.speed*elapsed+wk.offset;
+        const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
+        const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
+        const eased=frac<0.5?0.5*Math.pow(frac*2,0.7):1-0.5*Math.pow((1-frac)*2,0.7);
+        const tipAngle=eased*(Math.PI/2);
+        const pivotLocalX=((stepIdx+1)*wk.size)%WALK_LINE_LEN;
+        ctx.save();
+        ctx.translate(WALK_LINE_X-camX,WALK_LINE_Y_START);
+        ctx.rotate(Math.PI/2);ctx.translate(pivotLocalX,0);ctx.rotate(tipAngle);
+        // Draw metallic walking cube
+        const s=wk.size,r=s*0.15;
+        function wp(){ctx.beginPath();const bx=-s,by=-s;ctx.moveTo(bx+r,by);ctx.lineTo(bx+s-r,by);ctx.quadraticCurveTo(bx+s,by,bx+s,by+r);ctx.lineTo(bx+s,by+s-r);ctx.quadraticCurveTo(bx+s,by+s,bx+s-r,by+s);ctx.lineTo(bx+r,by+s);ctx.quadraticCurveTo(bx,by+s,bx,by+s-r);ctx.lineTo(bx,by+r);ctx.quadraticCurveTo(bx,by,bx+r,by);ctx.closePath();}
+        wp();ctx.fillStyle=wk.color;ctx.fill();
+        const ws=(elapsed*1.5+pivotLocalX*0.02)%(Math.PI*2),wo=Math.sin(ws)*s*0.3;
+        const wm=ctx.createLinearGradient(-s+wo,-s,wo,0);
+        wm.addColorStop(0,'rgba(255,255,255,0)');wm.addColorStop(0.4,'rgba(255,255,255,0.22)');
+        wm.addColorStop(0.6,'rgba(255,255,255,0.22)');wm.addColorStop(1,'rgba(255,255,255,0)');
+        wp();ctx.fillStyle=wm;ctx.fill();
+        wp();ctx.clip();
+        ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(-s,-s,s,s*0.35);
+        ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillRect(-s,-s*0.3,s,s*0.35);
+        ctx.restore();
+      }
+    }
+
+    // Throw line — gold glow
+    const tlX=THROW_LINE_X-camX;
+    const tlG=ctx.createLinearGradient(tlX-30,0,tlX+30,0);
+    tlG.addColorStop(0,'rgba(244,197,66,0)');tlG.addColorStop(0.5,'rgba(244,197,66,0.06)');tlG.addColorStop(1,'rgba(244,197,66,0)');
+    ctx.fillStyle=tlG;ctx.fillRect(tlX-30,0,60,H);
+    ctx.strokeStyle='rgba(244,197,66,0.35)';ctx.lineWidth=2;ctx.setLineDash([10,10]);
+    ctx.beginPath();ctx.moveTo(tlX,0);ctx.lineTo(tlX,H);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='rgba(244,197,66,0.4)';ctx.font='600 11px Urbanist';ctx.textAlign='center';
+    ctx.fillText('THROW LINE',tlX,20);
+
+    if(state==='ready'){
+      ctx.fillStyle='rgba(254,249,240,0.3)';ctx.font='500 14px Urbanist';ctx.textAlign='center';
+      ctx.fillText('GRAB A CUBE',WALK_LINE_X-camX,WALK_LINE_Y_START-20);
+      ctx.fillText('DRAG & THROW',WALK_LINE_X-camX,WALK_LINE_Y_START-4);
+    }
+  }
+
+  // ─── BACK WALL ───
+  if(lv.backWall){
+    const bw=lv.backWall,bwx=bw.x-camX;
+    const bwG=ctx.createLinearGradient(bwx,0,bwx+bw.w,0);
+    bwG.addColorStop(0,'rgba(184,71,90,0.15)');bwG.addColorStop(1,'rgba(122,40,72,0.1)');
+    roundRectPath(bwx,bw.y,bw.w,bw.h,4);ctx.fillStyle=bwG;ctx.fill();
+    ctx.strokeStyle='rgba(254,249,240,0.08)';ctx.lineWidth=1;ctx.stroke();
+  }
+
+  // ─── WALLS — glassmorphism (supports rotation) ───
+  for(const w of lv.walls){
+    ctx.save();
+    const wcx=w.x+w.w/2-camX, wcy=w.y+w.h/2;
+    ctx.translate(wcx,wcy);
+    if(w.rot)ctx.rotate(w.rot);
+    const wG=ctx.createLinearGradient(-w.w/2,0,w.w/2,0);
+    wG.addColorStop(0,'rgba(254,249,240,0.1)');wG.addColorStop(0.5,'rgba(254,249,240,0.06)');wG.addColorStop(1,'rgba(254,249,240,0.1)');
+    roundRectPath(-w.w/2,-w.h/2,w.w,w.h,6);ctx.fillStyle=wG;ctx.fill();
+    ctx.strokeStyle=COL.glassBorder;ctx.lineWidth=1;ctx.stroke();
+    if(w.h>30){ctx.fillStyle='rgba(254,249,240,0.04)';ctx.fillRect(-w.w/2+2,-w.h/2+2,w.w-4,Math.min(w.h*0.3,40));}
+    ctx.restore();
+  }
+
+  // ─── PLATFORMS — gold glow ledge (supports rotation) ───
+  for(const p of lv.platforms){
+    ctx.save();
+    const pcx=p.x+p.w/2-camX, pcy=p.y+3;
+    ctx.translate(pcx,pcy);
+    if(p.rot)ctx.rotate(p.rot);
+    const pG=ctx.createLinearGradient(0,0,0,18);
+    pG.addColorStop(0,'rgba(244,197,66,0.2)');pG.addColorStop(1,'rgba(244,197,66,0)');
+    ctx.fillStyle=pG;ctx.fillRect(-p.w/2,-3,p.w,18);
+    ctx.fillStyle='rgba(244,197,66,0.45)';ctx.fillRect(-p.w/2,-3,p.w,3);
+    ctx.fillStyle='rgba(254,249,240,0.4)';ctx.fillRect(-p.w/2,-3,p.w,1);
+    ctx.fillStyle='rgba(244,197,66,0.5)';
+    ctx.beginPath();ctx.arc(-p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
+    ctx.restore();
+  }
+
+  // ─── BUMPERS — coral neon ───
+  for(const b of lv.bumpers){
+    const bx=b.x-camX, bp=0.7+0.3*Math.sin(elapsed*4+b.x*0.01);
+    const bG=ctx.createRadialGradient(bx,b.y,b.r*0.3,bx,b.y,b.r*1.8);
+    bG.addColorStop(0,`rgba(232,115,90,${0.15*bp})`);bG.addColorStop(1,'rgba(232,115,90,0)');
+    ctx.fillStyle=bG;ctx.fillRect(bx-b.r*2,b.y-b.r*2,b.r*4,b.r*4);
+    const bG2=ctx.createRadialGradient(bx-b.r*0.3,b.y-b.r*0.3,0,bx,b.y,b.r);
+    bG2.addColorStop(0,`rgba(232,115,90,${0.35*bp})`);bG2.addColorStop(1,`rgba(184,61,142,${0.2*bp})`);
+    ctx.beginPath();ctx.arc(bx,b.y,b.r,0,Math.PI*2);ctx.fillStyle=bG2;ctx.fill();
+    ctx.strokeStyle=`rgba(232,115,90,${0.6*bp})`;ctx.lineWidth=2.5;ctx.stroke();
+  }
+
+  // ─── GOAL — open-left basket, gold ───
+  const g=lv.goal,gx=g.x-camX,gp=0.5+0.5*Math.sin(elapsed*3);
+
+  // Ambient glow
+  const gg=ctx.createRadialGradient(gx+g.w*0.4,g.y+g.h/2,0,gx+g.w*0.4,g.y+g.h/2,g.h*0.9);
+  gg.addColorStop(0,`rgba(244,197,66,${0.1+gp*0.05})`);gg.addColorStop(1,'rgba(244,197,66,0)');
+  ctx.fillStyle=gg;ctx.fillRect(gx-g.w*0.3,g.y-g.h*0.3,g.w*1.6,g.h*1.6);
+
+  // Interior
+  ctx.fillStyle=`rgba(244,197,66,${0.04+gp*0.02})`;ctx.fillRect(gx,g.y,g.w,g.h);
+
+  // Net
+  ctx.save();ctx.beginPath();ctx.rect(gx,g.y,g.w,g.h);ctx.clip();
+  ctx.strokeStyle=`rgba(244,197,66,${0.07+gp*0.03})`;ctx.lineWidth=1;
+  for(let ny=g.y+16;ny<g.y+g.h;ny+=16){ctx.beginPath();ctx.moveTo(gx,ny);ctx.lineTo(gx+g.w,ny);ctx.stroke();}
+  for(let nx=gx+16;nx<gx+g.w;nx+=16){const sw=Math.sin(elapsed*2+nx*0.05)*3;ctx.beginPath();ctx.moveTo(nx,g.y);ctx.lineTo(nx+sw,g.y+g.h);ctx.stroke();}
+  ctx.restore();
+
+  // Right rim
+  ctx.fillStyle=`rgba(244,197,66,${0.4+gp*0.25})`;ctx.fillRect(gx+g.w-3,g.y,6,g.h);
+  // Top rim
+  ctx.fillStyle=`rgba(244,197,66,${0.5+gp*0.3})`;ctx.fillRect(gx,g.y-2,g.w+3,4);
+  // Bottom rim
+  ctx.fillRect(gx,g.y+g.h-2,g.w+3,4);
+  // Lip dots
+  ctx.fillStyle=`rgba(244,197,66,${0.6+gp*0.3})`;
+  ctx.beginPath();ctx.arc(gx,g.y,4,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(gx,g.y+g.h,4,0,Math.PI*2);ctx.fill();
+
+  // ─── HINTS — simulated real trajectory ───
+  if (showHints) {
+    const hintPath = findHintPath(level);
+    if (hintPath && hintPath.length > 2) {
+      // Draw the path as a dotted line
+      ctx.setLineDash([4, 6]);
+      ctx.strokeStyle = 'rgba(244,197,66,0.25)';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(hintPath[0].x - camX, hintPath[0].y);
+      for (let i = 1; i < hintPath.length; i++) {
+        ctx.lineTo(hintPath[i].x - camX, hintPath[i].y);
+      }
+      ctx.stroke();
+      ctx.setLineDash([]);
+
+      // Start crosshair
+      const s = hintPath[0];
+      ctx.strokeStyle = 'rgba(244,197,66,0.35)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(s.x - camX, s.y, 12, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x - camX - 16, s.y); ctx.lineTo(s.x - camX + 16, s.y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(s.x - camX, s.y - 16); ctx.lineTo(s.x - camX, s.y + 16); ctx.stroke();
+
+      // End target
+      const e = hintPath[hintPath.length - 1];
+      ctx.strokeStyle = 'rgba(244,197,66,0.4)';
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(e.x - camX, e.y, 10, 0, Math.PI * 2); ctx.stroke();
+      ctx.fillStyle = 'rgba(244,197,66,0.2)';
+      ctx.beginPath(); ctx.arc(e.x - camX, e.y, 5, 0, Math.PI * 2); ctx.fill();
+    } else {
+      ctx.fillStyle = 'rgba(254,249,240,0.2)';
+      ctx.font = '400 12px Poppins';
+      ctx.textAlign = 'center';
+      ctx.fillText(hintSearching ? 'Finding path...' : 'No path found', W / 2, H - 20);
+    }
+  }
+
+  // ─── TRAIL ───
+  if(cube&&cube.trail.length>1){
+    for(let i=1;i<cube.trail.length;i++){
+      const t=cube.trail[i],a=t.t*0.3;
+      ctx.fillStyle=`rgba(244,197,66,${a*0.3})`;ctx.beginPath();ctx.arc(t.x-camX,t.y,5,0,Math.PI*2);ctx.fill();
+      ctx.fillStyle=`rgba(254,249,240,${a})`;ctx.beginPath();ctx.arc(t.x-camX,t.y,2,0,Math.PI*2);ctx.fill();
+    }
+  }
+
+  // ─── CUBE ───
+  if(cube&&(state==='aiming'||state==='thrown'||state==='won'||state==='lost')){
+    drawCubeAt(cube.x-camX,cube.y,cube.size,cube.angle,cube.color);
+    if(state==='won'){
+      const wp=0.5+0.5*Math.sin(elapsed*8);
+      const wg=ctx.createRadialGradient(cube.x-camX,cube.y,0,cube.x-camX,cube.y,cube.size*3);
+      wg.addColorStop(0,`rgba(244,197,66,${0.3*wp})`);wg.addColorStop(0.5,`rgba(232,115,90,${0.1*wp})`);wg.addColorStop(1,'rgba(244,197,66,0)');
+      ctx.fillStyle=wg;ctx.fillRect(cube.x-camX-cube.size*3,cube.y-cube.size*3,cube.size*6,cube.size*6);
+    }
+  }
+
+  // ─── HUD ───
+  ctx.fillStyle='rgba(254,249,240,0.6)';ctx.font='700 16px Urbanist';ctx.textAlign='left';
+  ctx.fillText(`LEVEL ${level+1}: ${lv.name}`,15,30);
+  ctx.font='400 13px Poppins';ctx.fillStyle='rgba(254,249,240,0.35)';
+  ctx.fillText(`THROWS: ${attempts}   PAR: ${lv.par}`,15,50);
+
+  // ─── LEVEL JUMPER — arrows on either side of level name ───
+  // Left arrow (prev)
+  const ljy = 22;
+  ctx.fillStyle = level > 0 ? 'rgba(254,249,240,0.4)' : 'rgba(254,249,240,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(220, ljy - 8); ctx.lineTo(220, ljy + 8); ctx.lineTo(208, ljy);
+  ctx.closePath(); ctx.fill();
+  // Right arrow (next)
+  ctx.fillStyle = level < LEVELS.length - 1 ? 'rgba(254,249,240,0.4)' : 'rgba(254,249,240,0.12)';
+  ctx.beginPath();
+  ctx.moveTo(235, ljy - 8); ctx.lineTo(235, ljy + 8); ctx.lineTo(247, ljy);
+  ctx.closePath(); ctx.fill();
+  // Level count
+  ctx.fillStyle='rgba(254,249,240,0.25)';ctx.font='400 11px Poppins';ctx.textAlign='center';
+  ctx.fillText(`${level+1}/${LEVELS.length}`, 228, ljy + 18);
+
+  // ─── EDITOR OVERLAY ───
+  if (editorMode) {
+    // Editor badge
+    ctx.fillStyle = 'rgba(0,255,255,0.15)'; ctx.fillRect(0, 0, W, H); // dim overlay
+    ctx.fillStyle = 'rgba(0,255,255,0.8)'; ctx.font = '700 14px Urbanist'; ctx.textAlign = 'left';
+    ctx.fillText('EDIT MODE', 15, 75);
+    ctx.fillStyle = 'rgba(254,249,240,0.3)'; ctx.font = '400 11px Poppins';
+    ctx.fillText('Drag objects. ` to exit. Ctrl+Z undo.', 15, 90);
+
+    // Level width marker
+    const lwx = getCurrentLevel().width - camX;
+    ctx.strokeStyle = 'rgba(244,197,66,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([6,6]);
+    ctx.beginPath(); ctx.moveTo(lwx, 0); ctx.lineTo(lwx, H); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(244,197,66,0.3)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('LEVEL WIDTH', lwx, H - 5);
+
+    // Selection handles
+    edDrawHandles();
+
+    // Toolbar
+    edDrawToolbar();
+  }
+
+  // ─── EDIT TOGGLE BUTTON — top right ───
+  const ebw = 80, ebh = 32, ebx = W - ebw - 105, eby = 15;
+  roundRectPath(ebx, eby, ebw, ebh, 10);
+  ctx.fillStyle = editorMode ? 'rgba(0,255,255,0.2)' : 'rgba(255,255,255,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = editorMode ? 'rgba(0,255,255,0.4)' : 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = editorMode ? 'rgba(0,255,255,0.85)' : 'rgba(254,249,240,0.4)';
+  ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
+  ctx.fillText('EDIT', ebx + ebw / 2, eby + ebh / 2 + 4);
+
+  // ─── HINTS TOGGLE BUTTON — top right ───
+  const hbw = 80, hbh = 32, hbx = W - hbw - 15, hby = 15;
+  roundRectPath(hbx, hby, hbw, hbh, 10);
+  ctx.fillStyle = showHints ? 'rgba(244,197,66,0.2)' : 'rgba(255,255,255,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = showHints ? 'rgba(244,197,66,0.4)' : 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1;
+  ctx.stroke();
+  ctx.fillStyle = showHints ? 'rgba(244,197,66,0.85)' : 'rgba(254,249,240,0.4)';
+  ctx.font = '600 12px Urbanist';
+  ctx.textAlign = 'center';
+  ctx.fillText('HINTS', hbx + hbw / 2, hby + hbh / 2 + 4);
+
+  // ─── RESET BUTTON — glassmorphism, center page ───
+  if(state==='thrown'||state==='lost'||state==='won'||state==='aiming'){
+    const rb=resetBtnBounds();
+    const rbr=14;
+    // Glass bg
+    const rbG=ctx.createLinearGradient(rb.x,rb.y,rb.x,rb.y+rb.h);
+    rbG.addColorStop(0,'rgba(232,115,90,0.2)');rbG.addColorStop(1,'rgba(184,61,142,0.12)');
+    roundRectPath(rb.x,rb.y,rb.w,rb.h,rbr);
+    ctx.fillStyle=rbG;ctx.fill();
+    ctx.strokeStyle='rgba(254,249,240,0.15)';ctx.lineWidth=1;ctx.stroke();
+    // Highlight
+    ctx.fillStyle='rgba(254,249,240,0.04)';ctx.fillRect(rb.x+4,rb.y+2,rb.w-8,rb.h*0.4);
+    // Text
+    ctx.fillStyle='rgba(254,249,240,0.85)';ctx.font='700 16px Urbanist';ctx.textAlign='center';
+    ctx.fillText('RESET',rb.x+rb.w/2,rb.y+rb.h/2+6);
+  }
+
+  // ─── WIN SCREEN (always visible while state==='won') ───
+  if (state==='won') {
+    // Darken overlay
+    ctx.fillStyle='rgba(26,14,46,0.4)';ctx.fillRect(0,0,W,H);
+
+    // LEVEL CLEAR text
+    ctx.save();
+    ctx.font='800 38px Urbanist';ctx.textAlign='center';
+    ctx.fillStyle=COL.gold;
+    ctx.fillText('LEVEL CLEAR!',W/2,H*0.38);
+
+    // Par text
+    const pt=attempts<=lv.par?'UNDER PAR!':attempts===lv.par+1?'ONE OVER':`${attempts-lv.par} OVER PAR`;
+    ctx.font='500 16px Poppins';ctx.fillStyle=COL.cream;
+    ctx.globalAlpha=0.7;
+    ctx.fillText(pt,W/2,H*0.38+35);
+    ctx.restore();
+
+    // NEXT LEVEL button
+    const nb=nextBtnBounds();
+    const nbr=16;
+    const nbGlow=ctx.createRadialGradient(nb.x+nb.w/2,nb.y+nb.h/2,0,nb.x+nb.w/2,nb.y+nb.h/2,nb.w*0.8);
+    nbGlow.addColorStop(0,'rgba(244,197,66,0.12)');nbGlow.addColorStop(1,'rgba(244,197,66,0)');
+    ctx.fillStyle=nbGlow;ctx.fillRect(nb.x-nb.w*0.3,nb.y-nb.h,nb.w*1.6,nb.h*3);
+    const nbG=ctx.createLinearGradient(nb.x,nb.y,nb.x+nb.w,nb.y+nb.h);
+    nbG.addColorStop(0,COL.gold);nbG.addColorStop(0.5,'#f0d060');nbG.addColorStop(1,COL.coral);
+    roundRectPath(nb.x,nb.y,nb.w,nb.h,nbr);
+    ctx.fillStyle=nbG;ctx.fill();
+    ctx.save();roundRectPath(nb.x,nb.y,nb.w,nb.h,nbr);ctx.clip();
+    ctx.fillStyle='rgba(255,255,255,0.2)';ctx.fillRect(nb.x,nb.y,nb.w,nb.h*0.45);
+    ctx.restore();
+    roundRectPath(nb.x,nb.y,nb.w,nb.h,nbr);
+    ctx.strokeStyle='rgba(255,255,255,0.25)';ctx.lineWidth=1.5;ctx.stroke();
+    ctx.fillStyle=COL.ink;ctx.font='700 18px Urbanist';ctx.textAlign='center';
+    ctx.fillText('NEXT LEVEL',nb.x+nb.w/2,nb.y+nb.h/2+6);
+  }
+
+  // ─── LOST/OTHER MESSAGES (timed) ───
+  if (messageTimer>0 && showMessage && state!=='won') {
+    ctx.fillStyle=COL.cream;ctx.globalAlpha=Math.min(1,messageTimer);
+    ctx.font='800 30px Urbanist';ctx.textAlign='center';
+    ctx.fillText(showMessage,W/2,H/2);
+    ctx.globalAlpha=1;
+  }
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
