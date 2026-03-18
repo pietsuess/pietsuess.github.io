@@ -91,35 +91,58 @@ body {
 /* MAIN APP */
 #app { display: none; max-width: 960px; margin: 0 auto; padding: 20px 20px 100px; }
 
-/* HEADER */
-.header {
+/* NAME GATE (overlay on video) */
+#name-gate {
+  position: absolute;
+  inset: 0;
+  background: rgba(20, 17, 12, 0.95);
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  margin-bottom: 16px;
-  flex-wrap: wrap;
-  gap: 12px;
+  justify-content: center;
+  z-index: 20;
+  border-radius: 8px;
 }
-.header-logo {
-  height: 36px;
-  opacity: 0.85;
+#name-gate.hidden { display: none; }
+.name-gate-inner {
+  text-align: center;
+  padding: 40px;
 }
-.reviewer-input {
-  display: flex; align-items: center; gap: 8px;
+.name-gate-inner p {
+  font-family: 'Cormorant Garamond', Georgia, serif;
+  font-size: 20px;
+  color: #e8dcc8;
+  margin-bottom: 24px;
 }
-.reviewer-input label { font-size: 13px; color: #8a7e6e; }
-.reviewer-input input {
-  padding: 6px 12px;
-  font-size: 14px;
+.name-gate-inner input {
+  padding: 12px 18px;
+  font-size: 16px;
   font-family: inherit;
   background: #241f18;
   border: 1px solid #3a3228;
-  border-radius: 6px;
+  border-radius: 8px;
   color: #e8dcc8;
+  text-align: center;
   outline: none;
-  width: 160px;
+  width: 260px;
+  display: block;
+  margin: 0 auto 16px;
 }
-.reviewer-input input:focus { border-color: #c4a265; }
+.name-gate-inner input:focus { border-color: #c4a265; }
+.name-gate-inner input::placeholder { color: #5a5040; }
+.name-gate-inner button {
+  padding: 12px 32px;
+  font-size: 13px;
+  font-family: inherit;
+  font-weight: 600;
+  background: #c4a265;
+  color: #1a1610;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.name-gate-inner button:hover { background: #d4b275; }
 
 /* LANGUAGE TABS */
 .lang-tabs {
@@ -370,20 +393,20 @@ body {
 
 <!-- MAIN APP -->
 <div id="app">
-  <div class="header">
-    <img src="https://images.squarespace-cdn.com/content/v1/667da6b0d213c7409a6c778b/1afd4847-4a0f-4fc5-b1f4-38ca62fca202/BTMATS_FilmTitle_PaleYellowGrain.png" alt="BTMATS" class="header-logo">
-    <div class="reviewer-input">
-      <label>Your name:</label>
-      <input type="text" id="reviewer-name" placeholder="Reviewer name">
-    </div>
-  </div>
-
   <div class="lang-tabs" id="lang-tabs"></div>
 
   <div class="video-wrap" id="video-wrap">
     <div id="vimeo-player"></div>
     <div id="subtitle-overlay">
       <span id="subtitle-text"></span>
+    </div>
+    <!-- NAME GATE (over video) -->
+    <div id="name-gate">
+      <div class="name-gate-inner">
+        <p>Enter your name to begin reviewing</p>
+        <input type="text" id="reviewer-name" placeholder="Your name" autocomplete="off">
+        <button id="name-submit">Start</button>
+      </div>
     </div>
   </div>
 
@@ -451,6 +474,7 @@ const SUBTITLE_DATA = {"english": [{"s": 0.0, "e": 1.042, "t": ""}, {"s": 113.53
 let currentLang = 'english';
 let currentCueIndex = -1;
 let isPaused = true;
+let nameEntered = false;
 let player = null;
 let corrections = {}; // { lang: { cueIndex: { original, correction, timecode } } }
 let correctionCount = 0;
@@ -496,12 +520,37 @@ document.getElementById('password-input').addEventListener('keydown', e => {
 });
 
 // ============================================================
+// NAME GATE
+// ============================================================
+function tryName() {
+  const name = document.getElementById('reviewer-name').value.trim();
+  if (!name) return;
+  nameEntered = true;
+  document.getElementById('name-gate').classList.add('hidden');
+  localStorage.setItem('bmats_corrections', JSON.stringify({
+    corrections: corrections,
+    reviewerName: name
+  }));
+}
+
+document.getElementById('name-submit').addEventListener('click', tryName);
+document.getElementById('reviewer-name').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryName();
+});
+
+// ============================================================
 // INIT APP
 // ============================================================
 function initApp() {
   buildLangTabs();
   initVimeoPlayer();
   updateCorrectionsBar();
+  // If name was restored from localStorage, skip the name gate
+  const name = document.getElementById('reviewer-name').value.trim();
+  if (name) {
+    nameEntered = true;
+    document.getElementById('name-gate').classList.add('hidden');
+  }
 }
 
 // ============================================================
@@ -608,7 +657,7 @@ function updateTimecode(seconds) {
 // STOP / PLAY BUTTON
 // ============================================================
 document.getElementById('stop-btn').addEventListener('click', () => {
-  if (!player) return;
+  if (!player || !nameEntered) return;
   if (isPaused) {
     player.play();
   } else {
@@ -620,7 +669,7 @@ document.getElementById('stop-btn').addEventListener('click', () => {
 document.addEventListener('keydown', e => {
   if (e.code === 'Space' && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
     e.preventDefault();
-    if (!player) return;
+    if (!player || !nameEntered) return;
     if (isPaused) player.play(); else player.pause();
   }
 });
