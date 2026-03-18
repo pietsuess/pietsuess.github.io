@@ -775,6 +775,13 @@ function onDown(e){
     // Toolbar hit
     const tbAction = edToolbarHit(p.x, p.y);
     if (tbAction) {
+      if (tbAction === 'drag') {
+        const { tx, ty } = edToolbarRect();
+        edToolbarDragging = true;
+        edToolbarDragOff = { dx: p.x - tx, dy: p.y - ty };
+        canvas.style.cursor = 'move';
+        return;
+      }
       if (tbAction === 'dupe' && edSel) {
         const lv = getCurrentLevel();
         edPushUndo();
@@ -923,6 +930,10 @@ function onMove(e){
 
   if (editorMode) {
     const wx = p.x + camX, wy = p.y;
+    if (edToolbarDragging && edToolbarDragOff) {
+      edToolbarPos = { x: p.x - edToolbarDragOff.dx, y: p.y - edToolbarDragOff.dy };
+      return;
+    }
     if (edDragging && edSel) {
       edApplyDrag(wx, wy);
     } else if (edPanning && edPanStart) {
@@ -957,7 +968,7 @@ function onMove(e){
 }
 
 function onUp(e){
-  if (editorMode) { edDragging=false; edPanning=false; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
+  if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
   if(state==='aiming'&&cube&&grabbing){
     // Throw if in the right half of throw zone or past it. Cancel only if near the walk line.
     if(cube.x >= getReleaseLine()){
@@ -992,6 +1003,9 @@ let edHandle = null;     // 'move'|'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw'|'radius'
 let edPanning = false;
 let edPanStart = null;
 let edAddMode = null;    // null|'wall'|'platform'|'bumper'
+let edToolbarPos = null; // {x, y} or null for default position
+let edToolbarDragging = false;
+let edToolbarDragOff = null;
 let edSnap = true;
 const ED_SNAP_SIZE = 10;
 function snap(v) { return edSnap ? Math.round(v / ED_SNAP_SIZE) * ED_SNAP_SIZE : v; }
@@ -1177,14 +1191,26 @@ function edDrawHandles() {
   ctx.fillText(edSel.type.toUpperCase() + (o.rot ? ' ' + Math.round(o.rot*180/Math.PI) + '°' : ''), lx, ly);
 }
 
-function edDrawToolbar() {
+function edToolbarRect() {
   const tw = 840, th = 44;
-  const tx = (W - tw) / 2, ty = H - th - 10;
+  const tx = edToolbarPos ? edToolbarPos.x : (W - tw) / 2;
+  const ty = edToolbarPos ? edToolbarPos.y : H - th - 10;
+  return { tx, ty, tw, th };
+}
+
+function edDrawToolbar() {
+  const { tx, ty, tw, th } = edToolbarRect();
 
   // Background
   roundRectPath(tx, ty, tw, th, 12);
   ctx.fillStyle = 'rgba(26,14,46,0.85)'; ctx.fill();
   ctx.strokeStyle = 'rgba(254,249,240,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+
+  // Drag grip (left side - 3 dots)
+  ctx.fillStyle = 'rgba(254,249,240,0.25)';
+  for (let di = 0; di < 3; di++) {
+    ctx.beginPath(); ctx.arc(tx + 12, ty + th/2 - 8 + di * 8, 2, 0, Math.PI*2); ctx.fill();
+  }
 
   ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
 
@@ -1215,9 +1241,11 @@ function edDrawToolbar() {
 }
 
 function edToolbarHit(px, py) {
-  const tw = 840, th = 44;
-  const tx = (W - tw) / 2, ty = H - th - 10;
+  const { tx, ty, tw, th } = edToolbarRect();
   if (py < ty || py > ty + th || px < tx || px > tx + tw) return null;
+
+  // Drag grip area (left 25px)
+  if (px < tx + 25) return 'drag';
 
   const btns = [
     { label: '+ WALL', x: tx + 50, action: 'wall' },
