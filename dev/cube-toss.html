@@ -780,6 +780,7 @@ function onDown(e){
         edSel = null;
       } else if (tbAction === 'export') { edExport(); }
       else if (tbAction === 'undo') { edPopUndo(); }
+      else if (tbAction === 'snap') { edSnap = !edSnap; }
       else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper') {
         edAddMode = edAddMode === tbAction ? null : tbAction;
       }
@@ -972,6 +973,9 @@ let edHandle = null;     // 'move'|'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw'|'radius'
 let edPanning = false;
 let edPanStart = null;
 let edAddMode = null;    // null|'wall'|'platform'|'bumper'
+let edSnap = false;
+const ED_SNAP_SIZE = 10;
+function snap(v) { return edSnap ? Math.round(v / ED_SNAP_SIZE) * ED_SNAP_SIZE : v; }
 let edUndo = [];
 const ED_HANDLE_SIZE = 8;
 const ED_GRAB_MARGIN = 15;
@@ -1067,26 +1071,27 @@ function edApplyDrag(wx, wy) {
   const dx = wx - ds.mx, dy = wy - ds.my;
 
   if (edHandle === 'throwLine') {
-    getCurrentLevel().throwLineX = Math.max(100, wx);
+    getCurrentLevel().throwLineX = snap(Math.max(100, wx));
     return;
   }
   if (edHandle === 'releaseLine') {
-    getCurrentLevel().releaseLineX = Math.max(50, Math.min(wx, getThrowLine() - 20));
+    getCurrentLevel().releaseLineX = snap(Math.max(50, Math.min(wx, getThrowLine() - 20)));
     return;
   }
   if (edHandle === 'rotate') {
-    // Rotate around object center
     const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
-    o.rot = Math.atan2(wx - cx, -(wy - cy)); // angle from center to mouse
+    let angle = Math.atan2(wx - cx, -(wy - cy));
+    if (edSnap) angle = Math.round(angle / (Math.PI/12)) * (Math.PI/12); // 15 degree snap
+    o.rot = angle;
   } else if (edHandle === 'move') {
-    o.x = ds.ox + dx; o.y = ds.oy + dy;
+    o.x = snap(ds.ox + dx); o.y = snap(ds.oy + dy);
   } else if (edHandle === 'radius') {
-    o.r = Math.max(10, Math.abs(wx - o.x));
+    o.r = snap(Math.max(10, Math.abs(wx - o.x)));
   } else {
-    if (edHandle.includes('w')) { o.x = ds.ox + dx; o.w = Math.max(10, ds.ow - dx); }
-    if (edHandle.includes('e')) { o.w = Math.max(10, ds.ow + dx); }
-    if (edHandle.includes('n')) { o.y = ds.oy + dy; o.h = Math.max(10, ds.oh - dy); }
-    if (edHandle.includes('s')) { o.h = Math.max(10, ds.oh + dy); }
+    if (edHandle.includes('w')) { o.x = snap(ds.ox + dx); o.w = Math.max(10, snap(ds.ow - dx)); }
+    if (edHandle.includes('e')) { o.w = Math.max(10, snap(ds.ow + dx)); }
+    if (edHandle.includes('n')) { o.y = snap(ds.oy + dy); o.h = Math.max(10, snap(ds.oh - dy)); }
+    if (edHandle.includes('s')) { o.h = Math.max(10, snap(ds.oh + dy)); }
   }
 }
 
@@ -1150,7 +1155,7 @@ function edDrawHandles() {
 }
 
 function edDrawToolbar() {
-  const tw = 700, th = 44;
+  const tw = 790, th = 44;
   const tx = (W - tw) / 2, ty = H - th - 10;
 
   // Background
@@ -1169,6 +1174,7 @@ function edDrawToolbar() {
     { label: 'DELETE', x: tx + 445, action: 'delete' },
     { label: 'EXPORT', x: tx + 540, action: 'export' },
     { label: 'UNDO', x: tx + 635, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 730, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1185,7 +1191,7 @@ function edDrawToolbar() {
 }
 
 function edToolbarHit(px, py) {
-  const tw = 700, th = 44;
+  const tw = 790, th = 44;
   const tx = (W - tw) / 2, ty = H - th - 10;
   if (py < ty || py > ty + th || px < tx || px > tx + tw) return null;
 
@@ -1197,6 +1203,7 @@ function edToolbarHit(px, py) {
     { label: 'DELETE', x: tx + 445, action: 'delete' },
     { label: 'EXPORT', x: tx + 540, action: 'export' },
     { label: 'UNDO', x: tx + 635, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 730, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1259,6 +1266,7 @@ window.addEventListener('keydown', (e) => {
     edSel = null;
     e.preventDefault();
   }
+  if (editorMode && e.key === 'g') { edSnap = !edSnap; e.preventDefault(); }
   if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey)) {
     edPopUndo(); e.preventDefault();
   }
@@ -1553,7 +1561,15 @@ function animate(time){
     ctx.fillStyle = 'rgba(0,255,255,0.8)'; ctx.font = '700 14px Urbanist'; ctx.textAlign = 'left';
     ctx.fillText('EDIT MODE', 15, 75);
     ctx.fillStyle = 'rgba(254,249,240,0.3)'; ctx.font = '400 11px Poppins';
-    ctx.fillText('Drag objects. ` to exit. Ctrl+Z undo.', 15, 90);
+    ctx.fillText(`Drag objects. \` to exit. Ctrl+Z undo. G = snap${edSnap?' (ON)':''}`, 15, 90);
+
+    // Snap grid overlay
+    if (edSnap) {
+      ctx.strokeStyle = 'rgba(0,255,255,0.06)'; ctx.lineWidth = 0.5;
+      const gs = ED_SNAP_SIZE, goff = -(camX % gs);
+      for (let gx = goff; gx < W; gx += gs) { ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); }
+      for (let gy = 0; gy < H; gy += gs) { ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke(); }
+    }
 
     // Throw/release line handles
     const edTlX = getThrowLine() - camX;
