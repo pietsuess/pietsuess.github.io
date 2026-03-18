@@ -21,6 +21,7 @@ body {
   background: #1a1610;
   display: flex; align-items: center; justify-content: center;
   z-index: 1000;
+  min-height: 100vh;
 }
 #password-gate .card {
   background: #241f18;
@@ -66,6 +67,34 @@ body {
 }
 #password-input:focus { border-color: #c4a265; }
 #password-input::placeholder { color: #5a5040; }
+.gate-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 8px;
+}
+.gate-field label {
+  display: block;
+  font-size: 11px;
+  color: #8a7e6e;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin-bottom: 6px;
+  text-align: left;
+}
+.gate-field input {
+  width: 100%;
+  padding: 14px 18px;
+  font-size: 16px;
+  font-family: inherit;
+  background: #16120d;
+  border: 1px solid #3a3228;
+  border-radius: 8px;
+  color: #e8dcc8;
+  text-align: center;
+  outline: none;
+}
+.gate-field input:focus { border-color: #c4a265; }
 #pw-error {
   color: #c45c4a;
   font-size: 13px;
@@ -91,58 +120,6 @@ body {
 /* MAIN APP */
 #app { display: none; max-width: 960px; margin: 0 auto; padding: 40px 20px 100px; }
 
-/* NAME GATE (overlay on video) */
-#name-gate {
-  position: absolute;
-  inset: 0;
-  background: rgba(20, 17, 12, 0.95);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 20;
-  border-radius: 8px;
-}
-#name-gate.hidden { display: none; }
-.name-gate-inner {
-  text-align: center;
-  padding: 40px;
-}
-.name-gate-inner p {
-  font-family: 'Cormorant Garamond', Georgia, serif;
-  font-size: 20px;
-  color: #e8dcc8;
-  margin-bottom: 24px;
-}
-.name-gate-inner input {
-  padding: 12px 18px;
-  font-size: 16px;
-  font-family: inherit;
-  background: #241f18;
-  border: 1px solid #3a3228;
-  border-radius: 8px;
-  color: #e8dcc8;
-  text-align: center;
-  outline: none;
-  width: 260px;
-  display: block;
-  margin: 0 auto 16px;
-}
-.name-gate-inner input:focus { border-color: #c4a265; }
-.name-gate-inner input::placeholder { color: #5a5040; }
-.name-gate-inner button {
-  padding: 12px 32px;
-  font-size: 13px;
-  font-family: inherit;
-  font-weight: 600;
-  background: #c4a265;
-  color: #1a1610;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
-}
-.name-gate-inner button:hover { background: #d4b275; }
 
 /* LANGUAGE TABS */
 .lang-tabs {
@@ -367,13 +344,21 @@ body {
 </head>
 <body>
 
-<!-- PASSWORD GATE -->
+<!-- GATE -->
 <div id="password-gate">
   <div class="card">
     <img src="https://images.squarespace-cdn.com/content/v1/667da6b0d213c7409a6c778b/1afd4847-4a0f-4fc5-b1f4-38ca62fca202/BTMATS_FilmTitle_PaleYellowGrain.png" alt="Between the Mountain and the Sky" class="gate-logo">
     <h1>Subtitle Review Tool</h1>
-    <p class="subtitle">Enter Password</p>
-    <input type="text" id="password-input" placeholder="" autocomplete="off" autofocus>
+    <div class="gate-fields">
+      <div class="gate-field">
+        <label for="reviewer-name">Your Name</label>
+        <input type="text" id="reviewer-name" placeholder="" autocomplete="off" autofocus>
+      </div>
+      <div class="gate-field">
+        <label for="password-input">Password</label>
+        <input type="text" id="password-input" placeholder="" autocomplete="off">
+      </div>
+    </div>
     <div id="pw-error"></div>
     <button id="pw-submit">Enter</button>
   </div>
@@ -387,14 +372,6 @@ body {
     <div id="vimeo-player"></div>
     <div id="subtitle-overlay">
       <span id="subtitle-text"></span>
-    </div>
-    <!-- NAME GATE (over video) -->
-    <div id="name-gate">
-      <div class="name-gate-inner">
-        <p>Enter your name to begin reviewing</p>
-        <input type="text" id="reviewer-name" placeholder="Your name" autocomplete="off">
-        <button id="name-submit">Start</button>
-      </div>
     </div>
   </div>
 
@@ -488,41 +465,38 @@ try {
 const passwordMap = {};
 CONFIG.languages.forEach(l => { passwordMap[l.password.toLowerCase()] = l.key; });
 
-function tryPassword() {
-  const input = document.getElementById('password-input').value.trim().toLowerCase();
-  const langKey = passwordMap[input];
-  if (langKey) {
-    currentLang = langKey;
-    document.getElementById('password-gate').style.display = 'none';
-    document.getElementById('app').style.display = 'block';
-    initApp();
-  } else {
-    document.getElementById('pw-error').textContent = 'Incorrect password. Please try again.';
-  }
-}
-
-document.getElementById('pw-submit').addEventListener('click', tryPassword);
-document.getElementById('password-input').addEventListener('keydown', e => {
-  if (e.key === 'Enter') tryPassword();
-});
-
-// ============================================================
-// NAME GATE
-// ============================================================
-function tryName() {
+function tryLogin() {
   const name = document.getElementById('reviewer-name').value.trim();
-  if (!name) return;
+  const input = document.getElementById('password-input').value.trim().toLowerCase();
+
+  if (!name) {
+    document.getElementById('pw-error').textContent = 'Please enter your name.';
+    return;
+  }
+
+  const langKey = passwordMap[input];
+  if (!langKey) {
+    document.getElementById('pw-error').textContent = 'Incorrect password. Please try again.';
+    return;
+  }
+
+  currentLang = langKey;
   nameEntered = true;
-  document.getElementById('name-gate').classList.add('hidden');
+  document.getElementById('password-gate').style.display = 'none';
+  document.getElementById('app').style.display = 'block';
   localStorage.setItem('bmats_corrections', JSON.stringify({
     corrections: corrections,
     reviewerName: name
   }));
+  initApp();
 }
 
-document.getElementById('name-submit').addEventListener('click', tryName);
+document.getElementById('pw-submit').addEventListener('click', tryLogin);
+document.getElementById('password-input').addEventListener('keydown', e => {
+  if (e.key === 'Enter') tryLogin();
+});
 document.getElementById('reviewer-name').addEventListener('keydown', e => {
-  if (e.key === 'Enter') tryName();
+  if (e.key === 'Enter') document.getElementById('password-input').focus();
 });
 
 // ============================================================
@@ -532,12 +506,6 @@ function initApp() {
   buildLangTabs();
   initVimeoPlayer();
   updateCorrectionsBar();
-  // If name was restored from localStorage, skip the name gate
-  const name = document.getElementById('reviewer-name').value.trim();
-  if (name) {
-    nameEntered = true;
-    document.getElementById('name-gate').classList.add('hidden');
-  }
 }
 
 // ============================================================
