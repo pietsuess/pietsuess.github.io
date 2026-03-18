@@ -52,6 +52,7 @@ const WALK_LINE_LEN = 360;
 
 // ─── CAMERA ───
 let camX = 0;
+let camY = 0; // vertical pan (editor only)
 let camTargetX = 0;
 
 // ─── GAME STATE ───
@@ -692,9 +693,20 @@ function updateCube(c, dt) {
     c.y += c.vy * subDt;
     collideCubeWalls(c, getCurrentLevel());
 
-    // Check goal — cube center must be inside AND entered from the left (moving right)
+    // Check goal — cube center must be inside (supports rotation)
     const lv = getCurrentLevel(), g = lv.goal;
-    if (c.x > g.x && c.x < g.x + g.w && c.y > g.y + c.size/2 && c.y < g.y + g.h - c.size/2) {
+    let inGoal = false;
+    if (g.rot) {
+      // Transform cube pos into goal's local space
+      const gcx = g.x + g.w/2, gcy = g.y + g.h/2;
+      const cos = Math.cos(-g.rot), sin = Math.sin(-g.rot);
+      const dx = c.x - gcx, dy = c.y - gcy;
+      const lx = dx*cos - dy*sin, ly = dx*sin + dy*cos;
+      inGoal = Math.abs(lx) < g.w/2 && Math.abs(ly) < g.h/2 - c.size/2;
+    } else {
+      inGoal = c.x > g.x && c.x < g.x + g.w && c.y > g.y + c.size/2 && c.y < g.y + g.h - c.size/2;
+    }
+    if (inGoal) {
       state = 'won'; showMsg('LEVEL CLEAR!', 2.5); break;
     }
   }
@@ -772,7 +784,7 @@ function onDown(e){
 
   // Editor mode input
   if (editorMode) {
-    const wx = p.x + camX, wy = p.y;
+    const wx = p.x + camX, wy = p.y + camY;
 
     // Toolbar hit
     const tbAction = edToolbarHit(p.x, p.y);
@@ -892,7 +904,7 @@ function onDown(e){
       // Deselect, start panning
       edSel = null;
       edPanning = true;
-      edPanStart = { mx: p.x, camX: camX };
+      edPanStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
       canvas.style.cursor = 'move';
     }
     return;
@@ -944,7 +956,7 @@ function onMove(e){
   lastMoveTime=now; prevMX=mouseX;prevMY=mouseY; mouseX=p.x;mouseY=p.y;
 
   if (editorMode) {
-    const wx = p.x + camX, wy = p.y;
+    const wx = p.x + camX, wy = p.y + camY;
     if (edToolbarDragging && edToolbarDragOff) {
       edToolbarPos = { x: p.x - edToolbarDragOff.dx, y: p.y - edToolbarDragOff.dy };
       return;
@@ -952,8 +964,8 @@ function onMove(e){
     if (edDragging && edSel) {
       edApplyDrag(wx, wy);
     } else if (edPanning && edPanStart) {
-      camX = edPanStart.camX - (p.x - edPanStart.mx);
-      camX = Math.max(0, camX);
+      camX = Math.max(0, edPanStart.camX - (p.x - edPanStart.mx));
+      camY = edPanStart.camY - (p.y - edPanStart.my);
     } else {
       // Cursor feedback
       if (edSel) {
@@ -1438,8 +1450,8 @@ edLoadLocal();
 window.addEventListener('keydown', (e) => {
   if (e.key === '`' || e.key === '~') {
     editorMode = !editorMode;
-    if (editorMode) { state = 'ready'; cube = null; camX = 0; camTargetX = 0; edSel = null; edAddMode = null; }
-    else { edSel = null; edAddMode = null; }
+    if (editorMode) { state = 'ready'; cube = null; camX = 0; camY = 0; camTargetX = 0; edSel = null; edAddMode = null; }
+    else { edSel = null; edAddMode = null; camY = 0; }
     e.preventDefault();
   }
   if (editorMode && (e.key === 'Delete' || e.key === 'Backspace') && edSel) {
@@ -1511,6 +1523,9 @@ function animate(time){
   }
 
   const lv=getCurrentLevel();
+
+  // Apply vertical camera offset for world rendering
+  if (camY !== 0) ctx.translate(0, -camY);
 
   // Grid — subtle crosshair
   const gridSpace=60, offG=-(camX*0.3)%gridSpace;
@@ -1650,34 +1665,41 @@ function animate(time){
     ctx.strokeStyle=`rgba(232,115,90,${0.6*bp})`;ctx.lineWidth=2.5;ctx.stroke();
   }
 
-  // ─── GOAL — open-left basket, gold ───
-  const g=lv.goal,gx=g.x-camX,gp=0.5+0.5*Math.sin(elapsed*3);
+  // ─── GOAL — open-left basket, gold (supports rotation) ───
+  const g=lv.goal,gp=0.5+0.5*Math.sin(elapsed*3);
+
+  ctx.save();
+  const gcx=g.x+g.w/2-camX, gcy=g.y+g.h/2;
+  ctx.translate(gcx,gcy);
+  if(g.rot)ctx.rotate(g.rot);
 
   // Ambient glow
-  const gg=ctx.createRadialGradient(gx+g.w*0.4,g.y+g.h/2,0,gx+g.w*0.4,g.y+g.h/2,g.h*0.9);
+  const gg=ctx.createRadialGradient(g.w*-0.1,0,0,0,0,g.h*0.9);
   gg.addColorStop(0,`rgba(244,197,66,${0.1+gp*0.05})`);gg.addColorStop(1,'rgba(244,197,66,0)');
-  ctx.fillStyle=gg;ctx.fillRect(gx-g.w*0.3,g.y-g.h*0.3,g.w*1.6,g.h*1.6);
+  ctx.fillStyle=gg;ctx.fillRect(-g.w*0.8,-g.h*0.8,g.w*1.6,g.h*1.6);
 
   // Interior
-  ctx.fillStyle=`rgba(244,197,66,${0.04+gp*0.02})`;ctx.fillRect(gx,g.y,g.w,g.h);
+  ctx.fillStyle=`rgba(244,197,66,${0.04+gp*0.02})`;ctx.fillRect(-g.w/2,-g.h/2,g.w,g.h);
 
   // Net
-  ctx.save();ctx.beginPath();ctx.rect(gx,g.y,g.w,g.h);ctx.clip();
+  ctx.save();ctx.beginPath();ctx.rect(-g.w/2,-g.h/2,g.w,g.h);ctx.clip();
   ctx.strokeStyle=`rgba(244,197,66,${0.07+gp*0.03})`;ctx.lineWidth=1;
-  for(let ny=g.y+16;ny<g.y+g.h;ny+=16){ctx.beginPath();ctx.moveTo(gx,ny);ctx.lineTo(gx+g.w,ny);ctx.stroke();}
-  for(let nx=gx+16;nx<gx+g.w;nx+=16){const sw=Math.sin(elapsed*2+nx*0.05)*3;ctx.beginPath();ctx.moveTo(nx,g.y);ctx.lineTo(nx+sw,g.y+g.h);ctx.stroke();}
+  for(let ny=-g.h/2+16;ny<g.h/2;ny+=16){ctx.beginPath();ctx.moveTo(-g.w/2,ny);ctx.lineTo(g.w/2,ny);ctx.stroke();}
+  for(let nx=-g.w/2+16;nx<g.w/2;nx+=16){const sw=Math.sin(elapsed*2+nx*0.05)*3;ctx.beginPath();ctx.moveTo(nx,-g.h/2);ctx.lineTo(nx+sw,g.h/2);ctx.stroke();}
   ctx.restore();
 
   // Right rim
-  ctx.fillStyle=`rgba(244,197,66,${0.4+gp*0.25})`;ctx.fillRect(gx+g.w-3,g.y,6,g.h);
+  ctx.fillStyle=`rgba(244,197,66,${0.4+gp*0.25})`;ctx.fillRect(g.w/2-3,-g.h/2,6,g.h);
   // Top rim
-  ctx.fillStyle=`rgba(244,197,66,${0.5+gp*0.3})`;ctx.fillRect(gx,g.y-2,g.w+3,4);
+  ctx.fillStyle=`rgba(244,197,66,${0.5+gp*0.3})`;ctx.fillRect(-g.w/2,-g.h/2-2,g.w+3,4);
   // Bottom rim
-  ctx.fillRect(gx,g.y+g.h-2,g.w+3,4);
+  ctx.fillRect(-g.w/2,g.h/2-2,g.w+3,4);
   // Lip dots
   ctx.fillStyle=`rgba(244,197,66,${0.6+gp*0.3})`;
-  ctx.beginPath();ctx.arc(gx,g.y,4,0,Math.PI*2);ctx.fill();
-  ctx.beginPath();ctx.arc(gx,g.y+g.h,4,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(-g.w/2,-g.h/2,4,0,Math.PI*2);ctx.fill();
+  ctx.beginPath();ctx.arc(-g.w/2,g.h/2,4,0,Math.PI*2);ctx.fill();
+
+  ctx.restore();
 
   // ─── HINTS — placeable half-circles ───
   const hintMarkers = lv.hintMarkers || [];
@@ -1728,6 +1750,9 @@ function animate(time){
       ctx.fillStyle=wg;ctx.fillRect(cube.x-camX-cube.size*3,cube.y-cube.size*3,cube.size*6,cube.size*6);
     }
   }
+
+  // Reset vertical camera for HUD (fixed on screen)
+  if (camY !== 0) ctx.translate(0, camY);
 
   // ─── HUD ───
   ctx.fillStyle='rgba(254,249,240,0.6)';ctx.font='700 16px Urbanist';ctx.textAlign='left';
