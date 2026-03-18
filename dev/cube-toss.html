@@ -366,6 +366,7 @@ const LEVELS = [
 function getCurrentLevel() { return LEVELS[level % LEVELS.length]; }
 function getThrowLine() { return getCurrentLevel().throwLineX || DEFAULT_THROW_LINE; }
 function getReleaseLine() { return getCurrentLevel().releaseLineX || DEFAULT_RELEASE_LINE; }
+function getDeathY() { return getCurrentLevel().deathY || H; }
 
 function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; }
 
@@ -388,7 +389,7 @@ function simulateTrajectory(lv, startX, startY, vx, vy, cubeSize, bounceMult, gr
     cvx *= 0.998;
 
     // Walls
-    if (cy - half > H + 50) break; // fell off bottom
+    if (cy - half > (lv.deathY || H)) break; // fell into death zone
     if (cy - half < 0) { cy = half; cvy = Math.abs(cvy) * B; }
     if (cx - half < getThrowLine()) { cx = getThrowLine() + half; cvx = Math.abs(cvx) * B; }
 
@@ -570,8 +571,8 @@ function drawCubeAt(x, y, size, angle, color) {
 function collideCubeWalls(c, lv) {
   const half = c.size / 2;
   const B = BOUNCE * (c.bounce || 1); // per-cube bounce
-  // No floor — cube falls off the bottom
-  if (c.y - half > H + 50) { c._fellOff = true; }
+  // Death zone — cube crosses the death bar
+  if (c.y - half > getDeathY()) { c._fellOff = true; }
   if (c.y - half < 0) { c.y = half; c.vy *= -B; }
   if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
   if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
@@ -828,8 +829,14 @@ function onDown(e){
       return;
     }
 
-    // Check throw/release/width line drag (in editor)
+    // Check death/throw/release/width line drag (in editor)
     const lv = getCurrentLevel();
+    if (Math.abs(wy - getDeathY()) < 12) {
+      edPushUndo();
+      edDragging = true; edHandle = 'deathLine';
+      edDragStart = { mx: wx, my: wy };
+      canvas.style.cursor = 'ns-resize'; return;
+    }
     if (Math.abs(wx - lv.width) < 12) {
       edPushUndo();
       edDragging = true; edHandle = 'widthLine';
@@ -1103,6 +1110,10 @@ function edApplyDrag(wx, wy) {
   const ds = edDragStart;
   const dx = wx - ds.mx, dy = wy - ds.my;
 
+  if (edHandle === 'deathLine') {
+    getCurrentLevel().deathY = snap(Math.max(H * 0.3, wy));
+    return;
+  }
   if (edHandle === 'widthLine') {
     getCurrentLevel().width = snap(Math.max(getThrowLine() + 200, wx));
     return;
@@ -1271,6 +1282,7 @@ function serializeLevel(lv) {
     name: lv.name, par: lv.par, width: lv.width,
     throwLineX: lv.throwLineX || null,
     releaseLineX: lv.releaseLineX || null,
+    deathYR: lv.deathY ? lv.deathY / H : null,
     walls: lv.walls.map(w => ({ x: w.x, yR: w.y/H, w: w.w, hR: w.h/H, rot: w.rot||0 })),
     platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/H, w: p.w, rot: p.rot||0 })),
     bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/H, r: b.r })),
@@ -1285,6 +1297,7 @@ function deserializeLevel(d) {
     name: d.name, par: d.par, width: d.width,
     throwLineX: d.throwLineX || null,
     releaseLineX: d.releaseLineX || null,
+    deathY: d.deathYR ? d.deathYR * H : null,
     walls: d.walls.map(w => ({ x: w.x, y: w.yR * H, w: w.w, h: w.hR * H, rot: w.rot||0 })),
     platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * H, w: p.w, rot: p.rot||0 })),
     bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * H, r: b.r })),
@@ -1446,6 +1459,26 @@ function animate(time){
     for(let gy=0;gy<H;gy+=gridSpace){
       ctx.fillRect(gx-3,gy,7,1);ctx.fillRect(gx,gy-3,1,7);
     }
+  }
+
+  // ─── DEATH BAR ───
+  const deathY = getDeathY();
+  if (deathY < H + 200) {
+    // Danger glow
+    const dgG = ctx.createLinearGradient(0, deathY - 30, 0, deathY + 10);
+    dgG.addColorStop(0, 'rgba(232,50,50,0)');
+    dgG.addColorStop(1, 'rgba(232,50,50,0.15)');
+    ctx.fillStyle = dgG;
+    ctx.fillRect(0, deathY - 30, W, 40);
+    // Line
+    ctx.strokeStyle = 'rgba(232,50,50,0.4)';
+    ctx.lineWidth = 2;
+    ctx.setLineDash([8, 6]);
+    ctx.beginPath(); ctx.moveTo(0, deathY); ctx.lineTo(W, deathY); ctx.stroke();
+    ctx.setLineDash([]);
+    // Fill below
+    ctx.fillStyle = 'rgba(232,50,50,0.05)';
+    ctx.fillRect(0, deathY, W, H - deathY + 200);
   }
 
   // ─── WALK ZONE ───
@@ -1683,6 +1716,13 @@ function animate(time){
       for (let gx = goff; gx < W; gx += gs) { ctx.beginPath(); ctx.moveTo(gx,0); ctx.lineTo(gx,H); ctx.stroke(); }
       for (let gy = 0; gy < H; gy += gs) { ctx.beginPath(); ctx.moveTo(0,gy); ctx.lineTo(W,gy); ctx.stroke(); }
     }
+
+    // Death bar handle
+    const edDY = getDeathY();
+    ctx.fillStyle = 'rgba(232,50,50,0.7)';
+    ctx.fillRect(W/2 - 15, edDY - 3, 30, 6);
+    ctx.fillStyle = 'rgba(232,50,50,0.5)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('DEATH', W/2, edDY - 8);
 
     // Throw/release line handles
     const edTlX = getThrowLine() - camX;
