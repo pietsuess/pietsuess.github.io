@@ -1,0 +1,585 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat — Piet Suess</title>
+<link href="https://fonts.googleapis.com/css2?family=Urbanist:wght@300;400;500;600;700;800&family=Poppins:wght@300;400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --gold: #f4c542;
+    --coral: #e8735a;
+    --rose: #d4547a;
+    --magenta: #b83d8e;
+    --ink: #1a0e2e;
+    --deep: #2a1a3e;
+    --cream: #fef9f0;
+    --glass: rgba(255,255,255,0.08);
+    --glass-border: rgba(255,255,255,0.12);
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    background: linear-gradient(135deg, #1a0e2e, #2d1640, #4a1942, #7a2848, #b8475a, #d4766a, #e8a555, #f4c542);
+    background-size: 400% 400%;
+    animation: gradientShift 20s ease infinite;
+    color: var(--cream);
+    font-family: 'Poppins', sans-serif;
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+    position: relative;
+  }
+  body::before {
+    content: '';
+    position: fixed;
+    inset: 0;
+    background: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.04'/%3E%3C/svg%3E");
+    pointer-events: none;
+    z-index: 0;
+  }
+  @keyframes gradientShift {
+    0% { background-position: 0% 50%; }
+    50% { background-position: 100% 50%; }
+    100% { background-position: 0% 50%; }
+  }
+
+  /* Setup Screen */
+  #setup {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 30px;
+    position: relative;
+    z-index: 1;
+  }
+  #setup h1 {
+    font-family: 'Urbanist', sans-serif;
+    font-weight: 700;
+    font-size: clamp(2rem, 5vw, 3.5rem);
+    background: linear-gradient(135deg, var(--cream) 0%, var(--gold) 60%, var(--coral) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    margin-bottom: 10px;
+    letter-spacing: 0.02em;
+  }
+  .btn-row {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .join-btn {
+    font-family: 'Urbanist', sans-serif;
+    font-size: 1.4em;
+    font-weight: 700;
+    padding: 24px 50px;
+    border: 1px solid var(--glass-border);
+    border-radius: 16px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: var(--cream);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .join-btn:hover {
+    transform: translateY(-4px);
+    border-color: rgba(244,197,66,0.4);
+    box-shadow: 0 12px 40px rgba(0,0,0,0.3);
+    background: rgba(255,255,255,0.12);
+  }
+  #other-input {
+    display: none;
+    margin-top: 10px;
+    text-align: center;
+  }
+  #other-input input {
+    font-family: 'Poppins', sans-serif;
+    padding: 14px 20px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    font-size: 1.1em;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--cream);
+    outline: none;
+    text-align: center;
+    width: 220px;
+    transition: border-color 0.3s;
+  }
+  #other-input input:focus { border-color: var(--gold); }
+  #other-input input::placeholder { color: rgba(254,249,240,0.3); }
+  #other-input button {
+    font-family: 'Urbanist', sans-serif;
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--cream);
+    font-size: 1em;
+    font-weight: 600;
+    cursor: pointer;
+    margin-left: 10px;
+    transition: all 0.3s;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  #other-input button:hover {
+    border-color: var(--gold);
+    background: rgba(255,255,255,0.12);
+  }
+
+  /* Chat Screen */
+  #chat { display: none; flex-direction: column; height: 100vh; position: relative; z-index: 1; }
+  #header {
+    padding: 14px 24px;
+    background: rgba(26,14,46,0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--glass-border);
+    font-family: 'Urbanist', sans-serif;
+    font-size: 1.1em;
+    font-weight: 600;
+    text-align: center;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+  #status { font-size: 0.7em; font-weight: 400; opacity: 0.5; margin-left: 10px; letter-spacing: 0.05em; }
+  #messages {
+    flex: 1;
+    overflow-y: auto;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  #messages::-webkit-scrollbar { width: 6px; }
+  #messages::-webkit-scrollbar-track { background: transparent; }
+  #messages::-webkit-scrollbar-thumb { background: rgba(254,249,240,0.15); border-radius: 3px; }
+  #messages::-webkit-scrollbar-thumb:hover { background: rgba(254,249,240,0.3); }
+
+  .msg {
+    padding: 14px 20px;
+    border-radius: 16px;
+    max-width: 70%;
+    word-wrap: break-word;
+    border: 1px solid var(--glass-border);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    animation: msgIn 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  @keyframes msgIn {
+    from { opacity: 0; transform: translateY(12px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .msg.mine {
+    background: linear-gradient(135deg, rgba(232,115,90,0.25), rgba(244,197,66,0.15));
+    border-color: rgba(244,197,66,0.2);
+    align-self: flex-end;
+  }
+  .msg.theirs {
+    background: var(--glass);
+    align-self: flex-start;
+  }
+  .msg .name {
+    font-family: 'Urbanist', sans-serif;
+    font-size: 0.7em;
+    font-weight: 600;
+    opacity: 0.6;
+    margin-bottom: 4px;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+  }
+  .msg .text { font-size: 1rem; line-height: 1.6; }
+  .msg img { max-width: 100%; border-radius: 10px; margin-top: 8px; cursor: pointer; transition: transform 0.2s; }
+  .msg img:hover { transform: scale(1.02); }
+
+  /* Input Bar */
+  #input-bar {
+    display: flex;
+    padding: 14px 16px;
+    background: rgba(26,14,46,0.7);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid var(--glass-border);
+    gap: 10px;
+    align-items: center;
+  }
+  #input-bar input[type="text"] {
+    flex: 1;
+    padding: 14px 18px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    font-family: 'Poppins', sans-serif;
+    font-size: 1rem;
+    background: var(--glass);
+    color: var(--cream);
+    outline: none;
+    transition: border-color 0.3s;
+  }
+  #input-bar input[type="text"]:focus { border-color: var(--gold); }
+  #input-bar input[type="text"]::placeholder { color: rgba(254,249,240,0.25); }
+  #send-btn {
+    padding: 14px 28px;
+    border-radius: 12px;
+    border: none;
+    background: linear-gradient(135deg, var(--coral), var(--gold));
+    color: var(--ink);
+    font-family: 'Urbanist', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    flex-shrink: 0;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.3s;
+  }
+  #send-btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(244,197,66,0.3); }
+  #img-btn {
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--cream);
+    font-size: 1.3em;
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: all 0.3s;
+  }
+  #img-btn:hover { border-color: var(--gold); background: rgba(255,255,255,0.12); }
+
+  /* Drop Overlay */
+  .drop-overlay {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(244,197,66,0.15);
+    border: 3px dashed var(--gold);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    font-family: 'Urbanist', sans-serif;
+    font-size: 1.8em;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    pointer-events: none;
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+  }
+  .drop-overlay.active { display: flex; }
+
+  /* Preview */
+  #preview {
+    display: none;
+    padding: 10px 16px;
+    background: rgba(26,14,46,0.7);
+    border-top: 1px solid var(--glass-border);
+  }
+  #preview img { max-height: 120px; border-radius: 10px; }
+  #preview .remove {
+    color: var(--coral);
+    cursor: pointer;
+    margin-left: 12px;
+    font-size: 1.2em;
+    vertical-align: top;
+    transition: color 0.2s;
+  }
+  #preview .remove:hover { color: var(--gold); }
+
+  /* Lightbox */
+  .lightbox {
+    display: none;
+    position: fixed;
+    inset: 0;
+    background: rgba(26,14,46,0.95);
+    z-index: 200;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .lightbox.active { display: flex; }
+  .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
+
+  @media (max-width: 768px) {
+    .join-btn { font-size: 1.1em; padding: 20px 36px; }
+    .msg { max-width: 85%; }
+    #send-btn { padding: 14px 20px; }
+  }
+</style>
+</head>
+<body>
+<div id="setup">
+  <h1>Chat</h1>
+  <div class="btn-row">
+    <button class="join-btn" onclick="join('Book')">Book</button>
+    <button class="join-btn" onclick="join('Studio')">Studio</button>
+    <button class="join-btn" onclick="showOtherInput()">Other</button>
+  </div>
+  <div id="other-input">
+    <input id="other-name" placeholder="Your name..." maxlength="20">
+    <button onclick="joinOther()">Join</button>
+  </div>
+</div>
+<div id="chat">
+  <div id="header">Chat <span id="status">connecting...</span></div>
+  <div id="messages"></div>
+  <div class="drop-overlay" id="drop-overlay">Drop image here</div>
+  <div id="preview"></div>
+  <div id="input-bar">
+    <button id="img-btn" onclick="document.getElementById('file-input').click()">&#128247;</button>
+    <input type="file" id="file-input" accept="image/*" style="display:none" onchange="handleFile(this.files[0])">
+    <input type="text" id="msg" placeholder="Type a message..." autocomplete="off">
+    <button id="send-btn" onclick="send()">Send</button>
+  </div>
+</div>
+<div class="lightbox" id="lightbox" onclick="this.classList.remove('active')">
+  <img id="lightbox-img">
+</div>
+<script>
+const TOPIC = 'piet-book-studio-chat-7x9k';
+const STORAGE_KEY = 'chat-messages';
+const NAME_KEY = 'chat-name';
+let name = '';
+let seen = new Set();
+let pendingImage = null;
+let allMessages = [];
+
+function loadMessages() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      allMessages = JSON.parse(stored);
+      allMessages.forEach(m => {
+        seen.add(m.id);
+        addMessage(m.name, m.text, m.image, m.name === name, true);
+      });
+      const container = document.getElementById('messages');
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch(e) {}
+}
+
+function saveMessages() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(allMessages));
+  } catch(e) {}
+}
+
+function storeMessage(msg) {
+  allMessages.push(msg);
+  saveMessages();
+}
+
+function showOtherInput() {
+  document.getElementById('other-input').style.display = 'block';
+  document.getElementById('other-name').focus();
+}
+
+function joinOther() {
+  const n = document.getElementById('other-name').value.trim();
+  if (!n) return;
+  join(n);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('other-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.stopPropagation(); joinOther(); }
+  });
+  const saved = localStorage.getItem(NAME_KEY);
+  if (saved) join(saved);
+});
+
+function join(n) {
+  name = n;
+  localStorage.setItem(NAME_KEY, n);
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('chat').style.display = 'flex';
+  document.getElementById('header').innerHTML = 'Chat — ' + name + ' <span id="status">connecting...</span>';
+  document.getElementById('msg').focus();
+  loadMessages();
+  listen();
+}
+
+function listen() {
+  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse?since=all');
+  es.onopen = () => {
+    document.getElementById('status').textContent = 'connected';
+  };
+  es.addEventListener('message', e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.event !== 'message') return;
+      let msg = null;
+      try { msg = JSON.parse(data.message); } catch(e) {}
+      if (data.attachment && data.attachment.url) {
+        const id = data.title || data.id;
+        const parts = (data.message || '').split('\n');
+        const sender = parts[0] || 'Unknown';
+        const text = parts.slice(1).join('\n') || '';
+        if (seen.has(id)) return;
+        seen.add(id);
+        const stored = { id, name: sender, text, image: data.attachment.url };
+        storeMessage(stored);
+        addMessage(sender, text, data.attachment.url, sender === name);
+        return;
+      }
+      if (!msg || !msg.id) return;
+      if (seen.has(msg.id)) return;
+      seen.add(msg.id);
+      storeMessage(msg);
+      addMessage(msg.name, msg.text, msg.image, msg.name === name);
+    } catch(err) {}
+  });
+  es.onerror = () => {
+    document.getElementById('status').textContent = 'reconnecting...';
+  };
+}
+
+function send() {
+  const input = document.getElementById('msg');
+  const text = input.value.trim();
+  if (!text && !pendingImage) return;
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2,8);
+
+  if (pendingImage) {
+    const blob = dataURLtoBlob(pendingImage);
+    clearPreview();
+    fetch('https://ntfy.sh/' + TOPIC, {
+      method: 'PUT',
+      headers: {
+        'Filename': 'image.jpg',
+        'Title': id,
+        'X-Message': name + '\n' + (text || '')
+      },
+      body: blob
+    });
+    input.value = '';
+    input.focus();
+    return;
+  }
+
+  const msg = { name, text, id };
+  fetch('https://ntfy.sh/' + TOPIC, {
+    method: 'POST',
+    body: JSON.stringify(msg)
+  });
+  input.value = '';
+  input.focus();
+}
+
+function dataURLtoBlob(dataURL) {
+  const parts = dataURL.split(',');
+  const mime = parts[0].match(/:(.*?);/)[1];
+  const binary = atob(parts[1]);
+  const arr = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) arr[i] = binary.charCodeAt(i);
+  return new Blob([arr], { type: mime });
+}
+
+function addMessage(sender, text, image, mine, skipScroll) {
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (mine ? 'mine' : 'theirs');
+  let html = '<div class="name">' + sender + '</div>';
+  if (text) {
+    const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+    html += '<div class="text">' + safe + '</div>';
+  }
+  if (image) {
+    html += '<img src="' + image + '" onclick="openLightbox(this.src)">';
+  }
+  div.innerHTML = html;
+  container.appendChild(div);
+  if (!skipScroll) container.scrollTop = container.scrollHeight;
+}
+
+function openLightbox(src) {
+  document.getElementById('lightbox-img').src = src;
+  document.getElementById('lightbox').classList.add('active');
+}
+
+function resizeImage(file, callback) {
+  const reader = new FileReader();
+  reader.onload = function(e) {
+    const img = new Image();
+    img.onload = function() {
+      const canvas = document.createElement('canvas');
+      let w = img.width, h = img.height;
+      const MAX = 800;
+      if (w > MAX || h > MAX) {
+        if (w > h) { h = Math.round(h * MAX / w); w = MAX; }
+        else { w = Math.round(w * MAX / h); h = MAX; }
+      }
+      canvas.width = w;
+      canvas.height = h;
+      canvas.getContext('2d').drawImage(img, 0, 0, w, h);
+      callback(canvas.toDataURL('image/jpeg', 0.6));
+    };
+    img.src = e.target.result;
+  };
+  reader.readAsDataURL(file);
+}
+
+function handleFile(file) {
+  if (!file || !file.type.startsWith('image/')) return;
+  resizeImage(file, dataUrl => {
+    pendingImage = dataUrl;
+    showPreview(dataUrl);
+  });
+}
+
+function showPreview(src) {
+  const p = document.getElementById('preview');
+  p.style.display = 'block';
+  p.innerHTML = '<img src="' + src + '"><span class="remove" onclick="clearPreview()">&#10005;</span>';
+}
+
+function clearPreview() {
+  pendingImage = null;
+  const p = document.getElementById('preview');
+  p.style.display = 'none';
+  p.innerHTML = '';
+  document.getElementById('file-input').value = '';
+}
+
+document.addEventListener('dragover', e => { e.preventDefault(); document.getElementById('drop-overlay').classList.add('active'); });
+document.addEventListener('dragleave', e => { if (e.relatedTarget === null) document.getElementById('drop-overlay').classList.remove('active'); });
+document.addEventListener('drop', e => {
+  e.preventDefault();
+  document.getElementById('drop-overlay').classList.remove('active');
+  if (!name) return;
+  const file = e.dataTransfer.files[0];
+  if (file) handleFile(file);
+});
+
+document.addEventListener('paste', e => {
+  if (!name) return;
+  const items = e.clipboardData.items;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i].type.startsWith('image/')) {
+      e.preventDefault();
+      handleFile(items[i].getAsFile());
+      return;
+    }
+  }
+});
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') send();
+});
+</script>
+</body>
+</html>
