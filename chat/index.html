@@ -313,6 +313,46 @@
   .lightbox.active { display: flex; }
   .lightbox img { max-width: 90vw; max-height: 90vh; border-radius: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
 
+  /* Password Gate */
+  #gate {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+  }
+  #gate h1 {
+    font-family: 'Urbanist', sans-serif;
+    font-weight: 700;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    background: linear-gradient(135deg, var(--cream) 0%, var(--gold) 60%, var(--coral) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  #gate input {
+    font-family: 'Poppins', sans-serif;
+    padding: 14px 24px;
+    border-radius: 12px;
+    border: 1px solid var(--glass-border);
+    font-size: 1.1em;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    color: var(--cream);
+    outline: none;
+    text-align: center;
+    width: 260px;
+    transition: border-color 0.3s;
+  }
+  #gate input:focus { border-color: var(--gold); }
+  #gate input::placeholder { color: rgba(254,249,240,0.25); }
+  #gate .error { color: var(--coral); font-size: 0.85em; opacity: 0; transition: opacity 0.3s; }
+  #gate .error.show { opacity: 1; }
+
   @media (max-width: 768px) {
     .join-btn { font-size: 1.1em; padding: 20px 36px; }
     .msg { max-width: 85%; }
@@ -321,7 +361,12 @@
 </style>
 </head>
 <body>
-<div id="setup">
+<div id="gate">
+  <h1>Enter Password</h1>
+  <input id="gate-pass" type="password" placeholder="Password..." autocomplete="off">
+  <div class="error" id="gate-error">Incorrect password</div>
+</div>
+<div id="setup" style="display:none">
   <h1>Chat</h1>
   <div class="btn-row">
     <button class="join-btn" onclick="join('Book')">Book</button>
@@ -349,7 +394,7 @@
   <img id="lightbox-img">
 </div>
 <script>
-const TOPIC = 'piet-book-studio-chat-7x9k';
+const TOPIC = 'ps-a6c5e5109115ac4afe7990057ee5cd12';
 const STORAGE_KEY = 'chat-messages';
 const NAME_KEY = 'chat-name';
 let name = '';
@@ -394,12 +439,44 @@ function joinOther() {
   join(n);
 }
 
+const PASS_KEY = 'chat-authed';
+const PASS_HASH = 'ebf49dcd836f810084c14e0f2dab4dc1768bbdc5980481bf201fcf76771dff7a';
+
+async function hashPass(pw) {
+  const buf = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(pw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2,'0')).join('');
+}
+
+async function checkGate() {
+  const input = document.getElementById('gate-pass');
+  const hash = await hashPass(input.value);
+  if (hash === PASS_HASH) {
+    localStorage.setItem(PASS_KEY, '1');
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('setup').style.display = 'flex';
+    const saved = localStorage.getItem(NAME_KEY);
+    if (saved) join(saved);
+  } else {
+    document.getElementById('gate-error').classList.add('show');
+    input.value = '';
+    setTimeout(() => document.getElementById('gate-error').classList.remove('show'), 2000);
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
+  document.getElementById('gate-pass').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.stopPropagation(); checkGate(); }
+  });
   document.getElementById('other-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.stopPropagation(); joinOther(); }
   });
-  const saved = localStorage.getItem(NAME_KEY);
-  if (saved) join(saved);
+  // Skip gate if already authed
+  if (localStorage.getItem(PASS_KEY)) {
+    document.getElementById('gate').style.display = 'none';
+    document.getElementById('setup').style.display = 'flex';
+    const saved = localStorage.getItem(NAME_KEY);
+    if (saved) join(saved);
+  }
 });
 
 function join(n) {
