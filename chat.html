@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Book / Studio Chat</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { background: #1a1a2e; color: #eee; font-family: -apple-system, sans-serif; height: 100vh; display: flex; flex-direction: column; }
+  #setup { display: flex; align-items: center; justify-content: center; height: 100vh; gap: 30px; }
+  #setup button { font-size: 2em; padding: 30px 60px; border: none; border-radius: 16px; cursor: pointer; font-weight: bold; transition: transform 0.15s; }
+  #setup button:hover { transform: scale(1.05); }
+  #btn-book { background: #e94560; color: white; }
+  #btn-studio { background: #0f3460; color: white; }
+  #chat { display: none; flex-direction: column; height: 100vh; }
+  #header { padding: 12px 20px; background: #16213e; font-size: 1.2em; font-weight: bold; text-align: center; }
+  #status { font-size: 0.7em; font-weight: normal; opacity: 0.6; margin-left: 10px; }
+  #messages { flex: 1; overflow-y: auto; padding: 20px; display: flex; flex-direction: column; gap: 10px; }
+  .msg { padding: 10px 16px; border-radius: 12px; max-width: 70%; word-wrap: break-word; }
+  .msg.mine { background: #e94560; align-self: flex-end; }
+  .msg.theirs { background: #0f3460; align-self: flex-start; }
+  .msg .name { font-size: 0.75em; opacity: 0.7; margin-bottom: 4px; }
+  .msg .text { font-size: 1.1em; line-height: 1.4; }
+  #input-bar { display: flex; padding: 12px; background: #16213e; gap: 10px; }
+  #input-bar input { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 1.1em; background: #1a1a2e; color: #eee; outline: none; }
+  #input-bar input::placeholder { color: #555; }
+  #input-bar button { padding: 14px 28px; border-radius: 10px; border: none; background: #e94560; color: white; font-size: 1.1em; font-weight: bold; cursor: pointer; }
+  #input-bar button:hover { background: #d63851; }
+</style>
+</head>
+<body>
+<div id="setup">
+  <button id="btn-book" onclick="join('Book')">Book</button>
+  <button id="btn-studio" onclick="join('Studio')">Studio</button>
+</div>
+<div id="chat">
+  <div id="header">Chat <span id="status">connecting...</span></div>
+  <div id="messages"></div>
+  <div id="input-bar">
+    <input id="msg" placeholder="Type a message..." autocomplete="off">
+    <button onclick="send()">Send</button>
+  </div>
+</div>
+<script>
+const TOPIC = 'piet-book-studio-chat-7x9k';
+let name = '';
+let seen = new Set();
+
+function join(n) {
+  name = n;
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('chat').style.display = 'flex';
+  document.getElementById('header').innerHTML = 'Chat - ' + name + ' <span id="status">connecting...</span>';
+  document.getElementById('msg').focus();
+  listen();
+}
+
+function listen() {
+  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse');
+  es.onopen = () => {
+    document.getElementById('status').textContent = 'connected';
+  };
+  es.addEventListener('message', e => {
+    try {
+      const data = JSON.parse(e.data);
+      if (data.event !== 'message') return;
+      const msg = JSON.parse(data.message);
+      if (seen.has(msg.id)) return;
+      seen.add(msg.id);
+      addMessage(msg.name, msg.text, msg.name === name);
+    } catch(err) {}
+  });
+  es.onerror = () => {
+    document.getElementById('status').textContent = 'reconnecting...';
+  };
+}
+
+function send() {
+  const input = document.getElementById('msg');
+  const text = input.value.trim();
+  if (!text) return;
+  const id = Date.now() + '-' + Math.random().toString(36).slice(2,8);
+  const payload = JSON.stringify({ name, text, id });
+  fetch('https://ntfy.sh/' + TOPIC, {
+    method: 'POST',
+    body: payload
+  });
+  input.value = '';
+  input.focus();
+}
+
+function addMessage(sender, text, mine) {
+  const container = document.getElementById('messages');
+  const div = document.createElement('div');
+  div.className = 'msg ' + (mine ? 'mine' : 'theirs');
+  const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+  div.innerHTML = '<div class="name">' + sender + '</div><div class="text">' + safe + '</div>';
+  container.appendChild(div);
+  container.scrollTop = container.scrollHeight;
+}
+
+document.addEventListener('keydown', e => {
+  if (e.key === 'Enter') send();
+});
+</script>
+</body>
+</html>
