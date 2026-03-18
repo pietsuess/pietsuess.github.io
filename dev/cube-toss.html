@@ -24,6 +24,12 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+canvas.addEventListener('wheel', (e) => {
+  if (levelMenuOpen) {
+    levelMenuScroll = Math.max(0, Math.min(levelMenuScroll + e.deltaY, Math.max(0, LEVELS.length * 30 - H * 0.5)));
+    e.preventDefault();
+  }
+}, { passive: false });
 
 // ─── DESIGN SYSTEM (PietSuess.com tokens) ───
 const COL = {
@@ -77,6 +83,8 @@ const walkCubes = [
 
 // ─── HINTS ───
 let showHints = false;
+let levelMenuOpen = false;
+let levelMenuScroll = 0;
 
 // ─── LEVEL DEFINITIONS ───
 // backWall: flush with goal right edge, full height, seals the end
@@ -762,15 +770,29 @@ function nextBtnBounds(){
 function onDown(e){
   const p=getPos(e); mouseX=prevMX=p.x; mouseY=prevMY=p.y;
 
-  // Level jumper arrows
-  const ljy = 22;
-  if (p.y > ljy - 15 && p.y < ljy + 15) {
-    if (p.x > 200 && p.x < 225 && level > 0) {
-      level--; attempts = 0; resetCube(); return;
+  // Level jumper menu
+  const ljx = 15, ljyBtn = 60;
+  if (levelMenuOpen) {
+    const mw = 200, mx = ljx, my = ljyBtn + 30;
+    const mh = Math.min(LEVELS.length * 30 + 8, H * 0.6);
+    // Click inside menu = select level
+    if (p.x >= mx && p.x <= mx + mw && p.y >= my && p.y <= my + mh) {
+      const idx = Math.floor((p.y - my - 4 + levelMenuScroll) / 30);
+      if (idx >= 0 && idx < LEVELS.length) {
+        level = idx; attempts = 0; resetCube(); levelMenuOpen = false;
+      }
+      return;
     }
-    if (p.x > 230 && p.x < 255 && level < LEVELS.length - 1) {
-      level++; attempts = 0; resetCube(); return;
+    // Click toggle button = close
+    if (p.x >= ljx && p.x <= ljx + 80 && p.y >= ljyBtn && p.y <= ljyBtn + 26) {
+      levelMenuOpen = false; return;
     }
+    // Click outside = close
+    levelMenuOpen = false; return;
+  }
+  // Toggle button
+  if (p.x >= ljx && p.x <= ljx + 80 && p.y >= ljyBtn && p.y <= ljyBtn + 26) {
+    levelMenuOpen = true; levelMenuScroll = 0; return;
   }
 
   // Editor toggle button (top right, next to hints)
@@ -1777,21 +1799,42 @@ function animate(time){
   ctx.font='400 13px Poppins';ctx.fillStyle='rgba(254,249,240,0.35)';
   ctx.fillText(`THROWS: ${attempts}   PAR: ${lv.par}`,15,50);
 
-  // ─── LEVEL JUMPER — arrows on either side of level name ───
-  // Left arrow (prev)
-  const ljy = 22;
-  ctx.fillStyle = level > 0 ? 'rgba(254,249,240,0.4)' : 'rgba(254,249,240,0.12)';
-  ctx.beginPath();
-  ctx.moveTo(220, ljy - 8); ctx.lineTo(220, ljy + 8); ctx.lineTo(208, ljy);
-  ctx.closePath(); ctx.fill();
-  // Right arrow (next)
-  ctx.fillStyle = level < LEVELS.length - 1 ? 'rgba(254,249,240,0.4)' : 'rgba(254,249,240,0.12)';
-  ctx.beginPath();
-  ctx.moveTo(235, ljy - 8); ctx.lineTo(235, ljy + 8); ctx.lineTo(247, ljy);
-  ctx.closePath(); ctx.fill();
-  // Level count
-  ctx.fillStyle='rgba(254,249,240,0.25)';ctx.font='400 11px Poppins';ctx.textAlign='center';
-  ctx.fillText(`${level+1}/${LEVELS.length}`, 228, ljy + 18);
+  // ─── LEVEL JUMPER — clickable dropdown ───
+  const ljx = 15, ljy = 60;
+  // Toggle button
+  roundRectPath(ljx, ljy, 80, 26, 8);
+  ctx.fillStyle = levelMenuOpen ? 'rgba(244,197,66,0.2)' : 'rgba(255,255,255,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = levelMenuOpen ? 'rgba(244,197,66,0.4)' : 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = 'rgba(254,249,240,0.6)'; ctx.font = '600 11px Urbanist'; ctx.textAlign = 'center';
+  ctx.fillText(`${level+1}/${LEVELS.length} ▾`, ljx + 40, ljy + 17);
+
+  // Dropdown menu
+  if (levelMenuOpen) {
+    const mw = 200, mh = Math.min(LEVELS.length * 30 + 8, H * 0.6);
+    const mx = ljx, my = ljy + 30;
+    // Background
+    roundRectPath(mx, my, mw, mh, 10);
+    ctx.fillStyle = 'rgba(26,14,46,0.92)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(254,249,240,0.15)'; ctx.lineWidth = 1; ctx.stroke();
+    // Scrollable items
+    ctx.save();
+    ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
+    for (let i = 0; i < LEVELS.length; i++) {
+      const iy = my + 4 + i * 30 - levelMenuScroll;
+      if (iy < my - 30 || iy > my + mh) continue;
+      const isActive = i === level;
+      if (isActive) {
+        ctx.fillStyle = 'rgba(244,197,66,0.15)';
+        ctx.fillRect(mx + 4, iy, mw - 8, 28);
+      }
+      ctx.fillStyle = isActive ? COL.gold : 'rgba(254,249,240,0.6)';
+      ctx.font = '500 12px Urbanist'; ctx.textAlign = 'left';
+      ctx.fillText(`${i+1}. ${LEVELS[i].name}`, mx + 12, iy + 18);
+    }
+    ctx.restore();
+  }
 
   // ─── EDITOR OVERLAY ───
   if (editorMode) {
