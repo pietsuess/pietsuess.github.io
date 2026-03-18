@@ -5708,6 +5708,7 @@ function update(){
   updateDebrisWall();
   updateRace();
   updateGateCollisions();
+  updateStartGateBarrier();
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -10468,6 +10469,35 @@ function _buildGateRun(){
 }
 const RACE_COURSES = [ _buildGateRun() ];
 
+// ── Build light dot borders along raceway edges ──
+const RACE_BORDER_HALF = 420; // half-width of the dot border corridor
+const RACE_DOT_SPACING = 90; // px between dots
+function _buildRaceDots(course){
+  const pts = [
+    { wx: course.startWX, wy: course.startWY },
+    ...course.waypoints,
+    { wx: course.finishWX, wy: course.finishWY }
+  ];
+  const north = [], south = [];
+  for(let i = 0; i < pts.length - 1; i++){
+    const ax = pts[i].wx, ay = pts[i].wy;
+    const bx = pts[i+1].wx, by = pts[i+1].wy;
+    const sdx = bx - ax, sdy = by - ay;
+    const segLen = Math.sqrt(sdx*sdx + sdy*sdy) || 1;
+    const steps = Math.max(1, Math.round(segLen / RACE_DOT_SPACING));
+    const tx = sdx/segLen, ty = sdy/segLen;
+    const nx = -ty, ny = tx; // perpendicular
+    for(let s = 0; s <= (i < pts.length - 2 ? steps - 1 : steps); s++){
+      const t = s / steps;
+      const wx = ax + sdx * t, wy = ay + sdy * t;
+      north.push({ wx: wx + nx * RACE_BORDER_HALF, wy: wy + ny * RACE_BORDER_HALF });
+      south.push({ wx: wx - nx * RACE_BORDER_HALF, wy: wy - ny * RACE_BORDER_HALF });
+    }
+  }
+  return { north, south };
+}
+const _raceDots = _buildRaceDots(RACE_COURSES[0]);
+
 // Race state
 const _race = {
   active: false,
@@ -10700,31 +10730,31 @@ function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
     const x1 = sx + gax * startAlong, y1 = sy + gay * startAlong;
     const x2 = sx + gax * endAlong, y2 = sy + gay * endAlong;
 
-    // Bloom
+    // Bloom (3x width)
     ctx.globalAlpha = 0.06 + pulse * 0.03;
-    ctx.lineWidth = 14;
+    ctx.lineWidth = 42;
     ctx.strokeStyle = col;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 
-    // Core wall
+    // Core wall (3x width)
     ctx.globalAlpha = 0.4 + pulse * 0.25;
-    ctx.shadowColor = col; ctx.shadowBlur = 12;
-    ctx.lineWidth = 4;
+    ctx.shadowColor = col; ctx.shadowBlur = 18;
+    ctx.lineWidth = 12;
     ctx.strokeStyle = col;
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 
-    // Hot center line
+    // Hot center line (3x width)
     ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 1.5;
+    ctx.lineWidth = 4.5;
     ctx.strokeStyle = 'rgba(255,255,255,0.4)';
     ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
     ctx.shadowBlur = 0;
 
-    // End cap orb
+    // End cap orb (larger)
     ctx.globalAlpha = 0.6 + pulse * 0.3;
-    ctx.shadowColor = col; ctx.shadowBlur = 14;
+    ctx.shadowColor = col; ctx.shadowBlur = 18;
     ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(x2, y2, 5, 0, Math.PI*2); ctx.fill();
+    ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
   }
 
@@ -10750,12 +10780,13 @@ function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
   ctx.restore();
 }
 
-// Draw start/finish gate (simple vertical energy beam)
+// Draw start/finish gate (tall barrier beam)
+const START_FINISH_H = 900; // much taller than race gates
 function drawStartFinishGate(ctx, cx, cy, wx, wy, label, isActive){
   const sx = wx - state.x + cx, sy = wy - state.y + cy;
-  if(sx < -400 || sx > canvas.width+400 || sy < -400 || sy > canvas.height+400) return;
+  if(sx < -600 || sx > canvas.width+600 || sy < -600 || sy > canvas.height+600) return;
 
-  const gateH = 300;
+  const gateH = START_FINISH_H;
   const pulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
   const col = isActive ? '#00ff88' : '#ffcc00';
 
@@ -10764,37 +10795,73 @@ function drawStartFinishGate(ctx, cx, cy, wx, wy, label, isActive){
 
   ctx.globalAlpha = 0.04 + pulse * 0.02;
   ctx.fillStyle = col;
-  ctx.fillRect(-30, -gateH/2 - 10, 60, gateH + 20);
+  ctx.fillRect(-40, -gateH/2 - 10, 80, gateH + 20);
 
+  // Bloom (thick)
   ctx.globalAlpha = 0.06 + pulse * 0.04;
-  ctx.lineWidth = 16; ctx.strokeStyle = col;
+  ctx.lineWidth = 36; ctx.strokeStyle = col;
   ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
 
+  // Core
   ctx.globalAlpha = 0.4 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 25;
-  ctx.lineWidth = 3; ctx.strokeStyle = col;
+  ctx.shadowColor = col; ctx.shadowBlur = 30;
+  ctx.lineWidth = 10; ctx.strokeStyle = col;
   ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
 
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+  // Hot center
+  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
   ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
   ctx.shadowBlur = 0;
 
+  // Post caps
   ctx.globalAlpha = 0.7 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 18;
+  ctx.shadowColor = col; ctx.shadowBlur = 22;
   ctx.fillStyle = col;
-  ctx.beginPath(); ctx.arc(0, -gateH/2, 7, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(0, gateH/2, 7, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, -gateH/2, 10, 0, Math.PI*2); ctx.fill();
+  ctx.beginPath(); ctx.arc(0, gateH/2, 10, 0, Math.PI*2); ctx.fill();
   ctx.shadowBlur = 0;
 
+  // Label
   ctx.globalAlpha = 0.85;
   ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
   ctx.fillStyle = col;
   ctx.textAlign = 'center';
   ctx.shadowColor = col; ctx.shadowBlur = 10;
-  ctx.fillText(label, 0, -gateH/2 - 20);
+  ctx.fillText(label, 0, -gateH/2 - 24);
   ctx.shadowBlur = 0;
 
   ctx.restore();
+}
+
+// Start gate barrier collision — blocks ship before countdown finishes
+function updateStartGateBarrier(){
+  if(!state.started || state.paused || state.gameOver) return;
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+  // Only block during countdown (active but not started)
+  if(!_race.active || _race.started) return;
+
+  const gateX = course.startWX;
+  const gateHalfH = START_FINISH_H / 2;
+  const shipR = 10;
+  // Simple X-plane barrier
+  const dx = state.x - gateX;
+  if(Math.abs(dx) < shipR + 6){
+    const dy = state.y - course.startWY;
+    if(Math.abs(dy) < gateHalfH){
+      // Push ship back
+      const pushDir = dx > 0 ? 1 : -1;
+      state.x = gateX + pushDir * (shipR + 8);
+      // Kill forward velocity into the gate
+      if((pushDir > 0 && state.vx < 0) || (pushDir < 0 && state.vx > 0)){
+        state.vx = -state.vx * 0.3;
+      }
+      state.collisionFlash = 3;
+      if(audioCtx && !state.sfxMuted){
+        playBeep(80, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
+      }
+    }
+  }
 }
 
 function drawRaceHUD(ctx){
@@ -10886,6 +10953,27 @@ function drawRaceHUD(ctx){
 function drawRaceCourse(ctx, cx, cy){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
+
+  // Light dot borders along raceway edges
+  ctx.save();
+  const _allBorderDots = [..._raceDots.north, ..._raceDots.south];
+  for(let i = 0; i < _allBorderDots.length; i++){
+    const d = _allBorderDots[i];
+    const ddx = d.wx - state.x + cx, ddy = d.wy - state.y + cy;
+    if(ddx < -60 || ddx > canvas.width+60 || ddy < -60 || ddy > canvas.height+60) continue;
+    const dotPulse = 0.3 + Math.sin(state.frameCount * 0.04 + i * 0.5) * 0.2;
+    // Outer glow
+    ctx.globalAlpha = dotPulse * 0.25;
+    ctx.fillStyle = '#0088cc';
+    ctx.beginPath(); ctx.arc(ddx, ddy, 6, 0, Math.PI*2); ctx.fill();
+    // Core dot
+    ctx.globalAlpha = dotPulse + 0.2;
+    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 8;
+    ctx.fillStyle = '#00bbff';
+    ctx.beginPath(); ctx.arc(ddx, ddy, 2.5, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+  }
+  ctx.restore();
 
   // Guide path through gate centers (dashed line)
   if(course.waypoints){
