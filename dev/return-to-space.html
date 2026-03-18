@@ -2625,86 +2625,99 @@ const SCALES={
 const MOODS=[
 
 // ── 0  VOID DRIFT ───────────────────────────────────────────────
-// Vast, contemplative, weightless. A minor. Long pads, sparse melody, distant echoes.
-// Drifting through empty space — solitude without loneliness.
+// Vast, contemplative, melodic. A minor. Flowing arpeggios, warm pads, singing lead.
+// Drifting through deep space — peaceful but musically rich.
 {
-  name:'VOID DRIFT', bpm:62, scale:'amin', root:110.0,
+  name:'VOID DRIFT', bpm:68, scale:'amin', root:220.0,
   gen(t0,bar,bl,sc,root,rng){
     const B=bar; const barLen=8*bl;
-    // Long cycle: 52 bars before reset — feels like it never repeats
-    const phase= B<=6?'silence': B<=18?'whisper': B<=34?'drift': B<=46?'vast': B<=52?'fade':'silence';
-    const vol= phase==='silence'?0.25: phase==='whisper'?0.48: phase==='drift'?0.75: phase==='vast'?1.0: 0.35;
+    const phase= B<=4?'awaken': B<=16?'float': B<=30?'drift': B<=42?'expanse': B<=50?'settle':'awaken';
+    const vol= phase==='awaken'?0.4: phase==='float'?0.62: phase==='drift'?0.82: phase==='expanse'?1.0: 0.45;
 
-    // Chord progression: Am - F - Dm - Em (3 bars each for longer cycle)
-    const prog=[[0,3,7],[5,9,0],[2,5,9],[4,7,11]];
-    const cIdx=Math.floor(B/3)%prog.length;
+    // Chord progression: Am - F - C - G then Am - Dm - Em - F (alternate every 8 bars)
+    const progA=[[0,3,7],[5,9,0],[3,7,0],[7,11,2]];
+    const progB=[[0,3,7],[2,5,9],[4,7,11],[5,9,0]];
+    const useB= Math.floor(B/8)%2===1;
+    const prog= useB?progB:progA;
+    const cIdx=Math.floor(B/2)%prog.length;
     const cRoot=root*fr(prog[cIdx][0]);
 
-    // Sub-bass — very deep, barely felt
-    if(phase!=='silence'){
-      _bass(cRoot/4, t0, barLen*0.95, 0.06*vol);
-      // Second bass voice enters late, octave up
-      if(phase==='drift'||phase==='vast'||phase==='fade')
-        _bass(cRoot/2, t0+4*bl, barLen*0.5, 0.04*vol);
+    // Bass — warm and melodic, not sub-rumble
+    _bass(cRoot/2, t0, barLen*0.85, 0.065*vol);
+    if(phase!=='awaken'&&phase!=='settle'){
+      const walkDeg= prog[cIdx][rng(1,2)];
+      _bass(root/2*fr(walkDeg), t0+4*bl, bl*3.0, 0.04*vol);
     }
 
-    // Expansive pads — the core texture. Multiple detuned layers.
-    if(phase!=='silence'){
+    // Pads — lush, always present after awaken
+    if(phase!=='awaken'||B>2){
       prog[cIdx].forEach((s,i)=>{
-        _pad(root*fr(s), t0+i*0.4, barLen+3.0, 0.038*vol*(1-i*0.08), B*3+i*7);
+        _pad(root*fr(s)/2, t0+i*0.3, barLen+2.5, 0.04*vol*(1-i*0.06), B*i+5);
       });
-      // Upper octave shimmer in drift/vast
-      if(phase==='drift'||phase==='vast'){
+      if(phase==='drift'||phase==='expanse'){
         prog[cIdx].forEach((s,i)=>{
-          _pad(root*2*fr(s), t0+i*0.6+1.0, barLen+2.0, 0.018*vol, B*5+i*11);
+          _pad(root*fr(s), t0+i*0.4+0.6, barLen+1.8, 0.022*vol, B*i+13);
         });
       }
-    } else {
-      // Silence phase: single lonely tone
-      _atm(root, t0, barLen+2.0, 0.02);
     }
 
-    // Sparse distant plucks — like stars pinging
-    if(phase==='whisper'||phase==='drift'){
-      const plkPattern=[0,7,3,5,0,3,7,12,5,0,7,3];
-      const pi=B%plkPattern.length;
-      // Only 2-3 plucks per bar, widely spaced
-      const beats= phase==='whisper'?[0,5]:[0,3,6];
-      beats.forEach((beat,i)=>{
-        if(rng(0,3)>0){
-          const note=plkPattern[(pi+i*3)%plkPattern.length];
-          _plk(root*2*fr(sc[note%sc.length]), t0+beat*bl+rng(0,3)*bl*0.15, 0.035*vol);
-        }
+    // Flowing arpeggios — the heartbeat of this track
+    {
+      const arpA=[0,3,7,3,0,7,3,7,0,3,7,12,7,3,0,7];
+      const arpB=[0,4,7,4,0,7,11,7,4,0,7,4,0,7,12,7];
+      const arp= B%6<3?arpA:arpB;
+      const ai=B%arp.length;
+      const nNotes= phase==='awaken'?6: phase==='float'?10: phase==='settle'?8: 14;
+      for(let i=0;i<nNotes;i++){
+        const note=arp[(ai+i)%arp.length];
+        const oct= i>8?2:1;
+        _plk(root*oct*fr(sc[note%sc.length]), t0+i*bl*(8/nNotes), 0.038*vol*(phase==='awaken'?0.7:1));
+      }
+    }
+
+    // Strings — enter at float, add warmth
+    if(phase==='float'||phase==='drift'||phase==='expanse'){
+      const nStr= phase==='float'?2:3;
+      prog[cIdx].slice(0,nStr).forEach((s,i)=>{
+        _str(root*fr(s)/2, t0+i*0.2, barLen*0.75, 0.026*vol*(1-i*0.1));
       });
     }
 
-    // Melody — very slow, wide intervals, lots of space between notes
-    if(phase==='drift'||phase==='vast'){
-      const melA=[0,7,5,3,0,12,7,5,3,7,0,5,12,7,3,0,5,7,12,10,7,5,3,0];
-      const mi=(B*2)%melA.length; // advance 2 per bar for slower feel
-      // Only 2 melody notes per bar in drift, 3 in vast
-      const melBeats= phase==='drift'?[0,4]:[0,3,6];
+    // Melody — lyrical, flowing, lots of stepwise motion
+    if(phase==='float'||phase==='drift'||phase==='expanse'){
+      const phrases=[
+        [0,2,3,5,7,5,3,2,0,3,5,7,8,7,5,3],
+        [7,5,3,2,0,2,3,5,7,8,10,8,7,5,3,2],
+        [3,5,7,8,7,5,3,0,2,3,5,3,2,0,3,5]
+      ];
+      const mel=phrases[Math.floor(B/5)%phrases.length];
+      const mi=B%mel.length;
+      const melBeats= phase==='float'?[0,3,6]:[0,2,4,6];
       melBeats.forEach((beat,i)=>{
-        const step=melA[(mi+i)%melA.length];
-        _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*3.5, 0.04*vol);
+        const step=mel[(mi+i)%mel.length];
+        _mel(root*fr(sc[step%sc.length]), t0+beat*bl, bl*2.6, 0.04*vol);
       });
     }
 
-    // Vast: atmospheric swells that come and go
-    if(phase==='vast'){
-      if(B%3===0){
-        [0,7,12].forEach((s,i)=>{
-          _atm(root*4*fr(sc[s%sc.length]), t0+i*bl*1.5, barLen*1.2, 0.016*vol);
-        });
+    // Expanse: counter-melody + atmospheric swells
+    if(phase==='expanse'){
+      const ctMel=[7,5,3,7,8,7,5,3,2,3,5,7,10,8,7,5];
+      const ci=B%ctMel.length;
+      [1,4,6].forEach((beat,i)=>{
+        _str(root*fr(sc[ctMel[(ci+i*2)%ctMel.length]%sc.length]),
+             t0+beat*bl, bl*2.0, 0.022*vol);
+      });
+      if(B%4===0){
+        [0,3,7].forEach((s,i)=>_atm(root*2*fr(sc[s%sc.length]), t0+i*bl*1.5, barLen*0.8, 0.014*vol));
       }
-      // Occasional deep string drone
-      if(B%5===0) _str(cRoot/2, t0, barLen*0.9, 0.025*vol);
     }
 
-    // Fade: thin out, return to near-silence
-    if(phase==='fade'){
-      _atm(root*2, t0, barLen+3.0, 0.022*vol);
-      if(B%2===0) _plk(root*2*fr(sc[rng(0,6)]), t0+rng(0,6)*bl, 0.02*vol);
+    // Settle: melody thins, arpeggios carry it home
+    if(phase==='settle'){
+      _pad(cRoot/2, t0, barLen+2.0, 0.03*vol);
+      if(B%2===0){
+        _mel(root*fr(sc[rng(0,4)]), t0+2*bl, bl*3.0, 0.025*vol);
+      }
     }
   }
 },
