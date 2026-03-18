@@ -44,7 +44,8 @@ const BOUNCE = 0.85;
 const FRICTION = 0.985;
 const ANG_FRICTION = 0.96;
 const CUBE_SIZE = 36;
-const THROW_LINE_X = 420;
+const DEFAULT_THROW_LINE = 420;
+const DEFAULT_RELEASE_LINE = 190;
 const WALK_LINE_X = 60;
 const WALK_LINE_Y_START = 200;
 const WALK_LINE_LEN = 300;
@@ -363,6 +364,8 @@ const LEVELS = [
 ];
 
 function getCurrentLevel() { return LEVELS[level % LEVELS.length]; }
+function getThrowLine() { return getCurrentLevel().throwLineX || DEFAULT_THROW_LINE; }
+function getReleaseLine() { return getCurrentLevel().releaseLineX || DEFAULT_RELEASE_LINE; }
 
 function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; }
 
@@ -387,7 +390,7 @@ function simulateTrajectory(lv, startX, startY, vx, vy, cubeSize, bounceMult, gr
     // Walls
     if (cy + half > H) { cy = H - half; cvy = -Math.abs(cvy) * B; }
     if (cy - half < 0) { cy = half; cvy = Math.abs(cvy) * B; }
-    if (cx - half < THROW_LINE_X) { cx = THROW_LINE_X + half; cvx = Math.abs(cvx) * B; }
+    if (cx - half < getThrowLine()) { cx = getThrowLine() + half; cvx = Math.abs(cvx) * B; }
 
     if (lv.backWall) {
       const bw = lv.backWall;
@@ -471,7 +474,7 @@ function findHintPath(lvIdx) {
       const {spd, sy, angle} = queue[idx];
       const vx = spd * Math.cos(angle);
       const vy = spd * Math.sin(angle);
-      const path = simulateTrajectory(lv, THROW_LINE_X, sy, vx, vy, cubeSize, bounceMult, gravMult);
+      const path = simulateTrajectory(lv, getThrowLine(), sy, vx, vy, cubeSize, bounceMult, gravMult);
       if (path && (!bestPath || path.length < bestPath.length)) {
         bestPath = path;
         if (path.length < 30) { // very direct — done
@@ -569,7 +572,7 @@ function collideCubeWalls(c, lv) {
   const B = BOUNCE * (c.bounce || 1); // per-cube bounce
   if (c.y + half > H) { c.y = H - half; c.vy *= -B; c.angVel += c.vx * 0.008; }
   if (c.y - half < 0) { c.y = half; c.vy *= -B; }
-  if (c.x - half < THROW_LINE_X) { c.x = THROW_LINE_X + half; c.vx = Math.abs(c.vx) * B; }
+  if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
   if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
 
   // Back wall — full height seal behind goal
@@ -804,6 +807,21 @@ function onDown(e){
       return;
     }
 
+    // Check throw/release line drag (in editor)
+    const lv = getCurrentLevel();
+    if (Math.abs(wx - getThrowLine()) < 12) {
+      edPushUndo();
+      edDragging = true; edHandle = 'throwLine';
+      edDragStart = { mx: wx, val: getThrowLine() };
+      canvas.style.cursor = 'ew-resize'; return;
+    }
+    if (Math.abs(wx - getReleaseLine()) < 12) {
+      edPushUndo();
+      edDragging = true; edHandle = 'releaseLine';
+      edDragStart = { mx: wx, val: getReleaseLine() };
+      canvas.style.cursor = 'ew-resize'; return;
+    }
+
     // Check resize handles on selected object first
     if (edSel) {
       const handle = edGetHandle(wx, wy);
@@ -854,7 +872,7 @@ function onDown(e){
   if(state==='lost'){resetCube();return;}
   if(state!=='ready')return;
   const wx=worldX(p.x);
-  if(wx<THROW_LINE_X+100){
+  if(wx<getThrowLine()+100){
     // Find the nearest walking cube to click position
     let bestWk=walkCubes[0], bestDist=Infinity;
     for(const wk of walkCubes){
@@ -911,10 +929,10 @@ function onMove(e){
       velSamples.push({vx:(mouseX-prevMX)/moveDt,vy:(mouseY-prevMY)/moveDt});
       if(velSamples.length>5)velSamples.shift();
     }
-    if(cube.x>THROW_LINE_X)doThrow();
+    if(cube.x>getThrowLine())doThrow();
   }
   if(state==='ready'&&!grabbing){
-    canvas.style.cursor=worldX(p.x)<THROW_LINE_X+100?'grab':'default';
+    canvas.style.cursor=worldX(p.x)<getThrowLine()+100?'grab':'default';
   }
 }
 
@@ -922,8 +940,7 @@ function onUp(e){
   if (editorMode) { edDragging=false; edPanning=false; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
   if(state==='aiming'&&cube&&grabbing){
     // Throw if in the right half of throw zone or past it. Cancel only if near the walk line.
-    const throwZoneStart = THROW_LINE_X * 0.45; // ~190px — left of this = cancel
-    if(cube.x >= throwZoneStart){
+    if(cube.x >= getReleaseLine()){
       doThrow();
     } else {
       // Cancel -- put cube back
@@ -1049,6 +1066,14 @@ function edApplyDrag(wx, wy) {
   const ds = edDragStart;
   const dx = wx - ds.mx, dy = wy - ds.my;
 
+  if (edHandle === 'throwLine') {
+    getCurrentLevel().throwLineX = Math.max(100, wx);
+    return;
+  }
+  if (edHandle === 'releaseLine') {
+    getCurrentLevel().releaseLineX = Math.max(50, Math.min(wx, getThrowLine() - 20));
+    return;
+  }
   if (edHandle === 'rotate') {
     // Rotate around object center
     const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
@@ -1208,6 +1233,8 @@ function edExport() {
     lines.push(`  backWall: { x: ${Math.round(bw.x)}, y: ${Math.round(bw.y)}, w: ${Math.round(bw.w)}, h: H },`);
   }
   lines.push(`  width: ${Math.round(lv.width)},`);
+  if (lv.throwLineX) lines.push(`  throwLineX: ${Math.round(lv.throwLineX)},`);
+  if (lv.releaseLineX) lines.push(`  releaseLineX: ${Math.round(lv.releaseLineX)},`);
   lines.push('}');
   const text = lines.join('\n');
   navigator.clipboard.writeText(text).then(() => {
@@ -1333,15 +1360,22 @@ function animate(time){
       }
     }
 
+    // Release line — subtle
+    const rlX=getReleaseLine()-camX;
+    ctx.strokeStyle='rgba(254,249,240,0.12)';ctx.lineWidth=1;ctx.setLineDash([6,8]);
+    ctx.beginPath();ctx.moveTo(rlX,0);ctx.lineTo(rlX,H);ctx.stroke();ctx.setLineDash([]);
+    ctx.fillStyle='rgba(254,249,240,0.15)';ctx.font='500 10px Urbanist';ctx.textAlign='center';
+    ctx.fillText('RELEASE',rlX,20);
+
     // Throw line — gold glow
-    const tlX=THROW_LINE_X-camX;
+    const tlX=getThrowLine()-camX;
     const tlG=ctx.createLinearGradient(tlX-30,0,tlX+30,0);
     tlG.addColorStop(0,'rgba(244,197,66,0)');tlG.addColorStop(0.5,'rgba(244,197,66,0.06)');tlG.addColorStop(1,'rgba(244,197,66,0)');
     ctx.fillStyle=tlG;ctx.fillRect(tlX-30,0,60,H);
     ctx.strokeStyle='rgba(244,197,66,0.35)';ctx.lineWidth=2;ctx.setLineDash([10,10]);
     ctx.beginPath();ctx.moveTo(tlX,0);ctx.lineTo(tlX,H);ctx.stroke();ctx.setLineDash([]);
     ctx.fillStyle='rgba(244,197,66,0.4)';ctx.font='600 11px Urbanist';ctx.textAlign='center';
-    ctx.fillText('THROW LINE',tlX,20);
+    ctx.fillText('THROW',tlX,20);
 
     if(state==='ready'){
       ctx.fillStyle='rgba(254,249,240,0.3)';ctx.font='500 14px Urbanist';ctx.textAlign='center';
@@ -1520,6 +1554,19 @@ function animate(time){
     ctx.fillText('EDIT MODE', 15, 75);
     ctx.fillStyle = 'rgba(254,249,240,0.3)'; ctx.font = '400 11px Poppins';
     ctx.fillText('Drag objects. ` to exit. Ctrl+Z undo.', 15, 90);
+
+    // Throw/release line handles
+    const edTlX = getThrowLine() - camX;
+    ctx.fillStyle = 'rgba(244,197,66,0.7)';
+    ctx.fillRect(edTlX - 3, H/2 - 15, 6, 30);
+    ctx.fillStyle = 'rgba(244,197,66,0.5)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('DRAG', edTlX, H/2 + 28);
+
+    const edRlX = getReleaseLine() - camX;
+    ctx.fillStyle = 'rgba(254,249,240,0.5)';
+    ctx.fillRect(edRlX - 3, H/2 - 15, 6, 30);
+    ctx.fillStyle = 'rgba(254,249,240,0.35)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('DRAG', edRlX, H/2 + 28);
 
     // Level width marker
     const lwx = getCurrentLevel().width - camX;
