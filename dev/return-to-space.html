@@ -4076,8 +4076,8 @@ function update(){
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _inRaceFric = _race.active || _race.showApproach;
-  const _normalFric = _inRaceFric ? 0.94 : 0.965; // tighter drag in race
-  const _boostFric = _inRaceFric ? 0.998 : 0.9995; // tighter boost drag in race
+  const _normalFric = _inRaceFric ? 0.90 : 0.965; // much tighter drag in race
+  const _boostFric = _inRaceFric ? 0.995 : 0.9995; // tighter boost drag in race
   const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
@@ -4147,7 +4147,7 @@ function update(){
   }
   if(!wormholeTransition){
     const _inRace = _race.active || _race.showApproach;
-    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.09:0.06);
+    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.14:0.06);
     if(state.keys['ArrowLeft'])state.angle-=turnRate;
     if(state.keys['ArrowRight'])state.angle+=turnRate;
   }
@@ -8934,16 +8934,18 @@ function drawGame(){
         }
       }
     } else {
-      const s=ps.size; ctx.beginPath();
+      const _shipZoom = _race.zoom > 1.01 ? _race.zoom : 1;
+      const s=ps.size * _shipZoom; ctx.beginPath();
       ctx.moveTo(0,-s); ctx.lineTo(s*0.6,s*0.7); ctx.lineTo(0,s*0.35); ctx.lineTo(-s*0.6,s*0.7); ctx.closePath();
-      ctx.strokeStyle=noFuel?'#ff6600':ps.color; ctx.lineWidth=1.5; ctx.stroke();
+      ctx.strokeStyle=noFuel?'#ff6600':ps.color; ctx.lineWidth=1.5*_shipZoom; ctx.stroke();
     }
-    ctx.beginPath(); ctx.arc(0,0,2.5,0,Math.PI*2);
+    const _shipZoom2 = _race.zoom > 1.01 ? _race.zoom : 1;
+    ctx.beginPath(); ctx.arc(0,0,2.5*_shipZoom2,0,Math.PI*2);
     ctx.fillStyle=noFuel?'#ff6600':ps.color; ctx.fill();
     if(!noFuel&&(state.keys['ArrowUp']||state.hyperspace)){
-      const fl=ps.size*0.5;
-      const flLen=state.hyperspace?16+Math.random()*12:6+Math.random()*6;
-      ctx.beginPath(); ctx.moveTo(-3,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3,fl);
+      const fl=ps.size*0.5*_shipZoom2;
+      const flLen=(state.hyperspace?16+Math.random()*12:6+Math.random()*6)*_shipZoom2;
+      ctx.beginPath(); ctx.moveTo(-3*_shipZoom2,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3*_shipZoom2,fl);
       ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
@@ -10532,13 +10534,12 @@ const _raceDots = _buildRaceDots(RACE_COURSES[0]);
 
 // ── Raceway border collision — keeps ship inside the dot walls during race ──
 function updateRaceBorderCollision(){
-  if(!_race.started || _race.finished) return;
+  // Active during countdown AND race — keeps ship in the corridor the whole time
+  if(!_race.active) return;
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
-  // Only enforce when ship is within the course X range
-  if(state.x < course.startWX - 200 || state.x > course.finishWX + 200) return;
 
-  // Find nearest center point
+  // Find nearest center point on the path
   const cPts = _raceDots.center;
   let bestIdx = 0, bestDist2 = Infinity;
   for(let i = 0; i < cPts.length; i++){
@@ -10549,22 +10550,21 @@ function updateRaceBorderCollision(){
 
   const cp = cPts[bestIdx];
   const shipDx = state.x - cp.wx, shipDy = state.y - cp.wy;
-  const perpDist = shipDx * cp.nx + shipDy * cp.ny; // signed distance from center
+  const perpDist = shipDx * cp.nx + shipDy * cp.ny;
 
-  if(Math.abs(perpDist) > RACE_BORDER_HALF - 10){
-    // Ship is hitting the border — push back, absorb perpendicular velocity
+  const wallLimit = RACE_BORDER_HALF - 14;
+  if(Math.abs(perpDist) > wallLimit){
+    // Hard clamp — force ship back inside, no negotiation
     const sign = perpDist > 0 ? 1 : -1;
-    const pushAmt = Math.abs(perpDist) - (RACE_BORDER_HALF - 12);
-    state.x -= sign * cp.nx * pushAmt;
-    state.y -= sign * cp.ny * pushAmt;
-    // Cancel the into-wall velocity component, keep sliding
+    state.x = cp.wx + cp.nx * sign * wallLimit;
+    state.y = cp.wy + cp.ny * sign * wallLimit;
+    // Kill the into-wall velocity, keep tangential
     const vDot = (state.vx * cp.nx + state.vy * cp.ny) * sign;
     if(vDot > 0){
       state.vx -= vDot * cp.nx * sign;
       state.vy -= vDot * cp.ny * sign;
-      state.vx *= 0.95;
-      state.vy *= 0.95;
     }
+    state.collisionFlash = 2;
   }
 }
 
