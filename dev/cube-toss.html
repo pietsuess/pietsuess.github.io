@@ -692,9 +692,9 @@ function updateCube(c, dt) {
     c.y += c.vy * subDt;
     collideCubeWalls(c, getCurrentLevel());
 
-    // Check goal — cube center must be inside the goal box
+    // Check goal — cube center must be inside AND entered from the left (moving right)
     const lv = getCurrentLevel(), g = lv.goal;
-    if (c.x > g.x && c.x < g.x + g.w && c.y > g.y && c.y < g.y + g.h) {
+    if (c.x > g.x && c.x < g.x + g.w && c.y > g.y + c.size/2 && c.y < g.y + g.h - c.size/2) {
       state = 'won'; showMsg('LEVEL CLEAR!', 2.5); break;
     }
   }
@@ -791,18 +791,20 @@ function onDown(e){
         if (edSel.type==='wall') { lv.walls.push(clone); edSel={type:'wall',index:lv.walls.length-1,obj:clone}; }
         else if (edSel.type==='platform') { lv.platforms.push(clone); edSel={type:'platform',index:lv.platforms.length-1,obj:clone}; }
         else if (edSel.type==='bumper') { lv.bumpers.push(clone); edSel={type:'bumper',index:lv.bumpers.length-1,obj:clone}; }
+        else if (edSel.type==='hint') { if(!lv.hintMarkers)lv.hintMarkers=[]; lv.hintMarkers.push(clone); edSel={type:'hint',index:lv.hintMarkers.length-1,obj:clone}; }
       } else if (tbAction === 'delete' && edSel) {
         const lv = getCurrentLevel();
         edPushUndo();
         if (edSel.type==='wall') lv.walls.splice(edSel.index,1);
         else if (edSel.type==='platform') lv.platforms.splice(edSel.index,1);
         else if (edSel.type==='bumper') lv.bumpers.splice(edSel.index,1);
+        else if (edSel.type==='hint') { if(lv.hintMarkers) lv.hintMarkers.splice(edSel.index,1); }
         edSel = null;
       } else if (tbAction === 'export') { edExport(); }
       else if (tbAction === 'undo') { edPopUndo(); }
       else if (tbAction === 'import') { edImport(); }
       else if (tbAction === 'snap') { edSnap = !edSnap; }
-      else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper') {
+      else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper' || tbAction === 'hint') {
         edAddMode = edAddMode === tbAction ? null : tbAction;
       }
       return;
@@ -824,6 +826,11 @@ function onDown(e){
         const nb = { x: wx, y: wy, r: 25 };
         lv.bumpers.push(nb);
         edSel = { type: 'bumper', index: lv.bumpers.length-1, obj: nb };
+      } else if (edAddMode === 'hint') {
+        if (!lv.hintMarkers) lv.hintMarkers = [];
+        const nh = { x: wx, y: wy, r: 18, rot: 0 };
+        lv.hintMarkers.push(nh);
+        edSel = { type: 'hint', index: lv.hintMarkers.length-1, obj: nh };
       }
       edAddMode = null;
       return;
@@ -1051,6 +1058,13 @@ function edHitTest(wx, wy) {
     if (wx > bw.x - m && wx < bw.x + bw.w + m && wy > bw.y - m && wy < bw.y + bw.h + m)
       return { type: 'backWall', index: 0, obj: bw };
   }
+  // Hint markers
+  const hms = lv.hintMarkers || [];
+  for (let i = hms.length - 1; i >= 0; i--) {
+    const hm = hms[i];
+    const dx = wx - hm.x, dy = wy - hm.y;
+    if (Math.sqrt(dx*dx + dy*dy) < (hm.r || 18) + m) return { type: 'hint', index: i, obj: hm };
+  }
   // Bumpers
   for (let i = lv.bumpers.length - 1; i >= 0; i--) {
     const b = lv.bumpers[i];
@@ -1081,6 +1095,18 @@ function edGetHandle(wx, wy) {
     const hx = o.x + o.r, hy = o.y;
     if (Math.abs(wx - hx) < hs && Math.abs(wy - hy) < hs) return 'radius';
     if (Math.sqrt((wx-o.x)**2 + (wy-o.y)**2) < o.r + ED_GRAB_MARGIN) return 'move';
+    return null;
+  }
+
+  if (edSel.type === 'hint') {
+    const hr = o.r || 18;
+    // Rotation handle
+    const rhx = o.x + hr + 15, rhy = o.y;
+    if (Math.abs(wx - rhx) < hs && Math.abs(wy - rhy) < hs) return 'rotate';
+    // Radius handle
+    const radHx = o.x, radHy = o.y - hr;
+    if (Math.abs(wx - radHx) < hs && Math.abs(wy - radHy) < hs) return 'radius';
+    if (Math.sqrt((wx-o.x)**2 + (wy-o.y)**2) < hr + ED_GRAB_MARGIN) return 'move';
     return null;
   }
 
@@ -1126,6 +1152,15 @@ function edApplyDrag(wx, wy) {
     getCurrentLevel().releaseLineX = snap(Math.max(50, Math.min(wx, getThrowLine() - 20)));
     return;
   }
+  if (edHandle === 'rotate' && edSel.type === 'hint') {
+    o.rot = Math.atan2(wy - o.y, wx - o.x);
+    if (edSnap) o.rot = Math.round(o.rot / (Math.PI/12)) * (Math.PI/12);
+    return;
+  }
+  if (edHandle === 'radius' && edSel.type === 'hint') {
+    o.r = snap(Math.max(10, Math.sqrt((wx-o.x)**2 + (wy-o.y)**2)));
+    return;
+  }
   if (edHandle === 'rotate') {
     const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
     let angle = Math.atan2(wx - cx, -(wy - cy));
@@ -1147,7 +1182,26 @@ function edDrawHandles() {
   if (!edSel) return;
   const o = edSel.obj;
 
-  if (edSel.type === 'bumper') {
+  if (edSel.type === 'hint') {
+    const hr = o.r || 18;
+    // Circle highlight
+    ctx.strokeStyle = 'rgba(244,197,66,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+    ctx.beginPath(); ctx.arc(o.x - camX, o.y, hr + 4, 0, Math.PI*2); ctx.stroke();
+    ctx.setLineDash([]);
+    // Radius handle (top)
+    ctx.fillStyle = 'rgba(244,197,66,0.8)';
+    ctx.fillRect(o.x - camX - 4, o.y - hr - 4, 8, 8);
+    // Rotation handle (right)
+    const rhx = o.x - camX + hr + 15, rhy = o.y;
+    ctx.beginPath(); ctx.arc(rhx, rhy, 7, 0, Math.PI*2);
+    ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.fill();
+    ctx.strokeStyle = 'rgba(26,14,46,0.6)'; ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(rhx, rhy, 4, -Math.PI*0.7, Math.PI*0.5); ctx.stroke();
+    if (o.rot) {
+      ctx.fillStyle = 'rgba(244,197,66,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
+      ctx.fillText(Math.round(o.rot * 180/Math.PI) + '°', rhx, rhy - 12);
+    }
+  } else if (edSel.type === 'bumper') {
     // Circle highlight
     ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.arc(o.x - camX, o.y, o.r + 4, 0, Math.PI*2); ctx.stroke();
@@ -1203,7 +1257,7 @@ function edDrawHandles() {
 }
 
 function edToolbarRect() {
-  const tw = 840, th = 44;
+  const tw = 920, th = 44;
   const tx = edToolbarPos ? edToolbarPos.x : (W - tw) / 2;
   const ty = edToolbarPos ? edToolbarPos.y : H - th - 10;
   return { tx, ty, tw, th };
@@ -1230,12 +1284,13 @@ function edDrawToolbar() {
     { label: '+ WALL', x: tx + 50, action: 'wall' },
     { label: '+ PLATFORM', x: tx + 155, action: 'platform' },
     { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
-    { label: 'DUPE', x: tx + 360, action: 'dupe' },
-    { label: 'DELETE', x: tx + 445, action: 'delete' },
-    { label: 'SAVE', x: tx + 525, action: 'export' },
-    { label: 'LOAD', x: tx + 605, action: 'import' },
-    { label: 'UNDO', x: tx + 685, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 775, action: 'snap' },
+    { label: '+ HINT', x: tx + 360, action: 'hint' },
+    { label: 'DUPE', x: tx + 445, action: 'dupe' },
+    { label: 'DELETE', x: tx + 530, action: 'delete' },
+    { label: 'SAVE', x: tx + 615, action: 'export' },
+    { label: 'LOAD', x: tx + 695, action: 'import' },
+    { label: 'UNDO', x: tx + 775, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 860, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1262,12 +1317,13 @@ function edToolbarHit(px, py) {
     { label: '+ WALL', x: tx + 50, action: 'wall' },
     { label: '+ PLATFORM', x: tx + 155, action: 'platform' },
     { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
-    { label: 'DUPE', x: tx + 360, action: 'dupe' },
-    { label: 'DELETE', x: tx + 445, action: 'delete' },
-    { label: 'SAVE', x: tx + 525, action: 'export' },
-    { label: 'LOAD', x: tx + 605, action: 'import' },
-    { label: 'UNDO', x: tx + 685, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 775, action: 'snap' },
+    { label: '+ HINT', x: tx + 360, action: 'hint' },
+    { label: 'DUPE', x: tx + 445, action: 'dupe' },
+    { label: 'DELETE', x: tx + 530, action: 'delete' },
+    { label: 'SAVE', x: tx + 615, action: 'export' },
+    { label: 'LOAD', x: tx + 695, action: 'import' },
+    { label: 'UNDO', x: tx + 775, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 860, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1286,6 +1342,7 @@ function serializeLevel(lv) {
     walls: lv.walls.map(w => ({ x: w.x, yR: w.y/H, w: w.w, hR: w.h/H, rot: w.rot||0 })),
     platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/H, w: p.w, rot: p.rot||0 })),
     bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/H, r: b.r })),
+    hintMarkers: (lv.hintMarkers||[]).map(h => ({ x: h.x, yR: h.y/H, r: h.r||18, rot: h.rot||0 })),
     goal: { x: lv.goal.x, yR: lv.goal.y/H, w: lv.goal.w, hR: lv.goal.h/H },
     backWall: lv.backWall ? { x: lv.backWall.x, w: lv.backWall.w } : null,
   };
@@ -1301,6 +1358,7 @@ function deserializeLevel(d) {
     walls: d.walls.map(w => ({ x: w.x, y: w.yR * H, w: w.w, h: w.hR * H, rot: w.rot||0 })),
     platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * H, w: p.w, rot: p.rot||0 })),
     bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * H, r: b.r })),
+    hintMarkers: (d.hintMarkers||[]).map(h => ({ x: h.x, y: h.yR * H, r: h.r||18, rot: h.rot||0 })),
     goal: { x: d.goal.x, y: d.goal.yR * H, w: d.goal.w, h: d.goal.hR * H },
     backWall: d.backWall ? { x: d.backWall.x, y: 0, w: d.backWall.w, h: H } : null,
   };
@@ -1389,6 +1447,7 @@ window.addEventListener('keydown', (e) => {
     if (edSel.type === 'wall') lv.walls.splice(edSel.index, 1);
     else if (edSel.type === 'platform') lv.platforms.splice(edSel.index, 1);
     else if (edSel.type === 'bumper') lv.bumpers.splice(edSel.index, 1);
+    else if (edSel.type === 'hint') { if(lv.hintMarkers) lv.hintMarkers.splice(edSel.index, 1); }
     edSel = null;
     e.preventDefault();
   }
@@ -1619,42 +1678,33 @@ function animate(time){
   ctx.beginPath();ctx.arc(gx,g.y,4,0,Math.PI*2);ctx.fill();
   ctx.beginPath();ctx.arc(gx,g.y+g.h,4,0,Math.PI*2);ctx.fill();
 
-  // ─── HINTS — simulated real trajectory ───
-  if (showHints) {
-    const hintPath = findHintPath(level);
-    if (hintPath && hintPath.length > 2) {
-      // Draw the path as a dotted line
-      ctx.setLineDash([4, 6]);
-      ctx.strokeStyle = 'rgba(244,197,66,0.25)';
-      ctx.lineWidth = 2;
+  // ─── HINTS — placeable half-circles ───
+  const hintMarkers = lv.hintMarkers || [];
+  if (showHints || editorMode) {
+    for (const hm of hintMarkers) {
+      const hx = hm.x - camX, hy = hm.y;
+      const hr = hm.r || 18;
+      const alpha = (showHints || editorMode) ? 0.35 : 0;
+      ctx.save();
+      ctx.translate(hx, hy);
+      ctx.rotate(hm.rot || 0);
+      // Half circle
       ctx.beginPath();
-      ctx.moveTo(hintPath[0].x - camX, hintPath[0].y);
-      for (let i = 1; i < hintPath.length; i++) {
-        ctx.lineTo(hintPath[i].x - camX, hintPath[i].y);
-      }
+      ctx.arc(0, 0, hr, -Math.PI/2, Math.PI/2);
+      ctx.closePath();
+      ctx.fillStyle = `rgba(244,197,66,${alpha * 0.4})`;
+      ctx.fill();
+      ctx.strokeStyle = `rgba(244,197,66,${alpha})`;
+      ctx.lineWidth = 2;
       ctx.stroke();
-      ctx.setLineDash([]);
-
-      // Start crosshair
-      const s = hintPath[0];
-      ctx.strokeStyle = 'rgba(244,197,66,0.35)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(s.x - camX, s.y, 12, 0, Math.PI * 2); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(s.x - camX - 16, s.y); ctx.lineTo(s.x - camX + 16, s.y); ctx.stroke();
-      ctx.beginPath(); ctx.moveTo(s.x - camX, s.y - 16); ctx.lineTo(s.x - camX, s.y + 16); ctx.stroke();
-
-      // End target
-      const e = hintPath[hintPath.length - 1];
-      ctx.strokeStyle = 'rgba(244,197,66,0.4)';
-      ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(e.x - camX, e.y, 10, 0, Math.PI * 2); ctx.stroke();
-      ctx.fillStyle = 'rgba(244,197,66,0.2)';
-      ctx.beginPath(); ctx.arc(e.x - camX, e.y, 5, 0, Math.PI * 2); ctx.fill();
-    } else {
-      ctx.fillStyle = 'rgba(254,249,240,0.2)';
-      ctx.font = '400 12px Poppins';
-      ctx.textAlign = 'center';
-      ctx.fillText(hintSearching ? 'Finding path...' : 'No path found', W / 2, H - 20);
+      // Flat edge line
+      ctx.beginPath();
+      ctx.moveTo(0, -hr);
+      ctx.lineTo(0, hr);
+      ctx.strokeStyle = `rgba(244,197,66,${alpha * 0.6})`;
+      ctx.lineWidth = 1.5;
+      ctx.stroke();
+      ctx.restore();
     }
   }
 
