@@ -1099,6 +1099,15 @@ function edHitTest(wx, wy) {
   return null;
 }
 
+// Transform world point into object's local space (centered, rotated)
+function edToLocal(wx, wy, o) {
+  const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
+  const rot = o.rot || 0;
+  const cos = Math.cos(-rot), sin = Math.sin(-rot);
+  const dx = wx - cx, dy = wy - cy;
+  return { lx: dx*cos - dy*sin, ly: dx*sin + dy*cos };
+}
+
 function edGetHandle(wx, wy) {
   if (!edSel) return null;
   const o = edSel.obj;
@@ -1113,33 +1122,34 @@ function edGetHandle(wx, wy) {
 
   if (edSel.type === 'hint') {
     const hr = o.r || 18;
-    // Rotation handle
     const rhx = o.x + hr + 15, rhy = o.y;
     if (Math.abs(wx - rhx) < hs && Math.abs(wy - rhy) < hs) return 'rotate';
-    // Radius handle
     const radHx = o.x, radHy = o.y - hr;
     if (Math.abs(wx - radHx) < hs && Math.abs(wy - radHy) < hs) return 'radius';
     if (Math.sqrt((wx-o.x)**2 + (wy-o.y)**2) < hr + ED_GRAB_MARGIN) return 'move';
     return null;
   }
 
-  // Rotation handle — circle above the object center
-  const cx = o.x + (o.w||0)/2, cy = o.y + (o.h||6)/2;
-  const rotHandleDist = Math.max(40, (o.h||6)/2 + 25);
-  const rhx = cx, rhy = cy - rotHandleDist;
-  if (Math.sqrt((wx-rhx)**2 + (wy-rhy)**2) < 10) return 'rotate';
+  // Work in object's local (rotated) space
+  const { lx, ly } = edToLocal(wx, wy, o);
+  const hw = (o.w||0)/2, hh = (o.h||6)/2;
 
-  // Rectangle handles
-  const x = o.x, y = o.y, w = o.w, h = o.h || 6;
-  if (Math.abs(wx - x) < hs && Math.abs(wy - y) < hs) return 'nw';
-  if (Math.abs(wx - (x+w)) < hs && Math.abs(wy - y) < hs) return 'ne';
-  if (Math.abs(wx - x) < hs && Math.abs(wy - (y+h)) < hs) return 'sw';
-  if (Math.abs(wx - (x+w)) < hs && Math.abs(wy - (y+h)) < hs) return 'se';
-  if (Math.abs(wx - x) < hs && wy > y && wy < y+h) return 'w';
-  if (Math.abs(wx - (x+w)) < hs && wy > y && wy < y+h) return 'e';
-  if (Math.abs(wy - y) < hs && wx > x && wx < x+w) return 'n';
-  if (Math.abs(wy - (y+h)) < hs && wx > x && wx < x+w) return 's';
-  if (wx > x - ED_GRAB_MARGIN && wx < x+w+ED_GRAB_MARGIN && wy > y-ED_GRAB_MARGIN && wy < y+h+ED_GRAB_MARGIN) return 'move';
+  // Rotation handle — above object in local space
+  const rotDist = Math.max(40, hh + 25);
+  if (Math.abs(lx) < 10 && Math.abs(ly + rotDist) < 10) return 'rotate';
+
+  // Corner handles
+  if (Math.abs(lx + hw) < hs && Math.abs(ly + hh) < hs) return 'nw';
+  if (Math.abs(lx - hw) < hs && Math.abs(ly + hh) < hs) return 'ne';
+  if (Math.abs(lx + hw) < hs && Math.abs(ly - hh) < hs) return 'sw';
+  if (Math.abs(lx - hw) < hs && Math.abs(ly - hh) < hs) return 'se';
+  // Edge handles
+  if (Math.abs(lx + hw) < hs && Math.abs(ly) < hh) return 'w';
+  if (Math.abs(lx - hw) < hs && Math.abs(ly) < hh) return 'e';
+  if (Math.abs(ly + hh) < hs && Math.abs(lx) < hw) return 'n';
+  if (Math.abs(ly - hh) < hs && Math.abs(lx) < hw) return 's';
+  // Body
+  if (Math.abs(lx) < hw + ED_GRAB_MARGIN && Math.abs(ly) < hh + ED_GRAB_MARGIN) return 'move';
   return null;
 }
 
@@ -1194,79 +1204,76 @@ function edApplyDrag(wx, wy) {
 function edDrawHandles() {
   if (!edSel) return;
   const o = edSel.obj;
+  const hs = ED_HANDLE_SIZE;
 
   if (edSel.type === 'hint') {
     const hr = o.r || 18;
-    // Circle highlight
     ctx.strokeStyle = 'rgba(244,197,66,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.arc(o.x - camX, o.y, hr + 4, 0, Math.PI*2); ctx.stroke();
     ctx.setLineDash([]);
-    // Radius handle (top)
     ctx.fillStyle = 'rgba(244,197,66,0.8)';
     ctx.fillRect(o.x - camX - 4, o.y - hr - 4, 8, 8);
-    // Rotation handle (right)
     const rhx = o.x - camX + hr + 15, rhy = o.y;
     ctx.beginPath(); ctx.arc(rhx, rhy, 7, 0, Math.PI*2);
     ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.fill();
-    ctx.strokeStyle = 'rgba(26,14,46,0.6)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(rhx, rhy, 4, -Math.PI*0.7, Math.PI*0.5); ctx.stroke();
     if (o.rot) {
       ctx.fillStyle = 'rgba(244,197,66,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
       ctx.fillText(Math.round(o.rot * 180/Math.PI) + '°', rhx, rhy - 12);
     }
-  } else if (edSel.type === 'bumper') {
-    // Circle highlight
+    return;
+  }
+
+  if (edSel.type === 'bumper') {
     ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
     ctx.beginPath(); ctx.arc(o.x - camX, o.y, o.r + 4, 0, Math.PI*2); ctx.stroke();
     ctx.setLineDash([]);
-    // Radius handle
     ctx.fillStyle = 'rgba(0,255,255,0.8)';
     ctx.fillRect(o.x + o.r - camX - 4, o.y - 4, 8, 8);
-  } else {
-    const x = o.x - camX, y = o.y, w = o.w, h = o.h || 6;
-    // Dashed border
-    ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-    ctx.strokeRect(x - 2, y - 2, w + 4, h + 4);
-    ctx.setLineDash([]);
-    // Handles
-    ctx.fillStyle = 'rgba(0,255,255,0.8)';
-    const hs = ED_HANDLE_SIZE;
-    const handles = [
-      [x, y], [x+w/2, y], [x+w, y],
-      [x, y+h/2], [x+w, y+h/2],
-      [x, y+h], [x+w/2, y+h], [x+w, y+h],
-    ];
-    for (const [hx, hy] of handles) {
-      ctx.fillRect(hx - hs/2, hy - hs/2, hs, hs);
-    }
+    return;
   }
 
-  // Rotation handle (not for bumpers)
-  if (edSel.type !== 'bumper') {
-    const cx = o.x + o.w/2 - camX, cy = o.y + (o.h||6)/2;
-    const rotDist = Math.max(40, (o.h||6)/2 + 25);
-    const rhx = cx, rhy = cy - rotDist;
-    // Line from center to handle
-    ctx.strokeStyle = 'rgba(0,255,255,0.3)'; ctx.lineWidth = 1;
-    ctx.beginPath(); ctx.moveTo(cx, cy); ctx.lineTo(rhx, rhy); ctx.stroke();
-    // Handle circle
-    ctx.fillStyle = 'rgba(0,255,255,0.8)';
-    ctx.beginPath(); ctx.arc(rhx, rhy, 7, 0, Math.PI*2); ctx.fill();
-    // Rotation arrow icon
-    ctx.strokeStyle = 'rgba(26,14,46,0.8)'; ctx.lineWidth = 1.5;
-    ctx.beginPath(); ctx.arc(rhx, rhy, 4, -Math.PI*0.7, Math.PI*0.5); ctx.stroke();
-    // Show angle
-    if (o.rot) {
-      ctx.fillStyle = 'rgba(0,255,255,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
-      ctx.fillText(Math.round((o.rot||0) * 180/Math.PI) + '°', rhx, rhy - 12);
-    }
+  // Rectangle types (wall, platform, goal, backWall) — draw rotated
+  const w = o.w || 0, h = o.h || 6;
+  const cx = o.x + w/2 - camX, cy = o.y + h/2;
+  const rot = o.rot || 0;
+
+  ctx.save();
+  ctx.translate(cx, cy);
+  ctx.rotate(rot);
+
+  // Dashed border
+  ctx.strokeStyle = 'rgba(0,255,255,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
+  ctx.strokeRect(-w/2 - 2, -h/2 - 2, w + 4, h + 4);
+  ctx.setLineDash([]);
+
+  // Corner + edge handles
+  ctx.fillStyle = 'rgba(0,255,255,0.8)';
+  const pts = [
+    [-w/2,-h/2],[0,-h/2],[w/2,-h/2],
+    [-w/2,0],[w/2,0],
+    [-w/2,h/2],[0,h/2],[w/2,h/2],
+  ];
+  for (const [px,py] of pts) ctx.fillRect(px-hs/2, py-hs/2, hs, hs);
+
+  // Rotation handle — above in local space
+  const rotDist = Math.max(40, h/2 + 25);
+  ctx.strokeStyle = 'rgba(0,255,255,0.3)'; ctx.lineWidth = 1;
+  ctx.beginPath(); ctx.moveTo(0, 0); ctx.lineTo(0, -rotDist); ctx.stroke();
+  ctx.fillStyle = 'rgba(0,255,255,0.8)';
+  ctx.beginPath(); ctx.arc(0, -rotDist, 7, 0, Math.PI*2); ctx.fill();
+
+  // Angle label
+  if (rot) {
+    ctx.fillStyle = 'rgba(0,255,255,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
+    ctx.rotate(-rot); // unrotate for readable text
+    ctx.fillText(Math.round(rot * 180/Math.PI) + '°', 0, -rotDist - 12);
   }
 
-  // Type label
+  ctx.restore();
+
+  // Type label (screen space)
   ctx.fillStyle = 'rgba(0,255,255,0.7)'; ctx.font = '600 11px Urbanist'; ctx.textAlign = 'left';
-  const lx = edSel.type === 'bumper' ? o.x - camX + o.r + 10 : o.x - camX;
-  const ly = edSel.type === 'bumper' ? o.y - o.r - 8 : o.y - 8;
-  ctx.fillText(edSel.type.toUpperCase() + (o.rot ? ' ' + Math.round(o.rot*180/Math.PI) + '°' : ''), lx, ly);
+  ctx.fillText(edSel.type.toUpperCase() + (rot ? ' ' + Math.round(rot*180/Math.PI) + '°' : ''), cx - w/2, cy - h/2 - 10);
 }
 
 function edToolbarRect() {
@@ -1484,9 +1491,16 @@ function animate(time){
     if(state==='thrown'&&cube){
       const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
       camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
-      // Follow cube vertically if it goes below screen
-      const camTargetY = Math.max(0, cube.y - H * 0.6);
-      camY += (camTargetY - camY) * 0.08;
+      // Only follow Y if the level extends below the screen (death zone below H)
+      const dY = getDeathY();
+      if (dY > H) {
+        // Shift down only when cube is near the bottom edge
+        if (cube.y > H * 0.9 + camY) {
+          camY += (cube.y - H * 0.5 - camY) * 0.04;
+        } else if (cube.y < camY + H * 0.2 && camY > 0) {
+          camY += (0 - camY) * 0.06;
+        }
+      }
     } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
     camX+=(camTargetX-camX)*0.08;
   }
