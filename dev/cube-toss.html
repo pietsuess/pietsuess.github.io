@@ -780,6 +780,7 @@ function onDown(e){
         edSel = null;
       } else if (tbAction === 'export') { edExport(); }
       else if (tbAction === 'undo') { edPopUndo(); }
+      else if (tbAction === 'import') { edImport(); }
       else if (tbAction === 'snap') { edSnap = !edSnap; }
       else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper') {
         edAddMode = edAddMode === tbAction ? null : tbAction;
@@ -1155,7 +1156,7 @@ function edDrawHandles() {
 }
 
 function edDrawToolbar() {
-  const tw = 790, th = 44;
+  const tw = 840, th = 44;
   const tx = (W - tw) / 2, ty = H - th - 10;
 
   // Background
@@ -1172,9 +1173,10 @@ function edDrawToolbar() {
     { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
     { label: 'DUPE', x: tx + 360, action: 'dupe' },
     { label: 'DELETE', x: tx + 445, action: 'delete' },
-    { label: 'EXPORT', x: tx + 540, action: 'export' },
-    { label: 'UNDO', x: tx + 635, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 730, action: 'snap' },
+    { label: 'SAVE', x: tx + 525, action: 'export' },
+    { label: 'LOAD', x: tx + 605, action: 'import' },
+    { label: 'UNDO', x: tx + 685, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 775, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1191,7 +1193,7 @@ function edDrawToolbar() {
 }
 
 function edToolbarHit(px, py) {
-  const tw = 790, th = 44;
+  const tw = 840, th = 44;
   const tx = (W - tw) / 2, ty = H - th - 10;
   if (py < ty || py > ty + th || px < tx || px > tx + tw) return null;
 
@@ -1201,9 +1203,10 @@ function edToolbarHit(px, py) {
     { label: '+ BUMPER', x: tx + 265, action: 'bumper' },
     { label: 'DUPE', x: tx + 360, action: 'dupe' },
     { label: 'DELETE', x: tx + 445, action: 'delete' },
-    { label: 'EXPORT', x: tx + 540, action: 'export' },
-    { label: 'UNDO', x: tx + 635, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 730, action: 'snap' },
+    { label: 'SAVE', x: tx + 525, action: 'export' },
+    { label: 'LOAD', x: tx + 605, action: 'import' },
+    { label: 'UNDO', x: tx + 685, action: 'undo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 775, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1212,42 +1215,102 @@ function edToolbarHit(px, py) {
   return null;
 }
 
-function edExport() {
-  const lv = getCurrentLevel();
-  const lines = ['{'];
-  lines.push(`  name: '${lv.name}',`);
-  lines.push(`  par: ${lv.par},`);
-  lines.push('  walls: [');
-  for (const w of lv.walls) {
-    const rot = w.rot ? `, rot: ${w.rot.toFixed(3)}` : '';
-    lines.push(`    { x: ${Math.round(w.x)}, y: H * ${(w.y/H).toFixed(3)}, w: ${Math.round(w.w)}, h: H * ${(w.h/H).toFixed(3)}${rot} },`);
-  }
-  lines.push('  ],');
-  lines.push('  platforms: [');
-  for (const p of lv.platforms) {
-    const rot = p.rot ? `, rot: ${p.rot.toFixed(3)}` : '';
-    lines.push(`    { x: ${Math.round(p.x)}, y: H * ${(p.y/H).toFixed(3)}, w: ${Math.round(p.w)}${rot} },`);
-  }
-  lines.push('  ],');
-  lines.push('  bumpers: [');
-  for (const b of lv.bumpers)
-    lines.push(`    { x: ${Math.round(b.x)}, y: H * ${(b.y/H).toFixed(3)}, r: ${Math.round(b.r)} },`);
-  lines.push('  ],');
-  const g = lv.goal;
-  lines.push(`  goal: { x: ${Math.round(g.x)}, y: H * ${(g.y/H).toFixed(3)}, w: ${Math.round(g.w)}, h: H * ${(g.h/H).toFixed(3)} },`);
-  if (lv.backWall) {
-    const bw = lv.backWall;
-    lines.push(`  backWall: { x: ${Math.round(bw.x)}, y: ${Math.round(bw.y)}, w: ${Math.round(bw.w)}, h: H },`);
-  }
-  lines.push(`  width: ${Math.round(lv.width)},`);
-  if (lv.throwLineX) lines.push(`  throwLineX: ${Math.round(lv.throwLineX)},`);
-  if (lv.releaseLineX) lines.push(`  releaseLineX: ${Math.round(lv.releaseLineX)},`);
-  lines.push('}');
-  const text = lines.join('\n');
-  navigator.clipboard.writeText(text).then(() => {
-    showMsg('LEVEL EXPORTED TO CLIPBOARD', 1.5);
-  });
+// Serialize a level to a plain object (no H references, store ratios)
+function serializeLevel(lv) {
+  return {
+    name: lv.name, par: lv.par, width: lv.width,
+    throwLineX: lv.throwLineX || null,
+    releaseLineX: lv.releaseLineX || null,
+    walls: lv.walls.map(w => ({ x: w.x, yR: w.y/H, w: w.w, hR: w.h/H, rot: w.rot||0 })),
+    platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/H, w: p.w, rot: p.rot||0 })),
+    bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/H, r: b.r })),
+    goal: { x: lv.goal.x, yR: lv.goal.y/H, w: lv.goal.w, hR: lv.goal.h/H },
+    backWall: lv.backWall ? { x: lv.backWall.x, w: lv.backWall.w } : null,
+  };
 }
+
+// Deserialize back (apply current H)
+function deserializeLevel(d) {
+  return {
+    name: d.name, par: d.par, width: d.width,
+    throwLineX: d.throwLineX || null,
+    releaseLineX: d.releaseLineX || null,
+    walls: d.walls.map(w => ({ x: w.x, y: w.yR * H, w: w.w, h: w.hR * H, rot: w.rot||0 })),
+    platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * H, w: p.w, rot: p.rot||0 })),
+    bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * H, r: b.r })),
+    goal: { x: d.goal.x, y: d.goal.yR * H, w: d.goal.w, h: d.goal.hR * H },
+    backWall: d.backWall ? { x: d.backWall.x, y: 0, w: d.backWall.w, h: H } : null,
+  };
+}
+
+// Save all levels to localStorage
+function edSaveLocal() {
+  const data = LEVELS.map(serializeLevel);
+  localStorage.setItem('cubeTossLevels', JSON.stringify(data));
+}
+
+// Load levels from localStorage
+function edLoadLocal() {
+  const raw = localStorage.getItem('cubeTossLevels');
+  if (!raw) return false;
+  try {
+    const data = JSON.parse(raw);
+    if (!Array.isArray(data) || data.length === 0) return false;
+    for (let i = 0; i < data.length && i < LEVELS.length; i++) {
+      Object.assign(LEVELS[i], deserializeLevel(data[i]));
+    }
+    // Add any extra levels beyond the defaults
+    for (let i = LEVELS.length; i < data.length; i++) {
+      LEVELS.push(deserializeLevel(data[i]));
+    }
+    return true;
+  } catch(e) { return false; }
+}
+
+// Export all levels as JSON file download
+function edExport() {
+  const data = LEVELS.map(serializeLevel);
+  const json = JSON.stringify(data, null, 2);
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'cube-toss-levels.json';
+  a.click();
+  URL.revokeObjectURL(url);
+  edSaveLocal();
+  showMsg('LEVELS SAVED', 1.5);
+}
+
+// Import levels from JSON file
+function edImport() {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.onchange = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const data = JSON.parse(ev.target.result);
+        if (!Array.isArray(data)) throw 'not array';
+        LEVELS.length = 0;
+        for (const d of data) LEVELS.push(deserializeLevel(d));
+        level = 0; resetCube(); edSaveLocal();
+        showMsg(`LOADED ${LEVELS.length} LEVELS`, 1.5);
+      } catch(err) { showMsg('IMPORT FAILED', 1.5); }
+    };
+    reader.readAsText(file);
+  };
+  input.click();
+}
+
+// Auto-save on every edit action
+const _origPushUndo = edPushUndo;
+edPushUndo = function() { _origPushUndo(); edSaveLocal(); };
+
+// Load saved levels on startup
+edLoadLocal();
 
 // Keyboard shortcuts
 window.addEventListener('keydown', (e) => {
