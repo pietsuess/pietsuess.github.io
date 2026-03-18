@@ -4075,7 +4075,10 @@ function update(){
   const BOOST_MAX=(state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
-  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? 0.9995 : (spd_now>BASE_MAX*1.2 ? 0.988 : 0.965));
+  const _inRaceFric = _race.active || _race.showApproach;
+  const _normalFric = _inRaceFric ? 0.94 : 0.965; // tighter drag in race
+  const _boostFric = _inRaceFric ? 0.998 : 0.9995; // tighter boost drag in race
+  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
   if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&state.fuel<=0.005&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer&&!state._lastGaspFired){
@@ -4143,7 +4146,8 @@ function update(){
     if(state.keys['ArrowDown']){state.vx-=Math.sin(state.angle)*BASE_ACCEL*0.5;state.vy+=Math.cos(state.angle)*BASE_ACCEL*0.5;}
   }
   if(!wormholeTransition){
-    const turnRate=state.cheat==='peanut'?0.13:0.06;
+    const _inRace = _race.active || _race.showApproach;
+    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.09:0.06);
     if(state.keys['ArrowLeft'])state.angle-=turnRate;
     if(state.keys['ArrowRight'])state.angle+=turnRate;
   }
@@ -5710,6 +5714,8 @@ function update(){
   updateGateCollisions();
   updateStartGateBarrier();
   updateRaceBorderCollision();
+  // Race zoom lerp — smooth transition
+  _race.zoom += (_race.zoomTarget - _race.zoom) * 0.04;
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -7184,6 +7190,14 @@ function drawGame(){
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
 
+  // Race zoom: scale world around player (screen center)
+  if(_race.zoom > 1.01){
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(_race.zoom, _race.zoom);
+    ctx.translate(-cx, -cy);
+  }
+
   // Victory zoom: scale world around Earth center
   if(state._victoryPhase==='zoom'){
     const z=state._victoryZoom;
@@ -8393,6 +8407,9 @@ function drawGame(){
   // drawMars(ctx, cx, cy);  // HIDDEN FOR NOW
   drawDebrisWall(ctx, cx, cy);
   drawRaceCourse(ctx, cx, cy);
+
+  // Close race zoom
+  if(_race.zoom > 1.01){ ctx.restore(); }
 
   if(state._victoryPhase==='zoom'){
     ctx.restore();
@@ -10566,8 +10583,10 @@ const _race = {
   finishTimer: 0,
   nearStart: false,
   showApproach: false,
-  // Track which side of each gate the ship is on (for crossing detection)
-  _gateSides: [], // +1 or -1 per gate, based on dot product with gate normal
+  _gateSides: [],
+  // Race zoom — smoothly lerps toward target
+  zoom: 1.0,       // current zoom level (1.0 = normal)
+  zoomTarget: 1.0, // what we're lerping toward
 };
 
 function initRaceCourse(idx){
@@ -10686,11 +10705,13 @@ function updateRace(){
   const dx = state.x - course.startWX, dy = state.y - course.startWY;
   const distToStart = Math.sqrt(dx*dx + dy*dy);
 
-  // Show instructions when approaching start area
+  // Show instructions when approaching start area + start zooming in
   if(!_race.active && !_race.finished && distToStart < 500){
     _race.showApproach = true;
-  } else if(distToStart > 600){
+    _race.zoomTarget = 1.8; // zoom in as you approach
+  } else if(distToStart > 600 && !_race.active){
     _race.showApproach = false;
+    _race.zoomTarget = 1.0; // zoom back out
   }
 
   // Approach start gate — trigger countdown
@@ -10734,6 +10755,7 @@ function updateRace(){
     if(allGatesPassed && fDist < 250){
       _race.finished = true;
       _race.finishTimer = 300;
+      _race.zoomTarget = 1.0; // zoom back out on finish
       const timeMs = Math.round(_race.timer / 60 * 1000);
       if(!_race.bestTime || timeMs < _race.bestTime) _race.bestTime = timeMs;
       const finishBonus = 500;
