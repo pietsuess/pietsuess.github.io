@@ -4619,7 +4619,7 @@ function update(){
         _bp.phase += 0.05;
         if(_bp._cooldown > 0){ _bp._cooldown--; continue; }
         const _dx = state.x - _bp.wx, _dy = state.y - _bp.wy;
-        if(_dx * _dx + _dy * _dy < 30 * 30){
+        if(_dx * _dx + _dy * _dy < 60 * 60){
           _bp._cooldown = 180;
           // Hold velocity at 36 for 2 seconds
           state._boostPadEffect = 120;
@@ -7989,22 +7989,22 @@ function drawGame(){
         const _isReward = bp._interzoneReward;
         ctx.shadowBlur = 0;
         ctx.lineJoin = 'round';
-        // Glow layer (wider, translucent — cheap fake glow)
+        // Glow layer (2x bigger to match 60px hit zone)
         ctx.strokeStyle = _isReward ? 'rgba(0,255,204,0.25)' : 'rgba(0,255,136,0.2)';
-        ctx.lineWidth = _isReward ? 10 : 8;
+        ctx.lineWidth = _isReward ? 16 : 14;
         ctx.beginPath();
-        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
-        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
+        ctx.moveTo(-40, -32); ctx.lineTo(0, 0); ctx.lineTo(-40, 32);
+        ctx.moveTo(-8, -32); ctx.lineTo(32, 0); ctx.lineTo(-8, 32);
         ctx.stroke();
-        // Chevron core
+        // Chevron core (2x bigger)
         ctx.strokeStyle = _isReward ? '#00ffcc' : '#00ff88';
         ctx.fillStyle = _isReward ? 'rgba(0,255,204,0.35)' : 'rgba(0,255,136,0.25)';
-        ctx.lineWidth = _isReward ? 4.5 : 3.5;
+        ctx.lineWidth = _isReward ? 7 : 6;
         ctx.beginPath();
-        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
+        ctx.moveTo(-40, -32); ctx.lineTo(0, 0); ctx.lineTo(-40, 32);
         ctx.stroke(); ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
+        ctx.moveTo(-8, -32); ctx.lineTo(32, 0); ctx.lineTo(-8, 32);
         ctx.stroke(); ctx.fill();
         ctx.restore();
       }
@@ -10595,25 +10595,25 @@ function updateGateCollisions(){
     }
     _race._gateSides[i] = side;
 
-    // Wall collision — only if ship is near the gate plane
-    if(Math.abs(localPerp) < shipR + 4){
+    // Wall collision — thick zone so boost x2 can't fly through
+    if(Math.abs(localPerp) < shipR + 40){
       const halfGap = g.gapSize / 2;
       const halfWall = g.wallLen / 2;
       // Ship is in wall zone if along-axis is outside gap but inside wall
       if(Math.abs(localAlong) > halfGap && Math.abs(localAlong) < halfWall){
-        // Bounce off gate wall
+        // Push ship out of wall
         const pushDir = localPerp > 0 ? 1 : -1;
-        const pushDist = (shipR + 4) - Math.abs(localPerp);
-        state.x += gnx * pushDir * (pushDist + 2);
-        state.y += gny * pushDir * (pushDist + 2);
-        // Reflect velocity off gate normal
+        const pushDist = (shipR + 40) - Math.abs(localPerp);
+        state.x += gnx * pushDir * (pushDist + 4);
+        state.y += gny * pushDir * (pushDist + 4);
+        // Gentle reflect — kill most of the into-wall velocity, keep sliding
         const vDot = state.vx * gnx * pushDir + state.vy * gny * pushDir;
         if(vDot < 0){
-          state.vx -= 1.5 * vDot * gnx * pushDir;
-          state.vy -= 1.5 * vDot * gny * pushDir;
-          // Dampen a bit
-          state.vx *= 0.7;
-          state.vy *= 0.7;
+          state.vx -= 1.2 * vDot * gnx * pushDir;
+          state.vy -= 1.2 * vDot * gny * pushDir;
+          // Light dampen — not violent
+          state.vx *= 0.85;
+          state.vy *= 0.85;
         }
         state.collisionFlash = 4;
         if(audioCtx && !state.sfxMuted){
@@ -10843,19 +10843,16 @@ function updateStartGateBarrier(){
 
   const gateX = course.startWX;
   const gateHalfH = START_FINISH_H / 2;
-  const shipR = 10;
-  // Simple X-plane barrier
+  // Thick barrier zone — 50px wide so even boost x2 can't punch through
+  const barrierHalf = 50;
   const dx = state.x - gateX;
-  if(Math.abs(dx) < shipR + 6){
+  if(Math.abs(dx) < barrierHalf){
     const dy = state.y - course.startWY;
     if(Math.abs(dy) < gateHalfH){
-      // Push ship back
-      const pushDir = dx > 0 ? 1 : -1;
-      state.x = gateX + pushDir * (shipR + 8);
-      // Kill forward velocity into the gate
-      if((pushDir > 0 && state.vx < 0) || (pushDir < 0 && state.vx > 0)){
-        state.vx = -state.vx * 0.3;
-      }
+      // Hard stop — push ship to the approach side and kill all forward velocity
+      state.x = gateX - barrierHalf - 4;
+      // Zero out any velocity toward the gate
+      if(state.vx > 0) state.vx = 0;
       state.collisionFlash = 3;
       if(audioCtx && !state.sfxMuted){
         playBeep(80, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
