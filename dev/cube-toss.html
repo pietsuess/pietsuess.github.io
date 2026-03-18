@@ -69,6 +69,97 @@ let attempts = 0;
 let showMessage = '';
 let messageTimer = 0;
 
+// ─── SCORECARD ───
+let scorecard = []; // [{throws, par, name}] per completed level
+let totalThrows = 0;
+
+// ─── SOUND EFFECTS (Web Audio API) ───
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+
+function playSound(type) {
+  try {
+    const now = audioCtx.currentTime;
+    const g = audioCtx.createGain();
+    g.connect(audioCtx.destination);
+
+    if (type === 'throw') {
+      // Whoosh — noise burst with filter sweep
+      const dur = 0.15;
+      const buf = audioCtx.createBuffer(1, audioCtx.sampleRate * dur, audioCtx.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < data.length; i++) data[i] = (Math.random() * 2 - 1) * (1 - i/data.length);
+      const src = audioCtx.createBufferSource();
+      src.buffer = buf;
+      const filt = audioCtx.createBiquadFilter();
+      filt.type = 'bandpass'; filt.frequency.setValueAtTime(2000, now);
+      filt.frequency.exponentialRampToValueAtTime(500, now + dur);
+      g.gain.setValueAtTime(0.15, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + dur);
+      src.connect(filt); filt.connect(g); src.start(now);
+    }
+    else if (type === 'bounce') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'triangle'; osc.frequency.setValueAtTime(220, now);
+      osc.frequency.exponentialRampToValueAtTime(110, now + 0.08);
+      g.gain.setValueAtTime(0.12, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.08);
+    }
+    else if (type === 'bumper') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(880, now);
+      osc.frequency.exponentialRampToValueAtTime(440, now + 0.12);
+      g.gain.setValueAtTime(0.2, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.12);
+    }
+    else if (type === 'goal') {
+      // Celebration — ascending chord
+      [523, 659, 784].forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gn = audioCtx.createGain();
+        osc.type = 'sine'; osc.frequency.value = freq;
+        gn.gain.setValueAtTime(0, now + i * 0.08);
+        gn.gain.linearRampToValueAtTime(0.15, now + i * 0.08 + 0.05);
+        gn.gain.exponentialRampToValueAtTime(0.001, now + 0.5);
+        osc.connect(gn); gn.connect(audioCtx.destination);
+        osc.start(now + i * 0.08); osc.stop(now + 0.5);
+      });
+    }
+    else if (type === 'death') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sawtooth'; osc.frequency.setValueAtTime(300, now);
+      osc.frequency.exponentialRampToValueAtTime(60, now + 0.3);
+      g.gain.setValueAtTime(0.1, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.3);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.3);
+    }
+    else if (type === 'click') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine'; osc.frequency.value = 600;
+      g.gain.setValueAtTime(0.08, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.04);
+    }
+    else if (type === 'grab') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(400, now);
+      osc.frequency.exponentialRampToValueAtTime(500, now + 0.06);
+      g.gain.setValueAtTime(0.1, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.06);
+    }
+    else if (type === 'cancel') {
+      const osc = audioCtx.createOscillator();
+      osc.type = 'sine'; osc.frequency.setValueAtTime(500, now);
+      osc.frequency.exponentialRampToValueAtTime(300, now + 0.08);
+      g.gain.setValueAtTime(0.08, now);
+      g.gain.exponentialRampToValueAtTime(0.001, now + 0.08);
+      osc.connect(g); osc.start(now); osc.stop(now + 0.08);
+    }
+  } catch(e) {}
+}
+
 // ─── WALKING CUBES (size = club choice) ───
 // Big: heavy, low bounce, high momentum — punches through bumpers, rolls far
 // Small: light, high bounce, less momentum — trick shots, fits tight gaps
@@ -581,7 +672,7 @@ function collideCubeWalls(c, lv) {
   const half = c.size / 2;
   const B = BOUNCE * (c.bounce || 1); // per-cube bounce
   // Death zone — cube crosses the death bar
-  if (c.y - half > getDeathY()) { c._fellOff = true; }
+  if (c.y - half > getDeathY() && !c._fellOff) { c._fellOff = true; playSound('death'); }
   if (c.y - half < 0) { c.y = half; c.vy *= -B; }
   if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
   if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
@@ -608,6 +699,7 @@ function collideCubeWalls(c, lv) {
   for (const b of lv.bumpers) {
     const dx=c.x-b.x, dy=c.y-b.y, dist=Math.sqrt(dx*dx+dy*dy), md=half+b.r;
     if (dist<md && dist>0) {
+      playSound('bumper');
       const nx=dx/dist, ny=dy/dist;
       c.x=b.x+nx*md; c.y=b.y+ny*md;
       // Full reflection (no energy loss)
@@ -633,6 +725,8 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
   if (!rot) {
     // No rotation — use fast AABB
     if (!rectOverlap(c.x-half, c.y-half, half*2, half*2, rx, ry, rw, rh)) return;
+    const spd=Math.sqrt(c.vx*c.vx+c.vy*c.vy);
+    if(spd>30)playSound('bounce');
     const ol=(c.x+half)-rx, or2=(rx+rw)-(c.x-half);
     const ot=(c.y+half)-ry, ob=(ry+rh)-(c.y-half);
     const m=Math.min(ol,or2,ot,ob);
@@ -680,6 +774,7 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
     const nx = pushWX/pushLen, ny = pushWY/pushLen;
     const dot = c.vx*nx + c.vy*ny;
     if (dot < 0) { // only if moving into the wall
+      if (Math.abs(dot) > 30) playSound('bounce');
       c.vx -= 2 * dot * nx;
       c.vy -= 2 * dot * ny;
       c.vx *= B; c.vy *= B;
@@ -715,7 +810,11 @@ function updateCube(c, dt) {
       inGoal = c.x > g.x && c.x < g.x + g.w && c.y > g.y + c.size/2 && c.y < g.y + g.h - c.size/2;
     }
     if (inGoal) {
-      state = 'won'; showMsg('LEVEL CLEAR!', 2.5); break;
+      state = 'won'; showMsg('LEVEL CLEAR!', 2.5);
+      playSound('goal');
+      scorecard[level] = { throws: attempts, par: lv.par, name: lv.name };
+      totalThrows += attempts;
+      break;
     }
   }
 
@@ -773,13 +872,44 @@ function onDown(e){
   // Level jumper menu
   const ljx = 15, ljyBtn = 60;
   if (levelMenuOpen) {
-    const mw = 200, mx = ljx, my = ljyBtn + 30;
-    const mh = Math.min(LEVELS.length * 30 + 8, H * 0.6);
-    // Click inside menu = select level
+    const mw = 240, rowH = 30, mx = ljx, my = ljyBtn + 30;
+    const mh = Math.min((LEVELS.length + 1) * rowH + 8, H * 0.6);
+    // Click inside menu
     if (p.x >= mx && p.x <= mx + mw && p.y >= my && p.y <= my + mh) {
-      const idx = Math.floor((p.y - my - 4 + levelMenuScroll) / 30);
+      const idx = Math.floor((p.y - my - 4 + levelMenuScroll) / rowH);
+      // ADD LEVEL button
+      if (idx === LEVELS.length) {
+        const newLv = {
+          name: 'NEW LEVEL', par: 3, width: 1000,
+          walls: [], platforms: [], bumpers: [], hintMarkers: [],
+          goal: { x: 700, y: H*0.4, w: 80, h: H*0.2, rot: 0 },
+          backWall: { x: 780, y: 0, w: 25, h: H, rot: 0 },
+        };
+        LEVELS.push(newLv);
+        level = LEVELS.length - 1; attempts = 0; resetCube();
+        levelMenuOpen = false; edSaveLocal(); playSound('click');
+        return;
+      }
+      // Reorder arrows (editor mode, right side of row)
+      if (editorMode && idx >= 0 && idx < LEVELS.length && p.x > mx + mw - 35) {
+        const iy = my + 4 + idx * rowH - levelMenuScroll;
+        const clickY = p.y - iy;
+        if (clickY < 15 && idx > 0) {
+          // Move up
+          [LEVELS[idx], LEVELS[idx-1]] = [LEVELS[idx-1], LEVELS[idx]];
+          if (level === idx) level--; else if (level === idx-1) level++;
+          edSaveLocal(); playSound('click'); return;
+        }
+        if (clickY >= 15 && idx < LEVELS.length-1) {
+          // Move down
+          [LEVELS[idx], LEVELS[idx+1]] = [LEVELS[idx+1], LEVELS[idx]];
+          if (level === idx) level++; else if (level === idx+1) level--;
+          edSaveLocal(); playSound('click'); return;
+        }
+      }
+      // Select level
       if (idx >= 0 && idx < LEVELS.length) {
-        level = idx; attempts = 0; resetCube(); levelMenuOpen = false;
+        level = idx; attempts = 0; resetCube(); levelMenuOpen = false; playSound('click');
       }
       return;
     }
@@ -942,7 +1072,7 @@ function onDown(e){
   }
   if(state==='won'){
     const nb=nextBtnBounds();
-    if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){level++;attempts=0;resetCube();return;}
+    if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){level++;attempts=0;resetCube();playSound('click');return;}
     return; // only next button works in won state
   }
   if(state==='lost'){resetCube();return;}
@@ -966,7 +1096,7 @@ function onDown(e){
       const d = Math.abs(p.y - cubeScreenY) + Math.abs(p.x - (cubeScreenX - camX));
       if(d<bestDist){bestDist=d;bestWk=wk;}
     }
-    grabbing=true;velSamples=[];lastMoveTime=performance.now();
+    grabbing=true;velSamples=[];lastMoveTime=performance.now();playSound('grab');
     cube=spawnCube(wx,p.y,bestWk);
     state='aiming';canvas.style.cursor='grabbing';
   }
@@ -1024,7 +1154,7 @@ function onUp(e){
       doThrow();
     } else {
       // Cancel -- put cube back
-      cube=null; state='ready'; canvas.style.cursor='default';
+      cube=null; state='ready'; canvas.style.cursor='default'; playSound('cancel');
     }
   }
   grabbing=false;
@@ -1038,6 +1168,7 @@ function doThrow(){
   if(velSamples.length>0){for(const s of velSamples){ax+=s.vx;ay+=s.vy;}ax/=velSamples.length;ay/=velSamples.length;}
   else{ax=(mouseX-prevMX)*60;ay=(mouseY-prevMY)*60;}
   cube.vx=ax;cube.vy=ay;cube.angVel=cube.vx*0.02;velSamples=[];canvas.style.cursor='default';
+  playSound('throw');
 }
 
 // ═══════════════════════════════════════════════════════
@@ -1812,7 +1943,8 @@ function animate(time){
 
   // Dropdown menu
   if (levelMenuOpen) {
-    const mw = 200, mh = Math.min(LEVELS.length * 30 + 8, H * 0.6);
+    const mw = 240, rowH = 30;
+    const mh = Math.min((LEVELS.length + 1) * rowH + 8, H * 0.6);
     const mx = ljx, my = ljy + 30;
     // Background
     roundRectPath(mx, my, mw, mh, 10);
@@ -1822,16 +1954,43 @@ function animate(time){
     ctx.save();
     ctx.beginPath(); ctx.rect(mx, my, mw, mh); ctx.clip();
     for (let i = 0; i < LEVELS.length; i++) {
-      const iy = my + 4 + i * 30 - levelMenuScroll;
-      if (iy < my - 30 || iy > my + mh) continue;
+      const iy = my + 4 + i * rowH - levelMenuScroll;
+      if (iy < my - rowH || iy > my + mh) continue;
       const isActive = i === level;
       if (isActive) {
         ctx.fillStyle = 'rgba(244,197,66,0.15)';
-        ctx.fillRect(mx + 4, iy, mw - 8, 28);
+        ctx.fillRect(mx + 4, iy, mw - 8, rowH - 2);
       }
+      // Level name
       ctx.fillStyle = isActive ? COL.gold : 'rgba(254,249,240,0.6)';
       ctx.font = '500 12px Urbanist'; ctx.textAlign = 'left';
       ctx.fillText(`${i+1}. ${LEVELS[i].name}`, mx + 12, iy + 18);
+      // Score if completed
+      if (scorecard[i]) {
+        ctx.fillStyle = scorecard[i].throws <= scorecard[i].par ? 'rgba(100,255,140,0.5)' : 'rgba(254,249,240,0.3)';
+        ctx.font = '400 10px Poppins'; ctx.textAlign = 'right';
+        ctx.fillText(`${scorecard[i].throws}/${scorecard[i].par}`, mx + mw - 50, iy + 18);
+      }
+      // Reorder arrows (editor mode only)
+      if (editorMode) {
+        ctx.fillStyle = 'rgba(254,249,240,0.3)';
+        // Up arrow
+        if (i > 0) {
+          ctx.beginPath(); ctx.moveTo(mx+mw-30, iy+12); ctx.lineTo(mx+mw-24, iy+6); ctx.lineTo(mx+mw-18, iy+12); ctx.closePath(); ctx.fill();
+        }
+        // Down arrow
+        if (i < LEVELS.length-1) {
+          ctx.beginPath(); ctx.moveTo(mx+mw-30, iy+18); ctx.lineTo(mx+mw-24, iy+24); ctx.lineTo(mx+mw-18, iy+18); ctx.closePath(); ctx.fill();
+        }
+      }
+    }
+    // ADD LEVEL button at bottom
+    const addY = my + 4 + LEVELS.length * rowH - levelMenuScroll;
+    if (addY > my && addY < my + mh) {
+      ctx.fillStyle = 'rgba(244,197,66,0.15)';
+      ctx.fillRect(mx + 4, addY, mw - 8, rowH - 2);
+      ctx.fillStyle = COL.gold; ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
+      ctx.fillText('+ ADD LEVEL', mx + mw/2, addY + 18);
     }
     ctx.restore();
   }
@@ -1955,6 +2114,10 @@ function animate(time){
     ctx.font='500 16px Poppins';ctx.fillStyle=COL.cream;
     ctx.globalAlpha=0.7;
     ctx.fillText(pt,W/2,H*0.38+35);
+
+    // Scorecard summary
+    ctx.font='400 13px Poppins';ctx.fillStyle=COL.cream;ctx.globalAlpha=0.45;
+    ctx.fillText(`Throws: ${attempts}  |  Par: ${lv.par}  |  Total: ${totalThrows}`,W/2,H*0.38+55);
     ctx.restore();
 
     // NEXT LEVEL button
