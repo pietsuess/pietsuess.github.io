@@ -5709,6 +5709,7 @@ function update(){
   updateRace();
   updateGateCollisions();
   updateStartGateBarrier();
+  updateRaceBorderCollision();
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -10494,9 +10495,61 @@ function _buildRaceDots(course){
       south.push({ wx: wx - nx * RACE_BORDER_HALF, wy: wy - ny * RACE_BORDER_HALF });
     }
   }
-  return { north, south };
+  // Also store center + normal for collision
+  const centerPts = [];
+  for(let i = 0; i < pts.length - 1; i++){
+    const ax = pts[i].wx, ay = pts[i].wy;
+    const bx = pts[i+1].wx, by = pts[i+1].wy;
+    const sdx2 = bx - ax, sdy2 = by - ay;
+    const segLen2 = Math.sqrt(sdx2*sdx2 + sdy2*sdy2) || 1;
+    const steps2 = Math.max(1, Math.round(segLen2 / 120)); // coarser for collision
+    const nx2 = -(sdy2/segLen2), ny2 = sdx2/segLen2;
+    for(let s = 0; s <= steps2; s++){
+      const t2 = s / steps2;
+      centerPts.push({ wx: ax + sdx2 * t2, wy: ay + sdy2 * t2, nx: nx2, ny: ny2 });
+    }
+  }
+  return { north, south, center: centerPts };
 }
 const _raceDots = _buildRaceDots(RACE_COURSES[0]);
+
+// ── Raceway border collision — keeps ship inside the dot walls during race ──
+function updateRaceBorderCollision(){
+  if(!_race.started || _race.finished) return;
+  const course = RACE_COURSES[_race.courseIdx];
+  if(!course) return;
+  // Only enforce when ship is within the course X range
+  if(state.x < course.startWX - 200 || state.x > course.finishWX + 200) return;
+
+  // Find nearest center point
+  const cPts = _raceDots.center;
+  let bestIdx = 0, bestDist2 = Infinity;
+  for(let i = 0; i < cPts.length; i++){
+    const dx = state.x - cPts[i].wx, dy = state.y - cPts[i].wy;
+    const d2 = dx*dx + dy*dy;
+    if(d2 < bestDist2){ bestDist2 = d2; bestIdx = i; }
+  }
+
+  const cp = cPts[bestIdx];
+  const shipDx = state.x - cp.wx, shipDy = state.y - cp.wy;
+  const perpDist = shipDx * cp.nx + shipDy * cp.ny; // signed distance from center
+
+  if(Math.abs(perpDist) > RACE_BORDER_HALF - 10){
+    // Ship is hitting the border — push back, absorb perpendicular velocity
+    const sign = perpDist > 0 ? 1 : -1;
+    const pushAmt = Math.abs(perpDist) - (RACE_BORDER_HALF - 12);
+    state.x -= sign * cp.nx * pushAmt;
+    state.y -= sign * cp.ny * pushAmt;
+    // Cancel the into-wall velocity component, keep sliding
+    const vDot = (state.vx * cp.nx + state.vy * cp.ny) * sign;
+    if(vDot > 0){
+      state.vx -= vDot * cp.nx * sign;
+      state.vy -= vDot * cp.ny * sign;
+      state.vx *= 0.95;
+      state.vy *= 0.95;
+    }
+  }
+}
 
 // Race state
 const _race = {
@@ -10601,19 +10654,20 @@ function updateGateCollisions(){
       const halfWall = g.wallLen / 2;
       // Ship is in wall zone if along-axis is outside gap but inside wall
       if(Math.abs(localAlong) > halfGap && Math.abs(localAlong) < halfWall){
-        // Push ship out of wall
+        // Push ship just outside the wall — minimal displacement
         const pushDir = localPerp > 0 ? 1 : -1;
         const pushDist = (shipR + 40) - Math.abs(localPerp);
-        state.x += gnx * pushDir * (pushDist + 4);
-        state.y += gny * pushDir * (pushDist + 4);
-        // Gentle reflect — kill most of the into-wall velocity, keep sliding
+        state.x += gnx * pushDir * (pushDist + 2);
+        state.y += gny * pushDir * (pushDist + 2);
+        // Absorb the into-wall component, keep the sliding component
         const vDot = state.vx * gnx * pushDir + state.vy * gny * pushDir;
         if(vDot < 0){
-          state.vx -= 1.2 * vDot * gnx * pushDir;
-          state.vy -= 1.2 * vDot * gny * pushDir;
-          // Light dampen — not violent
-          state.vx *= 0.85;
-          state.vy *= 0.85;
+          // Just cancel the into-wall velocity, no bounce-back
+          state.vx -= vDot * gnx * pushDir;
+          state.vy -= vDot * gny * pushDir;
+          // Very light friction on the slide
+          state.vx *= 0.95;
+          state.vy *= 0.95;
         }
         state.collisionFlash = 4;
         if(audioCtx && !state.sfxMuted){
