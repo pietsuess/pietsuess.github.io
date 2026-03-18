@@ -388,7 +388,7 @@ function simulateTrajectory(lv, startX, startY, vx, vy, cubeSize, bounceMult, gr
     cvx *= 0.998;
 
     // Walls
-    if (cy + half > H) { cy = H - half; cvy = -Math.abs(cvy) * B; }
+    if (cy - half > H + 50) break; // fell off bottom
     if (cy - half < 0) { cy = half; cvy = Math.abs(cvy) * B; }
     if (cx - half < getThrowLine()) { cx = getThrowLine() + half; cvx = Math.abs(cvx) * B; }
 
@@ -570,7 +570,8 @@ function drawCubeAt(x, y, size, angle, color) {
 function collideCubeWalls(c, lv) {
   const half = c.size / 2;
   const B = BOUNCE * (c.bounce || 1); // per-cube bounce
-  if (c.y + half > H) { c.y = H - half; c.vy *= -B; c.angVel += c.vx * 0.008; }
+  // No floor — cube falls off the bottom
+  if (c.y - half > H + 50) { c._fellOff = true; }
   if (c.y - half < 0) { c.y = half; c.vy *= -B; }
   if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
   if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
@@ -706,6 +707,11 @@ function updateCube(c, dt) {
     if(c.trail.length>60)c.trail.shift();
   }
   for(const t of c.trail) t.t*=0.97;
+
+  // Fell off bottom
+  if (c._fellOff && state==='thrown') {
+    state='lost'; showMsg('LOST IN THE VOID', 99); return;
+  }
 
   // Settle check
   const finalSpeed = Math.sqrt(c.vx*c.vx+c.vy*c.vy);
