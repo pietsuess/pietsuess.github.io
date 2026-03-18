@@ -146,7 +146,23 @@ function listen() {
     try {
       const data = JSON.parse(e.data);
       if (data.event !== 'message') return;
-      const msg = JSON.parse(data.message);
+      // Try parsing message body as JSON (text messages)
+      let msg = null;
+      try { msg = JSON.parse(data.message); } catch(e) {}
+      // Handle image attachments (sent via ntfy file upload)
+      if (data.attachment && data.attachment.url) {
+        const id = data.title || data.id;
+        const parts = (data.message || '').split('\n');
+        const sender = parts[0] || 'Unknown';
+        const text = parts.slice(1).join('\n') || '';
+        if (seen.has(id)) return;
+        seen.add(id);
+        const stored = { id, name: sender, text, image: data.attachment.url };
+        storeMessage(stored);
+        addMessage(sender, text, data.attachment.url, sender === name);
+        return;
+      }
+      if (!msg || !msg.id) return;
       if (seen.has(msg.id)) return;
       seen.add(msg.id);
       storeMessage(msg);
@@ -163,37 +179,31 @@ function send() {
   const text = input.value.trim();
   if (!text && !pendingImage) return;
   const id = Date.now() + '-' + Math.random().toString(36).slice(2,8);
-  const msg = { name, id };
-  if (text) msg.text = text;
+
   if (pendingImage) {
-    msg.image = pendingImage;
+    // Always upload images as ntfy attachment (message body has 4KB limit)
+    const blob = dataURLtoBlob(pendingImage);
     clearPreview();
-  }
-  const payload = JSON.stringify(msg);
-  // ntfy.sh has a message size limit; split large images into attachment upload
-  if (payload.length > 45000) {
-    // Upload image as ntfy attachment
     fetch('https://ntfy.sh/' + TOPIC, {
-      method: 'POST',
-      headers: { 'Filename': 'image.jpg' },
-      body: dataURLtoBlob(msg.image)
-    }).then(r => r.json()).then(data => {
-      // Send a text message with attachment URL
-      const attachMsg = { name, id, text: text || '' };
-      if (data.attachment && data.attachment.url) {
-        attachMsg.imageUrl = data.attachment.url;
-      }
-      fetch('https://ntfy.sh/' + TOPIC, {
-        method: 'POST',
-        body: JSON.stringify(attachMsg)
-      });
+      method: 'PUT',
+      headers: {
+        'Filename': 'image.jpg',
+        'Title': id,
+        'X-Message': name + '\n' + (text || '')
+      },
+      body: blob
     });
-  } else {
-    fetch('https://ntfy.sh/' + TOPIC, {
-      method: 'POST',
-      body: payload
-    });
+    input.value = '';
+    input.focus();
+    return;
   }
+
+  // Text-only message
+  const msg = { name, text, id };
+  fetch('https://ntfy.sh/' + TOPIC, {
+    method: 'POST',
+    body: JSON.stringify(msg)
+  });
   input.value = '';
   input.focus();
 }
