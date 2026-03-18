@@ -10838,26 +10838,19 @@ function updateStartGateBarrier(){
   if(!state.started || state.paused || state.gameOver) return;
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
-  // Only block during countdown (active but not started)
-  if(!_race.active || _race.started) return;
+  // Block ALWAYS until the race countdown finishes (GO!)
+  // Once _race.started is true, barrier drops
+  if(_race.started) return;
 
   const gateX = course.startWX;
   const gateHalfH = START_FINISH_H / 2;
-  // Thick barrier zone — 50px wide so even boost x2 can't punch through
-  const barrierHalf = 50;
-  const dx = state.x - gateX;
-  if(Math.abs(dx) < barrierHalf){
-    const dy = state.y - course.startWY;
-    if(Math.abs(dy) < gateHalfH){
-      // Hard stop — push ship to the approach side and kill all forward velocity
-      state.x = gateX - barrierHalf - 4;
-      // Zero out any velocity toward the gate
-      if(state.vx > 0) state.vx = 0;
-      state.collisionFlash = 3;
-      if(audioCtx && !state.sfxMuted){
-        playBeep(80, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
-      }
-    }
+  // Hard clamp — if ship is past the gate line, force it back
+  const dy = state.y - course.startWY;
+  if(Math.abs(dy) < gateHalfH && state.x > gateX - 60){
+    state.x = gateX - 62;
+    state.vx = Math.min(state.vx, 0); // kill all forward velocity
+    state.vy *= 0.9; // slight lateral dampen
+    state.collisionFlash = 3;
   }
 }
 
