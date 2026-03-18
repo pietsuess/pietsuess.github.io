@@ -1046,7 +1046,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 <div id="music-drawer">
   <div id="music-drawer-tab" onclick="toggleMusicDrawer()">
     <span id="music-drawer-tab-icon">♫</span>
-    <span id="music-drawer-now">AUDIO - VOID DRIFT</span>
+    <span id="music-drawer-now">AUDIO - LAUNCH</span>
     <div id="mute-btn" onclick="toggleMute();event.stopPropagation()" title="Mute/Unmute Music">🔊</div>
     <span id="music-drawer-arrow">▲</span>
   </div>
@@ -1248,7 +1248,7 @@ let state = {
   waveBeams:[],
   wormholes:[], wormholeFlash:0,
   currentLevel: -99,  // no zones in Return to Space
-  keys:{}, muted:false, songIndex:3, // 0=PULSAR 1=CASCADE 2=SOLSTICE 3=VORTEX 4=NOVA
+  keys:{}, muted:false, songIndex:3, // 0=VOID DRIFT 1=SIGNAL 2=EMBER 3=LAUNCH // 0=PULSAR 1=CASCADE 2=SOLSTICE 3=VORTEX 4=NOVA
   hyperspace:false, hsTimer:0, hsTail:[],
   tronTrail:[],
   boostSpeed:0,
@@ -2620,567 +2620,404 @@ const SCALES={
 // Returns an array of Hz values for a chord built on scale degree `deg`
 // across multiple octaves for fullness
 
-// ── 5 Cinematic Moods ────────────────────────────────────────────
+// ── 4 Cinematic Moods — RETURN TO SPACE ──────────────────────────
 const MOODS=[
 
-// ── 0  PULSAR ───────────────────────────────────────────────────
-// Energetic, rhythmic, propulsive. D Dorian. Steady pulse + rolling arpeggios.
-// Builds from a simple pulse into a driving, rhythmic groove.
+// ── 0  VOID DRIFT ───────────────────────────────────────────────
+// Vast, contemplative, weightless. A minor. Long pads, sparse melody, distant echoes.
+// Drifting through empty space — solitude without loneliness.
 {
-  name:'PULSAR', bpm:94, scale:'dmin', root:146.83,
+  name:'VOID DRIFT', bpm:62, scale:'amin', root:110.0,
   gen(t0,bar,bl,sc,root,rng){
     const B=bar; const barLen=8*bl;
-    const phase= B<=4?'seed': B<=18?'build': B<=36?'drive': B<=44?'peak':'seed';
-    const vol=  phase==='seed'?0.52: phase==='build'?0.78: phase==='drive'?1.0: phase==='peak'?1.0:0.52;
+    // Long cycle: 52 bars before reset — feels like it never repeats
+    const phase= B<=6?'silence': B<=18?'whisper': B<=34?'drift': B<=46?'vast': B<=52?'fade':'silence';
+    const vol= phase==='silence'?0.25: phase==='whisper'?0.48: phase==='drift'?0.75: phase==='vast'?1.0: 0.35;
 
-    // Chord progression: Dm - Bb - F - C  (2 bars each)
-    const prog=[[0,3,7],[10,2,5],[7,11,2],[0,4,7]];
-    const cIdx=Math.floor(B/2)%prog.length;
+    // Chord progression: Am - F - Dm - Em (3 bars each for longer cycle)
+    const prog=[[0,3,7],[5,9,0],[2,5,9],[4,7,11]];
+    const cIdx=Math.floor(B/3)%prog.length;
     const cRoot=root*fr(prog[cIdx][0]);
 
-    // Driving bass — on beats 1,3,5,7 with slight swing
-    [0,2,4,6].forEach(b=> _bass(cRoot/2, t0+b*bl, bl*0.75, 0.10*vol));
-    if(phase!=='seed') _bass(cRoot/2*fr(prog[cIdx][2]), t0+3*bl, bl*0.6, 0.07*vol);
-
-    // Arpeggio — rolling 16th-note pattern
-    if(phase==='build'||phase==='drive'||phase==='peak'){
-      const arpNotes=prog[cIdx].map(s=>root*fr(s));
-      const arpPat=[0,1,2,1,0,2,1,0,2,1,2,0,1,2,0,1];
-      arpPat.forEach((ni,i)=>{
-        const freq=arpNotes[ni%arpNotes.length]*(ni>2?2:1);
-        _plk(freq, t0+i*bl*0.5, 0.055*vol*(phase==='peak'?1.2:1));
-      });
+    // Sub-bass — very deep, barely felt
+    if(phase!=='silence'){
+      _bass(cRoot/4, t0, barLen*0.95, 0.06*vol);
+      // Second bass voice enters late, octave up
+      if(phase==='drift'||phase==='vast'||phase==='fade')
+        _bass(cRoot/2, t0+4*bl, barLen*0.5, 0.04*vol);
     }
 
-    // Pad chords — lush and sustained
-    if(phase!=='seed'){
+    // Expansive pads — the core texture. Multiple detuned layers.
+    if(phase!=='silence'){
       prog[cIdx].forEach((s,i)=>{
-        _pad(root*fr(s), t0+i*0.15, barLen+1.5, 0.04*vol*(1-i*0.12), B*i+3);
+        _pad(root*fr(s), t0+i*0.4, barLen+3.0, 0.038*vol*(1-i*0.08), B*3+i*7);
       });
-    }
-
-    // Melody — syncopated, punchy
-    if(phase==='drive'||phase==='peak'){
-      const mel=[0,2,3,5,3,5,7,5,3,2,0,3,5,7,5,3];
-      const mi=B%mel.length;
-      [0,1.5,3,4.5,6].forEach((beat,i)=>{
-        if(rng(0,3)>0){
-          const freq=root*2*fr(sc[mel[(mi+i)%mel.length]%sc.length]);
-          _mel(freq, t0+beat*bl, bl*1.4, 0.042*vol);
-        }
-      });
-    }
-
-    if(phase==='peak'){
-      // Extra shimmer layer
-      [0,3,7,10].forEach((s,i)=>_atm(root*4*fr(sc[s%sc.length]), t0+i*bl*0.8, barLen, 0.015*vol));
-    }
-  }
-},
-
-// ── 1  CASCADE ───────────────────────────────────────────────────
-// Bright, flowing, melodic. G major. Plucked strings + warm pads.
-// A gentle cascade of notes that build into something full and uplifting.
-{
-  name:'CASCADE', bpm:76, scale:'gmaj', root:196.0,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    const phase= B<=4?'drip': B<=16?'flow': B<=32?'flood': B<=40?'glow':'drip';
-    const vol=  phase==='drip'?0.48: phase==='flow'?0.72: phase==='flood'?1.0: 0.58;
-
-    // Chord progression: G - Em - C - D (I vi IV V in G major)
-    const prog=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-    const cIdx=Math.floor(B/2)%4;
-    const cNotes=prog[cIdx].map(s=>root*fr(s));
-    const cRoot=cNotes[0];
-
-    // Gentle walking bass
-    _bass(cRoot/2, t0, barLen*0.88, 0.075*vol);
-    if(phase!=='drip') _bass(cRoot/2*fr(sc[4]), t0+4*bl, bl*2.8, 0.05*vol);
-
-    // Plucked cascade pattern — the signature sound
-    const cascPat=[0,2,4,7,4,2,0,4,2,0,7,4,2,4,0,2];
-    const cpBase=B%cascPat.length;
-    cascPat.forEach((si,i)=>{
-      if(phase==='drip'&&i>7) return;
-      const octUp= i>8 ? 2 : 1;
-      const freq=cRoot*octUp*fr(sc[si%sc.length]);
-      _plk(freq, t0+i*bl*0.5, 0.048*vol*(phase==='drip'?0.7:1));
-    });
-
-    // Warm pad underneath
-    if(phase!=='drip'){
-      cNotes.forEach((f,i)=>{
-        _pad(f, t0+i*0.2, barLen+2.0, 0.042*vol*(1-i*0.1), B*i+5);
-        if(phase==='flood'||phase==='glow')
-          _pad(f*2, t0+i*0.3, barLen+1.5, 0.02*vol, B*i+55);
-      });
-    }
-
-    // String melody — lyrical and singable
-    if(phase==='flow'||phase==='flood'||phase==='glow'){
-      const mel=[0,2,4,5,4,2,4,5,7,5,4,5,4,2,0,4];
-      const mi=B%mel.length;
-      [0,2,4,6].forEach((beat,i)=>{
-        if(rng(0,3)>0){
-          const freq=root*2*fr(sc[mel[(mi+i)%mel.length]%sc.length]);
-          _str(freq, t0+beat*bl+rng(0,2)*bl*0.1, bl*2.2, 0.038*vol);
-        }
-      });
-    }
-
-    if(phase==='flood'){
-      // Harmonic shimmer on strong bars
-      if(B%4===0) [0,4,7,11].forEach((s,i)=>_atm(root*4*fr(sc[s%sc.length]), t0+i*bl*0.6, barLen, 0.014*vol));
-    }
-  }
-},
-
-// ── 2  SOLSTICE ──────────────────────────────────────────────────
-// Warm, nostalgic, hopeful. C major. Flows like memory.
-// Simple progressions develop into a lush full orchestration.
-{
-  name:'SOLSTICE', bpm:80, scale:'cmaj', root:130.81,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    const phase= B<=4?'hush': B<=16?'bloom': B<=28?'lush': B<=36?'glow':'hush';
-    const vol=  phase==='hush'?0.42: phase==='bloom'?0.72: phase==='lush'?1.0: 0.5;
-
-    // Chord progression: C Am F G (I vi IV V) 4-bar cycle
-    const progs=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-    const cC=progs[Math.floor(B/2)%4];
-    const cRoot=root*fr(cC[0]);
-
-    // Bass — gentle, half-time
-    _bass(cRoot/2, t0, barLen*0.92, 0.08*vol);
-    if(B%2===1) _bass(cRoot/2*fr(sc[4]), t0+4*bl, bl*3.5, 0.055*vol);
-
-    if(phase!=='hush'){
-      // Chord pads — warm, layered
-      cC.forEach((s,i)=>{
-        _pad(root*fr(s), t0+i*0.22, barLen+2.0, 0.052*vol*(1-i*0.1), B*i+3);
-        if(phase==='lush'||phase==='glow'){
-          _pad(root*fr(s)*2, t0+i*0.3+0.5, barLen+1.5, 0.026*vol, B*i+11);
-        }
-      });
-
-      // Walking counter-melody in midrange
-      const walk=[0,2,4,5,4,2,0,7,9,7,5,4,2,0,4,2];
-      const wi=B%walk.length;
-      _str(root*2*fr(sc[walk[wi]%sc.length]), t0, bl*2.8, 0.034*vol);
-      _str(root*2*fr(sc[walk[(wi+2)%walk.length]%sc.length]), t0+bl*3, bl*2.5, 0.028*vol);
+      // Upper octave shimmer in drift/vast
+      if(phase==='drift'||phase==='vast'){
+        prog[cIdx].forEach((s,i)=>{
+          _pad(root*2*fr(s), t0+i*0.6+1.0, barLen+2.0, 0.018*vol, B*5+i*11);
+        });
+      }
     } else {
-      // Hush: single solo pad note
-      _pad(cRoot, t0, barLen+2.0, 0.038*vol);
+      // Silence phase: single lonely tone
+      _atm(root, t0, barLen+2.0, 0.02);
     }
 
-    if(phase==='lush'||phase==='glow'){
-      // Main melody — singing, lyrical
-      const melC=[0,2,4,5,4,2,0,4,5,7,5,4,2,4,5,4];
-      const mi=B%melC.length;
-      const steps=[melC[mi], melC[(mi+2)%melC.length], melC[(mi+4)%melC.length]];
-      steps.forEach((s,i)=>{
-        _mel(root*4*fr(sc[s%sc.length]), t0+i*bl*2.4, bl*2.8, 0.045*vol);
-      });
-    }
-
-    // Plucked harp-like accent on off beats
-    if((phase==='bloom'||phase==='lush')&&B%3===0){
-      [1,3,5,7].forEach((beat,i)=>{
-        if(rng(0,2)>0) _plk(root*2*fr(sc[cC[i%cC.length]%sc.length]), t0+beat*bl+rng(0,2)*bl*0.08, 0.03*vol);
-      });
-    }
-  }
-},
-
-// ── 3  VORTEX ────────────────────────────────────────────────────
-// Driving, urgent, propulsive. D minor. Hypnotic ostinato + building tension.
-// Minimal start, adds layers, reaches a churning climax.
-{
-  name:'VORTEX', bpm:112, scale:'dmin', root:146.83,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    // In secret level BOSS phase: peak intensity, faster feel
-    const secret = typeof state !== 'undefined' && state.inSecretLevel && state._waveOrbSpawned;
-    const phase= secret ? 'peak' : (B<=4?'pulse': B<=14?'drive': B<=28?'surge': B<=36?'peak':'pulse');
-    const volBase= phase==='pulse'?0.5: phase==='drive'?0.75: phase==='surge'?0.95: 1.1;
-    const vol = secret ? volBase*1.25 : volBase;
-
-    // Kick/pulse — mechanical heartbeat
-    if(phase!=='peak'){
-      [0,2,4,6].forEach(i=>{
-        _bass(55, t0+i*bl, bl*0.14, 0.1*vol);
-      });
-    } else {
-      // Peak / secret: every beat, punchier
-      for(let i=0;i<8;i++) _bass(55, t0+i*bl, bl*0.12, (secret?0.13:0.1)*vol);
-      // Secret: extra off-beat punches
-      if(secret) for(let i=0;i<4;i++) _bass(55*1.5, t0+(i*2+1)*bl, bl*0.08, 0.06*vol);
-    }
-
-    // Driving bass line — D minor groove
-    const bassLine=[0,0,3,0,5,0,3,5];
-    const bassNotes=[sc[0],sc[0],sc[2],sc[0],sc[3],sc[0],sc[2],sc[3]];
-    bassNotes.forEach((s,i)=>{
-      _bass(root*fr(s), t0+i*bl, bl*0.82, (secret?0.1:0.07)*vol);
-    });
-    // Secret: add low sub-bass octave
-    if(secret) bassNotes.forEach((s,i)=>{
-      _bass(root*fr(s)/2, t0+i*bl, bl*0.6, 0.06*vol);
-    });
-
-    // Chord pads — darker, more compressed
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      const progV=[[0,3,7],[8,0,5],[5,8,0],[3,7,10]];
-      const cV=progV[Math.floor(B/2)%4];
-      const nVoices= phase==='drive'?2: 3;
-      cV.slice(0,nVoices).forEach((s,i)=>{
-        _str(root*fr(s), t0+i*0.12, barLen*0.8, 0.038*vol*(1-i*0.15));
-        if(phase==='surge'||phase==='peak'){
-          _pad(root*fr(s), t0+i*0.2, barLen+1.0, 0.028*vol, B+i*5);
-        }
-      });
-    }
-
-    // Rhythmic chop — staccato string stabs
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      const chopPat= phase==='drive'?[0,4]: phase==='surge'?[0,2,4,6]:[0,1,2,3,4,5,6,7];
-      chopPat.forEach(i=>{
-        if(rng(0,2)>0){
-          const s=sc[rng(0,3)];
-          _v(root*fr(s), t0+i*bl, 0.04, bl*0.28, 0.18, 0.042*vol, 'sawtooth', 0.3);
-        }
-      });
-    }
-
-    // Melodic urgency — short anxious phrases
-    if(phase==='surge'||phase==='peak'){
-      const urgMel=[0,3,2,0,3,5,3,2,0,3,5,7,5,3,2,0];
-      const ui=B%urgMel.length;
-      const beats = secret ? [0,2,3,5,6] : [0,3,5];
+    // Sparse distant plucks — like stars pinging
+    if(phase==='whisper'||phase==='drift'){
+      const plkPattern=[0,7,3,5,0,3,7,12,5,0,7,3];
+      const pi=B%plkPattern.length;
+      // Only 2-3 plucks per bar, widely spaced
+      const beats= phase==='whisper'?[0,5]:[0,3,6];
       beats.forEach((beat,i)=>{
-        _mel(root*2*fr(sc[urgMel[(ui+i*2)%urgMel.length]%sc.length]),
-             t0+beat*bl, bl*1.4, (secret?0.052:0.038)*vol);
+        if(rng(0,3)>0){
+          const note=plkPattern[(pi+i*3)%plkPattern.length];
+          _plk(root*2*fr(sc[note%sc.length]), t0+beat*bl+rng(0,3)*bl*0.15, 0.035*vol);
+        }
       });
-      // Secret: high pitched arpeggio bursts
-      if(secret && rng(0,2)===0){
-        [0,1,2,3].forEach(i=>{
-          _mel(root*4*fr(sc[rng(0,sc.length)]), t0+i*bl*0.5, bl*0.6, 0.028*vol);
+    }
+
+    // Melody — very slow, wide intervals, lots of space between notes
+    if(phase==='drift'||phase==='vast'){
+      const melA=[0,7,5,3,0,12,7,5,3,7,0,5,12,7,3,0,5,7,12,10,7,5,3,0];
+      const mi=(B*2)%melA.length; // advance 2 per bar for slower feel
+      // Only 2 melody notes per bar in drift, 3 in vast
+      const melBeats= phase==='drift'?[0,4]:[0,3,6];
+      melBeats.forEach((beat,i)=>{
+        const step=melA[(mi+i)%melA.length];
+        _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*3.5, 0.04*vol);
+      });
+    }
+
+    // Vast: atmospheric swells that come and go
+    if(phase==='vast'){
+      if(B%3===0){
+        [0,7,12].forEach((s,i)=>{
+          _atm(root*4*fr(sc[s%sc.length]), t0+i*bl*1.5, barLen*1.2, 0.016*vol);
+        });
+      }
+      // Occasional deep string drone
+      if(B%5===0) _str(cRoot/2, t0, barLen*0.9, 0.025*vol);
+    }
+
+    // Fade: thin out, return to near-silence
+    if(phase==='fade'){
+      _atm(root*2, t0, barLen+3.0, 0.022*vol);
+      if(B%2===0) _plk(root*2*fr(sc[rng(0,6)]), t0+rng(0,6)*bl, 0.02*vol);
+    }
+  }
+},
+
+// ── 1  SIGNAL ────────────────────────────────────────────────────
+// Tense, mysterious, searching. B Phrygian. Radar pings, dark pads, rising dread.
+// Something is out there. You're scanning for it.
+{
+  name:'SIGNAL', bpm:78, scale:'bphryg', root:123.47,
+  gen(t0,bar,bl,sc,root,rng){
+    const B=bar; const barLen=8*bl;
+    const phase= B<=5?'scan': B<=16?'contact': B<=30?'approach': B<=42?'encounter': B<=50?'recede':'scan';
+    const vol= phase==='scan'?0.38: phase==='contact'?0.58: phase==='approach'?0.82: phase==='encounter'?1.0: 0.42;
+
+    // Chord progression: Bm(b2) - Gm - Em - F (Phrygian color)
+    const prog=[[0,3,7],[8,0,3],[5,8,0],[1,5,8]];
+    const cIdx=Math.floor(B/3)%prog.length;
+    const cRoot=root*fr(prog[cIdx][0]);
+
+    // Bass — dark, pulsing, irregular
+    const bassPat= phase==='scan'?[0,4]: phase==='contact'?[0,3,6]: [0,2,4,6];
+    bassPat.forEach(b=>{
+      _bass(cRoot/2, t0+b*bl, bl*0.9, 0.08*vol);
+    });
+    // Sub-drone in approach+
+    if(phase==='approach'||phase==='encounter')
+      _bass(root/4, t0, barLen*0.8, 0.05*vol);
+
+    // Radar ping — the signature sound. Plucked high note, regular interval.
+    if(phase!=='recede'){
+      const pingInterval= phase==='scan'?4: phase==='contact'?3: phase==='approach'?2: 1.5;
+      for(let t=0; t<8; t+=pingInterval){
+        const pingFreq= root*4*fr(sc[rng(0,2)]); // slight pitch variation
+        _plk(pingFreq, t0+t*bl, 0.03*vol);
+        // Echo ping, softer and delayed
+        _plk(pingFreq*0.998, t0+t*bl+bl*0.4, 0.015*vol);
+      }
+    }
+
+    // Dark pads — Phrygian tension, slow-moving
+    if(phase!=='scan'){
+      prog[cIdx].forEach((s,i)=>{
+        _pad(root*fr(s), t0+i*0.35, barLen+2.5, 0.04*vol*(1-i*0.1), B*i+3);
+      });
+      if(phase==='encounter'){
+        // Double pad layer for thickness
+        prog[cIdx].forEach((s,i)=>{
+          _pad(root*2*fr(s), t0+i*0.5+0.8, barLen+1.5, 0.02*vol, B*i+17);
         });
       }
     }
+
+    // String tension — builds from contact onward
+    if(phase==='contact'||phase==='approach'){
+      const strNotes= phase==='contact'?prog[cIdx].slice(0,2):prog[cIdx];
+      strNotes.forEach((s,i)=>{
+        _str(root*fr(s), t0+i*0.2, barLen*0.7, 0.028*vol*(1-i*0.12));
+      });
+    }
+    if(phase==='encounter'){
+      // Full string cluster
+      prog[cIdx].forEach((s,i)=>{
+        _str(root*fr(s), t0+i*0.15, barLen*0.85, 0.036*vol);
+        _str(root*2*fr(s), t0+i*0.2+0.5, barLen*0.6, 0.018*vol);
+      });
+    }
+
+    // Melody — short, anxious motifs that grow longer
+    if(phase==='approach'||phase==='encounter'){
+      const melB=[0,1,3,5,3,1,0,5,3,1,3,5,7,5,3,1,0,3,5,7,8,7,5,3];
+      const mi=(B*3)%melB.length;
+      const melBeats= phase==='approach'?[0,3,5]:[0,2,3.5,5,7];
+      melBeats.forEach((beat,i)=>{
+        const step=melB[(mi+i*2)%melB.length];
+        _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*1.8, 0.038*vol);
+      });
+    }
+
+    // Encounter: dissonant accent stabs on odd bars
+    if(phase==='encounter' && B%2===1){
+      [1,5].forEach(beat=>{
+        _v(root*fr(1), t0+beat*bl, 0.03, bl*0.2, 0.15, 0.035*vol, 'sawtooth', 0.4);
+      });
+    }
+
+    // Recede: thinning out, fading pings
+    if(phase==='recede'){
+      _pad(cRoot, t0, barLen+2.0, 0.025*vol);
+      if(B%2===0) _plk(root*4*fr(sc[0]), t0+rng(0,4)*bl, 0.018*vol);
+      _atm(root*2, t0+2*bl, barLen*0.6, 0.015*vol);
+    }
   }
 },
 
-// ── 4  NOVA ──────────────────────────────────────────────────────
-// Triumphant, soaring, major key. E major. Builds from intimacy to full epic.
-// 4-voice counterpoint at full development.
+// ── 2  EMBER ─────────────────────────────────────────────────────
+// Warm, bittersweet, reflective. C major with minor color. Looking back at Earth.
+// Gentle at first, swells into something moving, then retreats.
 {
-  name:'NOVA', bpm:96, scale:'emaj', root:164.81,
+  name:'EMBER', bpm:72, scale:'cmaj', root:130.81,
   gen(t0,bar,bl,sc,root,rng){
     const B=bar; const barLen=8*bl;
-    const phase= B<=6?'seed': B<=18?'ascend': B<=34?'glory': B<=42?'summit':'seed';
-    const vol=  phase==='seed'?0.38: phase==='ascend'?0.65: phase==='glory'?0.95: 1.1;
+    const phase= B<=6?'glow': B<=18?'kindle': B<=32?'burn': B<=44?'blaze': B<=52?'ash':'glow';
+    const vol= phase==='glow'?0.35: phase==='kindle'?0.58: phase==='burn'?0.82: phase==='blaze'?1.0: 0.3;
 
-    // Chord arc: E - C#m - A - B (I - vi - IV - V)
-    const progN=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-    const cN=progN[Math.floor(B/2)%4];
-    const cNroot=root*fr(cN[0]);
+    // Chord progression: C - Am - F - G then C - Em - Dm - G (alternating 4-bar groups)
+    const progA=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const progB=[[0,4,7],[4,7,11],[2,5,9],[7,11,2]];
+    const useB= Math.floor(B/8)%2===1;
+    const prog= useB?progB:progA;
+    const cIdx=Math.floor(B/2)%prog.length;
+    const cRoot=root*fr(prog[cIdx][0]);
 
-    // Bass — noble, purposeful
-    _bass(cNroot/2, t0, barLen*0.9, 0.09*vol);
-    if(B%2===0) _bass(cNroot/2*fr(sc[4]), t0+4*bl, bl*3.8, 0.065*vol);
+    // Bass — warm, unhurried
+    _bass(cRoot/2, t0, barLen*0.9, 0.07*vol);
+    if(phase!=='glow'&&phase!=='ash'){
+      // Walking bass note on beat 5
+      const walkNote= prog[cIdx][rng(1,2)];
+      _bass(root/2*fr(walkNote), t0+4*bl, bl*3.0, 0.045*vol);
+    }
 
-    // Chord pads — grow in richness
-    const nVoices= phase==='seed'?1: phase==='ascend'?2: 3;
-    cN.slice(0,nVoices).forEach((s,i)=>{
-      _pad(root*fr(s), t0+i*0.25, barLen+2.5, 0.05*vol*(1-i*0.1), B*i+7);
-      if(phase==='glory'||phase==='summit'){
-        _pad(root*fr(s)*2, t0+i*0.35, barLen+2.0, 0.024*vol, B*i+13);
+    // Pads — the emotional core
+    if(phase!=='glow'||B>3){
+      prog[cIdx].forEach((s,i)=>{
+        const padGain= phase==='glow'?0.028: phase==='ash'?0.022: 0.042;
+        _pad(root*fr(s), t0+i*0.3, barLen+2.5, padGain*vol*(1-i*0.08), B*i+5);
+      });
+    }
+    if(phase==='burn'||phase==='blaze'){
+      // Upper pad octave
+      prog[cIdx].forEach((s,i)=>{
+        _pad(root*2*fr(s), t0+i*0.4+0.6, barLen+1.8, 0.02*vol, B*i+19);
+      });
+    }
+
+    // Plucked arpeggios — gentle, like a music box in glow/kindle
+    if(phase==='glow'||phase==='kindle'){
+      const arpPat=[0,4,7,4,0,7,4,0,9,7,4,7];
+      const ai=B%arpPat.length;
+      const nPlucks= phase==='glow'?4:8;
+      for(let i=0;i<nPlucks;i++){
+        const note=arpPat[(ai+i)%arpPat.length];
+        _plk(root*2*fr(sc[note%sc.length]), t0+i*bl, 0.032*vol);
       }
-    });
+    }
 
-    // Heroic string layer builds in
-    if(phase==='ascend'||phase==='glory'||phase==='summit'){
-      cN.forEach((s,i)=>{
-        _str(root*fr(s), t0+i*0.15, barLen*0.85, 0.032*vol*(1-i*0.08));
+    // Strings — enter at kindle, grow through burn
+    if(phase==='kindle'||phase==='burn'||phase==='blaze'){
+      const nStr= phase==='kindle'?2: 3;
+      prog[cIdx].slice(0,nStr).forEach((s,i)=>{
+        _str(root*fr(s), t0+i*0.18, barLen*0.8, 0.03*vol*(1-i*0.1));
       });
     }
 
-    // Main melody — soaring, wide intervals
-    const melN=[0,4,7,12,11,7,4,7,9,7,4,2,0,4,5,4];
-    const mn=B%melN.length;
-    if(phase!=='seed'){
-      [0,2,4,6].forEach((beat,i)=>{
-        const step=melN[(mn+i)%melN.length];
-        const noteHz=root*2*fr(step<=12?step:step-12)*( step>12?2:1 );
-        _mel(noteHz, t0+beat*bl, bl*2.5, 0.048*vol);
-      });
-    } else {
-      // Seed: single solo voice, tentative
-      _mel(root*2*fr(melN[mn]), t0, barLen*0.6, 0.032*vol);
-    }
-
-    // Counter-melody at glory/summit
-    if(phase==='glory'||phase==='summit'){
-      const ctN=[7,5,4,2,0,2,4,5,7,9,11,9,7,5,4,2];
-      const ci=B%ctN.length;
-      [1,3,5].forEach((beat,i)=>{
-        _str(root*4*fr(sc[ctN[(ci+i)%ctN.length]%sc.length]),
-             t0+beat*bl, bl*2.0, 0.028*vol);
+    // Main melody — lyrical, singable, unhurried
+    if(phase==='burn'||phase==='blaze'){
+      // Two contrasting melodic phrases that alternate by bar
+      const melA=[0,2,4,7,5,4,2,0,4,5,7,9,7,5,4,2,0,2,4,5,7,9,11,9];
+      const melB=[7,5,4,2,0,4,5,7,9,7,5,4,2,4,7,5,4,2,0,2,5,4,2,0];
+      const mel= B%4<2?melA:melB;
+      const mi=(B*2)%mel.length;
+      const melBeats= phase==='burn'?[0,2.5,5]:[0,2,4,6];
+      melBeats.forEach((beat,i)=>{
+        const step=mel[(mi+i)%mel.length];
+        _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*2.8, 0.042*vol);
       });
     }
 
-    // Summit: triumphant fanfare stabs
-    if(phase==='summit'&&B%4===0){
-      const fanf=[0,4,7,12,7,4];
-      fanf.forEach((s,i)=>_plk(root*4*fr(s), t0+i*bl*0.55, 0.05));
+    // Blaze: counter-melody in strings, high register
+    if(phase==='blaze'){
+      const ctMel=[11,9,7,5,4,7,9,11,12,11,9,7,5,7,9,7];
+      const ci=B%ctMel.length;
+      [1,4,6].forEach((beat,i)=>{
+        _str(root*4*fr(sc[ctMel[(ci+i*2)%ctMel.length]%sc.length]),
+             t0+beat*bl, bl*2.0, 0.024*vol);
+      });
+      // Atmospheric swell every 4 bars
+      if(B%4===0){
+        [0,4,7].forEach((s,i)=>_atm(root*4*fr(sc[s%sc.length]), t0+i*bl, barLen, 0.014*vol));
+      }
+    }
+
+    // Ash: dissolving, sparse, echoes of the melody
+    if(phase==='ash'){
+      _atm(root*2, t0, barLen+2.0, 0.018*vol);
+      if(B%2===0){
+        const echo=[0,4,7];
+        echo.forEach((s,i)=>_plk(root*2*fr(sc[s%sc.length]), t0+i*bl*2, 0.015*vol));
+      }
     }
   }
 },
 
-// ── 5  HOMEWARD ──────────────────────────────────────────────────
-// Major-key VORTEX. Same driving pulse + rolling arpeggios, but lifted to D major.
-// Jubilant, propulsive, earned triumph. Plays on launchpad refuel.
+// ── 3  LAUNCH ────────────────────────────────────────────────────
+// Driving, triumphant, propulsive. E major. The escape run. Full cinematic thrust.
+// Builds from ignition countdown into a soaring, layered wall of sound.
 {
-  name:'HOMEWARD', bpm:112, scale:'dmaj', root:146.83,
+  name:'LAUNCH', bpm:108, scale:'emaj', root:164.81,
   gen(t0,bar,bl,sc,root,rng){
     const B=bar; const barLen=8*bl;
-    const phase= B<=4?'pulse': B<=14?'drive': B<=28?'surge': B<=36?'peak':'pulse';
-    const vol=  phase==='pulse'?0.5: phase==='drive'?0.78: phase==='surge'?0.98: 1.1;
+    const phase= B<=4?'ignition': B<=14?'liftoff': B<=28?'ascent': B<=42?'orbit': B<=50?'weightless':'ignition';
+    const vol= phase==='ignition'?0.42: phase==='liftoff'?0.68: phase==='ascent'?0.9: phase==='orbit'?1.05: 0.38;
 
-    // Kick — same mechanical heartbeat as VORTEX but brighter feel
-    if(phase!=='peak'){
-      [0,2,4,6].forEach(i=>{ _bass(73.4, t0+i*bl, bl*0.14, 0.09*vol); });
-    } else {
-      for(let i=0;i<8;i++) _bass(73.4, t0+i*bl, bl*0.12, 0.11*vol);
+    // Chord progression: E - C#m - A - B (I-vi-IV-V), 6-bar groups for longer arc
+    const prog=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
+    const cIdx=Math.floor(B/3)%prog.length;
+    const cRoot=root*fr(prog[cIdx][0]);
+
+    // Kick pulse — mechanical, builds density
+    if(phase==='ignition'){
+      // Slow heartbeat
+      [0,4].forEach(i=>_bass(55, t0+i*bl, bl*0.2, 0.08*vol));
+    } else if(phase==='liftoff'){
+      [0,2,4,6].forEach(i=>_bass(55, t0+i*bl, bl*0.15, 0.09*vol));
+    } else if(phase==='ascent'||phase==='orbit'){
+      for(let i=0;i<8;i++) _bass(55, t0+i*bl, bl*0.12, 0.10*vol);
+    }
+    // Weightless: no kick — silence is powerful
+
+    // Bass line — grows from root notes to walking pattern
+    if(phase==='ignition'){
+      _bass(cRoot/2, t0, barLen*0.9, 0.07*vol);
+    } else if(phase!=='weightless'){
+      const bassWalk=[0,0,4,0,7,4,0,7];
+      bassWalk.forEach((s,i)=>{
+        _bass(root*fr(s)/2, t0+i*bl, bl*0.8, 0.08*vol);
+      });
+      if(phase==='orbit'){
+        // Sub-octave doubling
+        _bass(cRoot/4, t0, barLen*0.7, 0.05*vol);
+      }
     }
 
-    // Driving bass — D major groove (mirrors VORTEX rhythm, major intervals)
-    // VORTEX:  D  D  F  D  G  D  F  G  (minor thirds)
-    // HOMEWARD: D  D  F# D  A  D  F# A  (major thirds + fifth)
-    const bassSteps=[0,0,4,0,7,0,4,7];
-    bassSteps.forEach((s,i)=>{
-      _bass(root*fr(s), t0+i*bl, bl*0.82, 0.08*vol);
-    });
+    // Pads — expand from thin to massive
+    if(phase!=='ignition'){
+      const nVoices= phase==='liftoff'?2: 3;
+      prog[cIdx].slice(0,nVoices).forEach((s,i)=>{
+        _pad(root*fr(s), t0+i*0.25, barLen+2.0, 0.04*vol*(1-i*0.08), B*i+5);
+      });
+      if(phase==='ascent'||phase==='orbit'){
+        prog[cIdx].forEach((s,i)=>{
+          _pad(root*2*fr(s), t0+i*0.35+0.5, barLen+1.5, 0.02*vol, B*i+13);
+        });
+      }
+    } else {
+      // Ignition: single ominous pad
+      _pad(cRoot, t0, barLen+2.0, 0.03*vol);
+    }
 
-    // Chord pads — D major progression: D - Bm - G - A  (I - vi - IV - V)
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      const progH=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-      const cH=progH[Math.floor(B/2)%4];
-      const nVoices= phase==='drive'?2: 3;
-      cH.slice(0,nVoices).forEach((s,i)=>{
-        _str(root*fr(s), t0+i*0.12, barLen*0.8, 0.036*vol*(1-i*0.12));
-        if(phase==='surge'||phase==='peak'){
-          _pad(root*fr(s), t0+i*0.2, barLen+1.0, 0.026*vol, B+i*5);
-        }
+    // Strings — heroic, building
+    if(phase==='liftoff'||phase==='ascent'||phase==='orbit'){
+      const nStr= phase==='liftoff'?2:3;
+      prog[cIdx].slice(0,nStr).forEach((s,i)=>{
+        _str(root*fr(s), t0+i*0.15, barLen*0.85, 0.034*vol*(1-i*0.1));
       });
     }
 
-    // Rhythmic chop — same pattern as VORTEX, brighter timbre
-    if(phase==='drive'||phase==='surge'||phase==='peak'){
-      const chopPat= phase==='drive'?[0,4]: phase==='surge'?[0,2,4,6]:[0,1,2,3,4,5,6,7];
+    // Rhythmic drive — staccato energy (liftoff onward)
+    if(phase==='liftoff'||phase==='ascent'||phase==='orbit'){
+      const chopPat= phase==='liftoff'?[0,4]: phase==='ascent'?[0,2,4,6]:[0,1,2,4,5,6];
       chopPat.forEach(i=>{
         if(rng(0,2)>0){
           const s=sc[rng(0,4)];
-          _v(root*fr(s), t0+i*bl, 0.04, bl*0.28, 0.18, 0.040*vol, 'sawtooth', 0.25);
+          _v(root*fr(s), t0+i*bl, 0.04, bl*0.25, 0.16, 0.035*vol, 'sawtooth', 0.25);
         }
       });
     }
 
-    // Melodic urgency — same shape as VORTEX urg mel but in major
-    // VORTEX urgMel: [0,3,2,0,3,5,3,2,0,3,5,7,5,3,2,0] (minor scale degrees)
-    // HOMEWARD: [0,4,2,0,4,7,4,2,0,4,7,9,7,4,2,0] (major scale: 0=D,2=E,4=F#,7=A,9=B)
-    if(phase==='surge'||phase==='peak'){
-      const urgMelH=[0,4,2,0,4,7,4,2,0,4,7,9,7,4,2,0];
-      const ui=B%urgMelH.length;
-      [0,3,5].forEach((beat,i)=>{
-        _mel(root*2*fr(sc[urgMelH[(ui+i*2)%urgMelH.length]%sc.length]),
-             t0+beat*bl, bl*1.4, 0.040*vol);
-      });
+    // Arpeggios — rolling energy in ascent+
+    if(phase==='ascent'||phase==='orbit'){
+      const arpPat=[0,4,7,11,7,4,0,7,4,11,7,0,4,7,11,4];
+      const ai=B%arpPat.length;
+      const nArp= phase==='ascent'?8:12;
+      for(let i=0;i<nArp;i++){
+        const note=arpPat[(ai+i)%arpPat.length];
+        const oct= i>6?2:1;
+        _plk(root*oct*fr(sc[note%sc.length]), t0+i*bl*(8/nArp), 0.032*vol);
+      }
     }
 
-    // Peak only: triumphant counter-line (VORTEX has none — this is the lift)
-    if(phase==='peak' && B%4===0){
-      const fanfH=[0,4,7,9,7,4,7,12];
-      fanfH.forEach((s,i)=>{ _mel(root*4*fr(s), t0+i*bl*0.6, bl*1.2, 0.034*vol); });
-    }
-  }
-},
-
-// ── 6  ASCENT ────────────────────────────────────────────────────
-// Triumphant, warm, soaring. G major. Pleasant VORTEX variant — alien escape.
-// Same driving pulse but major key, long pads, singable melody, no dissonance.
-{
-  name:'ASCENT', bpm:104, scale:'gmaj', root:196.0,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    const phase= B<=4?'pulse': B<=12?'rise': B<=26?'soar': B<=36?'glory':'pulse';
-    const vol= phase==='pulse'?0.48: phase==='rise'?0.72: phase==='soar'?0.92: 1.05;
-
-    // Kick — VORTEX heartbeat, slightly warmer pitch
-    if(phase!=='glory'){
-      [0,2,4,6].forEach(i=>{ _bass(73.4, t0+i*bl, bl*0.13, 0.085*vol); });
-    } else {
-      for(let i=0;i<8;i++) _bass(73.4, t0+i*bl, bl*0.11, 0.10*vol);
-    }
-
-    // Bass — G major groove, VORTEX rhythm shape (root-3rd-5th)
-    const bassSteps=[0,0,4,0,7,0,4,7];
-    bassSteps.forEach((s,i)=>{
-      _bass(root*fr(s)/2, t0+i*bl, bl*0.85, 0.085*vol);
-    });
-
-    // Chord pads — G - Em - C - D (I-vi-IV-V), lush and sustained
-    if(phase==='rise'||phase==='soar'||phase==='glory'){
-      const progA=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-      const cA=progA[Math.floor(B/2)%4];
-      cA.slice(0, phase==='rise'?2:3).forEach((s,i)=>{
-        _str(root*fr(s), t0+i*0.10, barLen*0.9, 0.038*vol*(1-i*0.13));
-        if(phase==='soar'||phase==='glory')
-          _pad(root*fr(s), t0+i*0.18, barLen+1.2, 0.030*vol, B+i*7);
-      });
-    }
-
-    // Light rhythmic shimmer — gentler chop than VORTEX
-    if(phase==='rise'||phase==='soar'||phase==='glory'){
-      const chopPat= phase==='rise'?[0,4]: phase==='soar'?[0,2,5,7]:[0,1,3,4,6,7];
-      chopPat.forEach(i=>{
-        if(rng(0,3)>0){
-          const s=sc[rng(0,4)];
-          _v(root*fr(s), t0+i*bl, 0.04, bl*0.22, 0.15, 0.030*vol, 'sawtooth', 0.18);
-        }
-      });
-    }
-
-    // Soaring melody — major ascending phrases, warm and triumphant
-    if(phase==='soar'||phase==='glory'){
-      const mel=[0,2,4,7,9,7,4,7,9,11,9,7,4,7,9,7];
+    // Main melody — soaring, wide, heroic
+    if(phase==='ascent'||phase==='orbit'||phase==='weightless'){
+      // Three contrasting phrases rotate every 4 bars
+      const phrases=[
+        [0,4,7,12,11,7,4,7,9,11,12,9,7,4,2,0],
+        [7,9,11,12,9,7,4,0,2,4,7,9,12,11,9,7],
+        [0,2,4,9,7,4,2,0,4,7,11,12,11,9,7,4]
+      ];
+      const mel=phrases[Math.floor(B/4)%phrases.length];
       const mi=B%mel.length;
-      [0,2,4,6].forEach((beat,i)=>{
-        _mel(root*2*fr(sc[mel[(mi+i*2)%mel.length]%sc.length]),
-             t0+beat*bl, bl*1.8, 0.042*vol);
+      const melBeats= phase==='weightless'?[0,4]:[0,2,4,6];
+      melBeats.forEach((beat,i)=>{
+        const step=mel[(mi+i)%mel.length];
+        _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*2.4, 0.046*vol);
       });
     }
 
-    // Glory: fanfare counter-line
-    if(phase==='glory' && B%4===0){
-      const fanf=[0,4,7,9,7,4,7,12,11,9,7,4];
-      fanf.forEach((s,i)=>{ _mel(root*4*fr(s), t0+i*bl*0.5, bl*1.4, 0.030*vol); });
-    }
-  }
-},
-
-// ── 7  SECRET_BUBBLES ───────────────────────────────────────────
-// Playful, bouncy VORTEX variation. D major. Lighthearted discovery feel.
-// Same driving pulse but higher register, gentler bass, whimsical arpeggios.
-{
-  name:'SECRET_BUBBLES', bpm:112, scale:'dmaj', root:146.83, hidden:true,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    const phase= B<=4?'pulse': B<=14?'bounce': B<=28?'play':'bounce';
-    const vol= phase==='pulse'?0.45: phase==='bounce'?0.65: 0.8;
-
-    // Light bouncy kick — higher pitch, gentler
-    [0,2,4,6].forEach(i=>{
-      _bass(82, t0+i*bl, bl*0.1, 0.06*vol);
-    });
-    // Off-beat pops (playful rhythm)
-    if(phase!=='pulse') [1,3,5,7].forEach(i=>{
-      _plk(root*4*fr(sc[rng(0,5)]), t0+i*bl, 0.035*vol);
-    });
-
-    // Bouncy bass — D major, lighter feel, staccato
-    const bassSteps=[0,0,4,7,4,0,7,4];
-    bassSteps.forEach((s,i)=>{
-      _bass(root*fr(s), t0+i*bl, bl*0.5, 0.055*vol);
-    });
-
-    // Bright chord pads — airy, gentle
-    if(phase==='bounce'||phase==='play'){
-      const progB=[[0,4,7],[9,0,4],[5,9,0],[7,11,2]];
-      const cB=progB[Math.floor(B/2)%4];
-      cB.forEach((s,i)=>{
-        _pad(root*2*fr(s), t0+i*0.15, barLen*0.6, 0.02*vol, B+i*3);
-      });
-    }
-
-    // Whimsical arpeggios — playful cascading plucks
-    if(phase==='bounce'||phase==='play'){
-      const arpNotes=[0,4,7,11,7,4,0,4,7,12,7,4,9,7,4,0];
-      const ai=B%arpNotes.length;
-      const arpBeats= phase==='bounce'?[0,2,4,6]:[0,1,2,3,4,5,6,7];
-      arpBeats.forEach((beat,i)=>{
-        const note=arpNotes[(ai+i)%arpNotes.length];
-        _plk(root*2*fr(sc[note%sc.length]), t0+beat*bl, 0.045*vol);
-      });
-    }
-
-    // Play phase: light melodic line — curious, exploratory
-    if(phase==='play'){
-      const mel=[0,2,4,7,9,7,4,2,4,7,11,9,7,4,2,0];
-      const mi=B%mel.length;
-      [0,3,5].forEach((beat,i)=>{
-        _mel(root*2*fr(sc[mel[(mi+i*2)%mel.length]%sc.length]),
-             t0+beat*bl, bl*1.2, 0.032*vol);
-      });
-    }
-  }
-},
-
-// ── 8  SECRET_VICTORY ───────────────────────────────────────────
-// Triumphant VORTEX variation. D major. Bold, celebratory, earned victory.
-// Full pads from the start, heroic melody, fanfare flourishes.
-{
-  name:'SECRET_VICTORY', bpm:112, scale:'dmaj', root:146.83, hidden:true,
-  gen(t0,bar,bl,sc,root,rng){
-    const B=bar; const barLen=8*bl;
-    const phase= B<=2?'fanfare': B<=16?'triumph': B<=30?'glory':'fanfare';
-    const vol= phase==='fanfare'?0.9: phase==='triumph'?1.0: 1.1;
-
-    // Triumphant kick — bold, every beat
-    for(let i=0;i<8;i++) _bass(73.4, t0+i*bl, bl*0.12, 0.1*vol);
-
-    // Heroic bass — strong D major root motion
-    const bassSteps=[0,0,4,7,0,4,7,11];
-    bassSteps.forEach((s,i)=>{
-      _bass(root*fr(s), t0+i*bl, bl*0.8, 0.085*vol);
-    });
-
-    // Full chord pads — rich, warm, immediate
-    const progV=[[0,4,7],[5,9,0],[7,11,2],[9,0,4]];
-    const cV=progV[Math.floor(B/2)%4];
-    cV.forEach((s,i)=>{
-      _str(root*fr(s), t0+i*0.12, barLen*0.85, 0.04*vol*(1-i*0.08));
-      _pad(root*fr(s), t0+i*0.2, barLen+1.5, 0.03*vol, B+i*5);
-    });
-    // Octave doubling for fullness
-    cV.forEach((s,i)=>{
-      _pad(root*2*fr(s), t0+i*0.3, barLen+1.0, 0.018*vol, B*2+i*7);
-    });
-
-    // Triumphant melody — soaring, wide intervals, confident
-    const melV=[0,4,7,12,11,9,7,4,7,9,11,12,9,7,4,0];
-    const mi=B%melV.length;
-    [0,2,4,6].forEach((beat,i)=>{
-      const step=melV[(mi+i)%melV.length];
-      _mel(root*2*fr(sc[step%sc.length]), t0+beat*bl, bl*2.2, 0.048*vol);
-    });
-
-    // Counter-melody — heroic descant
-    if(phase==='triumph'||phase==='glory'){
-      const ctMel=[12,11,9,7,4,7,9,11,12,14,12,11,9,7,4,2];
+    // Orbit: counter-melody + fanfare flourishes
+    if(phase==='orbit'){
+      const ctMel=[12,11,9,7,4,7,9,12,14,12,9,7,4,2,4,7];
       const ci=B%ctMel.length;
       [1,3,5].forEach((beat,i)=>{
         _str(root*4*fr(sc[ctMel[(ci+i)%ctMel.length]%sc.length]),
-             t0+beat*bl, bl*1.8, 0.03*vol);
+             t0+beat*bl, bl*1.8, 0.026*vol);
       });
+      if(B%4===0){
+        [0,4,7,11,12].forEach((s,i)=>_plk(root*4*fr(s), t0+i*bl*0.5, 0.04*vol));
+      }
     }
 
-    // Fanfare flourishes
-    if(phase==='fanfare'||((phase==='glory')&&B%4===0)){
-      const fanf=[0,4,7,11,12,11,7,4];
-      fanf.forEach((s,i)=>{ _mel(root*4*fr(s), t0+i*bl*0.55, bl*1.0, 0.038*vol); });
+    // Weightless: melody over atmospheric pads, no rhythm — earned stillness
+    if(phase==='weightless'){
+      _pad(cRoot, t0, barLen+3.0, 0.032*vol);
+      _pad(root*fr(7), t0+0.5, barLen+2.5, 0.022*vol);
+      _atm(root*4, t0+2*bl, barLen*0.8, 0.018*vol);
     }
   }
 },
@@ -3207,7 +3044,7 @@ function playSFX(freq,start,dur,type='square',gain=0.08){
 }
 
 //  MUSIC ENGINE — simple, user-controlled
-// VORTEX (track 3) plays at game start and stays.
+// LAUNCH (track 3) plays at game start and stays.
 // Only the user can switch tracks via the music drawer.
 // No zone-based auto-switching. No belt wind.
 // pauseMusic() suspends audioCtx — resumes perfectly at same position.
@@ -3324,13 +3161,10 @@ function toggleMusicDrawer(){
   else close();
 })();
 const MOOD_DESCS=[
-  'Ambient · Vast · Floating',
-  'Dark · Modal · Dread',
-  'Warm · Nostalgic · Lush',
-  'Urgent · Driving · Pulse',
-  'Triumphant · Soaring · Epic',
-  'Jubilant · Driving · Earned',
-  'Triumphant · Warm · Soaring'
+  'Vast · Contemplative · Weightless',
+  'Tense · Mysterious · Searching',
+  'Warm · Bittersweet · Reflective',
+  'Driving · Triumphant · Cinematic'
 ];
 function updateMusicDrawer(){
   const list=document.getElementById('music-track-list');
@@ -6333,8 +6167,8 @@ function startVictoryFireworks(){
   _fireworkBurst();
   // Music fanfare
   if(audioCtx && !state.musicMuted){
-    const homewardIdx = MOODS.findIndex(m=>m.name==='HOMEWARD');
-    state.songIndex = homewardIdx >= 0 ? homewardIdx : 4;
+    const launchIdx = MOODS.findIndex(m=>m.name==='LAUNCH');
+    state.songIndex = launchIdx >= 0 ? launchIdx : 3;
     musicBarCount = 0;
     if(audioCtx.state==='suspended') try{audioCtx.resume();}catch(e){}
     playSong(state.songIndex);
@@ -6505,10 +6339,10 @@ function triggerLaunchpadVictory(){
     msg:'FUEL COLLECTED · HOMEWARD BOUND',
     _col:'#44ddff'
   };
-  // Switch to HOMEWARD track (index 5 — last in MOODS)
-  const _homewardIdx = MOODS.findIndex(m=>m.name==='HOMEWARD');
-  if(_homewardIdx >= 0){
-    state.songIndex = _homewardIdx;
+  // Switch to LAUNCH track on refuel
+  const _launchIdx = MOODS.findIndex(m=>m.name==='LAUNCH');
+  if(_launchIdx >= 0){
+    state.songIndex = _launchIdx;
     musicBarCount = 0;
     if(!state.musicMuted && !state.musicPaused){
       if(audioCtx && audioCtx.state==='suspended') try{ audioCtx.resume(); }catch(e){}
@@ -12665,7 +12499,7 @@ function returnToTitleWithScore(initials, score){
     rocksDestroyed:0, secretUnlocked:false, secretVisitCount:0, secretThreshold:10,
     inSecretLevel:false, bubbles:[], secretBlackHole:null, bhCapture:null, exitSpin:0,
     visitedLevels:new Set([1]), collectedItems:[], contentOpen:false, zoneCrossFlash:null,
-    keys:{}, songIndex:3,
+    keys:{}, songIndex:3, // 0=VOID DRIFT 1=SIGNAL 2=EMBER 3=LAUNCH
     x2BoostStar: null, _x2StarSpawned: false, gapBubble: null, _gapBubblePending: false,
     passageHatch: { hits: 0, broken: false, hitCooldown: 0 },
     launchpadWalls: null, // no enclosure in Return to Space
@@ -12716,7 +12550,7 @@ function returnToTitleWithScore(initials, score){
   resetIdleTimer(); // crucial: prevent immediate re-trigger after score submit
   window._titleReturnTime = Date.now(); // prevent Enter from score screen starting game
   // Restart music after a moment so it's clean
-  setTimeout(()=>{ if(!state.musicMuted) playSong(3); }, 500);
+  setTimeout(()=>{ if(!state.musicMuted) playSong(state.songIndex); }, 500);
 }
 
 // Idle timer resets ONLY on arrow keys and spacebar (not mouse)
