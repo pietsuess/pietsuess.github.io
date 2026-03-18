@@ -809,8 +809,14 @@ function onDown(e){
       return;
     }
 
-    // Check throw/release line drag (in editor)
+    // Check throw/release/width line drag (in editor)
     const lv = getCurrentLevel();
+    if (Math.abs(wx - lv.width) < 12) {
+      edPushUndo();
+      edDragging = true; edHandle = 'widthLine';
+      edDragStart = { mx: wx, val: lv.width };
+      canvas.style.cursor = 'ew-resize'; return;
+    }
     if (Math.abs(wx - getThrowLine()) < 12) {
       edPushUndo();
       edDragging = true; edHandle = 'throwLine';
@@ -1071,6 +1077,10 @@ function edApplyDrag(wx, wy) {
   const ds = edDragStart;
   const dx = wx - ds.mx, dy = wy - ds.my;
 
+  if (edHandle === 'widthLine') {
+    getCurrentLevel().width = snap(Math.max(getThrowLine() + 200, wx));
+    return;
+  }
   if (edHandle === 'throwLine') {
     getCurrentLevel().throwLineX = snap(Math.max(100, wx));
     return;
@@ -1647,12 +1657,17 @@ function animate(time){
     ctx.fillStyle = 'rgba(254,249,240,0.35)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'center';
     ctx.fillText('DRAG', edRlX, H/2 + 28);
 
-    // Level width marker
+    // Level width marker (draggable)
     const lwx = getCurrentLevel().width - camX;
     ctx.strokeStyle = 'rgba(244,197,66,0.3)'; ctx.lineWidth = 1; ctx.setLineDash([6,6]);
     ctx.beginPath(); ctx.moveTo(lwx, 0); ctx.lineTo(lwx, H); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(244,197,66,0.3)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
-    ctx.fillText('LEVEL WIDTH', lwx, H - 5);
+    ctx.fillStyle = 'rgba(244,197,66,0.5)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('LEVEL END', lwx, H - 5);
+    // Drag handle
+    ctx.fillStyle = 'rgba(244,197,66,0.7)';
+    ctx.fillRect(lwx - 3, H/2 - 15, 6, 30);
+    ctx.fillStyle = 'rgba(244,197,66,0.4)'; ctx.font = '500 9px Urbanist';
+    ctx.fillText('DRAG', lwx, H/2 + 28);
 
     // Selection handles
     edDrawHandles();
