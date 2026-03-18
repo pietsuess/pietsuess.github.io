@@ -73,9 +73,38 @@
 </div>
 <script>
 const TOPIC = 'piet-book-studio-chat-7x9k';
+const STORAGE_KEY = 'chat-messages';
+const NAME_KEY = 'chat-name';
 let name = '';
 let seen = new Set();
 let pendingImage = null;
+let allMessages = [];
+
+function loadMessages() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored) {
+      allMessages = JSON.parse(stored);
+      allMessages.forEach(m => {
+        seen.add(m.id);
+        addMessage(m.name, m.text, m.image, m.name === name, true);
+      });
+      const container = document.getElementById('messages');
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch(e) {}
+}
+
+function saveMessages() {
+  try {
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(allMessages));
+  } catch(e) {}
+}
+
+function storeMessage(msg) {
+  allMessages.push(msg);
+  saveMessages();
+}
 
 function showOtherInput() {
   document.getElementById('other-input').style.display = 'block';
@@ -92,19 +121,24 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('other-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.stopPropagation(); joinOther(); }
   });
+  // Auto-rejoin if name was saved
+  const saved = localStorage.getItem(NAME_KEY);
+  if (saved) join(saved);
 });
 
 function join(n) {
   name = n;
+  localStorage.setItem(NAME_KEY, n);
   document.getElementById('setup').style.display = 'none';
   document.getElementById('chat').style.display = 'flex';
   document.getElementById('header').innerHTML = 'Chat - ' + name + ' <span id="status">connecting...</span>';
   document.getElementById('msg').focus();
+  loadMessages();
   listen();
 }
 
 function listen() {
-  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse');
+  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse?since=all');
   es.onopen = () => {
     document.getElementById('status').textContent = 'connected';
   };
@@ -115,6 +149,7 @@ function listen() {
       const msg = JSON.parse(data.message);
       if (seen.has(msg.id)) return;
       seen.add(msg.id);
+      storeMessage(msg);
       addMessage(msg.name, msg.text, msg.image, msg.name === name);
     } catch(err) {}
   });
@@ -172,7 +207,7 @@ function dataURLtoBlob(dataURL) {
   return new Blob([arr], { type: mime });
 }
 
-function addMessage(sender, text, image, mine) {
+function addMessage(sender, text, image, mine, skipScroll) {
   const container = document.getElementById('messages');
   const div = document.createElement('div');
   div.className = 'msg ' + (mine ? 'mine' : 'theirs');
@@ -186,7 +221,7 @@ function addMessage(sender, text, image, mine) {
   }
   div.innerHTML = html;
   container.appendChild(div);
-  container.scrollTop = container.scrollHeight;
+  if (!skipScroll) container.scrollTop = container.scrollHeight;
 }
 
 function openLightbox(src) {
