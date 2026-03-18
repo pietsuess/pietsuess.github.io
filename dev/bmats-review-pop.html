@@ -256,7 +256,7 @@ body {
   position: absolute;
   bottom: 0;
   left: 0; right: 0;
-  background: rgba(26, 22, 16, 0.95);
+  background: rgba(26, 22, 16, 0.75);
   backdrop-filter: blur(8px);
   border-top: 1px solid #3a3228;
   border-radius: 0 0 8px 8px;
@@ -689,14 +689,43 @@ function jumpToCue(target) {
   });
 }
 
+// Find nearest cue index at or before a given time
+function findNearestCue(cues, time) {
+  let lo = 0, hi = cues.length - 1, best = 0;
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (cues[mid].s <= time) { best = mid; lo = mid + 1; }
+    else { hi = mid - 1; }
+  }
+  return best;
+}
+
 document.getElementById('prev-cue-btn').addEventListener('click', () => {
-  const target = currentCueIndex > 0 ? currentCueIndex - 1 : 0;
-  jumpToCue(target);
+  if (!player || !nameEntered) return;
+  const cues = SUBTITLE_DATA[currentLang];
+  if (!cues || !cues.length) return;
+  if (currentCueIndex > 0) {
+    jumpToCue(currentCueIndex - 1);
+  } else {
+    player.getCurrentTime().then(t => {
+      const nearest = findNearestCue(cues, t);
+      jumpToCue(nearest > 0 ? nearest - 1 : 0);
+    });
+  }
 });
 
 document.getElementById('next-cue-btn').addEventListener('click', () => {
-  const target = currentCueIndex >= 0 ? currentCueIndex + 1 : 0;
-  jumpToCue(target);
+  if (!player || !nameEntered) return;
+  const cues = SUBTITLE_DATA[currentLang];
+  if (!cues || !cues.length) return;
+  if (currentCueIndex >= 0) {
+    jumpToCue(Math.min(currentCueIndex + 1, cues.length - 1));
+  } else {
+    player.getCurrentTime().then(t => {
+      const nearest = findNearestCue(cues, t);
+      jumpToCue(Math.min(nearest + 1, cues.length - 1));
+    });
+  }
 });
 
 // ============================================================
