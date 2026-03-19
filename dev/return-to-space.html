@@ -5712,9 +5712,6 @@ function update(){
   updateWaveBeams();
   updateDebrisWall();
   updateRace();
-  updateGateCollisions();
-  updateStartGateBarrier();
-  updateRaceBorderCollision();
   // Race zoom lerp — smooth transition
   _race.zoom += (_race.zoomTarget - _race.zoom) * 0.04;
 
@@ -5740,13 +5737,13 @@ function update(){
 
   // (Speed particles removed — motion blur used instead)
 
-  // Gate burst particles — update
-  for(let gp = _race.gateParticles.length - 1; gp >= 0; gp--){
-    const p = _race.gateParticles[gp];
+  // Checkpoint burst particles — update
+  for(let gp = _race.checkpointParticles.length - 1; gp >= 0; gp--){
+    const p = _race.checkpointParticles[gp];
     p.wx += p.vx; p.wy += p.vy;
     p.vx *= 0.95; p.vy *= 0.95;
     p.age++;
-    if(p.age > p.maxAge) _race.gateParticles.splice(gp, 1);
+    if(p.age > p.maxAge) _race.checkpointParticles.splice(gp, 1);
   }
 
   // Grid world population — suppressed entirely in secret level
@@ -10381,13 +10378,7 @@ function startGame(){
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = false;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
-  // Spawn race course boost pads into the game's boost pad system
-  RACE_COURSES.forEach(function(c){
-    if(!c.boostPads) return;
-    c.boostPads.forEach(function(bp){
-      state.boostPads.push({ wx:bp.wx, wy:bp.wy, visualAng:bp.angle, phase:Math.random()*Math.PI*2, _cooldown:0 });
-    });
-  });
+  // Race courses use checkpoint rings — no boost pads to spawn
   state.collectedItems = [];
   // Start just outside Earth's surface, inside debris field
   state.x = EARTH_WX + 320; state.y = EARTH_WY;
@@ -10472,298 +10463,87 @@ function loop(timestamp) {
 initLeaderboard();
 
 // ══════════════════════════════════════════════════════════════
-//  RACE BEACONS — slalom courses with countdown start gate
+//  RACE SYSTEM — checkpoint ring courses with asteroid obstacles
 // ══════════════════════════════════════════════════════════════
 
-// Generate arc-based course — smooth sweeping curves
-// ── GATE RUN — physical gap barriers the ship threads through ──
-function _buildGateRun(){
-  const sx = EARTH_WX + 2800, sy = EARTH_WY;
-  // Waypoints define the flight path — gentle S-curves that suit arc-based flight
-  // Each waypoint becomes a gate location; gates are perpendicular to the path
-  const waypoints = [];
-  const count = 25;
-  const spacing = 700; // wider spacing between gates
-  const amplitude = 500; // Y swing
+// ── Course builder helpers ──
+function _buildCheckpointCourse(opts){
+  // opts: { name, sx, sy, checkpoints (count), spacing, asteroidsPer, curveAmp, curveFreq }
+  const sx = opts.sx, sy = opts.sy;
+  const checkpoints = [];
+  const count = opts.checkpoints;
+  const spacing = opts.spacing;
+  const amp = opts.curveAmp || 600;
+  const freq = opts.curveFreq || 3;
+
+  // Build checkpoint positions — eastward path with vertical curves
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 800 + i * spacing;
-    // 4 wave S-curves
-    const wy = sy + Math.sin(t * Math.PI * 4) * amplitude * (0.4 + t * 0.6);
-    waypoints.push({ wx, wy });
+    const wy = sy + Math.sin(t * Math.PI * freq) * amp * (0.4 + t * 0.6);
+    checkpoints.push({ wx, wy, passed: false });
   }
 
-  // Build gates at each waypoint, oriented perpendicular to the path
-  const gates = [];
-  for(let i = 0; i < waypoints.length; i++){
-    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
-    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
-    // Path direction at this point (average of incoming and outgoing)
-    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
-    const pathAngle = Math.atan2(dy, dx);
-    // Gate is perpendicular to path
-    const gateAngle = pathAngle + Math.PI / 2;
-    // Gap size varies: wider at start/end, tighter in the middle
-    const gt = i / (count - 1);
-    const difficulty = Math.sin(gt * Math.PI) * 0.4; // 0 at ends, 0.4 in middle
-    const gapSize = 280 - difficulty * 120; // 280px easy, 160px hard at peak
-    const wallLen = 1200; // total wall length — extends well past corridor borders
-    // Each wall is one line with a kink near the gap end.
-    // 90% is straight perpendicular. Last 10% bends forward (flight direction).
-    const halfGap = gapSize / 2;
-    const halfWall = wallLen / 2;
-    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
-    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
-    const px = dx/pLen, py = dy/pLen;
-    const wallPts = [];
-    const wallSegLen = halfWall - halfGap; // length of one wall side
-    const kinkFrac = 0.10; // last 10% bends
-    for(let side = -1; side <= 1; side += 2){
-      // Outer end: far from gap, on the perpendicular
-      const outerX = waypoints[i].wx + gax * halfWall * side;
-      const outerY = waypoints[i].wy + gay * halfWall * side;
-      // Kink point: 10% from the gap edge, still on the perpendicular
-      const kinkDist = halfGap + wallSegLen * kinkFrac;
-      const kinkX = waypoints[i].wx + gax * kinkDist * side;
-      const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      // Tip: continues mostly toward gap, deflected 30° toward flight direction
-      const kinkSegLen = wallSegLen * kinkFrac;
-      // Direction from outer toward gap (inward along gate axis)
-      const inX = -gax * side, inY = -gay * side;
-      // 30° bend: mostly inward (cos30=0.866) + slight flight deflection (sin30=0.5)
-      const tipDirX = inX * 0.866 + px * 0.5;
-      const tipDirY = inY * 0.866 + py * 0.5;
-      const tipX = kinkX + tipDirX * kinkSegLen;
-      const tipY = kinkY + tipDirY * kinkSegLen;
-      // ox,oy = outer end; ix,iy = kink; tx,ty = tip (gap end)
-      wallPts.push({ ox: outerX, oy: outerY, ix: kinkX, iy: kinkY, tx: tipX, ty: tipY, side: side });
+  // Build asteroids between each pair of checkpoints
+  const asteroids = [];
+  for(let i = 0; i < count - 1; i++){
+    const a = checkpoints[i], b = checkpoints[i + 1];
+    const numAst = opts.asteroidsPer;
+    for(let j = 0; j < numAst; j++){
+      const t = (j + 0.5) / numAst + (Math.random() - 0.5) * 0.15;
+      const mx = a.wx + (b.wx - a.wx) * t;
+      const my = a.wy + (b.wy - a.wy) * t;
+      // Offset within ~800px corridor width perpendicular to path
+      const perpAngle = Math.atan2(b.wy - a.wy, b.wx - a.wx) + Math.PI / 2;
+      const perpOfs = (Math.random() - 0.5) * 800;
+      const awx = mx + Math.cos(perpAngle) * perpOfs;
+      const awy = my + Math.sin(perpAngle) * perpOfs;
+      const r = 15 + Math.random() * 25;
+      // ~40% drift, ~60% stationary
+      const drifts = Math.random() < 0.4;
+      asteroids.push({
+        wx: awx, wy: awy, r: r,
+        vx: drifts ? (Math.random() - 0.5) * 0.6 : 0,
+        vy: drifts ? (Math.random() - 0.5) * 0.6 : 0,
+        hit: false, hitTimer: 0
+      });
     }
-    gates.push({
-      wx: waypoints[i].wx, wy: waypoints[i].wy,
-      angle: gateAngle,
-      gapSize: gapSize,
-      wallLen: wallLen,
-      passed: false,
-      pathAngle: pathAngle,
-      wallPts: wallPts, // funnel wall line segments
-      gax: gax, gay: gay, px: px, py: py
-    });
   }
 
-  // Boost pads — placed between every 3rd gate pair, amplify current velocity
-  const boostPads = [];
-  for(let i = 8; i < gates.length - 1; i += 15){
-    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
-    const midX = (g.wx + gn.wx) / 2, midY = (g.wy + gn.wy) / 2;
-    boostPads.push({ wx: midX, wy: midY, angle: 0, power: 18, phase: 0, _cooldown: 0 });
-  }
+  const lastCp = checkpoints[count - 1];
+  const finishWX = lastCp.wx + spacing * 0.6;
+  const finishWY = lastCp.wy;
 
   return {
-    name: 'GATE RUN',
+    name: opts.name,
     startWX: sx, startWY: sy,
-    finishWX: sx + 800 + count * spacing + 600, finishWY: waypoints[count-1].wy,
-    gates: gates,
-    boostPads: boostPads,
-    waypoints: waypoints
+    finishWX: finishWX, finishWY: finishWY,
+    checkpoints: checkpoints,
+    asteroids: asteroids
   };
 }
-// Track 2: DRIFT CORRIDOR — wider gaps, longer straights, more sweeping curves
-function _buildDriftCorridor(){
-  // Parallel to Track 1, offset 2000px south
-  const sx = EARTH_WX + 2800, sy = EARTH_WY + 2000;
-  const waypoints = [];
-  const count = 20;
-  const spacing = 900;
-  const kinkFrac = 0.10;
-  const amplitude = 600;
-  for(let i = 0; i < count; i++){
-    const t = i / (count - 1);
-    const wx = sx + 800 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 3) * amplitude * (0.5 + t * 0.5);
-    waypoints.push({ wx, wy });
-  }
-  const gates = [];
-  for(let i = 0; i < waypoints.length; i++){
-    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
-    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
-    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
-    const pathAngle = Math.atan2(dy, dx);
-    const gateAngle = pathAngle + Math.PI / 2;
-    const gt = i / (count - 1);
-    const difficulty = Math.sin(gt * Math.PI) * 0.3;
-    const gapSize = 320 - difficulty * 100; // wider gaps
-    const wallLen = 1200;
-    const halfGap = gapSize / 2, halfWall = wallLen / 2;
-    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
-    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
-    const px = dx/pLen, py = dy/pLen;
-    const wallSegLen = halfWall - halfGap;
-    const wallPts = [];
-    for(let side = -1; side <= 1; side += 2){
-      const outerX = waypoints[i].wx + gax * halfWall * side;
-      const outerY = waypoints[i].wy + gay * halfWall * side;
-      const kinkDist = halfGap + wallSegLen * kinkFrac;
-      const kinkX = waypoints[i].wx + gax * kinkDist * side;
-      const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      const kinkSegLen2 = wallSegLen * kinkFrac;
-      const inX2 = -gax * side, inY2 = -gay * side;
-      const tipDirX2 = inX2 * 0.866 + px * 0.5;
-      const tipDirY2 = inY2 * 0.866 + py * 0.5;
-      const tX = kinkX + tipDirX2 * kinkSegLen2;
-      const tY = kinkY + tipDirY2 * kinkSegLen2;
-      wallPts.push({ ox: outerX, oy: outerY, ix: kinkX, iy: kinkY, tx: tX, ty: tY, side: side });
-    }
-    gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
-  }
-  const boostPads = [];
-  for(let i = 5; i < gates.length - 1; i += 8){
-    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
-    boostPads.push({ wx: (g.wx+gn.wx)/2, wy: (g.wy+gn.wy)/2, angle: 0, power: 18, phase: 0, _cooldown: 0 });
-  }
-  return { name: 'DRIFT CORRIDOR', startWX: sx, startWY: sy, finishWX: sx + 800 + count * spacing + 600, finishWY: waypoints[count-1].wy, gates, boostPads, waypoints };
-}
 
-// Track 3: NEEDLE RUN — tight gaps, fast rhythm, shorter spacing
-function _buildNeedleRun(){
-  // Parallel to Track 1, offset 2000px north
-  const sx = EARTH_WX + 2800, sy = EARTH_WY - 2000;
-  const kinkFrac = 0.10;
-  const waypoints = [];
-  const count = 30;
-  const spacing = 550;
-  const amplitude = 400;
-  for(let i = 0; i < count; i++){
-    const t = i / (count - 1);
-    const wx = sx + 600 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 5) * amplitude * (0.3 + t * 0.7);
-    waypoints.push({ wx, wy });
-  }
-  const gates = [];
-  for(let i = 0; i < waypoints.length; i++){
-    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
-    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
-    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
-    const pathAngle = Math.atan2(dy, dx);
-    const gateAngle = pathAngle + Math.PI / 2;
-    const gt = i / (count - 1);
-    const difficulty = Math.sin(gt * Math.PI) * 0.5;
-    const gapSize = 220 - difficulty * 80; // tighter gaps
-    const wallLen = 1200;
-    const halfGap = gapSize / 2, halfWall = wallLen / 2;
-    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
-    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
-    const px = dx/pLen, py = dy/pLen;
-    const wallPts = [];
-    const wallSegLen = halfWall - halfGap;
-    for(let side = -1; side <= 1; side += 2){
-      const outerX = waypoints[i].wx + gax * halfWall * side;
-      const outerY = waypoints[i].wy + gay * halfWall * side;
-      const kinkDist = halfGap + wallSegLen * kinkFrac;
-      const kinkX = waypoints[i].wx + gax * kinkDist * side;
-      const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      const kinkSegLen3 = wallSegLen * kinkFrac;
-      const inX3 = -gax * side, inY3 = -gay * side;
-      const tipDirX3 = inX3 * 0.866 + px * 0.5;
-      const tipDirY3 = inY3 * 0.866 + py * 0.5;
-      const tX = kinkX + tipDirX3 * kinkSegLen3;
-      const tY = kinkY + tipDirY3 * kinkSegLen3;
-      wallPts.push({ ox: outerX, oy: outerY, ix: kinkX, iy: kinkY, tx: tX, ty: tY, side: side });
-    }
-    gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
-  }
-  const boostPads = [];
-  for(let i = 1; i < gates.length - 1; i += 2){
-    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
-    boostPads.push({ wx: (g.wx+gn.wx)/2, wy: (g.wy+gn.wy)/2, angle: 0, power: 18, phase: 0, _cooldown: 0 });
-  }
-  return { name: 'NEEDLE RUN', startWX: sx, startWY: sy, finishWX: sx + 600 + count * spacing + 600, finishWY: waypoints[count-1].wy, gates, boostPads, waypoints };
-}
-
-const RACE_COURSES = [ _buildGateRun(), _buildDriftCorridor(), _buildNeedleRun() ];
-
-// ── Build light dot borders along raceway edges ──
-const RACE_BORDER_HALF = 420; // half-width of the dot border corridor
-const RACE_DOT_SPACING = 90; // px between dots
-function _buildRaceDots(course){
-  const pts = [
-    { wx: course.startWX, wy: course.startWY },
-    ...course.waypoints,
-    { wx: course.finishWX, wy: course.finishWY }
-  ];
-  const north = [], south = [];
-  for(let i = 0; i < pts.length - 1; i++){
-    const ax = pts[i].wx, ay = pts[i].wy;
-    const bx = pts[i+1].wx, by = pts[i+1].wy;
-    const sdx = bx - ax, sdy = by - ay;
-    const segLen = Math.sqrt(sdx*sdx + sdy*sdy) || 1;
-    const steps = Math.max(1, Math.round(segLen / RACE_DOT_SPACING));
-    const tx = sdx/segLen, ty = sdy/segLen;
-    const nx = -ty, ny = tx; // perpendicular
-    for(let s = 0; s <= (i < pts.length - 2 ? steps - 1 : steps); s++){
-      const t = s / steps;
-      const wx = ax + sdx * t, wy = ay + sdy * t;
-      north.push({ wx: wx + nx * RACE_BORDER_HALF, wy: wy + ny * RACE_BORDER_HALF });
-      south.push({ wx: wx - nx * RACE_BORDER_HALF, wy: wy - ny * RACE_BORDER_HALF });
-    }
-  }
-  // Also store center + normal for collision
-  const centerPts = [];
-  for(let i = 0; i < pts.length - 1; i++){
-    const ax = pts[i].wx, ay = pts[i].wy;
-    const bx = pts[i+1].wx, by = pts[i+1].wy;
-    const sdx2 = bx - ax, sdy2 = by - ay;
-    const segLen2 = Math.sqrt(sdx2*sdx2 + sdy2*sdy2) || 1;
-    const steps2 = Math.max(1, Math.round(segLen2 / 120)); // coarser for collision
-    const nx2 = -(sdy2/segLen2), ny2 = sdx2/segLen2;
-    for(let s = 0; s <= steps2; s++){
-      const t2 = s / steps2;
-      centerPts.push({ wx: ax + sdx2 * t2, wy: ay + sdy2 * t2, nx: nx2, ny: ny2 });
-    }
-  }
-  return { north, south, center: centerPts };
-}
-const _allRaceDots = RACE_COURSES.map(c => _buildRaceDots(c));
-let _raceDots = _allRaceDots[0];
-
-// ── Raceway border collision — keeps ship inside the dot walls during race ──
-function updateRaceBorderCollision(){
-  // Active during countdown AND race — keeps ship in the corridor the whole time
-  if(!_race.active) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-
-  // Find nearest center point on the path
-  const cPts = _raceDots.center;
-  let bestIdx = 0, bestDist2 = Infinity;
-  for(let i = 0; i < cPts.length; i++){
-    const dx = state.x - cPts[i].wx, dy = state.y - cPts[i].wy;
-    const d2 = dx*dx + dy*dy;
-    if(d2 < bestDist2){ bestDist2 = d2; bestIdx = i; }
-  }
-
-  const cp = cPts[bestIdx];
-  const shipDx = state.x - cp.wx, shipDy = state.y - cp.wy;
-  const perpDist = shipDx * cp.nx + shipDy * cp.ny;
-
-  // Gentle center magnetism — always pulls toward corridor center
-  const magnetStrength = 0.15;
-  state.vx -= perpDist * cp.nx * magnetStrength * 0.001;
-  state.vy -= perpDist * cp.ny * magnetStrength * 0.001;
-
-  const wallLimit = RACE_BORDER_HALF - 14;
-  if(Math.abs(perpDist) > wallLimit){
-    // Hard clamp: force position back to the wall limit
-    const sign = perpDist > 0 ? 1 : -1;
-    state.x = cp.wx + sign * cp.nx * wallLimit;
-    state.y = cp.wy + sign * cp.ny * wallLimit;
-    // Cancel outward velocity component completely
-    const vOut = (state.vx * cp.nx + state.vy * cp.ny) * sign;
-    if(vOut > 0){
-      state.vx -= vOut * cp.nx * sign;
-      state.vy -= vOut * cp.ny * sign;
-    }
-  }
-}
+// Build 3 courses
+const RACE_COURSES = [
+  _buildCheckpointCourse({
+    name: 'ASTEROID SLALOM',
+    sx: EARTH_WX + 2800, sy: EARTH_WY,
+    checkpoints: 8, spacing: 2500, asteroidsPer: 15,
+    curveAmp: 500, curveFreq: 3
+  }),
+  _buildCheckpointCourse({
+    name: 'DEBRIS FIELD',
+    sx: EARTH_WX + 2800, sy: EARTH_WY + 2000,
+    checkpoints: 10, spacing: 2000, asteroidsPer: 20,
+    curveAmp: 700, curveFreq: 4
+  }),
+  _buildCheckpointCourse({
+    name: 'DEEP SPACE RUN',
+    sx: EARTH_WX + 2800, sy: EARTH_WY - 2000,
+    checkpoints: 8, spacing: 3000, asteroidsPer: 25,
+    curveAmp: 800, curveFreq: 2.5
+  })
+];
 
 // Race state
 const _race = {
@@ -10773,24 +10553,27 @@ const _race = {
   countdownPhase: 0,
   started: false,
   timer: 0,
-  nextGate: 0,
+  nextCheckpoint: 0,
   score: 0,
   bestTime: null,
   finished: false,
   finishTimer: 0,
   nearStart: false,
   showApproach: false,
-  _gateSides: [],
-  // Race zoom — smoothly lerps toward target
-  zoom: 1.0,       // current zoom level (1.0 = normal)
-  zoomTarget: 1.0, // what we're lerping toward
-  // Speed particles — streaks past during race
-  speedParticles: [],
-  // Gate pass burst particles
-  gateParticles: [],
-  // Zoom pulse timer (for gate pass effect)
+  zoom: 1.0,
+  zoomTarget: 1.0,
+  _finishCooldown: 0,
+  _preSongIdx: undefined,
+  hits: 0,
+  // Checkpoint pass burst particles
+  checkpointParticles: [],
+  // Zoom pulse timer
   zoomPulseTimer: 0,
   zoomPulseBase: 1.35,
+  // Screen shake
+  _shakeTimer: 0,
+  // HIT flash message
+  _hitMsg: null,
 };
 // Race camera lead — stored here so CX/CY can read them
 var _raceLeadX = 0, _raceLeadY = 0;
@@ -10801,165 +10584,25 @@ function initRaceCourse(idx){
   _race.countdown = 0;
   _race.started = false;
   _race.timer = 0;
-  _race.nextGate = 0;
+  _race.nextCheckpoint = 0;
   _race.score = 0;
   _race.finished = false;
   _race.finishTimer = 0;
   _race.nearStart = false;
   _race.showApproach = false;
-  // Init gate sides
-  const course = RACE_COURSES[idx];
-  if(course && course.gates){
-    _race._gateSides = course.gates.map(() => 0);
-    course.gates.forEach(g => { g.passed = false; });
-  }
-  _race.speedParticles = [];
-  _race.gateParticles = [];
+  _race.hits = 0;
+  _race.checkpointParticles = [];
   _race.zoomPulseTimer = 0;
+  _race._shakeTimer = 0;
+  _race._hitMsg = null;
+  // Reset checkpoints and asteroids
+  const course = RACE_COURSES[idx];
+  if(course){
+    course.checkpoints.forEach(function(cp){ cp.passed = false; });
+    course.asteroids.forEach(function(a){ a.hit = false; a.hitTimer = 0; });
+  }
 }
 initRaceCourse(0);
-
-// Gate collision: check if ship hits the solid wall parts (not the gap)
-function updateGateCollisions(){
-  if(!state.started || state.paused || state.gameOver) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course || !course.gates) return;
-
-  const shipR = 8; // ship collision radius
-  for(let i = 0; i < course.gates.length; i++){
-    const g = course.gates[i];
-    // Skip gates far from ship
-    const gdx = state.x - g.wx, gdy = state.y - g.wy;
-    if(gdx*gdx + gdy*gdy > 800*800) continue;
-
-    // Gate axis unit vector (along the wall)
-    const gax = Math.cos(g.angle), gay = Math.sin(g.angle);
-    // Gate normal (perpendicular to wall, points in path direction)
-    const gnx = -gay, gny = gax;
-
-    // Project ship position onto gate coordinate system
-    const localAlong = gdx * gax + gdy * gay; // distance along wall axis
-    const localPerp = gdx * gnx + gdy * gny;  // distance through gate plane
-
-    // Update gate side tracking
-    const side = localPerp > 0 ? 1 : -1;
-    if(_race._gateSides[i] === 0) _race._gateSides[i] = side;
-
-    // Check crossing (side changed) — only for the next gate in sequence
-    if(i === _race.nextGate && _race.started && !_race.finished){
-      const prevSide = _race._gateSides[i];
-      if(prevSide !== 0 && prevSide !== side){
-        // Ship crossed the gate plane — check if through the gap
-        const halfGap = g.gapSize / 2;
-        if(Math.abs(localAlong) < halfGap){
-          // Clean pass through the gap!
-          g.passed = true;
-          _race.nextGate++;
-          const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-          const closeBonus = Math.max(0, Math.round((halfGap - Math.abs(localAlong)) / 2));
-          const speedBonus = Math.round(spd * 8);
-          const gateScore = 150 + closeBonus + speedBonus;
-          _race.score += gateScore;
-          state.score += gateScore;
-          document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-          state.zoneCrossFlash = { lvl:-3, timer:50, msg:'+' + gateScore, _col:'#00ffcc' };
-          if(!state._raceRings) state._raceRings = [];
-          state._raceRings.push({ wx: g.wx, wy: g.wy, r: 0, maxR: 120, age: 0 });
-          if(audioCtx && !state.sfxMuted){
-            const _t = audioCtx.currentTime;
-            // Rising whoosh + chime
-            playBeep(300, _t, 0.04, 'sawtooth', 0.06);
-            playBeep(600, _t + 0.03, 0.06, 'sine', 0.08);
-            playBeep(900, _t + 0.06, 0.08, 'sine', 0.10);
-            playBeep(1200, _t + 0.10, 0.12, 'sine', 0.08);
-            // Low body
-            playBeep(150, _t, 0.1, 'triangle', 0.05);
-          }
-          // Gate pass burst particles — 18 particles outward from gate center
-          for(let bp = 0; bp < 18; bp++){
-            const bAngle = (bp / 18) * Math.PI * 2 + Math.random() * 0.3;
-            const bSpd = 4 + Math.random() * 6;
-            _race.gateParticles.push({
-              wx: g.wx, wy: g.wy,
-              vx: Math.cos(bAngle) * bSpd, vy: Math.sin(bAngle) * bSpd,
-              age: 0, maxAge: 18 + Math.random() * 8
-            });
-          }
-          // Zoom pulse — brief 3% zoom bump
-          _race.zoomPulseBase = _race.zoomTarget;
-          _race.zoomTarget = _race.zoom * 1.03;
-          _race.zoomPulseTimer = 8;
-        }
-        // If crossed outside gap, they hit a wall (handled below)
-      }
-    }
-    _race._gateSides[i] = side;
-
-    // Auto-skip missed gates: if ship is 400+ px past a gate that hasn't been passed
-    if(!g.passed && _race.started && !_race.finished && i < _race.nextGate === false){
-      // Check if ship has gone well past this gate's X position
-      const pastDx = state.x - g.wx;
-      const pastDy = state.y - g.wy;
-      // Use the gate's normal direction to determine "past" (dot product with path direction)
-      const gnxG = -Math.sin(g.angle), gnyG = Math.cos(g.angle);
-      const pastDist = pastDx * gnxG + pastDy * gnyG;
-      if(Math.abs(pastDist) > 400 && i < _race.nextGate + 5){
-        // This gate was missed — auto-skip it
-        g.passed = true;
-        if(i === _race.nextGate){
-          // Skip all consecutive missed gates
-          while(_race.nextGate < course.gates.length && course.gates[_race.nextGate].passed){
-            _race.nextGate++;
-          }
-        }
-        const penalty = 200;
-        _race.score -= penalty;
-        state.score -= penalty;
-        document.getElementById('score').textContent = String(Math.max(0, state.score)).padStart(6,'0');
-        state.zoneCrossFlash = { lvl:-3, timer:60, msg:'GATE MISSED -200', _col:'#ff4444' };
-        if(audioCtx && !state.sfxMuted){
-          const _t = audioCtx.currentTime;
-          playBeep(200, _t, 0.15, 'sawtooth', 0.08);
-          playBeep(120, _t + 0.1, 0.2, 'sawtooth', 0.06);
-        }
-      }
-    }
-
-    // Funnel wall collision — test against each angled wall segment + tip
-    if(g.wallPts){
-      // Helper: test ship against a single line segment, push out + slide
-      function _testWallSeg(ax,ay,bx,by){
-        const ex = bx - ax, ey = by - ay;
-        const segLen = Math.sqrt(ex*ex + ey*ey) || 1;
-        const wtx = ex/segLen, wty = ey/segLen;
-        const wnx = -wty, wny = wtx;
-        const dx2 = state.x - ax, dy2 = state.y - ay;
-        const along = dx2 * wtx + dy2 * wty;
-        const perp = dx2 * wnx + dy2 * wny;
-        if(along > -20 && along < segLen + 20 && Math.abs(perp) < shipR + 30){
-          const pushSign = perp > 0 ? 1 : -1;
-          const pushAmt = (shipR + 32) - Math.abs(perp);
-          if(pushAmt > 0){
-            // Just push back inside — don't change velocity direction at all
-            state.x += wnx * pushSign * pushAmt;
-            state.y += wny * pushSign * pushAmt;
-            // Tiny speed loss, no direction change
-            state.vx *= 0.99;
-            state.vy *= 0.99;
-            state.collisionFlash = 2;
-          }
-        }
-      }
-      for(let w = 0; w < g.wallPts.length; w++){
-        const wp = g.wallPts[w];
-        // Main wall: outer → kink (straight perpendicular)
-        _testWallSeg(wp.ox, wp.oy, wp.ix, wp.iy);
-        // Bent tip: kink → tip (angled forward)
-        if(wp.tx !== undefined) _testWallSeg(wp.ix, wp.iy, wp.tx, wp.ty);
-      }
-    }
-  }
-}
 
 function updateRace(){
   if(!state.started || state.paused || state.gameOver) return;
@@ -10972,14 +10615,13 @@ function updateRace(){
   // Show instructions when approaching start area + start zooming in
   if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && distToStart < 500){
     _race.showApproach = true;
-    _race.zoomTarget = 1.35; // zoom in as you approach
+    _race.zoomTarget = 1.35;
   } else if(distToStart > 600 && !_race.active){
     _race.showApproach = false;
-    _race.zoomTarget = 1.0; // zoom back out
+    _race.zoomTarget = 1.0;
   }
 
   // Enter staging box — trigger countdown
-  // Box is 350x280, centered at startWX-235, startWY
   const _inBox = Math.abs(state.x - (course.startWX - 235)) < 175 && Math.abs(state.y - course.startWY) < 140;
   if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && _inBox){
     if(!_race.nearStart){
@@ -10989,15 +10631,17 @@ function updateRace(){
       _race.countdownPhase = 3;
       _race.started = false;
       _race.timer = 0;
-      _race.nextGate = 0;
+      _race.nextCheckpoint = 0;
       _race.score = 0;
+      _race.hits = 0;
       _race.showApproach = false;
-      // Reset gates
-      if(course.gates) course.gates.forEach(g => { g.passed = false; });
-      _race._gateSides = course.gates ? course.gates.map(() => 0) : [];
+      _race._hitMsg = null;
+      // Reset checkpoints and asteroids
+      course.checkpoints.forEach(function(cp){ cp.passed = false; });
+      course.asteroids.forEach(function(a){ a.hit = false; a.hitTimer = 0; });
       // Switch to LAUNCH track for race hype
       _race._preSongIdx = state.songIndex;
-      const _launchIdx = MOODS.findIndex(m=>m.name==='LAUNCH');
+      const _launchIdx = MOODS.findIndex(function(m){return m.name==='LAUNCH';});
       if(_launchIdx >= 0 && state.songIndex !== _launchIdx){
         state.songIndex = _launchIdx;
         musicBarCount = 0;
@@ -11008,12 +10652,24 @@ function updateRace(){
   }
   if(distToStart > 400) _race.nearStart = false;
 
+  // Start gate barrier — block ship during countdown
+  if(_race.active && !_race.started){
+    const gateX = course.startWX;
+    const gateHalfH = 450;
+    const bdy = state.y - course.startWY;
+    if(Math.abs(bdy) < gateHalfH && state.x > gateX - 60){
+      state.x = gateX - 62;
+      state.vx = Math.min(state.vx, 0);
+      state.vy *= 0.9;
+      state.collisionFlash = 3;
+    }
+  }
+
   // Countdown
   if(_race.active && _race.countdown > 0){
     _race.countdown--;
     const prevPhase = _race.countdownPhase;
     _race.countdownPhase = Math.ceil(_race.countdown / 60);
-    // Countdown beeps on each number change
     if(_race.countdownPhase !== prevPhase && _race.countdownPhase > 0 && audioCtx && !state.sfxMuted){
       const _ct = audioCtx.currentTime;
       playBeep(440, _ct, 0.12, 'sine', 0.10);
@@ -11021,7 +10677,6 @@ function updateRace(){
     }
     if(_race.countdown <= 0){
       _race.started = true;
-      // GO! fanfare
       if(audioCtx && !state.sfxMuted){
         const _gt = audioCtx.currentTime;
         playBeep(660, _gt, 0.08, 'sine', 0.12);
@@ -11033,28 +10688,134 @@ function updateRace(){
     return;
   }
 
-  // Race in progress — gate crossing handled in updateGateCollisions()
+  // Race in progress
   if(_race.started && !_race.finished){
     _race.timer++;
+
+    // Checkpoint collision — distance check
+    const cpCount = course.checkpoints.length;
+    for(let ci = _race.nextCheckpoint; ci < cpCount; ci++){
+      const cp = course.checkpoints[ci];
+      if(cp.passed) continue;
+      const cdx = state.x - cp.wx, cdy = state.y - cp.wy;
+      const cDist = Math.sqrt(cdx*cdx + cdy*cdy);
+
+      if(ci === _race.nextCheckpoint && cDist < 350){
+        // Passed through checkpoint ring
+        cp.passed = true;
+        _race.nextCheckpoint++;
+        const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
+        const speedBonus = Math.round(spd * 5);
+        const cpScore = 200 + speedBonus;
+        _race.score += cpScore;
+        state.score += cpScore;
+        document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+        state.zoneCrossFlash = { lvl:-3, timer:50, msg:'+' + cpScore, _col:'#00ffcc' };
+        // Particle burst — 20 particles outward
+        for(let bp = 0; bp < 20; bp++){
+          const bAngle = (bp / 20) * Math.PI * 2 + Math.random() * 0.3;
+          const bSpd = 4 + Math.random() * 6;
+          _race.checkpointParticles.push({
+            wx: cp.wx, wy: cp.wy,
+            vx: Math.cos(bAngle) * bSpd, vy: Math.sin(bAngle) * bSpd,
+            age: 0, maxAge: 18 + Math.random() * 8
+          });
+        }
+        // Shockwave ring
+        if(!state._raceRings) state._raceRings = [];
+        state._raceRings.push({ wx: cp.wx, wy: cp.wy, r: 0, maxR: 160, age: 0 });
+        // Ascending chime
+        if(audioCtx && !state.sfxMuted){
+          const _t = audioCtx.currentTime;
+          playBeep(400 + ci * 80, _t, 0.06, 'sine', 0.10);
+          playBeep(600 + ci * 80, _t + 0.05, 0.08, 'sine', 0.10);
+          playBeep(800 + ci * 80, _t + 0.10, 0.10, 'sine', 0.08);
+          playBeep(150, _t, 0.08, 'triangle', 0.05);
+        }
+        // Zoom pulse
+        _race.zoomPulseBase = _race.zoomTarget;
+        _race.zoomTarget = _race.zoom * 1.03;
+        _race.zoomPulseTimer = 8;
+        break;
+      }
+
+      // Auto-complete missed checkpoint (X position 500px+ past)
+      if(ci === _race.nextCheckpoint && !cp.passed){
+        const pastX = state.x - cp.wx;
+        if(pastX > 500){
+          cp.passed = true;
+          _race.nextCheckpoint++;
+          // No bonus, just advance
+          state.zoneCrossFlash = { lvl:-3, timer:60, msg:'CHECKPOINT MISSED', _col:'#ff4444' };
+          if(audioCtx && !state.sfxMuted){
+            const _t = audioCtx.currentTime;
+            playBeep(200, _t, 0.15, 'sawtooth', 0.08);
+            playBeep(120, _t + 0.1, 0.2, 'sawtooth', 0.06);
+          }
+        }
+      }
+    }
+
+    // Asteroid collision
+    for(let ai = 0; ai < course.asteroids.length; ai++){
+      const ast = course.asteroids[ai];
+      if(ast.hit) continue;
+      const adx = state.x - ast.wx, ady = state.y - ast.wy;
+      const aDist = Math.sqrt(adx*adx + ady*ady);
+      if(aDist < ast.r + 8){
+        ast.hit = true;
+        ast.hitTimer = 30;
+        _race.hits++;
+        // Speed penalty
+        state.vx *= 0.8;
+        state.vy *= 0.8;
+        // Score penalty
+        _race.score -= 50;
+        state.score -= 50;
+        if(state.score < 0) state.score = 0;
+        if(_race.score < 0) _race.score = 0;
+        document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+        // HIT flash
+        _race._hitMsg = { timer: 40, msg: 'HIT -50' };
+        state.collisionFlash = 6;
+        // Screen shake
+        _race._shakeTimer = 4;
+        // Low thud sound
+        if(audioCtx && !state.sfxMuted){
+          const _t = audioCtx.currentTime;
+          playBeep(80, _t, 0.15, 'triangle', 0.12);
+          playBeep(50, _t + 0.05, 0.2, 'sawtooth', 0.06);
+        }
+      }
+    }
+
+    // Update drifting asteroids
+    for(let ai = 0; ai < course.asteroids.length; ai++){
+      const ast = course.asteroids[ai];
+      if(ast.vx || ast.vy){
+        ast.wx += ast.vx;
+        ast.wy += ast.vy;
+      }
+      if(ast.hit && ast.hitTimer > 0) ast.hitTimer--;
+    }
+
+    // Screen shake decay
+    if(_race._shakeTimer > 0) _race._shakeTimer--;
+
+    // HIT message decay
+    if(_race._hitMsg && _race._hitMsg.timer > 0){
+      _race._hitMsg.timer--;
+      if(_race._hitMsg.timer <= 0) _race._hitMsg = null;
+    }
 
     // Check finish line
     const fDx = state.x - course.finishWX, fDy = state.y - course.finishWY;
     const fDist = Math.sqrt(fDx*fDx + fDy*fDy);
-    if(fDist < 250){
-      // Penalty for missed gates
-      const missedGates = course.gates ? course.gates.length - _race.nextGate : 0;
-      if(missedGates > 0){
-        const penalty = missedGates * 200;
-        _race.score -= penalty;
-        state.score -= penalty;
-        // Mark all remaining gates as passed
-        if(course.gates) course.gates.forEach(g => { g.passed = true; });
-        _race.nextGate = course.gates ? course.gates.length : 0;
-      }
+    if(fDist < 300){
       _race.finished = true;
       _race.finishTimer = 300;
-      _race.zoomTarget = 1.0; // zoom back out on finish
-      // Refuel — spawn 3 fuel cells near the finish line
+      _race.zoomTarget = 1.0;
+      // Refuel
       for(let _fi = 0; _fi < 3; _fi++){
         state.fuelObjects.push({
           wx: course.finishWX + 100 + _fi * 120,
@@ -11063,7 +10824,7 @@ function updateRace(){
           collected: false, _permanent: true
         });
       }
-      state.fuel = Math.min(1, state.fuel + 0.5); // immediate 50% refuel bonus too
+      state.fuel = Math.min(1, state.fuel + 0.5);
       state.zoneCrossFlash = { lvl:-3, timer:80, msg:'FUEL RESTORED', _col:'#44ddff' };
       // Restore previous music track
       if(_race._preSongIdx !== undefined && _race._preSongIdx !== state.songIndex){
@@ -11098,22 +10859,21 @@ function updateRace(){
       _race.showApproach = false;
       _race.nearStart = false;
       _race.zoomTarget = 1.0;
-      _race._finishCooldown = 600; // 10 second cooldown before race can retrigger
+      _race._finishCooldown = 600;
     }
   }
 
   // Decrement finish cooldown
   if(_race._finishCooldown > 0) _race._finishCooldown--;
 
-  // Auto-switch course based on proximity to start gates (when not racing)
+  // Auto-switch course based on proximity to start positions (when not racing)
   if(!_race.active && !_race.finished){
     for(let ci = 0; ci < RACE_COURSES.length; ci++){
       if(ci === _race.courseIdx) continue;
-      const c = RACE_COURSES[ci];
-      const cdx = state.x - c.startWX, cdy = state.y - c.startWY;
-      if(Math.sqrt(cdx*cdx + cdy*cdy) < 800){
+      var c = RACE_COURSES[ci];
+      var cdx2 = state.x - c.startWX, cdy2 = state.y - c.startWY;
+      if(Math.sqrt(cdx2*cdx2 + cdy2*cdy2) < 800){
         _race.courseIdx = ci;
-        _raceDots = _allRaceDots[ci];
         initRaceCourse(ci);
         break;
       }
@@ -11121,184 +10881,7 @@ function updateRace(){
   }
 }
 
-// ── Draw a single gate (wall with gap) ──
-function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed, isUpcoming){
-  const sx = g.wx - state.x + cx, sy = g.wy - state.y + cy;
-  if(sx < -600 || sx > canvas.width+600 || sy < -600 || sy > canvas.height+600) return;
-
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.05 + idx * 1.3) * 0.4;
-  const col = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : (isUpcoming ? '#2277aa' : '#3388aa'));
-
-  ctx.save();
-
-  // Draw wall segments: outer→kink (straight), kink→tip (bent forward)
-  if(g.wallPts){
-    for(let w = 0; w < g.wallPts.length; w++){
-      const wp = g.wallPts[w];
-      // Main wall: outer end → kink point (straight perpendicular)
-      const x1 = wp.ox - state.x + cx, y1 = wp.oy - state.y + cy;
-      const x2 = wp.ix - state.x + cx, y2 = wp.iy - state.y + cy;
-
-      // Bloom
-      ctx.globalAlpha = 0.06 + pulse * 0.03;
-      ctx.lineWidth = 42;
-      ctx.strokeStyle = col;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-      // Core wall
-      ctx.globalAlpha = 0.4 + pulse * 0.25;
-      ctx.shadowColor = col; ctx.shadowBlur = 18;
-      ctx.lineWidth = 12;
-      ctx.strokeStyle = col;
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-      // Hot center line
-      ctx.globalAlpha = 0.6;
-      ctx.lineWidth = 4.5;
-      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-      ctx.shadowBlur = 0;
-
-      // Bent tip: kink → tip (angled forward along flight path)
-      if(wp.tx !== undefined){
-        const x3 = wp.tx - state.x + cx, y3 = wp.ty - state.y + cy;
-        ctx.globalAlpha = 0.06 + pulse * 0.03;
-        ctx.lineWidth = 42; ctx.strokeStyle = col;
-        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
-        ctx.globalAlpha = 0.4 + pulse * 0.25;
-        ctx.shadowColor = col; ctx.shadowBlur = 18;
-        ctx.lineWidth = 12; ctx.strokeStyle = col;
-        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
-        ctx.globalAlpha = 0.6;
-        ctx.lineWidth = 4.5; ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
-        ctx.shadowBlur = 0;
-        // End cap at tip
-        ctx.globalAlpha = 0.6 + pulse * 0.3;
-        ctx.shadowColor = col; ctx.shadowBlur = 18;
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(x3, y3, 6, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-      } else {
-        // End cap orb at outer end (no tip)
-        ctx.globalAlpha = 0.6 + pulse * 0.3;
-        ctx.shadowColor = col; ctx.shadowBlur = 18;
-        ctx.fillStyle = col;
-        ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
-        ctx.shadowBlur = 0;
-      }
-    }
-  }
-
-  // Gap markers — orbs at the inner gap edges
-  if(g.wallPts){
-    for(let w = 0; w < g.wallPts.length; w++){
-      const wp = g.wallPts[w];
-      const gx = (wp.tx||wp.ix) - state.x + cx, gy = (wp.ty||wp.iy) - state.y + cy;
-      ctx.globalAlpha = isNext ? 0.8 + pulse * 0.2 : 0.5;
-      ctx.shadowColor = isNext ? '#ff4400' : col; ctx.shadowBlur = isNext ? 16 : 8;
-      ctx.fillStyle = isNext ? '#ff4400' : col;
-      ctx.beginPath(); ctx.arc(gx, gy, isNext ? 8 : 5, 0, Math.PI*2); ctx.fill();
-      ctx.shadowBlur = 0;
-    }
-  }
-
-  // Gate number (at center of gap)
-  if(!isPassed){
-    ctx.globalAlpha = isNext ? 0.9 : (isUpcoming ? 0.5 : 0.3);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = isNext ? '#ffffff' : (isUpcoming ? '#88bbcc' : '#556677');
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(idx + 1), sx, sy);
-  }
-
-  // Upcoming gates (next+1, next+2): dim pulsing glow at gate center
-  if(isUpcoming){
-    const upPulse = 0.15 + Math.sin(state.frameCount * 0.06 + idx * 2) * 0.1;
-    ctx.globalAlpha = upPulse;
-    ctx.shadowColor = '#2277aa'; ctx.shadowBlur = 24;
-    ctx.fillStyle = '#2277aa';
-    ctx.beginPath(); ctx.arc(sx, sy, 18, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  ctx.restore();
-}
-
-// Draw start/finish gate (tall barrier beam)
-const START_FINISH_H = 900; // much taller than race gates
-function drawStartFinishGate(ctx, cx, cy, wx, wy, label, isActive){
-  const sx = wx - state.x + cx, sy = wy - state.y + cy;
-  if(sx < -600 || sx > canvas.width+600 || sy < -600 || sy > canvas.height+600) return;
-
-  const gateH = START_FINISH_H;
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
-  const col = isActive ? '#00ff88' : '#ffcc00';
-
-  ctx.save();
-  ctx.translate(sx, sy);
-
-  ctx.globalAlpha = 0.04 + pulse * 0.02;
-  ctx.fillStyle = col;
-  ctx.fillRect(-40, -gateH/2 - 10, 80, gateH + 20);
-
-  // Bloom (thick)
-  ctx.globalAlpha = 0.06 + pulse * 0.04;
-  ctx.lineWidth = 36; ctx.strokeStyle = col;
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-
-  // Core
-  ctx.globalAlpha = 0.4 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 30;
-  ctx.lineWidth = 10; ctx.strokeStyle = col;
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-
-  // Hot center
-  ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  // Post caps
-  ctx.globalAlpha = 0.7 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 22;
-  ctx.fillStyle = col;
-  ctx.beginPath(); ctx.arc(0, -gateH/2, 10, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(0, gateH/2, 10, 0, Math.PI*2); ctx.fill();
-  ctx.shadowBlur = 0;
-
-  // Label
-  ctx.globalAlpha = 0.85;
-  ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-  ctx.fillStyle = col;
-  ctx.textAlign = 'center';
-  ctx.shadowColor = col; ctx.shadowBlur = 10;
-  ctx.fillText(label, 0, -gateH/2 - 24);
-  ctx.shadowBlur = 0;
-
-  ctx.restore();
-}
-
-// Start gate barrier collision — blocks ship before countdown finishes
-function updateStartGateBarrier(){
-  if(!state.started || state.paused || state.gameOver) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-  // Block ALWAYS until the race countdown finishes (GO!)
-  // Once _race.started is true, barrier drops
-  if(_race.started) return;
-
-  const gateX = course.startWX;
-  const gateHalfH = START_FINISH_H / 2;
-  // Hard clamp — if ship is past the gate line, force it back
-  const dy = state.y - course.startWY;
-  if(Math.abs(dy) < gateHalfH && state.x > gateX - 60){
-    state.x = gateX - 62;
-    state.vx = Math.min(state.vx, 0); // kill all forward velocity
-    state.vy *= 0.9; // slight lateral dampen
-    state.collisionFlash = 3;
-  }
-}
-
+// ── Draw race HUD (outside zoom transform) ──
 function drawRaceHUD(ctx){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
@@ -11308,18 +10891,18 @@ function drawRaceHUD(ctx){
     ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10;
-    ctx.fillText('GATE RUN', canvas.width/2, canvas.height * 0.22);
+    ctx.fillText(course.name, canvas.width/2, canvas.height * 0.22);
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#aabb99';
-    ctx.fillText('FLY THROUGH THE START GATE', canvas.width/2, canvas.height * 0.22 + 24);
-    ctx.fillText('THREAD EACH GAP AT SPEED', canvas.width/2, canvas.height * 0.22 + 40);
+    ctx.fillText('FLY INTO THE STAGING AREA TO BEGIN', canvas.width/2, canvas.height * 0.22 + 24);
+    ctx.fillText('HIT CHECKPOINTS - DODGE ASTEROIDS', canvas.width/2, canvas.height * 0.22 + 40);
     ctx.fillText('CROSS THE FINISH LINE TO COMPLETE', canvas.width/2, canvas.height * 0.22 + 56);
     ctx.restore();
   }
 
   if(_race.active && _race.countdown > 0){
-    const num = _race.countdownPhase;
+    var num = _race.countdownPhase;
     ctx.save();
     ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -11344,8 +10927,8 @@ function drawRaceHUD(ctx){
   }
 
   if(_race.started && !_race.finished){
-    const gateCount = course.gates ? course.gates.length : 0;
-    const secs = (_race.timer / 60).toFixed(2);
+    var cpCount = course.checkpoints.length;
+    var secs = (_race.timer / 60).toFixed(2);
     ctx.save();
     ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center';
@@ -11354,10 +10937,10 @@ function drawRaceHUD(ctx){
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
     ctx.shadowBlur = 0;
     ctx.fillStyle = '#889999';
-    const allPassed = _race.nextGate >= gateCount;
+    var allPassed = _race.nextCheckpoint >= cpCount;
     ctx.fillText(
-      allPassed ? 'ALL GATES CLEARED — FIND THE FINISH!' :
-      'GATE ' + (_race.nextGate + 1) + ' OF ' + gateCount,
+      allPassed ? 'ALL CHECKPOINTS CLEARED - FIND THE FINISH!' :
+      'CHECKPOINT ' + (_race.nextCheckpoint + 1) + ' OF ' + cpCount,
       canvas.width/2, 48
     );
     ctx.fillStyle = '#ffcc00';
@@ -11365,9 +10948,21 @@ function drawRaceHUD(ctx){
     ctx.restore();
   }
 
+  // HIT flash message
+  if(_race._hitMsg && _race._hitMsg.timer > 0){
+    ctx.save();
+    ctx.font = '10px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = _race._hitMsg.timer / 40;
+    ctx.fillStyle = '#ff4444'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 8;
+    ctx.fillText(_race._hitMsg.msg, canvas.width/2, 84);
+    ctx.shadowBlur = 0;
+    ctx.restore();
+  }
+
   if(_race.finished){
-    const secs = (_race.timer / 60).toFixed(2);
-    const bestSecs = _race.bestTime ? (_race.bestTime / 1000).toFixed(2) : secs;
+    var finSecs = (_race.timer / 60).toFixed(2);
+    var bestSecs = _race.bestTime ? (_race.bestTime / 1000).toFixed(2) : finSecs;
     ctx.save();
     ctx.font = '24px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -11375,58 +10970,40 @@ function drawRaceHUD(ctx){
     ctx.fillText('RACE COMPLETE!', canvas.width/2, canvas.height * 0.26);
     ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
     ctx.shadowBlur = 6;
-    ctx.fillText('TIME: ' + secs + 's', canvas.width/2, canvas.height * 0.26 + 40);
+    ctx.fillText('TIME: ' + finSecs + 's', canvas.width/2, canvas.height * 0.26 + 40);
     ctx.fillStyle = '#ffcc00';
     ctx.fillText('SCORE: ' + _race.score, canvas.width/2, canvas.height * 0.26 + 64);
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
     ctx.fillStyle = '#889999'; ctx.shadowBlur = 0;
     ctx.fillText('BEST: ' + bestSecs + 's', canvas.width/2, canvas.height * 0.26 + 86);
+    ctx.fillStyle = '#ff6644';
+    ctx.fillText('HITS: ' + _race.hits, canvas.width/2, canvas.height * 0.26 + 104);
     ctx.restore();
   }
 }
 
+// ── Draw race course (inside zoom transform) ──
 function drawRaceCourse(ctx, cx, cy){
   const course = RACE_COURSES[_race.courseIdx];
   if(!course) return;
 
-  // Light dot borders along raceway edges
-  ctx.save();
-  const _allBorderDots = [..._raceDots.north, ..._raceDots.south];
-  for(let i = 0; i < _allBorderDots.length; i++){
-    const d = _allBorderDots[i];
-    const ddx = d.wx - state.x + cx, ddy = d.wy - state.y + cy;
-    if(ddx < -60 || ddx > canvas.width+60 || ddy < -60 || ddy > canvas.height+60) continue;
-    const dotPulse = 0.3 + Math.sin(state.frameCount * 0.04 + i * 0.5) * 0.2;
-    // Outer glow
-    ctx.globalAlpha = dotPulse * 0.25;
-    ctx.fillStyle = '#0088cc';
-    ctx.beginPath(); ctx.arc(ddx, ddy, 6, 0, Math.PI*2); ctx.fill();
-    // Core dot
-    ctx.globalAlpha = dotPulse + 0.2;
-    ctx.shadowColor = '#00aaff'; ctx.shadowBlur = 8;
-    ctx.fillStyle = '#00bbff';
-    ctx.beginPath(); ctx.arc(ddx, ddy, 2.5, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-  ctx.restore();
-
-  // Guide path through gate centers (dashed line)
-  if(course.waypoints){
+  // Guide path through checkpoint centers (dashed line)
+  {
     ctx.save();
     ctx.strokeStyle = 'rgba(100,160,200,0.10)';
     ctx.lineWidth = 1.5;
     ctx.setLineDash([16, 10]);
-    const pts = [
+    var pts = [
       { wx: course.startWX, wy: course.startWY },
-      ...course.waypoints,
+      ...course.checkpoints.map(function(cp){ return { wx: cp.wx, wy: cp.wy }; }),
       { wx: course.finishWX, wy: course.finishWY }
     ];
     ctx.beginPath();
-    for(let i = 0; i < pts.length; i++){
-      const px = pts[i].wx - state.x + cx, py = pts[i].wy - state.y + cy;
+    for(var i = 0; i < pts.length; i++){
+      var px = pts[i].wx - state.x + cx, py = pts[i].wy - state.y + cy;
       if(i === 0) ctx.moveTo(px, py);
       else if(i < pts.length - 1){
-        const nx = pts[i+1].wx - state.x + cx, ny = pts[i+1].wy - state.y + cy;
+        var nx = pts[i+1].wx - state.x + cx, ny = pts[i+1].wy - state.y + cy;
         ctx.quadraticCurveTo(px, py, (px + nx) / 2, (py + ny) / 2);
       } else {
         ctx.lineTo(px, py);
@@ -11437,30 +11014,28 @@ function drawRaceCourse(ctx, cx, cy){
     ctx.restore();
   }
 
-  // Checkered start box — staging area before the start gate
+  // Checkered start box
   {
-    const boxW = 350, boxH = 280;
-    const bsx = course.startWX - boxW/2 - 60 - state.x + cx;
-    const bsy = course.startWY - state.y + cy;
+    var boxW = 350, boxH = 280;
+    var bsx = course.startWX - boxW/2 - 60 - state.x + cx;
+    var bsy = course.startWY - state.y + cy;
     if(bsx > -500 && bsx < canvas.width+500 && bsy > -500 && bsy < canvas.height+500){
       ctx.save();
-      const cellSize = 28;
-      const cols = Math.ceil(boxW / cellSize), rows = Math.ceil(boxH / cellSize);
-      const pulse = 0.4 + Math.sin(state.frameCount * 0.04) * 0.15;
-      for(let r = 0; r < rows; r++){
-        for(let c = 0; c < cols; c++){
-          const isWhite = (r + c) % 2 === 0;
+      var cellSize = 28;
+      var cols = Math.ceil(boxW / cellSize), rows = Math.ceil(boxH / cellSize);
+      var pulse = 0.4 + Math.sin(state.frameCount * 0.04) * 0.15;
+      for(var r = 0; r < rows; r++){
+        for(var c = 0; c < cols; c++){
+          var isWhite = (r + c) % 2 === 0;
           ctx.globalAlpha = isWhite ? pulse * 0.35 : pulse * 0.12;
           ctx.fillStyle = isWhite ? '#ffffff' : '#00ffcc';
           ctx.fillRect(bsx - boxW/2 + c * cellSize, bsy - boxH/2 + r * cellSize, cellSize, cellSize);
         }
       }
-      // Border
       ctx.globalAlpha = pulse * 0.6;
       ctx.strokeStyle = '#00ffcc';
       ctx.lineWidth = 2;
       ctx.strokeRect(bsx - boxW/2, bsy - boxH/2, boxW, boxH);
-      // Label
       if(!_race.active){
         ctx.globalAlpha = 0.8;
         ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
@@ -11474,18 +11049,118 @@ function drawRaceCourse(ctx, cx, cy){
     }
   }
 
-  // Start and finish gates
-  drawStartFinishGate(ctx, cx, cy, course.startWX, course.startWY, 'START', _race.started);
-  const allPassed = course.gates ? _race.nextGate >= course.gates.length : true;
-  // Finish: dotted yellow line + checkered area after it
+  // Start barrier beam
   {
-    const fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
-    if(fsx > -600 && fsx < canvas.width+600 && fsy > -600 && fsy < canvas.height+600){
-      const fH = START_FINISH_H;
-      const fpulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
-      const fcol = (allPassed && _race.started) ? '#00ff88' : '#ffcc00';
+    var stSx = course.startWX - state.x + cx, stSy = course.startWY - state.y + cy;
+    if(stSx > -600 && stSx < canvas.width+600 && stSy > -600 && stSy < canvas.height+600){
+      var stH = 900;
+      var stPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
+      var stCol = _race.started ? '#00ff88' : '#ffcc00';
       ctx.save();
-      // Dotted yellow line
+      ctx.translate(stSx, stSy);
+      ctx.globalAlpha = 0.06 + stPulse * 0.04;
+      ctx.lineWidth = 36; ctx.strokeStyle = stCol;
+      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.globalAlpha = 0.4 + stPulse * 0.3;
+      ctx.shadowColor = stCol; ctx.shadowBlur = 30;
+      ctx.lineWidth = 10; ctx.strokeStyle = stCol;
+      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.7 + stPulse * 0.3;
+      ctx.shadowColor = stCol; ctx.shadowBlur = 22;
+      ctx.fillStyle = stCol;
+      ctx.beginPath(); ctx.arc(0, -stH/2, 10, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(0, stH/2, 10, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      ctx.globalAlpha = 0.85;
+      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
+      ctx.fillStyle = stCol; ctx.textAlign = 'center';
+      ctx.shadowColor = stCol; ctx.shadowBlur = 10;
+      ctx.fillText('START', 0, -stH/2 - 24);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
+  // Checkpoint rings
+  for(var ci = 0; ci < course.checkpoints.length; ci++){
+    var cp = course.checkpoints[ci];
+    var cpsx = cp.wx - state.x + cx, cpsy = cp.wy - state.y + cy;
+    if(cpsx < -400 || cpsx > canvas.width+400 || cpsy < -400 || cpsy > canvas.height+400) continue;
+
+    var isPassed = cp.passed;
+    var isNext = ci === _race.nextCheckpoint && _race.started;
+    var isUpcoming = !isPassed && _race.started && (ci === _race.nextCheckpoint + 1 || ci === _race.nextCheckpoint + 2);
+    var cpPulse = 0.5 + Math.sin(state.frameCount * 0.05 + ci * 1.3) * 0.4;
+    var cpCol = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : (isUpcoming ? '#2277aa' : '#3388aa'));
+    var cpAlpha = isPassed ? 0.15 : (isNext ? 0.7 + cpPulse * 0.3 : (isUpcoming ? 0.35 : 0.2));
+
+    ctx.save();
+    // Inner glow (radial gradient)
+    if(isNext){
+      var cpGrad = ctx.createRadialGradient(cpsx, cpsy, 0, cpsx, cpsy, 350);
+      cpGrad.addColorStop(0, 'rgba(0,255,204,0.06)');
+      cpGrad.addColorStop(0.7, 'rgba(0,255,204,0.02)');
+      cpGrad.addColorStop(1, 'rgba(0,255,204,0)');
+      ctx.globalAlpha = 0.5 + cpPulse * 0.3;
+      ctx.fillStyle = cpGrad;
+      ctx.beginPath(); ctx.arc(cpsx, cpsy, 350, 0, Math.PI*2); ctx.fill();
+    }
+    // Outer ring
+    ctx.globalAlpha = cpAlpha;
+    ctx.strokeStyle = cpCol;
+    ctx.shadowColor = cpCol; ctx.shadowBlur = isNext ? 20 : 8;
+    ctx.lineWidth = 3;
+    ctx.beginPath(); ctx.arc(cpsx, cpsy, 350, 0, Math.PI*2); ctx.stroke();
+    ctx.shadowBlur = 0;
+    // Number at center
+    if(!isPassed){
+      ctx.globalAlpha = isNext ? 0.9 : (isUpcoming ? 0.5 : 0.3);
+      ctx.font = '10px "Press Start 2P",monospace'; _curFont='';
+      ctx.fillStyle = isNext ? '#ffffff' : (isUpcoming ? '#88bbcc' : '#556677');
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText(String(ci + 1), cpsx, cpsy);
+    }
+    ctx.restore();
+  }
+
+  // Asteroids
+  for(var ai = 0; ai < course.asteroids.length; ai++){
+    var ast = course.asteroids[ai];
+    var asx = ast.wx - state.x + cx, asy = ast.wy - state.y + cy;
+    if(asx < -60 || asx > canvas.width+60 || asy < -60 || asy > canvas.height+60) continue;
+    ctx.save();
+    var astAlpha = 1.0;
+    if(ast.hit){
+      astAlpha = ast.hitTimer / 30;
+      if(astAlpha <= 0){ ctx.restore(); continue; }
+    }
+    ctx.globalAlpha = astAlpha * 0.7;
+    // Shadow/glow
+    ctx.shadowColor = 'rgba(80,80,80,0.4)'; ctx.shadowBlur = 6;
+    // Dark grey body
+    ctx.fillStyle = '#3a3a3a';
+    ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.fill();
+    ctx.shadowBlur = 0;
+    // Lighter edge
+    ctx.globalAlpha = astAlpha * 0.4;
+    ctx.strokeStyle = '#5a5a5a';
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Finish line — dotted yellow line + checkered area
+  {
+    var fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
+    if(fsx > -600 && fsx < canvas.width+600 && fsy > -600 && fsy < canvas.height+600){
+      var fH = 900;
+      var fpulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
+      var allCpPassed = _race.nextCheckpoint >= course.checkpoints.length;
+      var fcol = (allCpPassed && _race.started) ? '#00ff88' : '#ffcc00';
+      ctx.save();
       ctx.setLineDash([20, 14]);
       ctx.globalAlpha = 0.5 + fpulse * 0.3;
       ctx.shadowColor = fcol; ctx.shadowBlur = 16;
@@ -11495,77 +11170,63 @@ function drawRaceCourse(ctx, cx, cy){
       ctx.beginPath(); ctx.moveTo(fsx, fsy - fH/2); ctx.lineTo(fsx, fsy + fH/2); ctx.stroke();
       ctx.setLineDash([]);
       ctx.shadowBlur = 0;
-      // Post caps
       ctx.globalAlpha = 0.7 + fpulse * 0.3;
       ctx.shadowColor = fcol; ctx.shadowBlur = 18;
       ctx.fillStyle = fcol;
       ctx.beginPath(); ctx.arc(fsx, fsy - fH/2, 8, 0, Math.PI*2); ctx.fill();
       ctx.beginPath(); ctx.arc(fsx, fsy + fH/2, 8, 0, Math.PI*2); ctx.fill();
       ctx.shadowBlur = 0;
-      // Label
       ctx.globalAlpha = 0.85;
       ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
       ctx.fillStyle = fcol; ctx.textAlign = 'center';
       ctx.shadowColor = fcol; ctx.shadowBlur = 10;
       ctx.fillText('FINISH', fsx, fsy - fH/2 - 24);
       ctx.shadowBlur = 0;
-      // Checkered area after finish line (300px wide)
-      const cBoxW = 300, cBoxH = 400;
-      const cellSz = 30;
-      const cbx = fsx + cBoxW/2 + 20;
-      const cols2 = Math.ceil(cBoxW / cellSz), rows2 = Math.ceil(cBoxH / cellSz);
-      for(let r = 0; r < rows2; r++){
-        for(let c2 = 0; c2 < cols2; c2++){
-          const isW = (r + c2) % 2 === 0;
+      // Checkered area after finish line
+      var cBoxW = 300, cBoxH = 400, cellSz = 30;
+      var cbx = fsx + cBoxW/2 + 20;
+      var fCols = Math.ceil(cBoxW / cellSz), fRows = Math.ceil(cBoxH / cellSz);
+      for(var fr = 0; fr < fRows; fr++){
+        for(var fc = 0; fc < fCols; fc++){
+          var isW = (fr + fc) % 2 === 0;
           ctx.globalAlpha = isW ? fpulse * 0.25 : fpulse * 0.08;
           ctx.fillStyle = isW ? '#ffffff' : '#ffcc00';
-          ctx.fillRect(cbx - cBoxW/2 + c2 * cellSz, fsy - cBoxH/2 + r * cellSz, cellSz, cellSz);
+          ctx.fillRect(cbx - cBoxW/2 + fc * cellSz, fsy - cBoxH/2 + fr * cellSz, cellSz, cellSz);
         }
       }
       ctx.restore();
     }
   }
 
-  // Gates
-  if(course.gates){
-    for(let i = 0; i < course.gates.length; i++){
-      const g = course.gates[i];
-      const isPassed = g.passed;
-      const isNext = i === _race.nextGate && _race.started;
-      const isUpcoming = !isPassed && _race.started && (i === _race.nextGate + 1 || i === _race.nextGate + 2);
-      drawGateWall(ctx, cx, cy, g, i, isNext, isPassed, isUpcoming);
-    }
-  }
-
-  // Shockwave rings from gate passes
+  // Shockwave rings from checkpoint passes
   if(state._raceRings){
-    for(let i = state._raceRings.length - 1; i >= 0; i--){
-      const ring = state._raceRings[i];
+    for(var ri = state._raceRings.length - 1; ri >= 0; ri--){
+      var ring = state._raceRings[ri];
       ring.age++;
       ring.r = ring.age * 4;
-      if(ring.r > ring.maxR){ state._raceRings.splice(i, 1); continue; }
-      const rsx = ring.wx - state.x + cx, rsy = ring.wy - state.y + cy;
-      const alpha = 1 - ring.r / ring.maxR;
+      if(ring.r > ring.maxR){ state._raceRings.splice(ri, 1); continue; }
+      var rsx = ring.wx - state.x + cx, rsy = ring.wy - state.y + cy;
+      var rAlpha = 1 - ring.r / ring.maxR;
       ctx.save();
-      ctx.globalAlpha = alpha * 0.6;
+      ctx.globalAlpha = rAlpha * 0.6;
       ctx.strokeStyle = '#00ffcc';
       ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
-      ctx.lineWidth = 3 * alpha;
+      ctx.lineWidth = 3 * rAlpha;
       ctx.beginPath(); ctx.arc(rsx, rsy, ring.r, 0, Math.PI*2); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.restore();
     }
   }
 
-  // Gate pass burst particles
-  if(_race.gateParticles.length > 0){
+  // Checkpoint burst particles
+  if(_race.checkpointParticles.length > 0){
     ctx.save();
-    for(let gp = 0; gp < _race.gateParticles.length; gp++){
-      const p = _race.gateParticles[gp];
-      const gpx = p.wx - state.x + cx, gpy = p.wy - state.y + cy;
+    for(var gp = 0; gp < _race.checkpointParticles.length; gp++){
+      var p = _race.checkpointParticles[gp];
+      var gpx = p.wx - state.x + cx, gpy = p.wy - state.y + cy;
       if(gpx < -100 || gpx > canvas.width+100 || gpy < -100 || gpy > canvas.height+100) continue;
-      const alpha = (1 - p.age / p.maxAge) * 0.8;
-      ctx.globalAlpha = alpha;
+      var pAlpha = (1 - p.age / p.maxAge) * 0.8;
+      ctx.globalAlpha = pAlpha;
       ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
       ctx.fillStyle = '#00ffcc';
       ctx.beginPath(); ctx.arc(gpx, gpy, 2.5 * (1 - p.age / p.maxAge), 0, Math.PI * 2); ctx.fill();
@@ -11574,23 +11235,23 @@ function drawRaceCourse(ctx, cx, cy){
     ctx.restore();
   }
 
-  // Chevron direction arrows toward next gate
-  if(_race.started && !_race.finished && course.gates){
-    const gi = _race.nextGate;
-    if(gi < course.gates.length){
-      const target = course.gates[gi];
-      const prev = gi > 0 ? course.gates[gi-1] : { wx: course.startWX, wy: course.startWY };
-      for(let c = 1; c <= 3; c++){
-        const t = c / 4;
-        const chx = prev.wx + (target.wx - prev.wx) * t;
-        const chy = prev.wy + (target.wy - prev.wy) * t;
-        const csx = chx - state.x + cx, csy = chy - state.y + cy;
-        if(csx < -50 || csx > canvas.width+50 || csy < -50 || csy > canvas.height+50) continue;
-        const ang = Math.atan2(target.wy - prev.wy, target.wx - prev.wx);
-        const wave = (state.frameCount * 0.04 + c * 0.8) % 1;
-        const chAlpha = 0.15 + wave * 0.15;
+  // Chevron direction arrows toward next checkpoint
+  if(_race.started && !_race.finished && course.checkpoints.length > 0){
+    var cgi = _race.nextCheckpoint;
+    if(cgi < course.checkpoints.length){
+      var target = course.checkpoints[cgi];
+      var prevCp = cgi > 0 ? course.checkpoints[cgi-1] : { wx: course.startWX, wy: course.startWY };
+      for(var ch = 1; ch <= 3; ch++){
+        var cht = ch / 4;
+        var chx = prevCp.wx + (target.wx - prevCp.wx) * cht;
+        var chy = prevCp.wy + (target.wy - prevCp.wy) * cht;
+        var chsx = chx - state.x + cx, chsy = chy - state.y + cy;
+        if(chsx < -50 || chsx > canvas.width+50 || chsy < -50 || chsy > canvas.height+50) continue;
+        var chAng = Math.atan2(target.wy - prevCp.wy, target.wx - prevCp.wx);
+        var chWave = (state.frameCount * 0.04 + ch * 0.8) % 1;
+        var chAlpha = 0.15 + chWave * 0.15;
         ctx.save();
-        ctx.translate(csx, csy); ctx.rotate(ang);
+        ctx.translate(chsx, chsy); ctx.rotate(chAng);
         ctx.globalAlpha = chAlpha;
         ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
         ctx.beginPath();
