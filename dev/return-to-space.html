@@ -1536,8 +1536,8 @@ document.addEventListener('visibilitychange', () => {
 });
 // Camera offset — smoothly shifts player off-center near large bodies
 var _camOffX = 0, _camOffY = 0, _camBoostKilled = false;
-const CX = () => canvas.width/2 + _camOffX;
-const CY = () => canvas.height/2 + _camOffY;
+const CX = () => canvas.width/2 + _camOffX + _raceLeadX;
+const CY = () => canvas.height/2 + _camOffY + _raceLeadY;
 
 //  STARS — per-level colour palettes
 const LEVEL_BG = {
@@ -5718,6 +5718,66 @@ function update(){
   // Race zoom lerp — smooth transition
   _race.zoom += (_race.zoomTarget - _race.zoom) * 0.04;
 
+  // Race camera lead — offset view in direction of travel
+  if(_race.active || _race.showApproach){
+    const leadTarget_x = state.vx * 8;
+    const leadTarget_y = state.vy * 8;
+    _raceLeadX += (leadTarget_x - _raceLeadX) * 0.08;
+    _raceLeadY += (leadTarget_y - _raceLeadY) * 0.08;
+  } else {
+    _raceLeadX *= 0.9;
+    _raceLeadY *= 0.9;
+    if(Math.abs(_raceLeadX) < 0.5) _raceLeadX = 0;
+    if(Math.abs(_raceLeadY) < 0.5) _raceLeadY = 0;
+  }
+
+  // Race zoom pulse decay (gate pass effect)
+  if(_race.zoomPulseTimer > 0){
+    _race.zoomPulseTimer--;
+    if(_race.zoomPulseTimer <= 0){
+      _race.zoomTarget = _race.zoomPulseBase;
+    }
+  }
+
+  // Speed particles — spawn and update during race
+  if(_race.active || _race.showApproach){
+    const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+    // Spawn new particles proportional to speed
+    if(spd > 1 && _race.speedParticles.length < 40){
+      const spawnCount = Math.min(3, 40 - _race.speedParticles.length);
+      for(let sp = 0; sp < spawnCount; sp++){
+        // Spawn at random edge opposite to velocity direction
+        const angle = Math.atan2(state.vy, state.vx) + Math.PI + (Math.random() - 0.5) * 1.5;
+        const dist = 300 + Math.random() * 200;
+        _race.speedParticles.push({
+          sx: Math.cos(angle) * dist, sy: Math.sin(angle) * dist,
+          vx: -state.vx * (0.3 + Math.random() * 0.4),
+          vy: -state.vy * (0.3 + Math.random() * 0.4),
+          age: 0, maxAge: 15 + Math.random() * 10,
+          size: 1 + Math.random()
+        });
+      }
+    }
+    // Update existing
+    for(let sp = _race.speedParticles.length - 1; sp >= 0; sp--){
+      const p = _race.speedParticles[sp];
+      p.sx += p.vx; p.sy += p.vy;
+      p.age++;
+      if(p.age > p.maxAge) _race.speedParticles.splice(sp, 1);
+    }
+  } else {
+    _race.speedParticles.length = 0;
+  }
+
+  // Gate burst particles — update
+  for(let gp = _race.gateParticles.length - 1; gp >= 0; gp--){
+    const p = _race.gateParticles[gp];
+    p.wx += p.vx; p.wy += p.vy;
+    p.vx *= 0.95; p.vy *= 0.95;
+    p.age++;
+    if(p.age > p.maxAge) _race.gateParticles.splice(gp, 1);
+  }
+
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
   if(!state.inSecretLevel) tickGrid();
@@ -7197,6 +7257,27 @@ function drawGame(){
     ctx.translate(cx, cy);
     ctx.scale(_race.zoom, _race.zoom);
     ctx.translate(-cx, -cy);
+  }
+
+  // Speed particles — small dots streaking past during race
+  if((_race.active || _race.showApproach) && _race.speedParticles.length > 0){
+    ctx.save();
+    const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+    for(let sp = 0; sp < _race.speedParticles.length; sp++){
+      const p = _race.speedParticles[sp];
+      const alpha = (1 - p.age / p.maxAge) * Math.min(spd / 8, 1) * 0.7;
+      const streakLen = Math.min(spd * 1.5, 20);
+      const px = cx + p.sx, py = cy + p.sy;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#88ccff';
+      ctx.lineWidth = p.size;
+      ctx.beginPath();
+      ctx.moveTo(px, py);
+      const vLen = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 1;
+      ctx.lineTo(px + (p.vx / vLen) * streakLen, py + (p.vy / vLen) * streakLen);
+      ctx.stroke();
+    }
+    ctx.restore();
   }
 
   // Victory zoom: scale world around Earth center
@@ -10438,14 +10519,14 @@ function _buildGateRun(){
   // Waypoints define the flight path — gentle S-curves that suit arc-based flight
   // Each waypoint becomes a gate location; gates are perpendicular to the path
   const waypoints = [];
-  const count = 120;
-  const spacing = 220; // tight spacing — constant gate threading
-  const amplitude = 600; // Y swing — generous curves
+  const count = 25;
+  const spacing = 700; // wider spacing between gates
+  const amplitude = 500; // Y swing
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 800 + i * spacing;
-    // Flowing S-curves — more waves for the longer course
-    const wy = sy + Math.sin(t * Math.PI * 8) * amplitude * (0.4 + t * 0.6);
+    // 4 wave S-curves
+    const wy = sy + Math.sin(t * Math.PI * 4) * amplitude * (0.4 + t * 0.6);
     waypoints.push({ wx, wy });
   }
 
@@ -10528,14 +10609,14 @@ function _buildDriftCorridor(){
   // Parallel to Track 1, offset 2000px south
   const sx = EARTH_WX + 2800, sy = EARTH_WY + 2000;
   const waypoints = [];
-  const count = 100;
-  const spacing = 260;
+  const count = 20;
+  const spacing = 900;
   const kinkFrac = 0.10;
-  const amplitude = 700;
+  const amplitude = 600;
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 800 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 6) * amplitude * (0.5 + t * 0.5);
+    const wy = sy + Math.sin(t * Math.PI * 3) * amplitude * (0.5 + t * 0.5);
     waypoints.push({ wx, wy });
   }
   const gates = [];
@@ -10585,13 +10666,13 @@ function _buildNeedleRun(){
   const sx = EARTH_WX + 2800, sy = EARTH_WY - 2000;
   const kinkFrac = 0.10;
   const waypoints = [];
-  const count = 140;
-  const spacing = 180;
+  const count = 30;
+  const spacing = 550;
   const amplitude = 400;
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 600 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 10) * amplitude * (0.3 + t * 0.7);
+    const wy = sy + Math.sin(t * Math.PI * 5) * amplitude * (0.3 + t * 0.7);
     waypoints.push({ wx, wy });
   }
   const gates = [];
@@ -10703,18 +10784,16 @@ function updateRaceBorderCollision(){
 
   const wallLimit = RACE_BORDER_HALF - 14;
   if(Math.abs(perpDist) > wallLimit){
-    // Soft push — nudge back inside, reduce perpendicular velocity
+    // Soft border: drag + gentle push back, no hard clamp, no collision flash
     const sign = perpDist > 0 ? 1 : -1;
     const overshoot = Math.abs(perpDist) - wallLimit;
-    // Gentle push back (not hard clamp — prevents getting stuck)
-    state.x -= sign * cp.nx * (overshoot * 0.5 + 2);
-    state.y -= sign * cp.ny * (overshoot * 0.5 + 2);
-    // Reduce into-wall velocity, keep most of tangential
-    const vDot = (state.vx * cp.nx + state.vy * cp.ny) * sign;
-    if(vDot > 0){
-      state.vx -= vDot * cp.nx * sign * 0.8;
-      state.vy -= vDot * cp.ny * sign * 0.8;
-    }
+    // Drag: slow the ship while outside the border
+    state.vx *= 0.92;
+    state.vy *= 0.92;
+    // Gentle push back toward the corridor (proportional to overshoot)
+    const pushStrength = Math.min(overshoot * 0.15, 6);
+    state.x -= sign * cp.nx * pushStrength;
+    state.y -= sign * cp.ny * pushStrength;
   }
 }
 
@@ -10737,7 +10816,16 @@ const _race = {
   // Race zoom — smoothly lerps toward target
   zoom: 1.0,       // current zoom level (1.0 = normal)
   zoomTarget: 1.0, // what we're lerping toward
+  // Speed particles — streaks past during race
+  speedParticles: [],
+  // Gate pass burst particles
+  gateParticles: [],
+  // Zoom pulse timer (for gate pass effect)
+  zoomPulseTimer: 0,
+  zoomPulseBase: 1.35,
 };
+// Race camera lead — stored here so CX/CY can read them
+var _raceLeadX = 0, _raceLeadY = 0;
 
 function initRaceCourse(idx){
   _race.courseIdx = idx;
@@ -10757,6 +10845,9 @@ function initRaceCourse(idx){
     _race._gateSides = course.gates.map(() => 0);
     course.gates.forEach(g => { g.passed = false; });
   }
+  _race.speedParticles = [];
+  _race.gateParticles = [];
+  _race.zoomPulseTimer = 0;
 }
 initRaceCourse(0);
 
@@ -10816,6 +10907,20 @@ function updateGateCollisions(){
             // Low body
             playBeep(150, _t, 0.1, 'triangle', 0.05);
           }
+          // Gate pass burst particles — 18 particles outward from gate center
+          for(let bp = 0; bp < 18; bp++){
+            const bAngle = (bp / 18) * Math.PI * 2 + Math.random() * 0.3;
+            const bSpd = 4 + Math.random() * 6;
+            _race.gateParticles.push({
+              wx: g.wx, wy: g.wy,
+              vx: Math.cos(bAngle) * bSpd, vy: Math.sin(bAngle) * bSpd,
+              age: 0, maxAge: 18 + Math.random() * 8
+            });
+          }
+          // Zoom pulse — brief 3% zoom bump
+          _race.zoomPulseBase = _race.zoomTarget;
+          _race.zoomTarget = _race.zoom * 1.03;
+          _race.zoomPulseTimer = 8;
         }
         // If crossed outside gap, they hit a wall (handled below)
       }
@@ -10839,13 +10944,10 @@ function updateGateCollisions(){
           if(pushAmt > 0){
             state.x += wnx * pushSign * pushAmt;
             state.y += wny * pushSign * pushAmt;
+            // Reflect velocity off wall at 65% — bounce, never stop
             const vPerp = state.vx * wnx + state.vy * wny;
-            const vPerpSign = vPerp > 0 ? 1 : -1;
-            if(vPerpSign !== pushSign){
-              state.vx -= vPerp * wnx;
-              state.vy -= vPerp * wny;
-            }
-            state.vx *= 0.8; state.vy *= 0.8;
+            state.vx = (state.vx - 2 * vPerp * wnx) * 0.65;
+            state.vy = (state.vy - 2 * vPerp * wny) * 0.65;
             state.collisionFlash = 3;
             if(audioCtx && !state.sfxMuted) playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
           }
@@ -11007,12 +11109,12 @@ function updateRace(){
 }
 
 // ── Draw a single gate (wall with gap) ──
-function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
+function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed, isUpcoming){
   const sx = g.wx - state.x + cx, sy = g.wy - state.y + cy;
   if(sx < -600 || sx > canvas.width+600 || sy < -600 || sy > canvas.height+600) return;
 
   const pulse = 0.5 + Math.sin(state.frameCount * 0.05 + idx * 1.3) * 0.4;
-  const col = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#3388aa');
+  const col = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : (isUpcoming ? '#2277aa' : '#3388aa'));
 
   ctx.save();
 
@@ -11090,11 +11192,21 @@ function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
 
   // Gate number (at center of gap)
   if(!isPassed){
-    ctx.globalAlpha = isNext ? 0.9 : 0.3;
+    ctx.globalAlpha = isNext ? 0.9 : (isUpcoming ? 0.5 : 0.3);
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = isNext ? '#ffffff' : '#556677';
+    ctx.fillStyle = isNext ? '#ffffff' : (isUpcoming ? '#88bbcc' : '#556677');
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillText(String(idx + 1), sx, sy);
+  }
+
+  // Upcoming gates (next+1, next+2): dim pulsing glow at gate center
+  if(isUpcoming){
+    const upPulse = 0.15 + Math.sin(state.frameCount * 0.06 + idx * 2) * 0.1;
+    ctx.globalAlpha = upPulse;
+    ctx.shadowColor = '#2277aa'; ctx.shadowBlur = 24;
+    ctx.fillStyle = '#2277aa';
+    ctx.beginPath(); ctx.arc(sx, sy, 18, 0, Math.PI * 2); ctx.fill();
+    ctx.shadowBlur = 0;
   }
 
   ctx.restore();
@@ -11407,7 +11519,8 @@ function drawRaceCourse(ctx, cx, cy){
       const g = course.gates[i];
       const isPassed = g.passed;
       const isNext = i === _race.nextGate && _race.started;
-      drawGateWall(ctx, cx, cy, g, i, isNext, isPassed);
+      const isUpcoming = !isPassed && _race.started && (i === _race.nextGate + 1 || i === _race.nextGate + 2);
+      drawGateWall(ctx, cx, cy, g, i, isNext, isPassed, isUpcoming);
     }
   }
 
@@ -11429,6 +11542,23 @@ function drawRaceCourse(ctx, cx, cy){
       ctx.shadowBlur = 0;
       ctx.restore();
     }
+  }
+
+  // Gate pass burst particles
+  if(_race.gateParticles.length > 0){
+    ctx.save();
+    for(let gp = 0; gp < _race.gateParticles.length; gp++){
+      const p = _race.gateParticles[gp];
+      const gpx = p.wx - state.x + cx, gpy = p.wy - state.y + cy;
+      if(gpx < -100 || gpx > canvas.width+100 || gpy < -100 || gpy > canvas.height+100) continue;
+      const alpha = (1 - p.age / p.maxAge) * 0.8;
+      ctx.globalAlpha = alpha;
+      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
+      ctx.fillStyle = '#00ffcc';
+      ctx.beginPath(); ctx.arc(gpx, gpy, 2.5 * (1 - p.age / p.maxAge), 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.shadowBlur = 0;
+    ctx.restore();
   }
 
   // Chevron direction arrows toward next gate
