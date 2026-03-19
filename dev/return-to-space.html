@@ -10485,8 +10485,8 @@ function _buildCheckpointCourse(opts){
     checkpoints.push({ wx, wy, passed: false });
   }
 
-  // Build asteroids between each pair of checkpoints
-  const asteroids = [];
+  // Store asteroid spawn positions — real spaceRocks will be created at race start
+  const asteroidSpawns = [];
   for(let i = 0; i < count - 1; i++){
     const a = checkpoints[i], b = checkpoints[i + 1];
     const numAst = opts.asteroidsPer;
@@ -10494,20 +10494,12 @@ function _buildCheckpointCourse(opts){
       const t = (j + 0.5) / numAst + (Math.random() - 0.5) * 0.15;
       const mx = a.wx + (b.wx - a.wx) * t;
       const my = a.wy + (b.wy - a.wy) * t;
-      // Offset within ~800px corridor width perpendicular to path
       const perpAngle = Math.atan2(b.wy - a.wy, b.wx - a.wx) + Math.PI / 2;
       const perpOfs = (Math.random() - 0.5) * 800;
       const awx = mx + Math.cos(perpAngle) * perpOfs;
       const awy = my + Math.sin(perpAngle) * perpOfs;
-      const r = 15 + Math.random() * 25;
-      // ~40% drift, ~60% stationary
-      const drifts = Math.random() < 0.4;
-      asteroids.push({
-        wx: awx, wy: awy, r: r,
-        vx: drifts ? (Math.random() - 0.5) * 0.6 : 0,
-        vy: drifts ? (Math.random() - 0.5) * 0.6 : 0,
-        hit: false, hitTimer: 0
-      });
+      const sz = 20 + Math.random() * 40; // size for makeRock
+      asteroidSpawns.push({ wx: awx, wy: awy, sz: sz });
     }
   }
 
@@ -10520,7 +10512,7 @@ function _buildCheckpointCourse(opts){
     startWX: sx, startWY: sy,
     finishWX: finishWX, finishWY: finishWY,
     checkpoints: checkpoints,
-    asteroids: asteroids
+    asteroidSpawns: asteroidSpawns
   };
 }
 
@@ -10600,7 +10592,7 @@ function initRaceCourse(idx){
   const course = RACE_COURSES[idx];
   if(course){
     course.checkpoints.forEach(function(cp){ cp.passed = false; });
-    course.asteroids.forEach(function(a){ a.hit = false; a.hitTimer = 0; });
+    // Asteroids are real spaceRocks — no custom reset needed
   }
 }
 initRaceCourse(0);
@@ -10639,7 +10631,7 @@ function updateRace(){
       _race._hitMsg = null;
       // Reset checkpoints and asteroids
       course.checkpoints.forEach(function(cp){ cp.passed = false; });
-      course.asteroids.forEach(function(a){ a.hit = false; a.hitTimer = 0; });
+      // Asteroids are real spaceRocks — no custom reset needed
       // Switch to LAUNCH track for race hype
       _race._preSongIdx = state.songIndex;
       const _launchIdx = MOODS.findIndex(function(m){return m.name==='LAUNCH';});
@@ -10678,6 +10670,12 @@ function updateRace(){
     }
     if(_race.countdown <= 0){
       _race.started = true;
+      // Spawn real spaceRocks along the course
+      if(course.asteroidSpawns){
+        course.asteroidSpawns.forEach(function(asp){
+          state.spaceRocks.push(makeRock(asp.wx, asp.wy, asp.sz, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4));
+        });
+      }
       if(audioCtx && !state.sfxMuted){
         const _gt = audioCtx.currentTime;
         playBeep(660, _gt, 0.08, 'sine', 0.12);
@@ -10757,51 +10755,7 @@ function updateRace(){
       }
     }
 
-    // Asteroid collision
-    for(let ai = 0; ai < course.asteroids.length; ai++){
-      const ast = course.asteroids[ai];
-      if(ast.hit) continue;
-      const adx = state.x - ast.wx, ady = state.y - ast.wy;
-      const aDist = Math.sqrt(adx*adx + ady*ady);
-      if(aDist < ast.r + 8){
-        ast.hit = true;
-        ast.hitTimer = 30;
-        _race.hits++;
-        // Speed penalty
-        state.vx *= 0.8;
-        state.vy *= 0.8;
-        // Score penalty
-        _race.score -= 50;
-        state.score -= 50;
-        if(state.score < 0) state.score = 0;
-        if(_race.score < 0) _race.score = 0;
-        document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-        // HIT flash
-        _race._hitMsg = { timer: 40, msg: 'HIT -50' };
-        state.collisionFlash = 6;
-        // Screen shake
-        _race._shakeTimer = 4;
-        // Low thud sound
-        if(audioCtx && !state.sfxMuted){
-          const _t = audioCtx.currentTime;
-          playBeep(80, _t, 0.15, 'triangle', 0.12);
-          playBeep(50, _t + 0.05, 0.2, 'sawtooth', 0.06);
-        }
-      }
-    }
-
-    // Update drifting asteroids
-    for(let ai = 0; ai < course.asteroids.length; ai++){
-      const ast = course.asteroids[ai];
-      if(ast.vx || ast.vy){
-        ast.wx += ast.vx;
-        ast.wy += ast.vy;
-      }
-      if(ast.hit && ast.hitTimer > 0) ast.hitTimer--;
-    }
-
-    // Screen shake decay
-    if(_race._shakeTimer > 0) _race._shakeTimer--;
+    // Asteroids are real spaceRocks — collision handled by the game's existing rock system
 
     // HIT message decay
     if(_race._hitMsg && _race._hitMsg.timer > 0){
@@ -11127,79 +11081,51 @@ function drawRaceCourse(ctx, cx, cy){
     ctx.restore();
   }
 
-  // Asteroids
-  for(var ai = 0; ai < course.asteroids.length; ai++){
-    var ast = course.asteroids[ai];
-    var asx = ast.wx - state.x + cx, asy = ast.wy - state.y + cy;
-    if(asx < -60 || asx > canvas.width+60 || asy < -60 || asy > canvas.height+60) continue;
-    ctx.save();
-    var astAlpha = 1.0;
-    if(ast.hit){
-      astAlpha = ast.hitTimer / 30;
-      if(astAlpha <= 0){ ctx.restore(); continue; }
-    }
-    // Outer glow
-    ctx.globalAlpha = astAlpha * 0.15;
-    ctx.fillStyle = '#ff6644';
-    ctx.beginPath(); ctx.arc(asx, asy, ast.r + 8, 0, Math.PI*2); ctx.fill();
-    // Solid body — bright enough to see against space
-    ctx.globalAlpha = astAlpha * 0.85;
-    ctx.shadowColor = '#ff4422'; ctx.shadowBlur = 10;
-    ctx.fillStyle = '#6a4a3a';
-    ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
-    // Highlight edge
-    ctx.globalAlpha = astAlpha * 0.6;
-    ctx.strokeStyle = '#aa7755';
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.stroke();
-    // Inner highlight
-    ctx.globalAlpha = astAlpha * 0.3;
-    ctx.fillStyle = '#aa8866';
-    ctx.beginPath(); ctx.arc(asx - ast.r * 0.25, asy - ast.r * 0.25, ast.r * 0.4, 0, Math.PI*2); ctx.fill();
-    ctx.restore();
-  }
+  // Asteroids are real spaceRocks — drawn by the game's existing rock renderer
 
   // Finish line — dotted yellow line + checkered area
   {
     var fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
     if(fsx > -600 && fsx < canvas.width+600 && fsy > -600 && fsy < canvas.height+600){
-      var fH = 900;
+      var fW = 900; // horizontal finish line
       var fpulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
       var allCpPassed = _race.nextCheckpoint >= course.checkpoints.length;
       var fcol = (allCpPassed && _race.started) ? '#00ff88' : '#ffcc00';
       ctx.save();
+      // Horizontal dotted line
       ctx.setLineDash([20, 14]);
       ctx.globalAlpha = 0.5 + fpulse * 0.3;
       ctx.shadowColor = fcol; ctx.shadowBlur = 16;
       ctx.lineWidth = 8; ctx.strokeStyle = fcol;
-      ctx.beginPath(); ctx.moveTo(fsx, fsy - fH/2); ctx.lineTo(fsx, fsy + fH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fsx - fW/2, fsy); ctx.lineTo(fsx + fW/2, fsy); ctx.stroke();
       ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.beginPath(); ctx.moveTo(fsx, fsy - fH/2); ctx.lineTo(fsx, fsy + fH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(fsx - fW/2, fsy); ctx.lineTo(fsx + fW/2, fsy); ctx.stroke();
       ctx.setLineDash([]);
       ctx.shadowBlur = 0;
+      // End caps
       ctx.globalAlpha = 0.7 + fpulse * 0.3;
       ctx.shadowColor = fcol; ctx.shadowBlur = 18;
       ctx.fillStyle = fcol;
-      ctx.beginPath(); ctx.arc(fsx, fsy - fH/2, 8, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(fsx, fsy + fH/2, 8, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fsx - fW/2, fsy, 8, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fsx + fW/2, fsy, 8, 0, Math.PI*2); ctx.fill();
       ctx.shadowBlur = 0;
+      // Label
       ctx.globalAlpha = 0.85;
       ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
       ctx.fillStyle = fcol; ctx.textAlign = 'center';
       ctx.shadowColor = fcol; ctx.shadowBlur = 10;
-      ctx.fillText('FINISH', fsx, fsy - fH/2 - 24);
+      ctx.fillText('FINISH', fsx, fsy - 24);
       ctx.shadowBlur = 0;
-      // Checkered area after finish line
-      var cBoxW = 300, cBoxH = 400, cellSz = 30;
-      var cbx = fsx + cBoxW/2 + 20;
+      // Checkered area ABOVE finish line (since course goes upward)
+      var cBoxW = 400, cBoxH = 300, cellSz = 30;
+      var cby = fsy - cBoxH/2 - 20;
       var fCols = Math.ceil(cBoxW / cellSz), fRows = Math.ceil(cBoxH / cellSz);
       for(var fr = 0; fr < fRows; fr++){
         for(var fc = 0; fc < fCols; fc++){
           var isW = (fr + fc) % 2 === 0;
           ctx.globalAlpha = isW ? fpulse * 0.25 : fpulse * 0.08;
           ctx.fillStyle = isW ? '#ffffff' : '#ffcc00';
-          ctx.fillRect(cbx - cBoxW/2 + fc * cellSz, fsy - cBoxH/2 + fr * cellSz, cellSz, cellSz);
+          ctx.fillRect(fsx - cBoxW/2 + fc * cellSz, cby - cBoxH/2 + fr * cellSz, cellSz, cellSz);
         }
       }
       ctx.restore();
