@@ -113,6 +113,34 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 #close-video:hover { color: #f00; }
 #video-body { width: 100%; aspect-ratio: 16/9; background: #111; position: relative; }
 #video-body iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+
+/* Tileset zoom popup */
+#tile-zoom-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.95); z-index: 9000;
+}
+#tile-zoom-overlay.open { display: flex; flex-direction: column; }
+#tile-zoom-header {
+    background: #222; padding: 8px 14px; display: flex; justify-content: space-between; align-items: center;
+    border-bottom: 1px solid #444; flex-shrink: 0;
+}
+#tile-zoom-header span { color: #ffcc00; font-size: 12px; font-family: monospace; }
+#tile-zoom-header button {
+    cursor: pointer; color: #ffcc00; font-size: 14px; font-family: monospace;
+    background: #333; border: 1px solid #555; padding: 2px 10px;
+}
+#tile-zoom-header button:hover { background: #555; }
+#tile-zoom-body {
+    flex: 1; overflow: hidden; position: relative; cursor: crosshair;
+}
+#tile-zoom-canvas {
+    image-rendering: pixelated; image-rendering: crisp-edges;
+    position: absolute; top: 0; left: 0; transform-origin: 0 0;
+}
+#tile-zoom-info {
+    background: #222; padding: 6px 14px; border-top: 1px solid #444; flex-shrink: 0;
+    font-size: 11px; color: #888; font-family: monospace;
+}
 </style>
 </head>
 <body>
@@ -167,14 +195,14 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 
     <div id="tab-tiles" class="tab-content active">
         <div class="tool-section">
-            <h3>Environment Tileset</h3>
+            <h3 style="display:flex;justify-content:space-between;align-items:center;">Environment Tileset <button onclick="openTileZoom('env')" style="background:#333;color:#ffcc00;border:1px solid #555;padding:1px 8px;font-family:monospace;font-size:9px;cursor:pointer;">ZOOM</button></h3>
             <div id="tile-picker-wrap">
                 <canvas id="tile-picker-canvas"></canvas>
             </div>
-            <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Click tile to select · Shift+click to multi-select</div>
+            <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Click tile to select · Shift+click to multi-select · Double-click to zoom</div>
         </div>
         <div class="tool-section">
-            <h3>Lava Tileset</h3>
+            <h3 style="display:flex;justify-content:space-between;align-items:center;">Lava Tileset <button onclick="openTileZoom('lava')" style="background:#333;color:#ffcc00;border:1px solid #555;padding:1px 8px;font-family:monospace;font-size:9px;cursor:pointer;">ZOOM</button></h3>
             <div id="lava-picker-wrap">
                 <canvas id="lava-picker-canvas"></canvas>
             </div>
@@ -240,6 +268,23 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
         <button onclick="loadLevel()">Load Level (JSON)</button>
         <button onclick="clearLevel()">Clear Level</button>
     </div>
+</div>
+
+<div id="tile-zoom-overlay">
+    <div id="tile-zoom-header">
+        <span id="tile-zoom-title">ENVIRONMENT TILESET</span>
+        <div style="display:flex;gap:6px;align-items:center;">
+            <button onclick="tileZoomSet(2)">2x</button>
+            <button onclick="tileZoomSet(4)">4x</button>
+            <button onclick="tileZoomSet(6)">6x</button>
+            <button onclick="tileZoomSet(8)">8x</button>
+            <button onclick="closeTileZoom()" style="color:#f00;border-color:#f00;">CLOSE</button>
+        </div>
+    </div>
+    <div id="tile-zoom-body">
+        <canvas id="tile-zoom-canvas"></canvas>
+    </div>
+    <div id="tile-zoom-info">Click to select tile · Shift+click to multi-select · Scroll to zoom · Space+drag to pan</div>
 </div>
 
 <div id="video-overlay" onclick="closeVideo()">
@@ -587,6 +632,158 @@ function pickerClick(e, tileset) {
 
 tpCanvas.addEventListener('click', e => pickerClick(e, 'env'));
 lpCanvas.addEventListener('click', e => pickerClick(e, 'lava'));
+tpCanvas.addEventListener('dblclick', () => openTileZoom('env'));
+lpCanvas.addEventListener('dblclick', () => openTileZoom('lava'));
+
+// ---- TILE ZOOM POPUP ----
+let tileZoomOpen = false;
+let tileZoomTileset = 'env';
+let tzZoom = 4;
+let tzPanX = 0, tzPanY = 0;
+let tzPanning = false, tzPanStartX = 0, tzPanStartY = 0, tzPanCamX = 0, tzPanCamY = 0;
+let tzSpaceHeld = false;
+
+const tzCanvas = document.getElementById('tile-zoom-canvas');
+const tzCtx = tzCanvas.getContext('2d');
+const tzBody = document.getElementById('tile-zoom-body');
+
+function openTileZoom(tileset) {
+    tileZoomTileset = tileset;
+    tileZoomOpen = true;
+    document.getElementById('tile-zoom-overlay').classList.add('open');
+    document.getElementById('tile-zoom-title').textContent =
+        tileset === 'env' ? 'ENVIRONMENT TILESET' : 'LAVA TILESET';
+    tzPanX = 0; tzPanY = 0;
+    drawTileZoom();
+}
+
+function closeTileZoom() {
+    tileZoomOpen = false;
+    document.getElementById('tile-zoom-overlay').classList.remove('open');
+}
+
+function tileZoomSet(z) { tzZoom = z; drawTileZoom(); }
+
+function drawTileZoom() {
+    const srcImg = tileZoomTileset === 'env' ? img.env : img.lava;
+    if (!srcImg || !srcImg.complete) return;
+
+    const w = srcImg.naturalWidth;
+    const h = srcImg.naturalHeight;
+    tzCanvas.width = w;
+    tzCanvas.height = h;
+    tzCanvas.style.transform = `scale(${tzZoom}) translate(${tzPanX}px, ${tzPanY}px)`;
+
+    tzCtx.imageSmoothingEnabled = false;
+    tzCtx.drawImage(srcImg, 0, 0);
+
+    // Grid
+    const cols = Math.floor(w / T), rows = Math.floor(h / T);
+    tzCtx.strokeStyle = 'rgba(255,255,255,0.2)';
+    tzCtx.lineWidth = 0.5;
+    for (let x = 0; x <= cols; x++) { tzCtx.beginPath(); tzCtx.moveTo(x * T, 0); tzCtx.lineTo(x * T, h); tzCtx.stroke(); }
+    for (let y = 0; y <= rows; y++) { tzCtx.beginPath(); tzCtx.moveTo(0, y * T); tzCtx.lineTo(w, y * T); tzCtx.stroke(); }
+
+    // Solid/partial overlay (only for env tileset)
+    if (tileZoomTileset === 'env') {
+        for (const key of SOLID_ATLAS) {
+            const [ax, ay] = key.split(',').map(Number);
+            const partial = PARTIAL_CELLS[key];
+            if (partial) {
+                for (const [y0, y1] of partial) {
+                    tzCtx.fillStyle = 'rgba(255,160,0,0.4)';
+                    tzCtx.fillRect(ax * T, ay * T + y0, T, y1 - y0);
+                }
+                tzCtx.strokeStyle = 'rgba(255,160,0,0.7)';
+                tzCtx.lineWidth = 1;
+                tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
+            } else {
+                tzCtx.fillStyle = 'rgba(255,50,50,0.25)';
+                tzCtx.fillRect(ax * T, ay * T, T, T);
+                tzCtx.strokeStyle = 'rgba(255,50,50,0.6)';
+                tzCtx.lineWidth = 1;
+                tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
+            }
+        }
+    }
+
+    // Selection highlight
+    for (const t of selectedTiles) {
+        if (t.tileset !== tileZoomTileset) continue;
+        tzCtx.strokeStyle = '#ffcc00';
+        tzCtx.lineWidth = 2;
+        tzCtx.strokeRect(t.ax * T, t.ay * T, T, T);
+    }
+}
+
+// Zoom popup mouse events
+tzBody.addEventListener('mousedown', e => {
+    if (e.button === 0 && tzSpaceHeld) {
+        tzPanning = true;
+        tzPanStartX = e.clientX; tzPanStartY = e.clientY;
+        tzPanCamX = tzPanX; tzPanCamY = tzPanY;
+        e.preventDefault();
+        return;
+    }
+    if (e.button === 0) {
+        // Click to select tile
+        const rect = tzCanvas.getBoundingClientRect();
+        const scaleX = tzCanvas.width / rect.width;
+        const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
+        const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+        // Reuse the same logic as the panel picker
+        const tile = { ax, ay, tileset: tileZoomTileset, dx: 0, dy: 0 };
+        if (e.shiftKey && selectedTiles.length > 0 && selectedTiles[0].tileset === tileZoomTileset) {
+            const idx = selectedTiles.findIndex(t => t.ax === ax && t.ay === ay);
+            if (idx >= 0) selectedTiles.splice(idx, 1);
+            else selectedTiles.push(tile);
+            if (selectedTiles.length > 0) {
+                const minAx = Math.min(...selectedTiles.map(t => t.ax));
+                const minAy = Math.min(...selectedTiles.map(t => t.ay));
+                selectedTiles.forEach(t => { t.dx = t.ax - minAx; t.dy = t.ay - minAy; });
+            }
+        } else {
+            selectedTiles = [tile];
+        }
+        selectedEntity = null;
+        clearEntitySelection();
+        drawTileZoom();
+        drawTilePicker();
+        drawLavaPicker();
+        const atlasKey = ax + ',' + ay;
+        const solid = !isSolidAtlas(ax, ay) ? ' passthrough' :
+            (PARTIAL_CELLS[atlasKey] ? ' PARTIAL (' + PARTIAL_CELLS[atlasKey].map(r => r[0]+'-'+r[1]+'px').join(', ') + ')' : ' SOLID');
+        document.getElementById('tile-zoom-info').textContent = `Tile (${ax},${ay})${solid} · ${selectedTiles.length} selected`;
+        document.getElementById('tile-info').textContent = `Tile: ${tileZoomTileset} (${ax},${ay})${solid} · ${selectedTiles.length} selected`;
+    }
+});
+
+tzBody.addEventListener('mousemove', e => {
+    if (tzPanning) {
+        tzPanX = tzPanCamX + (e.clientX - tzPanStartX) / tzZoom;
+        tzPanY = tzPanCamY + (e.clientY - tzPanStartY) / tzZoom;
+        drawTileZoom();
+    }
+});
+
+tzBody.addEventListener('mouseup', () => { tzPanning = false; });
+
+tzBody.addEventListener('wheel', e => {
+    e.preventDefault();
+    if (e.deltaY < 0) tzZoom = Math.min(12, tzZoom * 1.2);
+    else tzZoom = Math.max(1, tzZoom / 1.2);
+    drawTileZoom();
+}, { passive: false });
+
+window.addEventListener('keydown', e => {
+    if (tileZoomOpen) {
+        if (e.code === 'Space') { tzSpaceHeld = true; e.preventDefault(); }
+        if (e.code === 'Escape') { closeTileZoom(); e.preventDefault(); }
+    }
+});
+window.addEventListener('keyup', e => {
+    if (e.code === 'Space') tzSpaceHeld = false;
+});
 
 // ---- ENTITY PICKER ----
 function setupEntityPicker() {
