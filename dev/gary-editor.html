@@ -272,8 +272,13 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     </div>
 
     <div id="file-ops">
-        <button onclick="saveLevel()">Save Level (JSON)</button>
-        <button onclick="loadLevel()">Load Level (JSON)</button>
+        <div style="display:flex;gap:4px;margin-bottom:4px;align-items:center;">
+            <label style="font-size:11px;white-space:nowrap;">Level:</label>
+            <input type="text" id="level-name" value="Level1" style="flex:1;background:#333;color:#fff;border:1px solid #555;padding:4px 6px;font-family:monospace;font-size:11px;">
+        </div>
+        <button onclick="saveLevel()">Save Level</button>
+        <button onclick="loadLevel()">Load from File</button>
+        <button onclick="loadLevelByName()">Load by Name</button>
         <button onclick="clearLevel()">Clear Level</button>
     </div>
 </div>
@@ -1277,7 +1282,8 @@ function saveLevel() {
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
-    a.download = 'Level1.json';
+    const levelName = document.getElementById('level-name').value.trim() || 'Level1';
+    a.download = levelName + '.json';
     a.click();
     URL.revokeObjectURL(a.href);
 }
@@ -1289,6 +1295,9 @@ function loadLevel() {
     input.onchange = e => {
         const file = e.target.files[0];
         if (!file) return;
+        // Set the level name from the filename
+        const name = file.name.replace('.json', '');
+        document.getElementById('level-name').value = name;
         const reader = new FileReader();
         reader.onload = ev => {
             try {
@@ -1300,6 +1309,14 @@ function loadLevel() {
         reader.readAsText(file);
     };
     input.click();
+}
+
+function loadLevelByName() {
+    const name = document.getElementById('level-name').value.trim() || 'Level1';
+    fetch('levels/' + name + '.json?t=' + Date.now())
+        .then(r => { if (r.ok) return r.json(); throw new Error('Not found'); })
+        .then(data => { applyLevelData(data); console.log('Loaded ' + name); })
+        .catch(() => { alert(name + '.json not found in levels/'); });
 }
 
 // ---- EDITOR DRAW ----
@@ -2244,7 +2261,7 @@ Promise.all(imgLoads).then(() => {
     // Auto-load Level1.json
     fetch('levels/Level1.json?t=' + Date.now())
         .then(r => { if (r.ok) return r.json(); throw new Error('Not found'); })
-        .then(data => { applyLevelData(data); console.log('Loaded Level1.json'); })
+        .then(data => { applyLevelData(data); document.getElementById('level-name').value = 'Level1'; console.log('Loaded Level1.json'); })
         .catch(() => { console.log('No Level1.json found, starting blank'); });
 
     camX = spawnX * T - 200;
