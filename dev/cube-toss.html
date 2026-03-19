@@ -1724,8 +1724,25 @@ function edImport() {
 const _origPushUndo = edPushUndo;
 edPushUndo = function() { _origPushUndo(); edSaveLocal(); };
 
-// Load saved levels on startup
-edLoadLocal();
+// Load levels: try JSON file first (same directory), then localStorage
+(async function loadLevels() {
+  try {
+    const resp = await fetch('cube-toss-levels.json');
+    if (resp.ok) {
+      const data = await resp.json();
+      if (Array.isArray(data) && data.length > 0) {
+        LEVELS.length = 0;
+        for (const d of data) LEVELS.push(deserializeLevel(d));
+        console.log(`Loaded ${LEVELS.length} levels from JSON`);
+        return;
+      }
+    }
+  } catch(e) {}
+  // Fallback to localStorage
+  if (edLoadLocal()) {
+    console.log(`Loaded ${LEVELS.length} levels from localStorage`);
+  }
+})();
 
 // Keyboard shortcuts
 window.addEventListener('keydown', (e) => {
