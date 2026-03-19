@@ -488,6 +488,22 @@ let activeLayer = 0;
 
 let entities = [];
 let spawnX = 4, spawnY = 25;
+let nextEntityId = 1;
+
+function createEntity(type, x, y) {
+    // Count existing of this type to generate label like "Arcade 1", "Coin 23"
+    const count = entities.filter(e => e.type === type).length + 1;
+    return { type, x, y, id: nextEntityId++, label: type + ' ' + count, props: {} };
+}
+
+function reindexEntities() {
+    // Rebuild labels after deletions so numbering stays clean
+    const counts = {};
+    for (const e of entities) {
+        counts[e.type] = (counts[e.type] || 0) + 1;
+        e.label = e.type + ' ' + counts[e.type];
+    }
+}
 
 // ---- EDITOR STATE ----
 let mode = 'edit';
@@ -1151,7 +1167,7 @@ canvas.addEventListener('mouseup', e => {
                 for (let tx = x1; tx <= x2; tx += gapX) {
                     const ex = tx * T + T / 2;
                     const ey = (ty + 1) * T;
-                    entities.push({ type: selectedEntity, x: ex, y: ey });
+                    entities.push(createEntity(selectedEntity, ex, ey));
                 }
             }
             entityBoxDragging = false;
@@ -1230,9 +1246,11 @@ function eraseAt(tx, ty) {
     // Erase entities within the brush area
     const pixL = x1 * T, pixR = (x2 + 1) * T;
     const pixT = y1 * T, pixB = (y2 + 1) * T;
+    const before = entities.length;
     entities = entities.filter(e => {
         return !(e.x >= pixL && e.x < pixR && e.y > pixT && e.y <= pixB);
     });
+    if (entities.length < before) reindexEntities();
 }
 
 function placeEntity(w) {
@@ -1362,6 +1380,12 @@ function drawEditor() {
         ctx.lineWidth = 1 / zoom;
         ctx.strokeRect(ent.x - def.w / 2, ent.y - def.h, def.w, def.h);
         ctx.globalAlpha = 1;
+        // Instance label
+        if (ent.label) {
+            ctx.fillStyle = def.color;
+            ctx.font = (6 / Math.max(zoom, 1.5)) + 'px monospace';
+            ctx.fillText(ent.label, ent.x - def.w / 2, ent.y - def.h - 2 / zoom);
+        }
     }
 
     // Gary spawn marker — draw actual Gary idle frame
@@ -1644,11 +1668,11 @@ function startPlay() {
     gState = 'idle'; gaFrame = 0; gaTimer = 0; gaDone = false;
     gScore = 0;
 
-    pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
-    pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
-    pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false }));
-    pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false }));
-    pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0 }));
+    pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
+    pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
+    pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false, label: e.label, props: e.props }));
+    pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false, label: e.label, props: e.props }));
+    pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0, label: e.label, props: e.props }));
 
     Object.keys(pKeys).forEach(k => delete pKeys[k]);
     pJumpBuf = 0;
@@ -2012,9 +2036,11 @@ function playFrame(dt) {
             const s = rodSfx.cloneNode(); s.volume = 0.4; s.play().catch(() => {});
         }
     }
+    // Press animation peak is frame 3 (arm fully extended at 366,0)
+    const atPressPeak = gState === 'press' && gaFrame === 3;
     for (const c of pChests) {
         c.t += dt;
-        if (gState === 'press' && !c.acted) {
+        if (atPressPeak && !c.acted) {
             if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) {
                 c.open = !c.open; c.t = 0; c.acted = true;
                 if (c.open) playChestOpen(); else playChestClose();
@@ -2024,10 +2050,11 @@ function playFrame(dt) {
     }
     for (const a of pArcades) {
         a.t += dt;
-        if (gState === 'press' && !a.acted) {
+        if (atPressPeak && !a.acted) {
             if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) {
                 a.acted = true;
-                openVideo('305429654');
+                const vid = a.props && a.props.video ? a.props.video : '305429654';
+                openVideo(vid);
             }
         }
         if (gState !== 'press') a.acted = false;
@@ -2182,7 +2209,21 @@ function playFrame(dt) {
             ctx.strokeStyle = '#0ff';
             ctx.strokeRect(Math.round(r.x) - 20, Math.round(r.y) - 25, 40, 25);
         }
+        // Instance labels on arcades, chests, platforms
         ctx.globalAlpha = 1;
+        ctx.font = '5px monospace';
+        for (const a of pArcades) {
+            ctx.fillStyle = '#fa0';
+            ctx.fillText(a.label || '', Math.round(a.x) - 23, Math.round(a.y) - 49);
+        }
+        for (const c of pChests) {
+            ctx.fillStyle = '#f0f';
+            ctx.fillText(c.label || '', Math.round(c.x) - 24, Math.round(c.y) - 26);
+        }
+        for (const p of pPlatforms) {
+            ctx.fillStyle = '#fff';
+            ctx.fillText(p.label || '', Math.round(p.x) - 38, Math.round(p.y) - 6);
+        }
     }
 
     ctx.restore();
@@ -2243,7 +2284,12 @@ function applyLevelData(data) {
             }
         }
     });
-    entities = data.entities || [];
+    entities = (data.entities || []).map(e => {
+        if (!e.id) e.id = nextEntityId++;
+        if (!e.props) e.props = {};
+        return e;
+    });
+    reindexEntities();
     Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
     if (data.collisionOverrides) Object.assign(collisionOverrides, data.collisionOverrides);
     drawTilePicker(); drawLavaPicker();
@@ -2296,6 +2342,7 @@ window.addEventListener('keydown', e => {
             pushUndo();
             if (selectedObj.type === 'entity') {
                 entities.splice(selectedObj.index, 1);
+                reindexEntities();
             }
             selectedObj = null;
             e.preventDefault();
