@@ -1126,23 +1126,43 @@ function onDown(e){
         canvas.style.cursor = 'move';
         return;
       }
-      if (tbAction === 'dupe' && edSel) {
+      if (tbAction === 'dupe' && (edSel || edMultiSel.length > 0)) {
         const lv = getCurrentLevel();
         edPushUndo();
-        const clone = JSON.parse(JSON.stringify(edSel.obj));
-        clone.x += 30; clone.y += 30; // offset so it's visible
-        if (edSel.type==='wall') { lv.walls.push(clone); edSel={type:'wall',index:lv.walls.length-1,obj:clone}; }
-        else if (edSel.type==='platform') { lv.platforms.push(clone); edSel={type:'platform',index:lv.platforms.length-1,obj:clone}; }
-        else if (edSel.type==='bumper') { lv.bumpers.push(clone); edSel={type:'bumper',index:lv.bumpers.length-1,obj:clone}; }
-        else if (edSel.type==='hint') { if(!lv.hintMarkers)lv.hintMarkers=[]; lv.hintMarkers.push(clone); edSel={type:'hint',index:lv.hintMarkers.length-1,obj:clone}; }
-      } else if (tbAction === 'delete' && edSel) {
+        const toDupe = edMultiSel.length > 1 ? edMultiSel : (edSel ? [edSel] : []);
+        const newMulti = [];
+        for (const sel of toDupe) {
+          const clone = JSON.parse(JSON.stringify(sel.obj));
+          clone.x += 30; clone.y += 30;
+          let newSel;
+          if (sel.type==='wall') { lv.walls.push(clone); newSel={type:'wall',index:lv.walls.length-1,obj:clone}; }
+          else if (sel.type==='platform') { lv.platforms.push(clone); newSel={type:'platform',index:lv.platforms.length-1,obj:clone}; }
+          else if (sel.type==='bumper') { lv.bumpers.push(clone); newSel={type:'bumper',index:lv.bumpers.length-1,obj:clone}; }
+          else if (sel.type==='hint') { if(!lv.hintMarkers)lv.hintMarkers=[]; lv.hintMarkers.push(clone); newSel={type:'hint',index:lv.hintMarkers.length-1,obj:clone}; }
+          if (newSel) newMulti.push(newSel);
+        }
+        edMultiSel = newMulti;
+        if (newMulti.length > 0) edSel = newMulti[newMulti.length - 1];
+      } else if (tbAction === 'delete' && (edSel || edMultiSel.length > 0)) {
         const lv = getCurrentLevel();
         edPushUndo();
-        if (edSel.type==='wall') lv.walls.splice(edSel.index,1);
-        else if (edSel.type==='platform') lv.platforms.splice(edSel.index,1);
-        else if (edSel.type==='bumper') lv.bumpers.splice(edSel.index,1);
-        else if (edSel.type==='hint') { if(lv.hintMarkers) lv.hintMarkers.splice(edSel.index,1); }
-        edSel = null;
+        const toDel = edMultiSel.length > 0 ? edMultiSel : (edSel ? [edSel] : []);
+        // Delete in reverse index order to avoid index shifting
+        const byType = {};
+        for (const s of toDel) {
+          if (!byType[s.type]) byType[s.type] = [];
+          byType[s.type].push(s.index);
+        }
+        for (const [type, indices] of Object.entries(byType)) {
+          indices.sort((a,b) => b - a); // reverse order
+          for (const idx of indices) {
+            if (type==='wall') lv.walls.splice(idx,1);
+            else if (type==='platform') lv.platforms.splice(idx,1);
+            else if (type==='bumper') lv.bumpers.splice(idx,1);
+            else if (type==='hint' && lv.hintMarkers) lv.hintMarkers.splice(idx,1);
+          }
+        }
+        edSel = null; edMultiSel = [];
       } else if (tbAction === 'export') { edExport(); }
       else if (tbAction === 'undo') { edPopUndo(); }
       else if (tbAction === 'import') { edImport(); }
@@ -1228,17 +1248,36 @@ function onDown(e){
 
     // Hit test for selection
     const hit = edHitTest(wx, wy);
+    const shiftKey = e.shiftKey || (e.touches && edMultiSel.length > 0);
     if (hit) {
-      edSel = hit;
-      edPushUndo();
-      edHandle = 'move';
-      edDragging = true;
-      const o = hit.obj;
-      edDragStart = { mx: wx, my: wy, ox: o.x, oy: o.y, ow: o.w || 0, oh: o.h || 0, or: o.r || 0 };
-      canvas.style.cursor = 'grabbing';
+      if (shiftKey) {
+        // Shift-click: add/remove from multi-select
+        const already = edMultiSel.findIndex(s => s.type === hit.type && s.index === hit.index);
+        if (already >= 0) {
+          edMultiSel.splice(already, 1);
+        } else {
+          edMultiSel.push(hit);
+        }
+        // Also keep edSel as the last clicked for handles
+        edSel = hit;
+      } else {
+        // Normal click: if clicking an already multi-selected item, keep multi-select for group drag
+        const inMulti = edMultiSel.findIndex(s => s.type === hit.type && s.index === hit.index) >= 0;
+        if (!inMulti) edMultiSel = [hit];
+        edSel = hit;
+        edPushUndo();
+        edHandle = 'move';
+        edDragging = true;
+        const o = hit.obj;
+        edDragStart = { mx: wx, my: wy, ox: o.x, oy: o.y, ow: o.w || 0, oh: o.h || 0, or: o.r || 0,
+          multiStarts: edMultiSel.map(s => ({x: s.obj.x, y: s.obj.y}))
+        };
+        canvas.style.cursor = 'grabbing';
+      }
     } else {
       // Deselect, start panning
       edSel = null;
+      edMultiSel = [];
       edPanning = true;
       edPanStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
       canvas.style.cursor = 'move';
@@ -1360,6 +1399,7 @@ let edSel = null;       // {type:'wall'|'platform'|'bumper'|'goal'|'backWall', i
 let edDragging = false;
 let edDragStart = null;  // {mx, my, ox, oy, ow, oh, or}
 let edHandle = null;     // 'move'|'n'|'s'|'e'|'w'|'ne'|'nw'|'se'|'sw'|'radius'
+let edMultiSel = [];     // [{type, index, obj}] for shift-click multi-select
 let edPanning = false;
 let edPanStart = null;
 let edAddMode = null;    // null|'wall'|'platform'|'bumper'
@@ -1533,6 +1573,17 @@ function edApplyDrag(wx, wy) {
     o.rot = angle;
   } else if (edHandle === 'move') {
     o.x = snap(ds.ox + dx); o.y = snap(ds.oy + dy);
+    // Move all multi-selected objects together
+    if (edMultiSel.length > 1 && ds.multiStarts) {
+      for (let mi = 0; mi < edMultiSel.length; mi++) {
+        const ms = edMultiSel[mi];
+        if (ms.obj === o) continue;
+        if (ds.multiStarts[mi]) {
+          ms.obj.x = snap(ds.multiStarts[mi].x + dx);
+          ms.obj.y = snap(ds.multiStarts[mi].y + dy);
+        }
+      }
+    }
   } else if (edHandle === 'radius') {
     o.r = snap(Math.max(10, Math.abs(wx - o.x)));
   } else {
@@ -2358,6 +2409,31 @@ function animate(time){
     ctx.fillRect(lwx - 3, H/2 - 15, 6, 30);
     ctx.fillStyle = 'rgba(244,197,66,0.4)'; ctx.font = '500 9px Urbanist';
     ctx.fillText('DRAG', lwx, H/2 + 28);
+
+    // Multi-select highlights
+    if (edMultiSel.length > 1) {
+      for (const ms of edMultiSel) {
+        if (ms === edSel) continue; // primary selection drawn by edDrawHandles
+        const o = ms.obj;
+        ctx.strokeStyle = 'rgba(0,255,255,0.35)'; ctx.lineWidth = 1.5; ctx.setLineDash([4,4]);
+        if (ms.type === 'bumper') {
+          ctx.beginPath(); ctx.arc(o.x - camX, o.y, o.r + 4, 0, Math.PI*2); ctx.stroke();
+        } else if (ms.type === 'hint') {
+          ctx.beginPath(); ctx.arc(o.x - camX, o.y, 10, 0, Math.PI*2); ctx.stroke();
+        } else {
+          const w = o.w||0, h = o.h||6;
+          ctx.save();
+          ctx.translate(o.x + w/2 - camX, o.y + h/2);
+          if (o.rot) ctx.rotate(o.rot);
+          ctx.strokeRect(-w/2-2, -h/2-2, w+4, h+4);
+          ctx.restore();
+        }
+        ctx.setLineDash([]);
+      }
+      // Count label
+      ctx.fillStyle = 'rgba(0,255,255,0.6)'; ctx.font = '600 11px Urbanist'; ctx.textAlign = 'left';
+      ctx.fillText(`${edMultiSel.length} SELECTED`, 15, H - 20);
+    }
 
     // Selection handles
     edDrawHandles();
