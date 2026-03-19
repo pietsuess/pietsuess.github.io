@@ -1061,24 +1061,42 @@ function onDown(e){
     const b = sideBtnBounds(index);
     return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h;
   }
-  // EDIT (index 3)
-  if(hitSideBtn(3)){
-    editorMode=!editorMode;
-    if(editorMode){state='ready';cube=null;camX=0;camY=0;camTargetX=0;edSel=null;edAddMode=null;}
-    else{edSel=null;edAddMode=null;camY=0;}
-    return;
+  // Side buttons — check all positions, determine which button by label
+  {
+    const gV = getCurrentLevel().goal;
+    const goalVis = (gV.x + gV.w - camX > 0 && gV.x - camX < W && gV.y + (gV.h||0) - camY > 0 && gV.y - camY < H);
+    let bi = 0;
+    // RESET at 0
+    if (hitSideBtn(bi) && (state==='thrown'||state==='lost'||state==='won'||state==='aiming')) { resetCube(); return; }
+    bi++;
+    // GOAL HINT (only if goal not visible)
+    if (!goalVis) {
+      if (hitSideBtn(bi)) { goalPreview = !goalPreview; return; }
+      bi++;
+    }
+    // HINTS
+    if (hitSideBtn(bi)) { showHints = !showHints; return; }
+    bi++;
+    // EDIT
+    if (hitSideBtn(bi)) {
+      editorMode = !editorMode;
+      if (editorMode) { state='ready'; cube=null; camX=0; camY=0; camTargetX=0; edSel=null; edAddMode=null; }
+      else { edSel=null; edAddMode=null; camY=0; }
+      return;
+    }
   }
 
   // Editor mode input
   if (editorMode) {
     const wx = p.x + camX, wy = p.y + camY;
 
-    // Camera pan checkboxes
-    const cbx2 = 15, cby2 = 105;
+    // Camera pan checkboxes (below side buttons)
+    const lastBtn = sideBtnBounds(3);
+    const cbx2 = lastBtn.x, cby2 = lastBtn.y + lastBtn.h + 15 + 12;
     const cbKeys = ['panRight','panUp','panDown'];
     for (let ci = 0; ci < 3; ci++) {
-      const cy3 = cby2 + ci * 22;
-      if (wx - camX >= cbx2 && wx - camX <= cbx2 + 100 && wy - camY >= cy3 && wy - camY <= cy3 + 14) {
+      const cy3 = cby2 + ci * 20;
+      if (p.x >= cbx2 && p.x <= cbx2 + SIDE_BTN_W && p.y >= cy3 && p.y <= cy3 + 12) {
         edPushUndo();
         const lv = getCurrentLevel();
         if (cbKeys[ci] === 'panRight') lv.panRight = lv.panRight === false ? true : false;
@@ -1217,15 +1235,7 @@ function onDown(e){
     return;
   }
 
-  // GOAL HINT (index 1)
-  if(hitSideBtn(1)){ goalPreview=!goalPreview; return; }
-  // HINTS (index 2)
-  if(hitSideBtn(2)){ showHints=!showHints; return; }
 
-  if(state==='thrown'||state==='lost'||state==='won'||state==='aiming'){
-    const rb=resetBtnBounds();
-    if(p.x>=rb.x&&p.x<=rb.x+rb.w&&p.y>=rb.y&&p.y<=rb.y+rb.h){resetCube();return;}
-  }
   if(state==='won'){
     const nb=nextBtnBounds();
     if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){level++;attempts=0;resetCube();return;}
@@ -2233,12 +2243,8 @@ function animate(time){
 
   // ─── EDITOR OVERLAY ───
   if (editorMode) {
-    // Editor badge
-    ctx.fillStyle = 'rgba(0,255,255,0.15)'; ctx.fillRect(0, 0, W, H); // dim overlay
-    ctx.fillStyle = 'rgba(0,255,255,0.8)'; ctx.font = '700 14px Urbanist'; ctx.textAlign = 'left';
-    ctx.fillText('EDIT MODE', 15, 75);
-    ctx.fillStyle = 'rgba(254,249,240,0.3)'; ctx.font = '400 11px Poppins';
-    ctx.fillText(`Drag objects. \` to exit. Ctrl+Z undo. G = snap${edSnap?' (ON)':''}`, 15, 90);
+    // Editor dim overlay
+    ctx.fillStyle = 'rgba(0,255,255,0.15)'; ctx.fillRect(0, 0, W, H);
 
     // Snap grid overlay
     if (edSnap) {
@@ -2251,26 +2257,30 @@ function animate(time){
     // World-space editor elements (need camY offset)
     if (camY !== 0) ctx.translate(0, -camY);
 
-    // Camera pan checkboxes
+    // Camera pan checkboxes — below the side buttons
     const cf = getCamFlags();
-    const cbx = 15, cby = 105;
-    ctx.font = '500 11px Urbanist'; ctx.textAlign = 'left';
+    const lastBtnB = sideBtnBounds(3); // EDIT is index 3
+    const cbx = lastBtnB.x, cby = lastBtnB.y + lastBtnB.h + 15;
+    ctx.font = '500 10px Urbanist'; ctx.textAlign = 'left';
+    // Edit mode label
+    ctx.fillStyle = 'rgba(0,255,255,0.7)'; ctx.font = '600 11px Urbanist';
+    ctx.fillText('EDIT MODE', cbx, cby);
     const cbLabels = [
       { key: 'panRight', label: 'PAN RIGHT', val: cf.panRight },
       { key: 'panUp', label: 'PAN UP', val: cf.panUp },
       { key: 'panDown', label: 'PAN DOWN', val: cf.panDown },
     ];
+    ctx.font = '500 10px Urbanist';
     for (let ci = 0; ci < cbLabels.length; ci++) {
-      const cy2 = cby + ci * 22;
-      // Checkbox
+      const cy2 = cby + 12 + ci * 20;
       ctx.strokeStyle = 'rgba(0,255,255,0.5)'; ctx.lineWidth = 1.5;
-      ctx.strokeRect(cbx, cy2, 14, 14);
+      ctx.strokeRect(cbx, cy2, 12, 12);
       if (cbLabels[ci].val) {
         ctx.fillStyle = 'rgba(0,255,255,0.7)';
-        ctx.fillRect(cbx + 3, cy2 + 3, 8, 8);
+        ctx.fillRect(cbx + 3, cy2 + 3, 6, 6);
       }
       ctx.fillStyle = 'rgba(0,255,255,0.6)';
-      ctx.fillText(cbLabels[ci].label, cbx + 20, cy2 + 12);
+      ctx.fillText(cbLabels[ci].label, cbx + 18, cy2 + 10);
     }
 
     // Ceiling bar handle
@@ -2337,16 +2347,27 @@ function animate(time){
     ctx.fillText(label, b.x + b.w/2, b.y + b.h/2 + 4);
   }
 
-  // 0: RESET (only when active)
+  // Check if goal is visible on screen
+  const gVis = lv.goal;
+  const goalOnScreen = (gVis.x + gVis.w - camX > 0 && gVis.x - camX < W &&
+    gVis.y + (gVis.h||0) - camY > 0 && gVis.y - camY < H);
+
+  let btnIdx = 0;
+  // RESET (only when active)
   if (state==='thrown'||state==='lost'||state==='won'||state==='aiming') {
-    drawSideBtn(0, 'RESET', false);
+    drawSideBtn(btnIdx, 'RESET', false);
   }
-  // 1: GOAL HINT
-  drawSideBtn(1, 'GOAL HINT', goalPreview);
-  // 2: HINTS
-  drawSideBtn(2, 'HINTS', showHints);
-  // 3: EDIT
-  drawSideBtn(3, 'EDIT', editorMode);
+  btnIdx++;
+  // GOAL HINT (only when goal not visible)
+  if (!goalOnScreen) {
+    drawSideBtn(btnIdx, 'GOAL HINT', goalPreview);
+    btnIdx++;
+  } else if (goalPreview) { goalPreview = false; } // auto-dismiss
+  // HINTS
+  drawSideBtn(btnIdx, 'HINTS', showHints);
+  btnIdx++;
+  // EDIT
+  drawSideBtn(btnIdx, 'EDIT', editorMode);
 
   // ─── WIN SCREEN (always visible while state==='won') ───
   if (state==='won') {
