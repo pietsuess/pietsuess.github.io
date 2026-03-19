@@ -71,9 +71,9 @@ const BOUNCE = 0.85;
 const FRICTION = 0.985;
 const ANG_FRICTION = 0.96;
 const CUBE_SIZE = 36;
-const DEFAULT_THROW_LINE = 300;
-const DEFAULT_RELEASE_LINE = 50;
-const WALK_LINE_X = 15;
+const DEFAULT_THROW_LINE = 200;
+const DEFAULT_RELEASE_LINE = 70;
+const WALK_LINE_X = 30;
 const WALK_LINE_Y_START = 170;
 const WALK_LINE_LEN = 360;
 
@@ -597,7 +597,9 @@ function getCamFlags() {
   return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
 }
 
-function resetCube() { cube = null; state = 'ready'; camX = 0; camY = 0; camTargetX = 0; hintCache = {}; stopAirborne(); }
+function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; stopAirborne(); }
+// Only reset camera when changing levels
+function resetLevel() { camX = 0; camY = 0; resetCube(); }
 
 // ─── TRAJECTORY SIMULATOR — finds a real path using actual physics ───
 let hintCache = {}; // level index → {path:[], vx, vy, startY}
@@ -1056,7 +1058,7 @@ function onDown(e){
           backWall: { x: 780, y: 0, w: 25, h: H, rot: 0 },
         };
         LEVELS.push(newLv);
-        level = LEVELS.length - 1; attempts = 0; resetCube();
+        level = LEVELS.length - 1; attempts = 0; resetLevel();
         levelMenuOpen = false; edSaveLocal();        return;
       }
       // Reorder arrows (editor mode, right side of row)
@@ -1078,7 +1080,7 @@ function onDown(e){
       }
       // Select level
       if (idx >= 0 && idx < LEVELS.length) {
-        level = idx; attempts = 0; resetCube(); levelMenuOpen = false;      }
+        level = idx; attempts = 0; resetLevel(); levelMenuOpen = false;      }
       return;
     }
     // Click toggle button = close
@@ -1321,7 +1323,7 @@ function onDown(e){
   if(state==='finalScore'){
     const pab={x:(W-180)/2,y:H*0.88,w:180,h:50};
     if(p.x>=pab.x&&p.x<=pab.x+pab.w&&p.y>=pab.y&&p.y<=pab.y+pab.h){
-      level=0;attempts=0;totalThrows=0;scorecard=[];resetCube();return;
+      level=0;attempts=0;totalThrows=0;scorecard=[];resetLevel();return;
     }
     return;
   }
@@ -1329,7 +1331,7 @@ function onDown(e){
     const nb=nextBtnBounds();
     if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){
       if(level>=LEVELS.length-1){state='finalScore';return;}
-      level++;attempts=0;resetCube();return;
+      level++;attempts=0;resetLevel();return;
     }
     const rpb=replayBtnBounds();
     if(p.x>=rpb.x&&p.x<=rpb.x+rpb.w&&p.y>=rpb.y&&p.y<=rpb.y+rpb.h){attempts=0;resetCube();return;}
@@ -1919,7 +1921,7 @@ function edImport() {
         if (!Array.isArray(data)) throw 'not array';
         LEVELS.length = 0;
         for (const d of data) LEVELS.push(deserializeLevel(d));
-        level = 0; resetCube(); edSaveLocal();
+        level = 0; resetLevel(); edSaveLocal();
         showMsg(`LOADED ${LEVELS.length} LEVELS`, 1.5);
       } catch(err) { showMsg('IMPORT FAILED', 1.5); }
     };
@@ -2027,9 +2029,10 @@ function animate(time){
       } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
         camY += (0 - camY) * 0.05;
       }
+      // Follow cube horizontally during throw
+      if (!peekPanning) camX+=(camTargetX-camX)*0.08;
     }
     // All other states: leave camera where user panned it
-    if (!peekPanning) camX+=(camTargetX-camX)*0.08;
   }
 
   if(state==='thrown'&&cube){
