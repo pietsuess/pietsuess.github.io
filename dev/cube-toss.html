@@ -583,6 +583,10 @@ function getThrowLine() { return getCurrentLevel().throwLineX || DEFAULT_THROW_L
 function getReleaseLine() { return getCurrentLevel().releaseLineX || DEFAULT_RELEASE_LINE; }
 function getDeathY() { return getCurrentLevel().deathY || H; }
 function getCeilingY() { return getCurrentLevel().ceilingY != null ? getCurrentLevel().ceilingY : 0; }
+function getCamFlags() {
+  const lv = getCurrentLevel();
+  return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
+}
 
 function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; stopAirborne(); }
 
@@ -1068,6 +1072,20 @@ function onDown(e){
   // Editor mode input
   if (editorMode) {
     const wx = p.x + camX, wy = p.y + camY;
+
+    // Camera pan checkboxes
+    const cbx2 = 15, cby2 = 105;
+    const cbKeys = ['panRight','panUp','panDown'];
+    for (let ci = 0; ci < 3; ci++) {
+      const cy3 = cby2 + ci * 22;
+      if (wx - camX >= cbx2 && wx - camX <= cbx2 + 100 && wy - camY >= cy3 && wy - camY <= cy3 + 14) {
+        edPushUndo();
+        const lv = getCurrentLevel();
+        if (cbKeys[ci] === 'panRight') lv.panRight = lv.panRight === false ? true : false;
+        else lv[cbKeys[ci]] = !lv[cbKeys[ci]];
+        edSaveLocal(); return;
+      }
+    }
 
     // Toolbar hit
     const tbAction = edToolbarHit(p.x, p.y);
@@ -1658,6 +1676,7 @@ function serializeLevel(lv) {
     releaseLineX: lv.releaseLineX || null,
     deathYR: lv.deathY ? lv.deathY / H : null,
     ceilingYR: lv.ceilingY != null ? lv.ceilingY / H : null,
+    panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false,
     walls: lv.walls.map(w => ({ x: w.x, yR: w.y/H, w: w.w, hR: w.h/H, rot: w.rot||0 })),
     platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/H, w: p.w, rot: p.rot||0 })),
     bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/H, r: b.r })),
@@ -1675,6 +1694,7 @@ function deserializeLevel(d) {
     releaseLineX: d.releaseLineX || null,
     deathY: d.deathYR ? d.deathYR * H : null,
     ceilingY: d.ceilingYR != null ? d.ceilingYR * H : null,
+    panUp: !!d.panUp, panDown: !!d.panDown, panRight: d.panRight !== false,
     walls: d.walls.map(w => ({ x: w.x, y: w.yR * H, w: w.w, h: w.hR * H, rot: w.rot||0 })),
     platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * H, w: p.w, rot: p.rot||0 })),
     bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * H, r: b.r })),
@@ -1833,13 +1853,16 @@ function animate(time){
       camX += (goalCamX - camX) * 0.08;
       camY += (goalCamY - camY) * 0.08;
     } else if(state==='thrown'&&cube){
-      const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
-      camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
-      // Follow cube vertically
-      const ceil = getCeilingY();
-      if (cube.y > H * 0.75 + camY) {
+      const cf = getCamFlags();
+      if (cf.panRight) {
+        const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
+        camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
+      }
+      // Vertical follow only if flags enabled
+      if (cf.panDown && cube.y > H * 0.75 + camY) {
         camY += (cube.y - H * 0.4 - camY) * 0.12;
-      } else if (cube.y < camY + H * 0.25) {
+      }
+      if (cf.panUp && cube.y < camY + H * 0.25) {
         camY += (cube.y - H * 0.4 - camY) * 0.12;
       }
     } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
@@ -2227,6 +2250,28 @@ function animate(time){
 
     // World-space editor elements (need camY offset)
     if (camY !== 0) ctx.translate(0, -camY);
+
+    // Camera pan checkboxes
+    const cf = getCamFlags();
+    const cbx = 15, cby = 105;
+    ctx.font = '500 11px Urbanist'; ctx.textAlign = 'left';
+    const cbLabels = [
+      { key: 'panRight', label: 'PAN RIGHT', val: cf.panRight },
+      { key: 'panUp', label: 'PAN UP', val: cf.panUp },
+      { key: 'panDown', label: 'PAN DOWN', val: cf.panDown },
+    ];
+    for (let ci = 0; ci < cbLabels.length; ci++) {
+      const cy2 = cby + ci * 22;
+      // Checkbox
+      ctx.strokeStyle = 'rgba(0,255,255,0.5)'; ctx.lineWidth = 1.5;
+      ctx.strokeRect(cbx, cy2, 14, 14);
+      if (cbLabels[ci].val) {
+        ctx.fillStyle = 'rgba(0,255,255,0.7)';
+        ctx.fillRect(cbx + 3, cy2 + 3, 8, 8);
+      }
+      ctx.fillStyle = 'rgba(0,255,255,0.6)';
+      ctx.fillText(cbLabels[ci].label, cbx + 20, cy2 + 12);
+    }
 
     // Ceiling bar handle
     const edCY = getCeilingY();
