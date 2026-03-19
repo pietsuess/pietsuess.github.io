@@ -5720,7 +5720,7 @@ function update(){
 
   // Race camera — fixed offset, ship at 10% from left edge. No bouncing.
   if(_race.active || _race.showApproach){
-    const targetX = -(canvas.width * 0.40); // push ship 40% left of center
+    const targetX = -(canvas.width * 0.35); // push ship 35% left of center = ~15% from edge
     _raceLeadX += (targetX - _raceLeadX) * 0.03; // smooth once, then hold
     _raceLeadY += (0 - _raceLeadY) * 0.03;
   } else {
@@ -10750,13 +10750,15 @@ function updateRaceBorderCollision(){
     // Soft border: drag + gentle push back, no hard clamp, no collision flash
     const sign = perpDist > 0 ? 1 : -1;
     const overshoot = Math.abs(perpDist) - wallLimit;
-    // Drag: slow the ship while outside the border
-    state.vx *= 0.92;
-    state.vy *= 0.92;
-    // Gentle push back toward the corridor (proportional to overshoot)
-    const pushStrength = Math.min(overshoot * 0.15, 6);
-    state.x -= sign * cp.nx * pushStrength;
-    state.y -= sign * cp.ny * pushStrength;
+    // Strong push back into the corridor — ship should not leave
+    state.x -= sign * cp.nx * (overshoot + 4);
+    state.y -= sign * cp.ny * (overshoot + 4);
+    // Cancel outward velocity component, keep tangential
+    const vOut = (state.vx * cp.nx + state.vy * cp.ny) * sign;
+    if(vOut > 0){
+      state.vx -= vOut * cp.nx * sign * 0.8;
+      state.vy -= vOut * cp.ny * sign * 0.8;
+    }
   }
 }
 
@@ -10905,19 +10907,13 @@ function updateGateCollisions(){
           const pushSign = perp > 0 ? 1 : -1;
           const pushAmt = (shipR + 32) - Math.abs(perp);
           if(pushAmt > 0){
+            // Just push back inside — don't change velocity direction at all
             state.x += wnx * pushSign * pushAmt;
             state.y += wny * pushSign * pushAmt;
-            // Soft nudge — cancel into-wall velocity, keep sliding at 90%
-            const vPerp = state.vx * wnx + state.vy * wny;
-            const vPerpS = vPerp > 0 ? 1 : -1;
-            if(vPerpS !== pushSign){
-              state.vx -= vPerp * wnx;
-              state.vy -= vPerp * wny;
-            }
-            state.vx *= 0.97;
-            state.vy *= 0.97;
-            state.collisionFlash = 3;
-            if(audioCtx && !state.sfxMuted) playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
+            // Tiny speed loss, no direction change
+            state.vx *= 0.99;
+            state.vy *= 0.99;
+            state.collisionFlash = 2;
           }
         }
       }
