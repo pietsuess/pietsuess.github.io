@@ -1565,6 +1565,29 @@ function colBox() {
 
 function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[3]]; }
 
+// Check if Gary has room to stand up (from crouch/roll to full height)
+function canStandUp() {
+    // Test if the standing hitbox would collide with anything above
+    const standTop = gy - 43; // standing box top
+    const standLeft = gx - 6, standWidth = 12;
+    const l = Math.floor(standLeft / T), r = Math.floor((standLeft + standWidth) / T);
+    const t = Math.floor(standTop / T);
+    const currentTop = Math.floor((gy - 22) / T); // crouch box top (kneel height)
+    // Check tiles between crouch top and stand top
+    for (let ty = t; ty < currentTop; ty++) {
+        for (let tx = l; tx <= r; tx++) {
+            if (!isSolid(tx, ty)) continue;
+            if (cellOverlap(tx, ty, standTop, gy - 22)) return false;
+        }
+    }
+    // Also check the row at crouch top in case standing box extends into it further
+    for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, currentTop)) continue;
+        if (cellOverlap(tx, currentTop, standTop, gy - 22)) return false;
+    }
+    return true;
+}
+
 function rectHit(x, y, w, h) {
     const l = Math.floor(x / T), r = Math.floor((x + w) / T);
     const t = Math.floor(y / T), b = Math.floor((y + h - 1) / T);
@@ -1721,7 +1744,7 @@ function playTick(ts) {
             if (!gFloor && gvy > 0) pSetState('fall');
             else if (pkR()) { gDir = 1; pSetState('start'); }
             else if (pkL()) { gDir = -1; pSetState('start'); }
-            else if (pUseJump()) pSetState('hop');
+            else if (pUseJump()) { gvy = JUMP; gFloor = false; pSetState('hop'); }
             else if (pkD()) pSetState('crouch');
             else if (pkSp() && nearPressable()) pSetState('press');
             break;
@@ -1741,8 +1764,11 @@ function playTick(ts) {
             else if (!(pkR() || pkL())) pSetState('idle');
             break;
         case 'hop':
-            gvx = 0; gvy = 0;
-            if (gaDone) pSetState('idle');
+            // Real jump with hop animation — pressing a direction switches to air state
+            if (pkR()) { gDir = 1; gvx = AIR_SPD; pSetState('air'); }
+            else if (pkL()) { gDir = -1; gvx = -AIR_SPD; pSetState('air'); }
+            else gvx = 0;
+            if (gFloor && gvy >= 0) pSetState('land');
             break;
         case 'crouch':
             gvx = 0;
@@ -1752,20 +1778,31 @@ function playTick(ts) {
             gvx = 0;
             if (pkR()) { gDir = 1; pSetState('roll'); }
             else if (pkL()) { gDir = -1; pSetState('roll'); }
-            else if (!pkD()) pSetState('crouch_up');
+            else if (!pkD()) {
+                if (canStandUp()) pSetState('crouch_up');
+                // else stay kneeling — ceiling above
+            }
             break;
         case 'crouch_up':
-            gvx = 0; pSetState('idle');
+            gvx = 0;
+            if (canStandUp()) pSetState('idle');
+            else pSetState('kneel'); // can't stand, go back to kneel
             break;
         case 'into_roll':
             gvx = gDir * ROLL_SPD;
-            if (!pkD()) pSetState('run'); else pSetState('roll');
+            if (!pkD()) {
+                if (canStandUp()) pSetState('run');
+                else pSetState('roll'); // can't stand, keep rolling
+            } else pSetState('roll');
             break;
         case 'roll':
             if (pkR()) { gDir = 1; gvx = ROLL_SPD; }
             else if (pkL()) { gDir = -1; gvx = -ROLL_SPD; }
             else gvx = 0;
-            if (!pkD()) pSetState('run');
+            if (!pkD()) {
+                if (canStandUp()) pSetState('run');
+                else { /* stay rolling — ceiling above */ }
+            }
             else if (!(pkR() || pkL())) { gvx = 0; pSetState('roll_out'); }
             break;
         case 'roll_out':
@@ -1786,6 +1823,7 @@ function playTick(ts) {
             break;
         case 'land':
             gvx = 0;
+            if (!canStandUp()) { pSetState('kneel'); break; }
             if (gaDone) pSetState('idle');
             if (pkR() || pkL()) pSetState('run');
             break;
