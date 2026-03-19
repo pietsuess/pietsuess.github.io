@@ -94,12 +94,15 @@ function startAirborne() {
   airborneNode.connect(filt); filt.connect(airborneGain); airborneGain.connect(audioCtx.destination);
   airborneNode.start();
 }
+let airborneHitCount = 0;
 function updateAirborne(speed) {
   if (!airborneGain) return;
-  // Volume scales with speed, caps at low volume for a subtle whoosh
-  const vol = Math.min(0.06, speed / 8000);
-  airborneGain.gain.value = vol;
+  // Very quiet, fades after first bounce
+  const base = Math.min(0.02, speed / 20000);
+  const fade = Math.max(0, 1 - airborneHitCount * 0.7); // kills it after 1-2 hits
+  airborneGain.gain.value = base * fade;
 }
+function airborneHit() { airborneHitCount++; }
 function stopAirborne() {
   if (airborneNode) { try { airborneNode.stop(); } catch(e){} airborneNode = null; airborneGain = null; }
 }
@@ -124,9 +127,11 @@ function playSound(type) {
       g.gain.exponentialRampToValueAtTime(0.001, now + dur);
       src.connect(filt); filt.connect(g); src.start(now);
       // Start airborne sound
+      airborneHitCount = 0;
       startAirborne();
     }
     else if (type === 'bounce') {
+      airborneHit();
       // Bouncy — quick pitch-up boing with a rubbery quality
       const osc1 = audioCtx.createOscillator();
       const osc2 = audioCtx.createOscillator();
@@ -149,6 +154,7 @@ function playSound(type) {
       osc2.start(now); osc2.stop(now + 0.1);
     }
     else if (type === 'bumper') {
+      airborneHit();
       // Springy ping — bright and punchy
       const osc = audioCtx.createOscillator();
       osc.type = 'sine';
