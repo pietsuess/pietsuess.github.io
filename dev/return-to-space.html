@@ -8937,18 +8937,16 @@ function drawGame(){
         }
       }
     } else {
-      const _shipZoom = _race.zoom > 1.01 ? _race.zoom : 1;
-      const s=ps.size * _shipZoom; ctx.beginPath();
+      const s=ps.size; ctx.beginPath();
       ctx.moveTo(0,-s); ctx.lineTo(s*0.6,s*0.7); ctx.lineTo(0,s*0.35); ctx.lineTo(-s*0.6,s*0.7); ctx.closePath();
-      ctx.strokeStyle=noFuel?'#ff6600':ps.color; ctx.lineWidth=1.5*_shipZoom; ctx.stroke();
+      ctx.strokeStyle=noFuel?'#ff6600':ps.color; ctx.lineWidth=1.5; ctx.stroke();
     }
-    const _shipZoom2 = _race.zoom > 1.01 ? _race.zoom : 1;
-    ctx.beginPath(); ctx.arc(0,0,2.5*_shipZoom2,0,Math.PI*2);
+    ctx.beginPath(); ctx.arc(0,0,2.5,0,Math.PI*2);
     ctx.fillStyle=noFuel?'#ff6600':ps.color; ctx.fill();
     if(!noFuel&&(state.keys['ArrowUp']||state.hyperspace)){
-      const fl=ps.size*0.5*_shipZoom2;
-      const flLen=(state.hyperspace?16+Math.random()*12:6+Math.random()*6)*_shipZoom2;
-      ctx.beginPath(); ctx.moveTo(-3*_shipZoom2,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3*_shipZoom2,fl);
+      const fl=ps.size*0.5;
+      const flLen=state.hyperspace?16+Math.random()*12:6+Math.random()*6;
+      ctx.beginPath(); ctx.moveTo(-3,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3,fl);
       ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
@@ -10681,21 +10679,20 @@ function updateGateCollisions(){
       const halfWall = g.wallLen / 2;
       // Ship is in wall zone if along-axis is outside gap but inside wall
       if(Math.abs(localAlong) > halfGap && Math.abs(localAlong) < halfWall){
-        // Push ship just outside the wall — minimal displacement
+        // Funnel: deflect ship toward the gap center, slow down but keep moving
         const pushDir = localPerp > 0 ? 1 : -1;
         const pushDist = (shipR + 40) - Math.abs(localPerp);
         state.x += gnx * pushDir * (pushDist + 2);
         state.y += gny * pushDir * (pushDist + 2);
-        // Absorb the into-wall component, keep the sliding component
-        const vDot = state.vx * gnx * pushDir + state.vy * gny * pushDir;
-        if(vDot < 0){
-          // Just cancel the into-wall velocity, no bounce-back
-          state.vx -= vDot * gnx * pushDir;
-          state.vy -= vDot * gny * pushDir;
-          // Very light friction on the slide
-          state.vx *= 0.95;
-          state.vy *= 0.95;
-        }
+
+        // Redirect velocity toward the gap center
+        const toGapX = g.wx - state.x, toGapY = g.wy - state.y;
+        const toGapDist = Math.sqrt(toGapX * toGapX + toGapY * toGapY) || 1;
+        const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
+        // Blend: 60% current direction + 40% toward gap, at 65% speed
+        const keepFrac = 0.6, gapFrac = 0.4;
+        state.vx = (state.vx * keepFrac + (toGapX / toGapDist) * spd * gapFrac) * 0.65;
+        state.vy = (state.vy * keepFrac + (toGapY / toGapDist) * spd * gapFrac) * 0.65;
         state.collisionFlash = 4;
         if(audioCtx && !state.sfxMuted){
           playBeep(100, audioCtx.currentTime, 0.06, 'sawtooth', 0.08);
