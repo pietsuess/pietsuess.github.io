@@ -1444,11 +1444,18 @@ function edGetHandle(wx, wy) {
 
   if (edSel.type === 'hint') {
     const hr = o.r || 18;
-    const rhx = o.x + hr + 15, rhy = o.y;
-    if (Math.abs(wx - rhx) < hs && Math.abs(wy - rhy) < hs) return 'rotate';
-    const radHx = o.x, radHy = o.y - hr;
-    if (Math.abs(wx - radHx) < hs && Math.abs(wy - radHy) < hs) return 'radius';
-    if (Math.sqrt((wx-o.x)**2 + (wy-o.y)**2) < hr + ED_GRAB_MARGIN) return 'move';
+    const rot = o.rot || 0;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    // Arrow tip handle (for line length) — at -hr in local X, rotated
+    const tipWx = o.x + (-hr) * cos, tipWy = o.y + (-hr) * sin;
+    if (Math.abs(wx - tipWx) < hs + 4 && Math.abs(wy - tipWy) < hs + 4) return 'radius';
+    // Rotation handle — perpendicular, above the dot
+    const rotWx = o.x + 0 * cos - (hr + 15) * sin;
+    const rotWy = o.y + 0 * sin + (hr + 15) * cos;
+    // Simpler: just check distance from dot for rotation vs move
+    const distFromDot = Math.sqrt((wx-o.x)**2 + (wy-o.y)**2);
+    if (distFromDot > 10 && distFromDot < hr + 20) return 'rotate';
+    if (distFromDot <= 10) return 'move';
     return null;
   }
 
@@ -1507,7 +1514,8 @@ function edApplyDrag(wx, wy) {
     return;
   }
   if (edHandle === 'radius' && edSel.type === 'hint') {
-    o.r = snap(Math.max(10, Math.sqrt((wx-o.x)**2 + (wy-o.y)**2)));
+    // Line length = distance from dot to arrow tip
+    o.r = snap(Math.max(15, Math.sqrt((wx-o.x)**2 + (wy-o.y)**2)));
     return;
   }
   if (edHandle === 'rotate') {
@@ -1534,17 +1542,22 @@ function edDrawHandles() {
 
   if (edSel.type === 'hint') {
     const hr = o.r || 18;
-    ctx.strokeStyle = 'rgba(244,197,66,0.6)'; ctx.lineWidth = 2; ctx.setLineDash([4,4]);
-    ctx.beginPath(); ctx.arc(o.x - camX, o.y, hr + 4, 0, Math.PI*2); ctx.stroke();
+    const rot = o.rot || 0;
+    const cos = Math.cos(rot), sin = Math.sin(rot);
+    const ox = o.x - camX, oy = o.y;
+    // Dot highlight
+    ctx.strokeStyle = 'rgba(244,197,66,0.5)'; ctx.lineWidth = 1.5; ctx.setLineDash([3,3]);
+    ctx.beginPath(); ctx.arc(ox, oy, 10, 0, Math.PI*2); ctx.stroke();
     ctx.setLineDash([]);
+    // Arrow tip handle (drag to change line length)
+    const tipX = ox + (-hr) * cos, tipY = oy + (-hr) * sin;
     ctx.fillStyle = 'rgba(244,197,66,0.8)';
-    ctx.fillRect(o.x - camX - 4, o.y - hr - 4, 8, 8);
-    const rhx = o.x - camX + hr + 15, rhy = o.y;
-    ctx.beginPath(); ctx.arc(rhx, rhy, 7, 0, Math.PI*2);
-    ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(tipX, tipY, 6, 0, Math.PI*2); ctx.fill();
+    // Label
+    ctx.fillStyle = 'rgba(244,197,66,0.5)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText('DRAG', tipX, tipY + 14);
     if (o.rot) {
-      ctx.fillStyle = 'rgba(244,197,66,0.6)'; ctx.font = '500 10px Urbanist'; ctx.textAlign = 'center';
-      ctx.fillText(Math.round(o.rot * 180/Math.PI) + '°', rhx, rhy - 12);
+      ctx.fillText(Math.round(rot * 180/Math.PI) + '°', ox, oy - 14);
     }
     return;
   }
@@ -2128,15 +2141,16 @@ function animate(time){
       ctx.translate(hx, hy);
       ctx.rotate(hm.rot || 0);
       // Small dot at the hint point
-      const dotR = hr * 0.2;
+      const dotR = 4;
       ctx.beginPath();
       ctx.arc(0, 0, dotR, 0, Math.PI * 2);
       ctx.fillStyle = `rgba(244,197,66,${alpha * 0.8})`;
       ctx.fill();
-      // Aim line with arrow pointing inward
+      // Aim line — length = hr (draggable via radius handle)
+      const lineLen = hr;
       ctx.beginPath();
-      ctx.moveTo(hr * 0.5, 0);
-      ctx.lineTo(-hr * 1.8, 0);
+      ctx.moveTo(dotR + 2, 0);
+      ctx.lineTo(-lineLen, 0);
       ctx.strokeStyle = `rgba(244,197,66,${alpha * 0.7})`;
       ctx.lineWidth = 1.5;
       ctx.setLineDash([4, 4]);
@@ -2145,9 +2159,9 @@ function animate(time){
       // Arrow tip
       ctx.fillStyle = `rgba(244,197,66,${alpha * 0.7})`;
       ctx.beginPath();
-      ctx.moveTo(-hr * 1.8, 0);
-      ctx.lineTo(-hr * 1.4, -5);
-      ctx.lineTo(-hr * 1.4, 5);
+      ctx.moveTo(-lineLen, 0);
+      ctx.lineTo(-lineLen + 6, -5);
+      ctx.lineTo(-lineLen + 6, 5);
       ctx.closePath();
       ctx.fill();
       ctx.restore();
