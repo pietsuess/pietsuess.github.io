@@ -4147,7 +4147,7 @@ function update(){
   }
   if(!wormholeTransition){
     const _inRace = _race.active || _race.showApproach;
-    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.028:0.06);
+    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.022:0.06);
     if(state.keys['ArrowLeft'])state.angle-=turnRate;
     if(state.keys['ArrowRight'])state.angle+=turnRate;
   }
@@ -10476,9 +10476,14 @@ function _buildGateRun(){
     for(let side = -1; side <= 1; side += 2){
       const innerX = waypoints[i].wx + gax * halfGap * side;
       const innerY = waypoints[i].wy + gay * halfGap * side;
-      const outerX = waypoints[i].wx + gax * halfWall * side - px * funnelDepth;
-      const outerY = waypoints[i].wy + gay * halfWall * side - py * funnelDepth;
-      wallPts.push({ ix: innerX, iy: innerY, ox: outerX, oy: outerY, side: side });
+      const outerBaseX = waypoints[i].wx + gax * halfWall * side - px * funnelDepth;
+      const outerBaseY = waypoints[i].wy + gay * halfWall * side - py * funnelDepth;
+      // Tip bend: last portion angles 45 degrees more inward (toward gap)
+      // Inward direction = toward center along gate axis (opposite of side)
+      const tipBend = 80; // how far the tip curls inward
+      const tipX = outerBaseX - gax * side * tipBend - px * tipBend * 0.5;
+      const tipY = outerBaseY - gay * side * tipBend - py * tipBend * 0.5;
+      wallPts.push({ ix: innerX, iy: innerY, ox: outerBaseX, oy: outerBaseY, tx: tipX, ty: tipY, side: side });
     }
     gates.push({
       wx: waypoints[i].wx, wy: waypoints[i].wy,
@@ -10509,7 +10514,110 @@ function _buildGateRun(){
     waypoints: waypoints
   };
 }
-const RACE_COURSES = [ _buildGateRun() ];
+// Track 2: DRIFT CORRIDOR — wider gaps, longer straights, more sweeping curves
+function _buildDriftCorridor(){
+  const c1 = _buildGateRun();
+  const sx = c1.finishWX + 1200, sy = c1.finishWY;
+  const waypoints = [];
+  const count = 10;
+  const spacing = 2200;
+  const amplitude = 800;
+  for(let i = 0; i < count; i++){
+    const t = i / (count - 1);
+    const wx = sx + 800 + i * spacing;
+    const wy = sy + Math.sin(t * Math.PI * 1.8) * amplitude * (0.5 + t * 0.5);
+    waypoints.push({ wx, wy });
+  }
+  const gates = [];
+  for(let i = 0; i < waypoints.length; i++){
+    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
+    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
+    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
+    const pathAngle = Math.atan2(dy, dx);
+    const gateAngle = pathAngle + Math.PI / 2;
+    const gt = i / (count - 1);
+    const difficulty = Math.sin(gt * Math.PI) * 0.3;
+    const gapSize = 320 - difficulty * 100; // wider gaps
+    const wallLen = 1200;
+    const halfGap = gapSize / 2, halfWall = wallLen / 2;
+    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
+    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    const px = dx/pLen, py = dy/pLen;
+    const funnelDepth = 300;
+    const wallPts = [];
+    for(let side = -1; side <= 1; side += 2){
+      const innerX = waypoints[i].wx + gax * halfGap * side;
+      const innerY = waypoints[i].wy + gay * halfGap * side;
+      const outerBaseX = waypoints[i].wx + gax * halfWall * side - px * funnelDepth;
+      const outerBaseY = waypoints[i].wy + gay * halfWall * side - py * funnelDepth;
+      const tipBend = 80;
+      const tipX = outerBaseX - gax * side * tipBend - px * tipBend * 0.5;
+      const tipY = outerBaseY - gay * side * tipBend - py * tipBend * 0.5;
+      wallPts.push({ ix: innerX, iy: innerY, ox: outerBaseX, oy: outerBaseY, tx: tipX, ty: tipY, side: side });
+    }
+    gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
+  }
+  const boostPads = [];
+  for(let i = 2; i < gates.length - 1; i += 3){
+    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
+    boostPads.push({ wx: (g.wx+gn.wx)/2, wy: (g.wy+gn.wy)/2, angle: 0, power: 18, phase: 0, _cooldown: 0 });
+  }
+  return { name: 'DRIFT CORRIDOR', startWX: sx, startWY: sy, finishWX: sx + 800 + count * spacing + 600, finishWY: waypoints[count-1].wy, gates, boostPads, waypoints };
+}
+
+// Track 3: NEEDLE RUN — tight gaps, fast rhythm, shorter spacing
+function _buildNeedleRun(){
+  const c1 = _buildGateRun();
+  const c2f = c1.finishWX + 1200 + 800 + 10 * 2200 + 600; // after drift corridor
+  const sx = c2f + 1200, sy = EARTH_WY - 400;
+  const waypoints = [];
+  const count = 14;
+  const spacing = 1400;
+  const amplitude = 500;
+  for(let i = 0; i < count; i++){
+    const t = i / (count - 1);
+    const wx = sx + 600 + i * spacing;
+    const wy = sy + Math.sin(t * Math.PI * 3.5) * amplitude * (0.3 + t * 0.7);
+    waypoints.push({ wx, wy });
+  }
+  const gates = [];
+  for(let i = 0; i < waypoints.length; i++){
+    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
+    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
+    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
+    const pathAngle = Math.atan2(dy, dx);
+    const gateAngle = pathAngle + Math.PI / 2;
+    const gt = i / (count - 1);
+    const difficulty = Math.sin(gt * Math.PI) * 0.5;
+    const gapSize = 220 - difficulty * 80; // tighter gaps
+    const wallLen = 1200;
+    const halfGap = gapSize / 2, halfWall = wallLen / 2;
+    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
+    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    const px = dx/pLen, py = dy/pLen;
+    const funnelDepth = 200;
+    const wallPts = [];
+    for(let side = -1; side <= 1; side += 2){
+      const innerX = waypoints[i].wx + gax * halfGap * side;
+      const innerY = waypoints[i].wy + gay * halfGap * side;
+      const outerBaseX = waypoints[i].wx + gax * halfWall * side - px * funnelDepth;
+      const outerBaseY = waypoints[i].wy + gay * halfWall * side - py * funnelDepth;
+      const tipBend = 80;
+      const tipX = outerBaseX - gax * side * tipBend - px * tipBend * 0.5;
+      const tipY = outerBaseY - gay * side * tipBend - py * tipBend * 0.5;
+      wallPts.push({ ix: innerX, iy: innerY, ox: outerBaseX, oy: outerBaseY, tx: tipX, ty: tipY, side: side });
+    }
+    gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
+  }
+  const boostPads = [];
+  for(let i = 1; i < gates.length - 1; i += 2){
+    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
+    boostPads.push({ wx: (g.wx+gn.wx)/2, wy: (g.wy+gn.wy)/2, angle: 0, power: 18, phase: 0, _cooldown: 0 });
+  }
+  return { name: 'NEEDLE RUN', startWX: sx, startWY: sy, finishWX: sx + 600 + count * spacing + 600, finishWY: waypoints[count-1].wy, gates, boostPads, waypoints };
+}
+
+const RACE_COURSES = [ _buildGateRun(), _buildDriftCorridor(), _buildNeedleRun() ];
 
 // ── Build light dot borders along raceway edges ──
 const RACE_BORDER_HALF = 420; // half-width of the dot border corridor
@@ -10552,7 +10660,8 @@ function _buildRaceDots(course){
   }
   return { north, south, center: centerPts };
 }
-const _raceDots = _buildRaceDots(RACE_COURSES[0]);
+const _allRaceDots = RACE_COURSES.map(c => _buildRaceDots(c));
+let _raceDots = _allRaceDots[0];
 
 // ── Raceway border collision — keeps ship inside the dot walls during race ──
 function updateRaceBorderCollision(){
@@ -10576,17 +10685,18 @@ function updateRaceBorderCollision(){
 
   const wallLimit = RACE_BORDER_HALF - 14;
   if(Math.abs(perpDist) > wallLimit){
-    // Hard clamp — force ship back inside, no negotiation
+    // Soft push — nudge back inside, reduce perpendicular velocity
     const sign = perpDist > 0 ? 1 : -1;
-    state.x = cp.wx + cp.nx * sign * wallLimit;
-    state.y = cp.wy + cp.ny * sign * wallLimit;
-    // Kill the into-wall velocity, keep tangential
+    const overshoot = Math.abs(perpDist) - wallLimit;
+    // Gentle push back (not hard clamp — prevents getting stuck)
+    state.x -= sign * cp.nx * (overshoot * 0.5 + 2);
+    state.y -= sign * cp.ny * (overshoot * 0.5 + 2);
+    // Reduce into-wall velocity, keep most of tangential
     const vDot = (state.vx * cp.nx + state.vy * cp.ny) * sign;
     if(vDot > 0){
-      state.vx -= vDot * cp.nx * sign;
-      state.vy -= vDot * cp.ny * sign;
+      state.vx -= vDot * cp.nx * sign * 0.8;
+      state.vy -= vDot * cp.ny * sign * 0.8;
     }
-    state.collisionFlash = 2;
   }
 }
 
@@ -10694,45 +10804,41 @@ function updateGateCollisions(){
     }
     _race._gateSides[i] = side;
 
-    // Funnel wall collision — test against each angled wall segment
+    // Funnel wall collision — test against each angled wall segment + tip
     if(g.wallPts){
-      for(let w = 0; w < g.wallPts.length; w++){
-        const wp = g.wallPts[w];
-        // Line segment from inner (gap edge) to outer (funneled end)
-        const ex = wp.ox - wp.ix, ey = wp.oy - wp.iy;
+      // Helper: test ship against a single line segment, push out + slide
+      function _testWallSeg(ax,ay,bx,by){
+        const ex = bx - ax, ey = by - ay;
         const segLen = Math.sqrt(ex*ex + ey*ey) || 1;
-        // Wall tangent and normal
         const wtx = ex/segLen, wty = ey/segLen;
         const wnx = -wty, wny = wtx;
-        // Project ship onto wall line
-        const dx2 = state.x - wp.ix, dy2 = state.y - wp.iy;
-        const along = dx2 * wtx + dy2 * wty; // distance along wall
-        const perp = dx2 * wnx + dy2 * wny;  // distance from wall line
-        // Only collide if ship is within the wall segment length and close enough
+        const dx2 = state.x - ax, dy2 = state.y - ay;
+        const along = dx2 * wtx + dy2 * wty;
+        const perp = dx2 * wnx + dy2 * wny;
         if(along > -20 && along < segLen + 20 && Math.abs(perp) < shipR + 30){
-          // Push ship out along wall normal
           const pushSign = perp > 0 ? 1 : -1;
           const pushAmt = (shipR + 32) - Math.abs(perp);
           if(pushAmt > 0){
             state.x += wnx * pushSign * pushAmt;
             state.y += wny * pushSign * pushAmt;
-            // Deflect: cancel into-wall velocity, slide along wall toward gap
             const vPerp = state.vx * wnx + state.vy * wny;
             const vPerpSign = vPerp > 0 ? 1 : -1;
             if(vPerpSign !== pushSign){
-              // Ship is moving into the wall — cancel that component
               state.vx -= vPerp * wnx;
               state.vy -= vPerp * wny;
             }
-            // The wall angle naturally redirects sliding toward the gap
-            state.vx *= 0.8;
-            state.vy *= 0.8;
+            state.vx *= 0.8; state.vy *= 0.8;
             state.collisionFlash = 3;
-            if(audioCtx && !state.sfxMuted){
-              playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
-            }
+            if(audioCtx && !state.sfxMuted) playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
           }
         }
+      }
+      for(let w = 0; w < g.wallPts.length; w++){
+        const wp = g.wallPts[w];
+        // Main wall segment: inner → outer
+        _testWallSeg(wp.ix, wp.iy, wp.ox, wp.oy);
+        // Tip segment: outer → tip (extra 45-degree curl)
+        if(wp.tx !== undefined) _testWallSeg(wp.ox, wp.oy, wp.tx, wp.ty);
       }
     }
   }
@@ -10749,7 +10855,7 @@ function updateRace(){
   // Show instructions when approaching start area + start zooming in
   if(!_race.active && !_race.finished && distToStart < 500){
     _race.showApproach = true;
-    _race.zoomTarget = 1.2; // zoom in as you approach
+    _race.zoomTarget = 1.35; // zoom in as you approach
   } else if(distToStart > 600 && !_race.active){
     _race.showApproach = false;
     _race.zoomTarget = 1.0; // zoom back out
@@ -10854,6 +10960,21 @@ function updateRace(){
       _race.started = false;
     }
   }
+
+  // Auto-switch course based on proximity to start gates (when not racing)
+  if(!_race.active && !_race.finished){
+    for(let ci = 0; ci < RACE_COURSES.length; ci++){
+      if(ci === _race.courseIdx) continue;
+      const c = RACE_COURSES[ci];
+      const cdx = state.x - c.startWX, cdy = state.y - c.startWY;
+      if(Math.sqrt(cdx*cdx + cdy*cdy) < 800){
+        _race.courseIdx = ci;
+        _raceDots = _allRaceDots[ci];
+        initRaceCourse(ci);
+        break;
+      }
+    }
+  }
 }
 
 // ── Draw a single gate (wall with gap) ──
@@ -10893,12 +11014,34 @@ function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
       ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
       ctx.shadowBlur = 0;
 
-      // End cap orb at outer end
-      ctx.globalAlpha = 0.6 + pulse * 0.3;
-      ctx.shadowColor = col; ctx.shadowBlur = 18;
-      ctx.fillStyle = col;
-      ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
-      ctx.shadowBlur = 0;
+      // Tip segment: outer → tip (extra curl inward)
+      if(wp.tx !== undefined){
+        const x3 = wp.tx - state.x + cx, y3 = wp.ty - state.y + cy;
+        ctx.globalAlpha = 0.05 + pulse * 0.02;
+        ctx.lineWidth = 36; ctx.strokeStyle = col;
+        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
+        ctx.globalAlpha = 0.35 + pulse * 0.2;
+        ctx.shadowColor = col; ctx.shadowBlur = 14;
+        ctx.lineWidth = 10; ctx.strokeStyle = col;
+        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
+        ctx.globalAlpha = 0.5;
+        ctx.lineWidth = 3.5; ctx.strokeStyle = 'rgba(255,255,255,0.35)';
+        ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x3, y3); ctx.stroke();
+        ctx.shadowBlur = 0;
+        // End cap at tip
+        ctx.globalAlpha = 0.6 + pulse * 0.3;
+        ctx.shadowColor = col; ctx.shadowBlur = 18;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(x3, y3, 6, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+      } else {
+        // End cap orb at outer end (no tip)
+        ctx.globalAlpha = 0.6 + pulse * 0.3;
+        ctx.shadowColor = col; ctx.shadowBlur = 18;
+        ctx.fillStyle = col;
+        ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
+        ctx.shadowBlur = 0;
+      }
     }
   }
 
@@ -11179,7 +11322,54 @@ function drawRaceCourse(ctx, cx, cy){
   // Start and finish gates
   drawStartFinishGate(ctx, cx, cy, course.startWX, course.startWY, 'START', _race.started);
   const allPassed = course.gates ? _race.nextGate >= course.gates.length : true;
-  drawStartFinishGate(ctx, cx, cy, course.finishWX, course.finishWY, 'FINISH', allPassed && _race.started);
+  // Finish: dotted yellow line + checkered area after it
+  {
+    const fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
+    if(fsx > -600 && fsx < canvas.width+600 && fsy > -600 && fsy < canvas.height+600){
+      const fH = START_FINISH_H;
+      const fpulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
+      const fcol = (allPassed && _race.started) ? '#00ff88' : '#ffcc00';
+      ctx.save();
+      // Dotted yellow line
+      ctx.setLineDash([20, 14]);
+      ctx.globalAlpha = 0.5 + fpulse * 0.3;
+      ctx.shadowColor = fcol; ctx.shadowBlur = 16;
+      ctx.lineWidth = 8; ctx.strokeStyle = fcol;
+      ctx.beginPath(); ctx.moveTo(fsx, fsy - fH/2); ctx.lineTo(fsx, fsy + fH/2); ctx.stroke();
+      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
+      ctx.beginPath(); ctx.moveTo(fsx, fsy - fH/2); ctx.lineTo(fsx, fsy + fH/2); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.shadowBlur = 0;
+      // Post caps
+      ctx.globalAlpha = 0.7 + fpulse * 0.3;
+      ctx.shadowColor = fcol; ctx.shadowBlur = 18;
+      ctx.fillStyle = fcol;
+      ctx.beginPath(); ctx.arc(fsx, fsy - fH/2, 8, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(fsx, fsy + fH/2, 8, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+      // Label
+      ctx.globalAlpha = 0.85;
+      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
+      ctx.fillStyle = fcol; ctx.textAlign = 'center';
+      ctx.shadowColor = fcol; ctx.shadowBlur = 10;
+      ctx.fillText('FINISH', fsx, fsy - fH/2 - 24);
+      ctx.shadowBlur = 0;
+      // Checkered area after finish line (300px wide)
+      const cBoxW = 300, cBoxH = 400;
+      const cellSz = 30;
+      const cbx = fsx + cBoxW/2 + 20;
+      const cols2 = Math.ceil(cBoxW / cellSz), rows2 = Math.ceil(cBoxH / cellSz);
+      for(let r = 0; r < rows2; r++){
+        for(let c2 = 0; c2 < cols2; c2++){
+          const isW = (r + c2) % 2 === 0;
+          ctx.globalAlpha = isW ? fpulse * 0.25 : fpulse * 0.08;
+          ctx.fillStyle = isW ? '#ffffff' : '#ffcc00';
+          ctx.fillRect(cbx - cBoxW/2 + c2 * cellSz, fsy - cBoxH/2 + r * cellSz, cellSz, cellSz);
+        }
+      }
+      ctx.restore();
+    }
+  }
 
   // Gates
   if(course.gates){
