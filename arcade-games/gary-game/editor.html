@@ -1,0 +1,1425 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gary Game — Level Editor</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #111; color: #ccc; font-family: monospace; overflow: hidden; display: flex; height: 100vh; }
+
+/* LEFT: Game/Editor Canvas */
+#canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; }
+canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: crosshair; }
+#mode-bar {
+    position: absolute; top: 8px; left: 8px; display: flex; gap: 6px; z-index: 10;
+}
+#mode-bar button {
+    background: #333; color: #ffcc00; border: 1px solid #ffcc00; padding: 4px 10px;
+    font-family: monospace; font-size: 11px; cursor: pointer;
+}
+#mode-bar button.active { background: #ffcc00; color: #000; }
+#mode-bar button:hover { background: #555; }
+#mode-bar button.active:hover { background: #eebb00; }
+
+#info-bar {
+    position: absolute; bottom: 8px; left: 8px; font-size: 10px; color: #888; z-index: 10;
+}
+
+/* RIGHT: Tool Panel */
+#panel {
+    width: 320px; background: #1a1a1a; border-left: 2px solid #333;
+    display: flex; flex-direction: column; overflow: hidden;
+}
+#panel-tabs {
+    display: flex; background: #222; border-bottom: 1px solid #444;
+}
+#panel-tabs button {
+    flex: 1; background: none; color: #888; border: none; padding: 8px 4px;
+    font-family: monospace; font-size: 11px; cursor: pointer; border-bottom: 2px solid transparent;
+}
+#panel-tabs button.active { color: #ffcc00; border-bottom-color: #ffcc00; }
+
+.tab-content { display: none; flex: 1; overflow-y: auto; padding: 8px; }
+.tab-content.active { display: flex; flex-direction: column; }
+
+/* Tile picker */
+#tile-picker-wrap { position: relative; }
+#tile-picker-canvas { image-rendering: pixelated; cursor: pointer; width: 100%; }
+#tile-picker-canvas:hover { outline: 1px solid #ffcc00; }
+
+/* Entity picker */
+.entity-btn {
+    display: flex; align-items: center; gap: 8px; padding: 8px;
+    background: #222; border: 1px solid #333; margin-bottom: 4px; cursor: pointer;
+    color: #ccc; font-family: monospace; font-size: 11px;
+}
+.entity-btn:hover { border-color: #ffcc00; }
+.entity-btn.active { border-color: #ffcc00; background: #2a2a00; }
+.entity-btn canvas { image-rendering: pixelated; }
+
+/* Layer picker */
+.layer-row {
+    display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+    background: #222; border: 1px solid #333; margin-bottom: 2px; cursor: pointer;
+    font-size: 11px;
+}
+.layer-row:hover { border-color: #666; }
+.layer-row.active { border-color: #ffcc00; background: #2a2a00; }
+.layer-row input[type=checkbox] { accent-color: #ffcc00; }
+
+/* Tools */
+.tool-section { margin-bottom: 12px; }
+.tool-section h3 { color: #ffcc00; font-size: 11px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.tool-row { display: flex; gap: 4px; margin-bottom: 4px; }
+.tool-row button {
+    flex: 1; background: #333; color: #ccc; border: 1px solid #555; padding: 4px 8px;
+    font-family: monospace; font-size: 10px; cursor: pointer;
+}
+.tool-row button.active { background: #ffcc00; color: #000; border-color: #ffcc00; }
+.tool-row button:hover { background: #444; }
+
+/* File ops */
+#file-ops { padding: 8px; border-top: 1px solid #333; background: #1a1a1a; }
+#file-ops button {
+    width: 100%; background: #333; color: #ccc; border: 1px solid #555; padding: 6px;
+    font-family: monospace; font-size: 11px; cursor: pointer; margin-bottom: 4px;
+}
+#file-ops button:hover { background: #444; border-color: #ffcc00; }
+
+/* Video overlay (for play mode) */
+#video-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.92); z-index: 9500;
+    justify-content: center; align-items: center; padding: 20px;
+}
+#video-overlay.open { display: flex; }
+#video-box {
+    position: relative; max-width: 960px; width: 100%; max-height: 90vh;
+    background: #000; border: 3px solid #ffcc00;
+    box-shadow: 0 0 30px #ffcc00, 0 0 60px rgba(255,204,0,0.3);
+}
+#video-header {
+    background: #ffcc00; padding: 8px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+#video-title { color: #000; font-size: 12px; font-family: monospace; letter-spacing: 1px; }
+#close-video {
+    cursor: pointer; color: #000; font-size: 14px; font-family: monospace;
+    background: none; border: none; padding: 0 4px;
+}
+#close-video:hover { color: #f00; }
+#video-body { width: 100%; aspect-ratio: 16/9; background: #111; position: relative; }
+#video-body iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+</style>
+</head>
+<body>
+
+<div id="canvas-wrap">
+    <canvas id="game"></canvas>
+    <div id="mode-bar">
+        <button id="btn-edit" class="active" onclick="setMode('edit')">EDIT</button>
+        <button id="btn-play" onclick="setMode('play')">PLAY</button>
+        <button id="btn-grid" class="active" onclick="toggleGrid()">GRID</button>
+    </div>
+    <div id="info-bar">Click to place · Right-click to erase · Scroll to zoom · Middle-drag to pan</div>
+</div>
+
+<div id="panel">
+    <div id="panel-tabs">
+        <button class="active" onclick="showTab('tiles')">Tiles</button>
+        <button onclick="showTab('entities')">Objects</button>
+        <button onclick="showTab('layers')">Layers</button>
+        <button onclick="showTab('tools')">Tools</button>
+    </div>
+
+    <div id="tab-tiles" class="tab-content active">
+        <div class="tool-section">
+            <h3>Environment Tileset</h3>
+            <div id="tile-picker-wrap">
+                <canvas id="tile-picker-canvas"></canvas>
+            </div>
+            <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Select a tile</div>
+        </div>
+        <div class="tool-section">
+            <h3>Lava Tileset</h3>
+            <div id="lava-picker-wrap">
+                <canvas id="lava-picker-canvas"></canvas>
+            </div>
+        </div>
+    </div>
+
+    <div id="tab-entities" class="tab-content">
+        <div class="tool-section">
+            <h3>Place Objects</h3>
+            <div id="entity-list"></div>
+        </div>
+    </div>
+
+    <div id="tab-layers" class="tab-content">
+        <div class="tool-section">
+            <h3>Tile Layers</h3>
+            <div id="layer-list"></div>
+        </div>
+    </div>
+
+    <div id="tab-tools" class="tab-content">
+        <div class="tool-section">
+            <h3>Brush</h3>
+            <div class="tool-row">
+                <button id="tool-paint" class="active" onclick="setTool('paint')">Paint</button>
+                <button id="tool-erase" onclick="setTool('erase')">Erase</button>
+                <button id="tool-fill" onclick="setTool('fill')">Fill</button>
+            </div>
+        </div>
+        <div class="tool-section">
+            <h3>Level Size</h3>
+            <div style="font-size:11px;">
+                <label>Width: <input type="number" id="lvl-w" value="60" min="10" max="500" style="width:50px;background:#333;color:#fff;border:1px solid #555;padding:2px;font-family:monospace;"></label>
+                <label style="margin-left:8px;">Height: <input type="number" id="lvl-h" value="30" min="10" max="200" style="width:50px;background:#333;color:#fff;border:1px solid #555;padding:2px;font-family:monospace;"></label>
+                <button onclick="resizeLevel()" style="margin-left:8px;background:#333;color:#ccc;border:1px solid #555;padding:2px 8px;cursor:pointer;font-family:monospace;font-size:10px;">Apply</button>
+            </div>
+        </div>
+        <div class="tool-section">
+            <h3>Background Color</h3>
+            <input type="color" id="bg-color" value="#16213e" style="width:100%;height:30px;cursor:pointer;">
+        </div>
+    </div>
+
+    <div id="file-ops">
+        <button onclick="saveLevel()">Save Level (JSON)</button>
+        <button onclick="loadLevel()">Load Level (JSON)</button>
+        <button onclick="clearLevel()">Clear Level</button>
+        <button onclick="exportPlayable()">Export Playable HTML</button>
+    </div>
+</div>
+
+<div id="video-overlay" onclick="closeVideo()">
+    <div id="video-box" onclick="event.stopPropagation()">
+        <div id="video-header">
+            <div id="video-title">NOW PLAYING</div>
+            <button id="close-video" onclick="closeVideo()">X</button>
+        </div>
+        <div id="video-body"></div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// GARY GAME LEVEL EDITOR + PLAY ENGINE
+// ============================================================
+
+const T = 16; // tile size in pixels
+const canvas = document.getElementById('game');
+const ctx = canvas.getContext('2d');
+
+// ---- IMAGES ----
+const img = {};
+function loadImg(name, src) {
+    const i = new Image();
+    i.src = src;
+    img[name] = i;
+    return new Promise(r => { i.onload = () => r(); i.onerror = () => r(); });
+}
+
+const imgLoads = [
+    loadImg('env', 'EnvironmentTileSet.png'),
+    loadImg('lava', 'LavaTileset.png'),
+    loadImg('gary', 'ManSprite_SHEET2.png'),
+    loadImg('coin', 'TreasureAnim.png'),
+    loadImg('rod', 'Rod.png'),
+    loadImg('chest', 'TreasureChest_Sheet.png'),
+    loadImg('arcade', 'Arcade.png'),
+    loadImg('platform', 'Platforms.png'),
+];
+
+// ---- LEVEL DATA ----
+let LVL_W = 60; // tiles wide
+let LVL_H = 30; // tiles tall
+
+// Layers: each is a Map of "x,y" -> { ax, ay, tileset } (atlas coords + which tileset)
+const layers = [
+    { name: 'Background', tiles: new Map(), visible: true, z: 0 },
+    { name: 'Midground', tiles: new Map(), visible: true, z: 1 },
+    { name: 'Foreground', tiles: new Map(), visible: true, z: 7 },
+];
+let activeLayer = 0;
+
+// Entities
+let entities = []; // { type, x, y, ...props }
+let spawnX = 4, spawnY = 25; // Gary spawn in tile coords
+
+// ---- EDITOR STATE ----
+let mode = 'edit'; // 'edit' or 'play'
+let tool = 'paint'; // 'paint', 'erase', 'fill'
+let showGridLines = true;
+let selectedTile = null; // { ax, ay, tileset: 'env'|'lava' }
+let selectedEntity = null; // 'coin', 'rod', 'chest', 'arcade', 'platform', 'spawn', 'eraser'
+let placingEntity = false;
+
+// Camera / viewport
+let camX = 0, camY = 0;
+let zoom = 2;
+let panning = false, panStartX = 0, panStartY = 0, panCamX = 0, panCamY = 0;
+let painting = false;
+let erasing = false;
+
+// ---- ENTITY DEFINITIONS ----
+const ENTITY_DEFS = {
+    spawn:    { label: 'Gary Spawn', color: '#0f0', w: 12, h: 43, single: true },
+    coin:     { label: 'Coin', color: '#ff0', w: 8, h: 16, img: 'coin', sx: 192, sy: 0, sw: 8, sh: 48 },
+    rod:      { label: 'Rod', color: '#0ff', w: 14, h: 30, img: 'rod', sx: 0, sy: 0, sw: 14, sh: 30 },
+    chest:    { label: 'Chest', color: '#f0f', w: 48, h: 24, img: 'chest', sx: 0, sy: 24, sw: 48, sh: 24 },
+    arcade:   { label: 'Arcade', color: '#fa0', w: 48, h: 47, img: 'arcade', sx: 0, sy: 0, sw: 48, sh: 47 },
+    platform: { label: 'Platform', color: '#fff', w: 76, h: 9, img: 'platform', sx: 37, sy: 26, sw: 76, sh: 9 },
+};
+
+// ---- TILE PICKER ----
+const tpCanvas = document.getElementById('tile-picker-canvas');
+const tpCtx = tpCanvas.getContext('2d');
+const lpCanvas = document.getElementById('lava-picker-canvas');
+const lpCtx = lpCanvas.getContext('2d');
+
+function setupTilePicker() {
+    // Environment: 384x384, 16px tiles = 24x24 grid
+    if (img.env.complete && img.env.naturalWidth > 0) {
+        const cols = Math.floor(img.env.naturalWidth / T);
+        const rows = Math.floor(img.env.naturalHeight / T);
+        tpCanvas.width = img.env.naturalWidth;
+        tpCanvas.height = img.env.naturalHeight;
+        tpCtx.imageSmoothingEnabled = false;
+        tpCtx.drawImage(img.env, 0, 0);
+        // Grid overlay
+        tpCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+        for (let x = 0; x <= cols; x++) { tpCtx.beginPath(); tpCtx.moveTo(x * T, 0); tpCtx.lineTo(x * T, img.env.naturalHeight); tpCtx.stroke(); }
+        for (let y = 0; y <= rows; y++) { tpCtx.beginPath(); tpCtx.moveTo(0, y * T); tpCtx.lineTo(img.env.naturalWidth, y * T); tpCtx.stroke(); }
+    }
+
+    if (img.lava.complete && img.lava.naturalWidth > 0) {
+        lpCanvas.width = img.lava.naturalWidth;
+        lpCanvas.height = img.lava.naturalHeight;
+        lpCtx.imageSmoothingEnabled = false;
+        lpCtx.drawImage(img.lava, 0, 0);
+        const cols = Math.floor(img.lava.naturalWidth / T);
+        const rows = Math.floor(img.lava.naturalHeight / T);
+        lpCtx.strokeStyle = 'rgba(255,255,255,0.15)';
+        for (let x = 0; x <= cols; x++) { lpCtx.beginPath(); lpCtx.moveTo(x * T, 0); lpCtx.lineTo(x * T, img.lava.naturalHeight); lpCtx.stroke(); }
+        for (let y = 0; y <= rows; y++) { lpCtx.beginPath(); lpCtx.moveTo(0, y * T); lpCtx.lineTo(img.lava.naturalWidth, y * T); lpCtx.stroke(); }
+    }
+}
+
+tpCanvas.addEventListener('click', e => {
+    const rect = tpCanvas.getBoundingClientRect();
+    const scaleX = tpCanvas.width / rect.width;
+    const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
+    const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+    selectedTile = { ax, ay, tileset: 'env' };
+    selectedEntity = null;
+    highlightTilePicker();
+    document.getElementById('tile-info').textContent = `Tile: env (${ax}, ${ay})`;
+    clearEntitySelection();
+});
+
+lpCanvas.addEventListener('click', e => {
+    const rect = lpCanvas.getBoundingClientRect();
+    const scaleX = lpCanvas.width / rect.width;
+    const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
+    const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+    selectedTile = { ax, ay, tileset: 'lava' };
+    selectedEntity = null;
+    highlightTilePicker();
+    clearEntitySelection();
+});
+
+function highlightTilePicker() {
+    // Redraw pickers with selection highlight
+    setupTilePicker();
+    if (selectedTile) {
+        const cvs = selectedTile.tileset === 'env' ? tpCtx : lpCtx;
+        cvs.strokeStyle = '#ffcc00';
+        cvs.lineWidth = 2;
+        cvs.strokeRect(selectedTile.ax * T, selectedTile.ay * T, T, T);
+        cvs.lineWidth = 1;
+    }
+}
+
+// ---- ENTITY PICKER ----
+function setupEntityPicker() {
+    const list = document.getElementById('entity-list');
+    list.innerHTML = '';
+    for (const [type, def] of Object.entries(ENTITY_DEFS)) {
+        const btn = document.createElement('div');
+        btn.className = 'entity-btn';
+        btn.dataset.type = type;
+        btn.onclick = () => selectEntity(type);
+
+        // Preview canvas
+        const pc = document.createElement('canvas');
+        pc.width = 48; pc.height = 48;
+        pc.style.width = '48px'; pc.style.height = '48px';
+        const pctx = pc.getContext('2d');
+        pctx.imageSmoothingEnabled = false;
+
+        if (type === 'spawn') {
+            pctx.fillStyle = '#0f0';
+            pctx.fillRect(18, 5, 12, 43);
+            pctx.fillStyle = '#fff';
+            pctx.font = '8px monospace';
+            pctx.fillText('G', 20, 30);
+        } else if (def.img && img[def.img] && img[def.img].complete) {
+            const scale = Math.min(44 / def.sw, 44 / def.sh);
+            const dw = def.sw * scale, dh = def.sh * scale;
+            pctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh,
+                (48 - dw) / 2, (48 - dh) / 2, dw, dh);
+        }
+
+        const label = document.createElement('span');
+        label.textContent = def.label;
+
+        btn.appendChild(pc);
+        btn.appendChild(label);
+        list.appendChild(btn);
+    }
+
+    // Eraser entity
+    const btn = document.createElement('div');
+    btn.className = 'entity-btn';
+    btn.dataset.type = 'eraser';
+    btn.onclick = () => selectEntity('eraser');
+    const pc = document.createElement('canvas');
+    pc.width = 48; pc.height = 48; pc.style.width = '48px'; pc.style.height = '48px';
+    const pctx = pc.getContext('2d');
+    pctx.fillStyle = '#f00';
+    pctx.font = '20px monospace';
+    pctx.fillText('X', 16, 32);
+    const label = document.createElement('span');
+    label.textContent = 'Erase Object';
+    btn.appendChild(pc);
+    btn.appendChild(label);
+    list.appendChild(btn);
+}
+
+function selectEntity(type) {
+    selectedEntity = type;
+    selectedTile = null;
+    highlightTilePicker();
+    document.querySelectorAll('.entity-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.type === type);
+    });
+}
+
+function clearEntitySelection() {
+    selectedEntity = null;
+    document.querySelectorAll('.entity-btn').forEach(b => b.classList.remove('active'));
+}
+
+// ---- LAYER PICKER ----
+function setupLayerPicker() {
+    const list = document.getElementById('layer-list');
+    list.innerHTML = '';
+    layers.forEach((l, i) => {
+        const row = document.createElement('div');
+        row.className = 'layer-row' + (i === activeLayer ? ' active' : '');
+        row.onclick = () => { activeLayer = i; setupLayerPicker(); };
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = l.visible;
+        cb.onclick = e => { e.stopPropagation(); l.visible = cb.checked; };
+        const lbl = document.createElement('span');
+        lbl.textContent = l.name + ` (z=${l.z})`;
+        row.appendChild(cb);
+        row.appendChild(lbl);
+        list.appendChild(row);
+    });
+}
+
+// ---- TABS ----
+function showTab(name) {
+    document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+    document.querySelectorAll('#panel-tabs button').forEach(b => b.classList.remove('active'));
+    document.getElementById('tab-' + name).classList.add('active');
+    document.querySelectorAll('#panel-tabs button').forEach(b => {
+        if (b.textContent.toLowerCase().startsWith(name.slice(0, 3))) b.classList.add('active');
+    });
+}
+
+// ---- MODE ----
+function setMode(m) {
+    mode = m;
+    document.getElementById('btn-edit').classList.toggle('active', m === 'edit');
+    document.getElementById('btn-play').classList.toggle('active', m === 'play');
+    canvas.style.cursor = m === 'edit' ? 'crosshair' : 'default';
+    if (m === 'play') startPlay();
+    else stopPlay();
+}
+
+function toggleGrid() {
+    showGridLines = !showGridLines;
+    document.getElementById('btn-grid').classList.toggle('active', showGridLines);
+}
+
+function setTool(t) {
+    tool = t;
+    document.querySelectorAll('.tool-row button').forEach(b => {
+        b.classList.toggle('active', b.id === 'tool-' + t);
+    });
+}
+
+// ---- CANVAS EVENTS ----
+function canvasToWorld(e) {
+    const rect = canvas.getBoundingClientRect();
+    const px = (e.clientX - rect.left) / zoom + camX;
+    const py = (e.clientY - rect.top) / zoom + camY;
+    return { px, py, tx: Math.floor(px / T), ty: Math.floor(py / T) };
+}
+
+canvas.addEventListener('mousedown', e => {
+    if (mode === 'play') return;
+    const w = canvasToWorld(e);
+
+    if (e.button === 1) { // middle click = pan
+        panning = true;
+        panStartX = e.clientX; panStartY = e.clientY;
+        panCamX = camX; panCamY = camY;
+        e.preventDefault();
+        return;
+    }
+
+    if (e.button === 2) { // right click = erase
+        erasing = true;
+        eraseTile(w.tx, w.ty);
+        return;
+    }
+
+    if (e.button === 0) { // left click
+        if (selectedEntity) {
+            placeEntity(w);
+        } else if (selectedTile) {
+            painting = true;
+            placeTile(w.tx, w.ty);
+        }
+    }
+});
+
+canvas.addEventListener('mousemove', e => {
+    if (mode === 'play') return;
+
+    if (panning) {
+        camX = panCamX - (e.clientX - panStartX) / zoom;
+        camY = panCamY - (e.clientY - panStartY) / zoom;
+        return;
+    }
+
+    const w = canvasToWorld(e);
+
+    if (painting && selectedTile) {
+        placeTile(w.tx, w.ty);
+    }
+    if (erasing) {
+        eraseTile(w.tx, w.ty);
+    }
+});
+
+canvas.addEventListener('mouseup', e => {
+    if (e.button === 1) panning = false;
+    if (e.button === 0) painting = false;
+    if (e.button === 2) erasing = false;
+});
+
+canvas.addEventListener('wheel', e => {
+    e.preventDefault();
+    const oldZoom = zoom;
+    if (e.deltaY < 0) zoom = Math.min(8, zoom * 1.15);
+    else zoom = Math.max(0.5, zoom / 1.15);
+
+    // Zoom toward mouse
+    const rect = canvas.getBoundingClientRect();
+    const mx = e.clientX - rect.left;
+    const my = e.clientY - rect.top;
+    camX += mx / oldZoom - mx / zoom;
+    camY += my / oldZoom - my / zoom;
+}, { passive: false });
+
+canvas.addEventListener('contextmenu', e => e.preventDefault());
+
+// ---- TILE / ENTITY PLACEMENT ----
+function placeTile(tx, ty) {
+    if (tx < 0 || ty < 0 || tx >= LVL_W || ty >= LVL_H) return;
+    if (!selectedTile) return;
+    const key = tx + ',' + ty;
+
+    if (tool === 'fill') {
+        floodFill(tx, ty, selectedTile);
+        return;
+    }
+
+    layers[activeLayer].tiles.set(key, { ...selectedTile });
+}
+
+function eraseTile(tx, ty) {
+    const key = tx + ',' + ty;
+    layers[activeLayer].tiles.delete(key);
+    // Also check entities
+    entities = entities.filter(e => {
+        const etx = Math.floor(e.x / T);
+        const ety = Math.floor(e.y / T);
+        return !(etx === tx && ety === ty);
+    });
+}
+
+function placeEntity(w) {
+    if (selectedEntity === 'eraser') {
+        // Remove entity nearest to click
+        let best = -1, bestD = 30;
+        entities.forEach((e, i) => {
+            const d = Math.hypot(e.x - w.px, e.y - w.py);
+            if (d < bestD) { bestD = d; best = i; }
+        });
+        if (best >= 0) entities.splice(best, 1);
+        return;
+    }
+
+    if (selectedEntity === 'spawn') {
+        // Snap to grid, bottom of tile
+        spawnX = w.tx;
+        spawnY = w.ty;
+        return;
+    }
+
+    const def = ENTITY_DEFS[selectedEntity];
+    if (!def) return;
+
+    // Place at pixel position, snapped to grid center-bottom
+    const ex = w.tx * T + T / 2;
+    const ey = (w.ty + 1) * T; // bottom of tile
+    entities.push({ type: selectedEntity, x: ex, y: ey });
+}
+
+function floodFill(startX, startY, tile) {
+    const layer = layers[activeLayer];
+    const startKey = startX + ',' + startY;
+    const startTile = layer.tiles.get(startKey);
+    // If clicking on same tile, bail
+    if (startTile && startTile.ax === tile.ax && startTile.ay === tile.ay && startTile.tileset === tile.tileset) return;
+
+    const visited = new Set();
+    const queue = [[startX, startY]];
+    let count = 0;
+    const maxFill = 5000;
+
+    while (queue.length > 0 && count < maxFill) {
+        const [cx, cy] = queue.shift();
+        const k = cx + ',' + cy;
+        if (visited.has(k)) continue;
+        if (cx < 0 || cy < 0 || cx >= LVL_W || cy >= LVL_H) continue;
+
+        const current = layer.tiles.get(k);
+        // Match: both empty, or both same tile
+        if (startTile === undefined && current !== undefined) continue;
+        if (startTile !== undefined && (current === undefined ||
+            current.ax !== startTile.ax || current.ay !== startTile.ay || current.tileset !== startTile.tileset)) continue;
+
+        visited.add(k);
+        layer.tiles.set(k, { ...tile });
+        count++;
+
+        queue.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
+    }
+}
+
+// ---- RESIZE ----
+function resizeLevel() {
+    LVL_W = parseInt(document.getElementById('lvl-w').value) || 60;
+    LVL_H = parseInt(document.getElementById('lvl-h').value) || 30;
+}
+
+function clearLevel() {
+    if (!confirm('Clear entire level?')) return;
+    layers.forEach(l => l.tiles.clear());
+    entities = [];
+    spawnX = 4; spawnY = LVL_H - 5;
+}
+
+// ---- SAVE / LOAD ----
+function saveLevel() {
+    const data = {
+        version: 1,
+        width: LVL_W,
+        height: LVL_H,
+        bgColor: document.getElementById('bg-color').value,
+        spawn: { x: spawnX, y: spawnY },
+        layers: layers.map(l => ({
+            name: l.name,
+            z: l.z,
+            tiles: Object.fromEntries(l.tiles),
+        })),
+        entities: entities,
+    };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'gary-level.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+}
+
+function loadLevel() {
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.json';
+    input.onchange = e => {
+        const file = e.target.files[0];
+        if (!file) return;
+        const reader = new FileReader();
+        reader.onload = ev => {
+            try {
+                const data = JSON.parse(ev.target.result);
+                LVL_W = data.width || 60;
+                LVL_H = data.height || 30;
+                document.getElementById('lvl-w').value = LVL_W;
+                document.getElementById('lvl-h').value = LVL_H;
+                if (data.bgColor) document.getElementById('bg-color').value = data.bgColor;
+                spawnX = data.spawn?.x ?? 4;
+                spawnY = data.spawn?.y ?? LVL_H - 5;
+                layers.forEach((l, i) => {
+                    l.tiles.clear();
+                    if (data.layers[i]?.tiles) {
+                        for (const [k, v] of Object.entries(data.layers[i].tiles)) {
+                            l.tiles.set(k, v);
+                        }
+                    }
+                });
+                entities = data.entities || [];
+            } catch (err) {
+                alert('Failed to load: ' + err.message);
+            }
+        };
+        reader.readAsText(file);
+    };
+    input.click();
+}
+
+// ---- EDITOR DRAW ----
+function drawEditor() {
+    const cw = canvas.parentElement.clientWidth;
+    const ch = canvas.parentElement.clientHeight;
+    canvas.width = cw;
+    canvas.height = ch;
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = document.getElementById('bg-color').value;
+    ctx.fillRect(0, 0, cw, ch);
+
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    ctx.translate(-camX, -camY);
+
+    // Level bounds
+    ctx.strokeStyle = 'rgba(255,204,0,0.3)';
+    ctx.strokeRect(0, 0, LVL_W * T, LVL_H * T);
+
+    // Draw tile layers
+    for (const layer of layers) {
+        if (!layer.visible) continue;
+        for (const [key, tile] of layer.tiles) {
+            const [tx, ty] = key.split(',').map(Number);
+            const tileset = tile.tileset === 'lava' ? img.lava : img.env;
+            if (tileset && tileset.complete) {
+                ctx.drawImage(tileset, tile.ax * T, tile.ay * T, T, T, tx * T, ty * T, T, T);
+            }
+        }
+    }
+
+    // Draw entities
+    for (const ent of entities) {
+        const def = ENTITY_DEFS[ent.type];
+        if (!def) continue;
+
+        if (def.img && img[def.img] && img[def.img].complete) {
+            const dx = ent.x - def.w / 2;
+            const dy = ent.y - def.h;
+            ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh, dx, dy, def.sw, def.sh);
+        }
+
+        // Debug outline
+        ctx.strokeStyle = def.color;
+        ctx.globalAlpha = 0.5;
+        ctx.strokeRect(ent.x - def.w / 2, ent.y - def.h, def.w, def.h);
+        ctx.globalAlpha = 1;
+    }
+
+    // Gary spawn marker
+    const sx = spawnX * T + T / 2, sy = (spawnY + 1) * T;
+    ctx.fillStyle = 'rgba(0,255,0,0.3)';
+    ctx.fillRect(sx - 6, sy - 43, 12, 43);
+    ctx.strokeStyle = '#0f0';
+    ctx.strokeRect(sx - 6, sy - 43, 12, 43);
+    ctx.fillStyle = '#0f0';
+    ctx.font = '8px monospace';
+    ctx.fillText('GARY', sx - 12, sy - 46);
+
+    // Grid
+    if (showGridLines) {
+        ctx.strokeStyle = 'rgba(255,255,255,0.07)';
+        ctx.lineWidth = 1 / zoom;
+        for (let x = 0; x <= LVL_W; x++) {
+            ctx.beginPath(); ctx.moveTo(x * T, 0); ctx.lineTo(x * T, LVL_H * T); ctx.stroke();
+        }
+        for (let y = 0; y <= LVL_H; y++) {
+            ctx.beginPath(); ctx.moveTo(0, y * T); ctx.lineTo(LVL_W * T, y * T); ctx.stroke();
+        }
+    }
+
+    // Hover tile highlight
+    const rect = canvas.getBoundingClientRect();
+    // We'll draw this in the main loop using last known mouse pos
+
+    ctx.restore();
+
+    // HUD
+    ctx.fillStyle = '#ffcc00';
+    ctx.font = '12px monospace';
+    ctx.fillText(`EDIT | Layer: ${layers[activeLayer].name} | Zoom: ${zoom.toFixed(1)}x | Level: ${LVL_W}x${LVL_H}`, 100, 20);
+}
+
+
+// ============================================================
+// PLAY MODE — Full Gary Engine (from testbed)
+// ============================================================
+
+let playActive = false;
+let playLast = 0;
+let videoOpen = false;
+
+// Gary play state
+const GRAV = 600, SPD = 220, JUMP = -350, ROLL_SPD = 220, AIR_SPD = 170;
+let gx, gy, gvx, gvy, gDir, gFloor, gState, gaFrame, gaTimer, gaDone, gScore, gDead, gDeadT;
+let showHitboxes = false;
+
+const pKeys = {};
+let pJumpBuf = 0;
+
+function f(x, y) { return [x, y]; }
+const ANIMS = {
+    idle:      { fr: [f(0,0),f(0,0),f(0,0),f(0,0),f(61,0),f(61,0),f(61,0),f(61,0)], fps: 8, loop: true },
+    start:     { fr: [f(488,0),f(549,0),f(0,61)], fps: 8, loop: false },
+    run:       { fr: [f(61,61),f(122,61),f(183,61),f(244,61),f(305,61)], fps: 8, loop: true },
+    hop:       { fr: [f(183,183),f(488,183),f(488,183),f(549,183),f(549,183),f(0,244),f(0,0)], fps: 8, loop: false },
+    crouch:    { fr: [f(0,0),f(183,183),f(122,183),f(61,183)], fps: 8, loop: false },
+    kneel:     { fr: [f(305,183),f(61,183),f(305,183),f(61,244),f(61,244),f(61,244)], fps: 8, loop: true },
+    crouch_up: { fr: [f(305,183),f(244,183),f(183,183),f(0,0)], fps: 8, loop: false },
+    take_off:  { fr: [f(366,61),f(427,61),f(488,61),f(549,61)], fps: 8, loop: false },
+    air:       { fr: [f(549,61),f(366,183),f(427,183)], fps: 8, loop: true },
+    land:      { fr: [f(0,122),f(61,122),f(122,122)], fps: 10, loop: false },
+    into_roll: { fr: [f(183,122),f(244,122)], fps: 8, loop: false },
+    roll:      { fr: [f(305,122),f(366,122),f(427,122)], fps: 8, loop: true },
+    roll_out:  { fr: [f(488,122),f(549,122),f(0,183)], fps: 8, loop: false },
+    press:     { fr: [f(122,0),f(244,0),f(305,0),f(366,0),f(366,0),f(366,0),f(305,0),f(244,0),f(122,0)], fps: 8, loop: false },
+    fall:      { fr: [f(183,244),f(183,244),f(244,244),f(244,244)], fps: 8, loop: true },
+    push:      { fr: [f(305,244),f(366,244),f(427,244),f(488,244),f(549,244)], fps: 4, loop: true },
+};
+
+// Play-mode entity instances (cloned from editor entities at play start)
+let pCoins, pRods, pChests, pArcades, pPlatforms;
+
+// Build collision set from tiles
+let solidSet;
+
+function buildSolidSet() {
+    solidSet = new Set();
+    // All tiles on all visible layers are solid by default
+    // (Later: we can mark specific tiles as non-solid / passthrough)
+    for (const layer of layers) {
+        if (!layer.visible) continue;
+        for (const key of layer.tiles.keys()) {
+            solidSet.add(key);
+        }
+    }
+}
+
+function isSolid(tx, ty) {
+    return solidSet.has(tx + ',' + ty);
+}
+
+// Sounds
+let audioCtx = null;
+function getAC() {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    return audioCtx;
+}
+
+function makeClick(ac, time, freq) {
+    const bufLen = ac.sampleRate * 0.015;
+    const noiseBuf = ac.createBuffer(1, bufLen, ac.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource(); src.buffer = noiseBuf;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(freq, time); bp.Q.setValueAtTime(30, time);
+    const gain = ac.createGain(); gain.gain.setValueAtTime(0.35, time); gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+    src.start(time); src.stop(time + 0.04);
+}
+
+function playChestOpen() {
+    const ac = getAC(); const now = ac.currentTime;
+    makeClick(ac, now, 1800);
+    const creakStart = now + 0.07;
+    const osc1 = ac.createOscillator(), osc2 = ac.createOscillator();
+    const g1 = ac.createGain(), g2 = ac.createGain();
+    const filt = ac.createBiquadFilter();
+    osc1.type = 'sawtooth'; osc1.frequency.setValueAtTime(80, creakStart); osc1.frequency.linearRampToValueAtTime(220, creakStart + 0.12); osc1.frequency.linearRampToValueAtTime(100, creakStart + 0.25);
+    g1.gain.setValueAtTime(0.06, creakStart); g1.gain.linearRampToValueAtTime(0.03, creakStart + 0.25); g1.gain.linearRampToValueAtTime(0, creakStart + 0.35);
+    osc2.type = 'square'; osc2.frequency.setValueAtTime(180, creakStart); osc2.frequency.linearRampToValueAtTime(400, creakStart + 0.1); osc2.frequency.linearRampToValueAtTime(200, creakStart + 0.2);
+    g2.gain.setValueAtTime(0.015, creakStart); g2.gain.linearRampToValueAtTime(0.008, creakStart + 0.2); g2.gain.linearRampToValueAtTime(0, creakStart + 0.3);
+    filt.type = 'bandpass'; filt.frequency.setValueAtTime(400, creakStart); filt.Q.setValueAtTime(2, creakStart);
+    osc1.connect(g1); osc2.connect(g2); g1.connect(filt); g2.connect(filt); filt.connect(ac.destination);
+    osc1.start(creakStart); osc2.start(creakStart); osc1.stop(creakStart + 0.5); osc2.stop(creakStart + 0.5);
+}
+
+function playChestClose() {
+    const ac = getAC(); const now = ac.currentTime;
+    const osc1 = ac.createOscillator(), osc2 = ac.createOscillator();
+    const g1 = ac.createGain(), g2 = ac.createGain(), filt = ac.createBiquadFilter();
+    osc1.type = 'sawtooth'; osc1.frequency.setValueAtTime(200, now); osc1.frequency.linearRampToValueAtTime(90, now + 0.15); osc1.frequency.linearRampToValueAtTime(60, now + 0.22);
+    g1.gain.setValueAtTime(0.05, now); g1.gain.linearRampToValueAtTime(0.02, now + 0.2); g1.gain.linearRampToValueAtTime(0, now + 0.28);
+    osc2.type = 'square'; osc2.frequency.setValueAtTime(350, now); osc2.frequency.linearRampToValueAtTime(150, now + 0.15);
+    g2.gain.setValueAtTime(0.012, now); g2.gain.linearRampToValueAtTime(0, now + 0.22);
+    filt.type = 'bandpass'; filt.frequency.setValueAtTime(350, now); filt.Q.setValueAtTime(2, now);
+    osc1.connect(g1); osc2.connect(g2); g1.connect(filt); g2.connect(filt); filt.connect(ac.destination);
+    osc1.start(now); osc2.start(now); osc1.stop(now + 0.4); osc2.stop(now + 0.4);
+    makeClick(ac, now + 0.28, 1400);
+}
+
+const coinSfx = new Audio('audio/kalimba-mallets-accept-sound-SBA-300463068.wav');
+coinSfx.volume = 0.4;
+const rodSfx = new Audio('audio/xylo-mallet-complete-sound-3-percussion-multimedia-success-SBA-300463154.wav');
+rodSfx.volume = 0.4;
+
+function openVideo(vimeoId) {
+    document.getElementById('video-body').innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}?autoplay=1&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    document.getElementById('video-overlay').classList.add('open');
+    videoOpen = true;
+}
+
+function closeVideo() {
+    document.getElementById('video-overlay').classList.remove('open');
+    document.getElementById('video-body').innerHTML = '';
+    videoOpen = false;
+}
+
+function startPlay() {
+    buildSolidSet();
+
+    // Init Gary at spawn
+    gx = spawnX * T + T / 2;
+    gy = (spawnY + 1) * T;
+    gvx = 0; gvy = 0; gDir = 1; gFloor = false;
+    gState = 'idle'; gaFrame = 0; gaTimer = 0; gaDone = false;
+    gScore = 0; gDead = false; gDeadT = 0;
+
+    // Clone entities
+    pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
+    pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
+    pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false }));
+    pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false }));
+    pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0 }));
+
+    Object.keys(pKeys).forEach(k => delete pKeys[k]);
+    pJumpBuf = 0;
+
+    playActive = true;
+    playLast = performance.now();
+}
+
+function stopPlay() {
+    playActive = false;
+    videoOpen = false;
+    document.getElementById('video-overlay').classList.remove('open');
+}
+
+function pSetState(s) {
+    if (gState === s) return;
+    gState = s; gaFrame = 0; gaTimer = 0; gaDone = false;
+}
+
+// Collision helpers
+function resolveY(x, y, vy, hTop, hBot) {
+    // Check tiles below feet
+    const feetY = y;
+    const headY = y + hTop; // hTop is negative
+    const tx = Math.floor(x / T);
+
+    if (vy >= 0) {
+        // Falling — check floor
+        const ty = Math.floor(feetY / T);
+        for (let dx = -1; dx <= 0; dx++) {
+            const checkX = Math.floor((x + dx * 5) / T);
+            if (isSolid(checkX, ty)) {
+                const tileTop = ty * T;
+                if (feetY >= tileTop && feetY - vy * 0.017 <= tileTop + 2) {
+                    return { y: tileTop, floor: true };
+                }
+            }
+        }
+    } else {
+        // Rising — check ceiling
+        const ty = Math.floor(headY / T);
+        for (let dx = -1; dx <= 0; dx++) {
+            const checkX = Math.floor((x + dx * 5) / T);
+            if (isSolid(checkX, ty)) {
+                const tileBot = (ty + 1) * T;
+                if (headY <= tileBot) {
+                    return { y: tileBot - hTop, vy: 0 };
+                }
+            }
+        }
+    }
+    return null;
+}
+
+function resolveX(x, y, vx, hLeft, hRight, hTop) {
+    const headY = y + hTop;
+    const midY = y + hTop / 2;
+
+    const checkYs = [y - 2, midY, headY + 2];
+
+    if (vx > 0) {
+        const rightEdge = x + hRight;
+        const tx = Math.floor(rightEdge / T);
+        for (const cy of checkYs) {
+            const ty = Math.floor(cy / T);
+            if (isSolid(tx, ty)) {
+                return tx * T - hRight;
+            }
+        }
+    } else if (vx < 0) {
+        const leftEdge = x + hLeft;
+        const tx = Math.floor(leftEdge / T);
+        for (const cy of checkYs) {
+            const ty = Math.floor(cy / T);
+            if (isSolid(tx, ty)) {
+                return (tx + 1) * T - hLeft;
+            }
+        }
+    }
+    return null;
+}
+
+function checkFloor(x, y) {
+    const ty = Math.floor(y / T);
+    // Check one pixel below feet
+    const belowTy = Math.floor((y + 1) / T);
+    for (let dx = -1; dx <= 0; dx++) {
+        const checkX = Math.floor((x + dx * 5) / T);
+        if (isSolid(checkX, belowTy)) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// Play input
+window.addEventListener('keydown', e => {
+    if (mode !== 'play') return;
+    if (!pKeys[e.code]) {
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') pJumpBuf = 8;
+        if (e.code === 'KeyH') showHitboxes = !showHitboxes;
+    }
+    if (e.code === 'Escape') {
+        if (videoOpen) closeVideo();
+        else setMode('edit');
+        return;
+    }
+    pKeys[e.code] = true;
+    e.preventDefault();
+});
+window.addEventListener('keyup', e => {
+    if (mode !== 'play') return;
+    pKeys[e.code] = false;
+});
+
+const pkL = () => pKeys['ArrowLeft'] || pKeys['KeyA'];
+const pkR = () => pKeys['ArrowRight'] || pKeys['KeyD'];
+const pkD = () => pKeys['ArrowDown'] || pKeys['KeyS'];
+const pkSp = () => pKeys['Space'];
+function pUseJump() { if (pJumpBuf > 0) { pJumpBuf = 0; return true; } return false; }
+
+function nearPressable() {
+    for (const c of pChests) {
+        if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) return true;
+    }
+    for (const a of pArcades) {
+        if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) return true;
+    }
+    return false;
+}
+
+function playTick(ts) {
+    if (!playActive) return;
+
+    const dt = Math.min((ts - playLast) / 1000, 0.05);
+    playLast = ts;
+
+    if (videoOpen) { requestAnimationFrame(playTick); return; }
+
+    // Hitbox based on state
+    let hLeft = -6, hRight = 6, hTop = -43, hBot = 0;
+    if (gState === 'roll' || gState === 'into_roll') { hLeft = -7; hRight = 7; hTop = -15; }
+    else if (gState === 'kneel' || gState === 'crouch') { hLeft = -6; hRight = 6; hTop = -22; }
+
+    // STATE MACHINE
+    switch (gState) {
+        case 'idle':
+            gvx = 0;
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (pkR()) { gDir = 1; pSetState('start'); }
+            else if (pkL()) { gDir = -1; pSetState('start'); }
+            else if (pUseJump()) pSetState('hop');
+            else if (pkD()) pSetState('crouch');
+            else if (pkSp() && nearPressable()) pSetState('press');
+            break;
+        case 'start':
+            gvx = gDir * SPD;
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (!(pkR() || pkL())) pSetState('idle');
+            else if (pUseJump()) { gvy = JUMP; gFloor = false; pSetState('air'); }
+            else pSetState('run');
+            break;
+        case 'run':
+            if (pkR()) gDir = 1; else if (pkL()) gDir = -1;
+            gvx = gDir * SPD;
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (pUseJump()) { gvy = JUMP; gFloor = false; pSetState('air'); }
+            else if (pkD()) pSetState('into_roll');
+            else if (!(pkR() || pkL())) pSetState('idle');
+            break;
+        case 'hop':
+            gvx = 0; gvy = 0;
+            if (gaDone) pSetState('idle');
+            break;
+        case 'crouch':
+            gvx = 0;
+            if (!pkD()) pSetState('crouch_up'); else pSetState('kneel');
+            break;
+        case 'kneel':
+            gvx = 0;
+            if (pkR()) { gDir = 1; pSetState('roll'); }
+            else if (pkL()) { gDir = -1; pSetState('roll'); }
+            else if (!pkD()) pSetState('crouch_up');
+            break;
+        case 'crouch_up':
+            gvx = 0; pSetState('idle');
+            break;
+        case 'into_roll':
+            gvx = gDir * ROLL_SPD;
+            if (!pkD()) pSetState('run'); else pSetState('roll');
+            break;
+        case 'roll':
+            if (pkR()) { gDir = 1; gvx = ROLL_SPD; }
+            else if (pkL()) { gDir = -1; gvx = -ROLL_SPD; }
+            else gvx = 0;
+            if (!pkD()) pSetState('run');
+            else if (!(pkR() || pkL())) { gvx = 0; pSetState('roll_out'); }
+            break;
+        case 'roll_out':
+            gvx = 0; pSetState('kneel');
+            break;
+        case 'air':
+            if (pkR()) { gDir = 1; gvx = AIR_SPD; }
+            else if (pkL()) { gDir = -1; gvx = -AIR_SPD; }
+            else gvx = 0;
+            if (gFloor) pSetState('land');
+            else if (gvy > 0 && gvx === 0) pSetState('fall');
+            break;
+        case 'fall':
+            if (pkR()) { gDir = 1; gvx = AIR_SPD; }
+            else if (pkL()) { gDir = -1; gvx = -AIR_SPD; }
+            else gvx = 0;
+            if (gFloor) pSetState('land');
+            break;
+        case 'land':
+            gvx = 0;
+            if (gaDone) pSetState('idle');
+            if (pkR() || pkL()) pSetState('run');
+            break;
+        case 'press':
+            gvx = 0;
+            if (gaDone) pSetState('idle');
+            break;
+        case 'push':
+            gvx = gDir * SPD;
+            if (!(pkR() || pkL())) pSetState('idle');
+            break;
+    }
+
+    // Physics
+    if (!gFloor) gvy += GRAV * dt;
+    gx += gvx * dt;
+    gy += gvy * dt;
+
+    // X collision
+    const xResult = resolveX(gx, gy, gvx, hLeft, hRight, hTop);
+    if (xResult !== null) { gx = xResult; gvx = 0; }
+
+    // Y collision
+    const yResult = resolveY(gx, gy, gvy, hTop, hBot);
+    if (yResult) {
+        if (yResult.floor) { gy = yResult.y; gvy = 0; gFloor = true; }
+        else if (yResult.vy !== undefined) { gy = yResult.y; gvy = yResult.vy; }
+    } else {
+        gFloor = checkFloor(gx, gy);
+        if (!gFloor && gvy === 0 && (gState === 'idle' || gState === 'run' || gState === 'roll')) {
+            // Walk off edge
+            gFloor = false;
+        }
+    }
+
+    // Fall death
+    if (gy > LVL_H * T + 100) {
+        gx = spawnX * T + T / 2;
+        gy = (spawnY + 1) * T;
+        gvx = 0; gvy = 0; gFloor = false;
+        pSetState('fall');
+    }
+
+    // Level bounds
+    if (gx < hRight) gx = hRight;
+    if (gx > LVL_W * T + hLeft) gx = LVL_W * T + hLeft;
+
+    // Entity interactions
+    // Coins
+    for (const c of pCoins) {
+        if (c.gone) continue;
+        c.t += dt;
+        const gL = gx - 6, gR = gx + 6, gT = gy - 43, gB = gy;
+        const cL = c.x - 6, cR = c.x + 6, cT = c.y - 18, cB = c.y;
+        if (gR > cL && gL < cR && gB > cT && gT < cB) {
+            c.gone = true; gScore++;
+            const s = coinSfx.cloneNode(); s.volume = 0.4; s.play().catch(() => {});
+        }
+    }
+
+    // Rods
+    for (const r of pRods) {
+        if (r.gone) continue;
+        r.t += dt;
+        const dx = gx - r.x, dy = (gy - 15) - (r.y - 15);
+        if (Math.abs(dx) < 20 && Math.abs(dy) < 25) {
+            r.gone = true; gScore++;
+            const s = rodSfx.cloneNode(); s.volume = 0.4; s.play().catch(() => {});
+        }
+    }
+
+    // Chests
+    for (const c of pChests) {
+        c.t += dt;
+        if (gState === 'press' && !c.acted) {
+            if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) {
+                c.open = !c.open; c.t = 0; c.acted = true;
+                if (c.open) playChestOpen(); else playChestClose();
+            }
+        }
+        if (gState !== 'press') c.acted = false;
+    }
+
+    // Arcades
+    for (const a of pArcades) {
+        a.t += dt;
+        if (gState === 'press' && !a.acted) {
+            if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) {
+                a.acted = true;
+                openVideo('305429654');
+            }
+        }
+        if (gState !== 'press') a.acted = false;
+    }
+
+    // Animate Gary
+    const anim = ANIMS[gState];
+    if (anim) {
+        gaTimer += dt;
+        const spf = 1 / anim.fps;
+        while (gaTimer >= spf) {
+            gaTimer -= spf;
+            gaFrame++;
+            if (gaFrame >= anim.fr.length) {
+                if (anim.loop) gaFrame = 0;
+                else { gaFrame = anim.fr.length - 1; gaDone = true; }
+            }
+        }
+    }
+    if (pJumpBuf > 0) pJumpBuf--;
+
+    // ---- DRAW PLAY MODE ----
+    const cw = canvas.width, ch = canvas.height;
+    const playW = cw / zoom;
+    const playH = ch / zoom;
+
+    // Camera follows Gary
+    const pcamX = gx - playW / 2;
+    const pcamY = gy - 50 - playH / 2;
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.clearRect(0, 0, cw, ch);
+
+    // Background
+    ctx.fillStyle = document.getElementById('bg-color').value;
+    ctx.fillRect(0, 0, cw, ch);
+
+    ctx.save();
+    ctx.scale(zoom, zoom);
+    ctx.translate(-pcamX, -pcamY);
+
+    // Draw tile layers
+    // Only draw visible tiles for performance
+    const startTX = Math.max(0, Math.floor(pcamX / T) - 1);
+    const endTX = Math.min(LVL_W, Math.ceil((pcamX + playW) / T) + 1);
+    const startTY = Math.max(0, Math.floor(pcamY / T) - 1);
+    const endTY = Math.min(LVL_H, Math.ceil((pcamY + playH) / T) + 1);
+
+    for (const layer of layers) {
+        if (!layer.visible) continue;
+        for (let ty = startTY; ty < endTY; ty++) {
+            for (let tx = startTX; tx < endTX; tx++) {
+                const tile = layer.tiles.get(tx + ',' + ty);
+                if (!tile) continue;
+                const tileset = tile.tileset === 'lava' ? img.lava : img.env;
+                if (tileset && tileset.complete) {
+                    ctx.drawImage(tileset, tile.ax * T, tile.ay * T, T, T, tx * T, ty * T, T, T);
+                }
+            }
+        }
+    }
+
+    // Draw entities
+    // Coins
+    for (const c of pCoins) {
+        if (c.gone) continue;
+        const fr = Math.floor(c.t * 6) % 7;
+        ctx.drawImage(img.coin, 192 + fr * 16, 0, 8, 48, Math.round(c.x) - 4, Math.round(c.y) - 48, 8, 48);
+    }
+
+    // Rods
+    for (const r of pRods) {
+        if (r.gone) continue;
+        const fr = Math.floor(r.t * 8) % 9;
+        ctx.drawImage(img.rod, fr * 14, 0, 14, 30, Math.round(r.x) - 8, Math.round(r.y) - 30, 14, 30);
+    }
+
+    // Chests
+    for (const c of pChests) {
+        let fr;
+        if (c.open) {
+            fr = Math.min(5, 3 + Math.floor(c.t * 6));
+        } else if (c.t < 0.5) {
+            fr = Math.max(0, 5 - Math.floor(c.t * 6));
+        } else {
+            fr = Math.floor(c.t * 3) % 3;
+        }
+        ctx.drawImage(img.chest, fr * 48, 24, 48, 24, Math.round(c.x) - 24, Math.round(c.y) - 24, 48, 24);
+    }
+
+    // Arcades
+    for (const a of pArcades) {
+        const pat = [0,0,1,2,2,3,4,5,5];
+        const afr = pat[Math.floor(a.t * 8) % 9];
+        ctx.drawImage(img.arcade, afr * 48, 0, 48, 47, Math.round(a.x) - 23, Math.round(a.y) - 47, 48, 47);
+    }
+
+    // Platforms
+    for (const p of pPlatforms) {
+        ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
+    }
+
+    // Gary
+    if (img.gary && img.gary.complete) {
+        const fr = ANIMS[gState].fr[gaFrame];
+        const px = Math.round(gx), py = Math.round(gy);
+        ctx.save();
+        if (gDir === -1) {
+            ctx.translate(px, py - 61);
+            ctx.scale(-1, 1);
+            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, -30, 0, 61, 61);
+        } else {
+            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, px - 30, py - 61, 61, 61);
+        }
+        ctx.restore();
+    }
+
+    // Debug hitboxes
+    if (showHitboxes) {
+        ctx.globalAlpha = 0.5;
+        ctx.strokeStyle = '#0f0';
+        ctx.strokeRect(Math.round(gx) + hLeft, Math.round(gy) + hTop, hRight - hLeft, -hTop);
+        for (const c of pCoins) {
+            if (c.gone) continue;
+            ctx.strokeStyle = '#ff0';
+            ctx.strokeRect(Math.round(c.x) - 6, Math.round(c.y) - 18, 12, 18);
+        }
+        for (const r of pRods) {
+            if (r.gone) continue;
+            ctx.strokeStyle = '#0ff';
+            ctx.strokeRect(Math.round(r.x) - 20, Math.round(r.y) - 25, 40, 25);
+        }
+        ctx.globalAlpha = 1;
+    }
+
+    ctx.restore();
+
+    // HUD
+    ctx.fillStyle = '#fff';
+    ctx.font = '14px monospace';
+    ctx.fillText('SCORE: ' + gScore, 10, 24);
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '11px monospace';
+    ctx.fillText('State: ' + gState + '  [ESC] edit  [H] hitboxes', 10, ch - 10);
+
+    requestAnimationFrame(playTick);
+}
+
+// ---- EXPORT PLAYABLE ----
+function exportPlayable() {
+    alert('Export coming soon — for now, save the JSON and use it with the game engine.');
+}
+
+// ---- MAIN LOOP ----
+function mainLoop() {
+    if (mode === 'edit') {
+        drawEditor();
+    }
+    requestAnimationFrame(mainLoop);
+}
+
+// ---- INIT ----
+Promise.all(imgLoads).then(() => {
+    setupTilePicker();
+    setupEntityPicker();
+    setupLayerPicker();
+
+    // Center camera on spawn
+    camX = spawnX * T - 200;
+    camY = spawnY * T - 100;
+
+    requestAnimationFrame(mainLoop);
+});
+
+// When switching to play, start the play loop
+const origSetMode = setMode;
+window.setMode = function(m) {
+    origSetMode(m);
+    if (m === 'play') requestAnimationFrame(playTick);
+};
+
+// Keyboard shortcuts
+window.addEventListener('keydown', e => {
+    if (mode === 'edit') {
+        if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) { setMode('play'); e.preventDefault(); }
+        if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey) { toggleGrid(); e.preventDefault(); }
+        if (e.code === 'Digit1') { activeLayer = 0; setupLayerPicker(); }
+        if (e.code === 'Digit2') { activeLayer = 1; setupLayerPicker(); }
+        if (e.code === 'Digit3') { activeLayer = 2; setupLayerPicker(); }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); saveLevel(); }
+    }
+});
+</script>
+</body>
+</html>
