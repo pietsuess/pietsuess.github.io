@@ -10438,7 +10438,7 @@ function _buildGateRun(){
   // Each waypoint becomes a gate location; gates are perpendicular to the path
   const waypoints = [];
   const count = 12;
-  const spacing = 1200; // wider spacing — gives room to arc into gates
+  const spacing = 1800; // wide spacing — plenty of room to arc into gates
   const amplitude = 600; // Y swing — generous curves
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
@@ -10462,7 +10462,7 @@ function _buildGateRun(){
     const gt = i / (count - 1);
     const difficulty = Math.sin(gt * Math.PI) * 0.4; // 0 at ends, 0.4 in middle
     const gapSize = 280 - difficulty * 120; // 280px easy, 160px hard at peak
-    const wallLen = 800; // total wall length (each side = (wallLen - gapSize) / 2)
+    const wallLen = 1200; // total wall length — extends well past corridor borders
     gates.push({
       wx: waypoints[i].wx, wy: waypoints[i].wy,
       angle: gateAngle,
@@ -10661,8 +10661,13 @@ function updateGateCollisions(){
           state._raceRings.push({ wx: g.wx, wy: g.wy, r: 0, maxR: 120, age: 0 });
           if(audioCtx && !state.sfxMuted){
             const _t = audioCtx.currentTime;
-            playBeep(880, _t, 0.06, 'sine', 0.08);
-            playBeep(1100, _t + 0.06, 0.06, 'sine', 0.06);
+            // Rising whoosh + chime
+            playBeep(300, _t, 0.04, 'sawtooth', 0.06);
+            playBeep(600, _t + 0.03, 0.06, 'sine', 0.08);
+            playBeep(900, _t + 0.06, 0.08, 'sine', 0.10);
+            playBeep(1200, _t + 0.10, 0.12, 'sine', 0.08);
+            // Low body
+            playBeep(150, _t, 0.1, 'triangle', 0.05);
           }
         }
         // If crossed outside gap, they hit a wall (handled below)
@@ -10734,6 +10739,15 @@ function updateRace(){
       // Reset gates
       if(course.gates) course.gates.forEach(g => { g.passed = false; });
       _race._gateSides = course.gates ? course.gates.map(() => 0) : [];
+      // Switch to LAUNCH track for race hype
+      _race._preSongIdx = state.songIndex;
+      const _launchIdx = MOODS.findIndex(m=>m.name==='LAUNCH');
+      if(_launchIdx >= 0 && state.songIndex !== _launchIdx){
+        state.songIndex = _launchIdx;
+        musicBarCount = 0;
+        if(!state.musicMuted && !state.musicPaused) playSong(state.songIndex);
+        updateMusicDrawer();
+      }
     }
   }
   if(distToStart > 400) _race.nearStart = false;
@@ -10741,9 +10755,23 @@ function updateRace(){
   // Countdown
   if(_race.active && _race.countdown > 0){
     _race.countdown--;
+    const prevPhase = _race.countdownPhase;
     _race.countdownPhase = Math.ceil(_race.countdown / 60);
+    // Countdown beeps on each number change
+    if(_race.countdownPhase !== prevPhase && _race.countdownPhase > 0 && audioCtx && !state.sfxMuted){
+      const _ct = audioCtx.currentTime;
+      playBeep(440, _ct, 0.12, 'sine', 0.10);
+      playBeep(220, _ct, 0.12, 'triangle', 0.06);
+    }
     if(_race.countdown <= 0){
       _race.started = true;
+      // GO! fanfare
+      if(audioCtx && !state.sfxMuted){
+        const _gt = audioCtx.currentTime;
+        playBeep(660, _gt, 0.08, 'sine', 0.12);
+        playBeep(880, _gt + 0.08, 0.08, 'sine', 0.12);
+        playBeep(1100, _gt + 0.16, 0.15, 'sine', 0.14);
+      }
       _race.countdownPhase = 0;
     }
     return;
@@ -10761,6 +10789,13 @@ function updateRace(){
       _race.finished = true;
       _race.finishTimer = 300;
       _race.zoomTarget = 1.0; // zoom back out on finish
+      // Restore previous music track
+      if(_race._preSongIdx !== undefined && _race._preSongIdx !== state.songIndex){
+        state.songIndex = _race._preSongIdx;
+        musicBarCount = 0;
+        if(!state.musicMuted && !state.musicPaused) playSong(state.songIndex);
+        updateMusicDrawer();
+      }
       const timeMs = Math.round(_race.timer / 60 * 1000);
       if(!_race.bestTime || timeMs < _race.bestTime) _race.bestTime = timeMs;
       const finishBonus = 500;
