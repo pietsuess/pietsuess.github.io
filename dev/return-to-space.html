@@ -4077,8 +4077,8 @@ function update(){
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _inRaceFric = _race.active || _race.showApproach;
-  const _normalFric = _inRaceFric ? 0.90 : 0.965; // much tighter drag in race
-  const _boostFric = _inRaceFric ? 0.995 : 0.9995; // tighter boost drag in race
+  const _normalFric = _inRaceFric ? 0.98 : 0.965; // drifty race feel — momentum carries
+  const _boostFric = _inRaceFric ? 0.998 : 0.9995; // boost keeps speed longer in race
   const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
@@ -5720,8 +5720,8 @@ function update(){
 
   // Race camera lead — offset view in direction of travel
   if(_race.active || _race.showApproach){
-    const leadTarget_x = state.vx * 8;
-    const leadTarget_y = state.vy * 8;
+    const leadTarget_x = -state.vx * 8;
+    const leadTarget_y = -state.vy * 8;
     _raceLeadX += (leadTarget_x - _raceLeadX) * 0.08;
     _raceLeadY += (leadTarget_y - _raceLeadY) * 0.08;
   } else {
@@ -10944,10 +10944,15 @@ function updateGateCollisions(){
           if(pushAmt > 0){
             state.x += wnx * pushSign * pushAmt;
             state.y += wny * pushSign * pushAmt;
-            // Reflect velocity off wall at 65% — bounce, never stop
+            // Soft nudge — cancel into-wall velocity, keep sliding at 90%
             const vPerp = state.vx * wnx + state.vy * wny;
-            state.vx = (state.vx - 2 * vPerp * wnx) * 0.65;
-            state.vy = (state.vy - 2 * vPerp * wny) * 0.65;
+            const vPerpS = vPerp > 0 ? 1 : -1;
+            if(vPerpS !== pushSign){
+              state.vx -= vPerp * wnx;
+              state.vy -= vPerp * wny;
+            }
+            state.vx *= 0.90;
+            state.vy *= 0.90;
             state.collisionFlash = 3;
             if(audioCtx && !state.sfxMuted) playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
           }
