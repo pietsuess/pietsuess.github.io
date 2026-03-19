@@ -1165,6 +1165,7 @@ function onDown(e){
         edSel = null; edMultiSel = [];
       } else if (tbAction === 'export') { edExport(); }
       else if (tbAction === 'undo') { edPopUndo(); }
+      else if (tbAction === 'redo') { edPopRedo(); }
       else if (tbAction === 'import') { edImport(); }
       else if (tbAction === 'snap') { edSnap = !edSnap; }
       else if (tbAction === 'wall' || tbAction === 'platform' || tbAction === 'bumper' || tbAction === 'hint') {
@@ -1410,25 +1411,44 @@ let edSnap = true;
 const ED_SNAP_SIZE = 10;
 function snap(v) { return edSnap ? Math.round(v / ED_SNAP_SIZE) * ED_SNAP_SIZE : v; }
 let edUndo = [];
+let edRedo = [];
 const ED_HANDLE_SIZE = 8;
 const ED_GRAB_MARGIN = 15;
 
-function edPushUndo() {
+function edSnapshotLevel() {
   const lv = getCurrentLevel();
-  edUndo.push(JSON.parse(JSON.stringify({
+  return JSON.parse(JSON.stringify({
     walls: lv.walls, platforms: lv.platforms, bumpers: lv.bumpers,
     goal: lv.goal, backWall: lv.backWall, width: lv.width
-  })));
+  }));
+}
+
+function edPushUndo() {
+  edUndo.push(edSnapshotLevel());
   if (edUndo.length > 5) edUndo.shift();
+  edRedo = []; // clear redo on new action
 }
 
 function edPopUndo() {
   if (!edUndo.length) return;
+  edRedo.push(edSnapshotLevel()); // save current for redo
+  if (edRedo.length > 5) edRedo.shift();
   const prev = edUndo.pop();
   const lv = getCurrentLevel();
   lv.walls = prev.walls; lv.platforms = prev.platforms; lv.bumpers = prev.bumpers;
   lv.goal = prev.goal; lv.backWall = prev.backWall; lv.width = prev.width;
-  edSel = null;
+  edSel = null; edMultiSel = [];
+}
+
+function edPopRedo() {
+  if (!edRedo.length) return;
+  edUndo.push(edSnapshotLevel()); // save current for undo
+  if (edUndo.length > 5) edUndo.shift();
+  const next = edRedo.pop();
+  const lv = getCurrentLevel();
+  lv.walls = next.walls; lv.platforms = next.platforms; lv.bumpers = next.bumpers;
+  lv.goal = next.goal; lv.backWall = next.backWall; lv.width = next.width;
+  edSel = null; edMultiSel = [];
 }
 
 function edHitTest(wx, wy) {
@@ -1675,7 +1695,7 @@ function edDrawHandles() {
 }
 
 function edToolbarRect() {
-  const tw = 920, th = 44;
+  const tw = 980, th = 44;
   const tx = edToolbarPos ? edToolbarPos.x : (W - tw) / 2;
   const ty = edToolbarPos ? edToolbarPos.y : H - th - 10;
   return { tx, ty, tw, th };
@@ -1707,8 +1727,9 @@ function edDrawToolbar() {
     { label: 'DELETE', x: tx + 530, action: 'delete' },
     { label: 'SAVE', x: tx + 615, action: 'export' },
     { label: 'LOAD', x: tx + 695, action: 'import' },
-    { label: 'UNDO', x: tx + 775, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 860, action: 'snap' },
+    { label: 'UNDO', x: tx + 755, action: 'undo' },
+    { label: 'REDO', x: tx + 835, action: 'redo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 920, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1740,8 +1761,9 @@ function edToolbarHit(px, py) {
     { label: 'DELETE', x: tx + 530, action: 'delete' },
     { label: 'SAVE', x: tx + 615, action: 'export' },
     { label: 'LOAD', x: tx + 695, action: 'import' },
-    { label: 'UNDO', x: tx + 775, action: 'undo' },
-    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 860, action: 'snap' },
+    { label: 'UNDO', x: tx + 755, action: 'undo' },
+    { label: 'REDO', x: tx + 835, action: 'redo' },
+    { label: edSnap ? 'SNAP:ON' : 'SNAP', x: tx + 920, action: 'snap' },
   ];
 
   for (const btn of btns) {
@@ -1911,8 +1933,11 @@ window.addEventListener('keydown', (e) => {
     e.preventDefault();
   }
   if (editorMode && e.key === 'g') { edSnap = !edSnap; e.preventDefault(); }
-  if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey)) {
+  if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey) && !e.shiftKey) {
     edPopUndo(); e.preventDefault();
+  }
+  if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
+    edPopRedo(); e.preventDefault();
   }
 });
 
