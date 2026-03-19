@@ -7,7 +7,16 @@
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { background: #111; color: #ccc; font-family: monospace; overflow: hidden; display: flex; height: 100vh; }
 
-/* LEFT: Game/Editor Canvas */
+/* LEFT: Shortcuts */
+#shortcuts {
+    width: 140px; background: #0d0d0d; border-right: 1px solid #333; padding: 8px 6px;
+    font-size: 10px; line-height: 1.8; overflow-y: auto; flex-shrink: 0;
+}
+#shortcuts h3 { color: #ffcc00; font-size: 10px; margin-bottom: 4px; text-transform: uppercase; letter-spacing: 1px; }
+#shortcuts .sep { border-top: 1px solid #333; margin: 6px 0; }
+.key { display: inline-block; background: #333; color: #ffcc00; padding: 0 4px; border-radius: 2px; font-size: 9px; min-width: 16px; text-align: center; }
+
+/* MIDDLE: Game/Editor Canvas */
 #canvas-wrap { flex: 1; display: flex; align-items: center; justify-content: center; background: #000; position: relative; }
 canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: crosshair; }
 #mode-bar {
@@ -28,7 +37,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 /* RIGHT: Tool Panel */
 #panel {
     width: 320px; background: #1a1a1a; border-left: 2px solid #333;
-    display: flex; flex-direction: column; overflow: hidden;
+    display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
 }
 #panel-tabs {
     display: flex; background: #222; border-bottom: 1px solid #444;
@@ -46,6 +55,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 #tile-picker-wrap { position: relative; }
 #tile-picker-canvas { image-rendering: pixelated; cursor: pointer; width: 100%; }
 #tile-picker-canvas:hover { outline: 1px solid #ffcc00; }
+#lava-picker-canvas { image-rendering: pixelated; cursor: pointer; width: 100%; }
 
 /* Entity picker */
 .entity-btn {
@@ -70,13 +80,6 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 /* Tools */
 .tool-section { margin-bottom: 12px; }
 .tool-section h3 { color: #ffcc00; font-size: 11px; margin-bottom: 6px; text-transform: uppercase; letter-spacing: 1px; }
-.tool-row { display: flex; gap: 4px; margin-bottom: 4px; }
-.tool-row button {
-    flex: 1; background: #333; color: #ccc; border: 1px solid #555; padding: 4px 8px;
-    font-family: monospace; font-size: 10px; cursor: pointer;
-}
-.tool-row button.active { background: #ffcc00; color: #000; border-color: #ffcc00; }
-.tool-row button:hover { background: #444; }
 
 /* File ops */
 #file-ops { padding: 8px; border-top: 1px solid #333; background: #1a1a1a; }
@@ -114,6 +117,31 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 </head>
 <body>
 
+<div id="shortcuts">
+    <h3>Edit Mode</h3>
+    <span class="key">Click</span> Paint tile<br>
+    <span class="key">Ctrl</span>+Click Erase<br>
+    <span class="key">Space</span>+Drag Pan<br>
+    <span class="key">Scroll</span> Zoom<br>
+    <span class="key">Shift</span>+Click Multi-select tiles<br>
+    <span class="key">G</span> Toggle grid<br>
+    <span class="key">1</span><span class="key">2</span><span class="key">3</span> Switch layer<br>
+    <span class="key">Cmd+S</span> Save level<br>
+    <span class="key">P</span> Play mode<br>
+    <div class="sep"></div>
+    <h3>Play Mode</h3>
+    <span class="key">&larr;</span><span class="key">&rarr;</span> / <span class="key">A</span><span class="key">D</span> Move<br>
+    <span class="key">&uarr;</span> / <span class="key">W</span> Jump<br>
+    <span class="key">&darr;</span> / <span class="key">S</span> Crouch/Roll<br>
+    <span class="key">Space</span> Interact<br>
+    <span class="key">H</span> Hitboxes<br>
+    <span class="key">Esc</span> Back to edit<br>
+    <div class="sep"></div>
+    <h3>Tileset</h3>
+    <span style="color:#f44;">Red</span> = solid<br>
+    <span style="color:#888;">No outline</span> = passthrough
+</div>
+
 <div id="canvas-wrap">
     <canvas id="game"></canvas>
     <div id="mode-bar">
@@ -121,7 +149,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
         <button id="btn-play" onclick="setMode('play')">PLAY</button>
         <button id="btn-grid" class="active" onclick="toggleGrid()">GRID</button>
     </div>
-    <div id="info-bar">Click to place · Right-click to erase · Scroll to zoom · Middle-drag to pan</div>
+    <div id="info-bar"></div>
 </div>
 
 <div id="panel">
@@ -138,7 +166,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
             <div id="tile-picker-wrap">
                 <canvas id="tile-picker-canvas"></canvas>
             </div>
-            <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Select a tile</div>
+            <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Click tile to select · Shift+click to multi-select</div>
         </div>
         <div class="tool-section">
             <h3>Lava Tileset</h3>
@@ -164,14 +192,6 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 
     <div id="tab-tools" class="tab-content">
         <div class="tool-section">
-            <h3>Brush</h3>
-            <div class="tool-row">
-                <button id="tool-paint" class="active" onclick="setTool('paint')">Paint</button>
-                <button id="tool-erase" onclick="setTool('erase')">Erase</button>
-                <button id="tool-fill" onclick="setTool('fill')">Fill</button>
-            </div>
-        </div>
-        <div class="tool-section">
             <h3>Level Size</h3>
             <div style="font-size:11px;">
                 <label>Width: <input type="number" id="lvl-w" value="60" min="10" max="500" style="width:50px;background:#333;color:#fff;border:1px solid #555;padding:2px;font-family:monospace;"></label>
@@ -189,7 +209,6 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
         <button onclick="saveLevel()">Save Level (JSON)</button>
         <button onclick="loadLevel()">Load Level (JSON)</button>
         <button onclick="clearLevel()">Clear Level</button>
-        <button onclick="exportPlayable()">Export Playable HTML</button>
     </div>
 </div>
 
@@ -212,13 +231,57 @@ const T = 16; // tile size in pixels
 const canvas = document.getElementById('game');
 const ctx = canvas.getContext('2d');
 
+// ---- SOLID TILE ATLAS POSITIONS ----
+// These 45 atlas coordinates have physics polygons defined in the Godot TileSetAtlasSource.
+// Parsed from game.tscn TileSetAtlasSource_xpv3r physics_layer_0/polygon data.
+// Every other tile in the environment tileset is PASSTHROUGH (bushes, details, sky, etc.)
+const SOLID_ATLAS = new Set([
+    '0,0','3,0','6,0','9,0','12,0','15,0','18,0','22,0',
+    '0,3','3,3','6,3','9,3','12,3','15,3','18,3','21,3',
+    '2,6','3,6','4,6','5,6','6,6',
+    '0,10','3,10',
+    '6,11','9,11','12,11','15,11',
+    '6,12','12,12','15,12','21,12',
+    '18,16','21,16',
+    '13,18','14,18','18,18','21,18',
+    '12,19','13,19','14,19',
+    '10,20','11,20','12,20','13,20','14,20'
+]);
+
+// Multi-cell tile sizes from Godot TileSetAtlasSource size_in_atlas data.
+// Maps "ax,ay" -> [width, height] in tiles. Tiles not listed here are 1x1.
+const TILE_SIZES = {
+    '0,0':[3,3],'3,0':[3,3],'6,0':[3,3],'9,0':[3,3],'12,0':[3,3],'15,0':[3,3],'18,0':[3,2],'22,0':[1,3],
+    '0,3':[3,3],'3,3':[3,3],'6,3':[3,3],'9,3':[3,3],'12,3':[3,3],'15,3':[3,3],'18,3':[3,2],'21,3':[3,3],
+    '2,6':[1,1],'3,6':[1,1],'4,6':[1,1],'5,6':[1,1],'6,6':[1,1],
+    '0,6':[2,4],'7,6':[3,4],'10,6':[3,4],'13,6':[3,4],'16,6':[3,4],'19,6':[3,4],'22,6':[2,4],
+    '0,10':[3,1],'3,10':[3,1],
+    '6,10':[3,1],'9,10':[3,1],'12,10':[3,1],'15,10':[3,1],'18,10':[3,1],'21,10':[3,1],
+    '6,11':[3,1],'9,11':[3,1],'12,11':[3,1],'15,11':[3,1],
+    '6,12':[3,1],'9,12':[3,1],'12,12':[3,1],'15,12':[3,1],'21,12':[3,1],
+    '18,12':[3,4],'0,11':[3,2],'3,11':[3,2],
+    '18,16':[3,2],'21,16':[3,2],
+    '0,13':[3,3],'3,13':[3,3],'6,13':[3,3],'9,13':[3,3],'12,13':[3,3],'15,13':[3,3],
+    '0,16':[3,2],'3,16':[3,3],'6,16':[3,2],'9,16':[3,2],'12,16':[3,2],'15,16':[3,2],
+    '0,18':[3,2],'3,18':[3,2],'6,18':[3,2],'9,18':[3,2],
+    '13,18':[1,1],'14,18':[1,1],'18,18':[3,2],'21,18':[3,2],
+    '12,18':[1,2],'12,19':[1,1],'13,19':[1,1],'14,19':[1,1],
+    '0,20':[3,2],'3,20':[3,2],'6,20':[3,2],
+    '10,20':[1,1],'11,20':[1,1],'12,20':[1,1],'13,20':[1,1],'14,20':[1,1],
+    '0,22':[3,2],'3,22':[3,2],'6,22':[3,2],'9,22':[3,2],'12,22':[3,2],'15,22':[3,2],'18,22':[3,2],'21,22':[3,2]
+};
+
+function isSolidAtlas(ax, ay) {
+    return SOLID_ATLAS.has(ax + ',' + ay);
+}
+
 // ---- IMAGES ----
 const img = {};
 function loadImg(name, src) {
     const i = new Image();
     i.src = src;
     img[name] = i;
-    return new Promise(r => { i.onload = () => r(); i.onerror = () => r(); });
+    return new Promise(r => { i.onload = () => r(); i.onerror = () => { console.error('Failed to load:', src); r(); }; });
 }
 
 const imgLoads = [
@@ -233,10 +296,9 @@ const imgLoads = [
 ];
 
 // ---- LEVEL DATA ----
-let LVL_W = 60; // tiles wide
-let LVL_H = 30; // tiles tall
+let LVL_W = 60;
+let LVL_H = 30;
 
-// Layers: each is a Map of "x,y" -> { ax, ay, tileset } (atlas coords + which tileset)
 const layers = [
     { name: 'Background', tiles: new Map(), visible: true, z: 0 },
     { name: 'Midground', tiles: new Map(), visible: true, z: 1 },
@@ -244,24 +306,27 @@ const layers = [
 ];
 let activeLayer = 0;
 
-// Entities
-let entities = []; // { type, x, y, ...props }
-let spawnX = 4, spawnY = 25; // Gary spawn in tile coords
+let entities = [];
+let spawnX = 4, spawnY = 25;
 
 // ---- EDITOR STATE ----
-let mode = 'edit'; // 'edit' or 'play'
-let tool = 'paint'; // 'paint', 'erase', 'fill'
+let mode = 'edit';
 let showGridLines = true;
-let selectedTile = null; // { ax, ay, tileset: 'env'|'lava' }
-let selectedEntity = null; // 'coin', 'rod', 'chest', 'arcade', 'platform', 'spawn', 'eraser'
-let placingEntity = false;
+
+// Single tile or multi-tile selection
+// selectedTiles is an array of {ax, ay, tileset, dx, dy} where dx,dy are offsets from top-left of selection
+let selectedTiles = []; // array of tiles in selection
+let selectedEntity = null;
 
 // Camera / viewport
 let camX = 0, camY = 0;
 let zoom = 2;
 let panning = false, panStartX = 0, panStartY = 0, panCamX = 0, panCamY = 0;
 let painting = false;
-let erasing = false;
+let spaceHeld = false;
+
+// Mouse tracking
+let lastMouseX = 0, lastMouseY = 0;
 
 // ---- ENTITY DEFINITIONS ----
 const ENTITY_DEFS = {
@@ -279,68 +344,100 @@ const tpCtx = tpCanvas.getContext('2d');
 const lpCanvas = document.getElementById('lava-picker-canvas');
 const lpCtx = lpCanvas.getContext('2d');
 
-function setupTilePicker() {
-    // Environment: 384x384, 16px tiles = 24x24 grid
-    if (img.env.complete && img.env.naturalWidth > 0) {
-        const cols = Math.floor(img.env.naturalWidth / T);
-        const rows = Math.floor(img.env.naturalHeight / T);
-        tpCanvas.width = img.env.naturalWidth;
-        tpCanvas.height = img.env.naturalHeight;
-        tpCtx.imageSmoothingEnabled = false;
-        tpCtx.drawImage(img.env, 0, 0);
-        // Grid overlay
-        tpCtx.strokeStyle = 'rgba(255,255,255,0.15)';
-        for (let x = 0; x <= cols; x++) { tpCtx.beginPath(); tpCtx.moveTo(x * T, 0); tpCtx.lineTo(x * T, img.env.naturalHeight); tpCtx.stroke(); }
-        for (let y = 0; y <= rows; y++) { tpCtx.beginPath(); tpCtx.moveTo(0, y * T); tpCtx.lineTo(img.env.naturalWidth, y * T); tpCtx.stroke(); }
+function drawTilePicker() {
+    if (!img.env.complete || img.env.naturalWidth === 0) return;
+    const cols = Math.floor(img.env.naturalWidth / T);
+    const rows = Math.floor(img.env.naturalHeight / T);
+    tpCanvas.width = img.env.naturalWidth;
+    tpCanvas.height = img.env.naturalHeight;
+    tpCtx.imageSmoothingEnabled = false;
+    tpCtx.drawImage(img.env, 0, 0);
+
+    // Grid overlay
+    tpCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+    tpCtx.lineWidth = 0.5;
+    for (let x = 0; x <= cols; x++) { tpCtx.beginPath(); tpCtx.moveTo(x * T, 0); tpCtx.lineTo(x * T, img.env.naturalHeight); tpCtx.stroke(); }
+    for (let y = 0; y <= rows; y++) { tpCtx.beginPath(); tpCtx.moveTo(0, y * T); tpCtx.lineTo(img.env.naturalWidth, y * T); tpCtx.stroke(); }
+
+    // Mark solid tiles with red tint
+    for (const key of SOLID_ATLAS) {
+        const [ax, ay] = key.split(',').map(Number);
+        tpCtx.fillStyle = 'rgba(255,50,50,0.25)';
+        tpCtx.fillRect(ax * T, ay * T, T, T);
+        tpCtx.strokeStyle = 'rgba(255,50,50,0.6)';
+        tpCtx.lineWidth = 1;
+        tpCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
     }
 
-    if (img.lava.complete && img.lava.naturalWidth > 0) {
-        lpCanvas.width = img.lava.naturalWidth;
-        lpCanvas.height = img.lava.naturalHeight;
-        lpCtx.imageSmoothingEnabled = false;
-        lpCtx.drawImage(img.lava, 0, 0);
-        const cols = Math.floor(img.lava.naturalWidth / T);
-        const rows = Math.floor(img.lava.naturalHeight / T);
-        lpCtx.strokeStyle = 'rgba(255,255,255,0.15)';
-        for (let x = 0; x <= cols; x++) { lpCtx.beginPath(); lpCtx.moveTo(x * T, 0); lpCtx.lineTo(x * T, img.lava.naturalHeight); lpCtx.stroke(); }
-        for (let y = 0; y <= rows; y++) { lpCtx.beginPath(); lpCtx.moveTo(0, y * T); lpCtx.lineTo(img.lava.naturalWidth, y * T); lpCtx.stroke(); }
+    // Highlight selected tiles
+    for (const t of selectedTiles) {
+        if (t.tileset !== 'env') continue;
+        tpCtx.strokeStyle = '#ffcc00';
+        tpCtx.lineWidth = 2;
+        tpCtx.strokeRect(t.ax * T, t.ay * T, T, T);
+    }
+}
+
+function drawLavaPicker() {
+    if (!img.lava.complete || img.lava.naturalWidth === 0) return;
+    const cols = Math.floor(img.lava.naturalWidth / T);
+    const rows = Math.floor(img.lava.naturalHeight / T);
+    lpCanvas.width = img.lava.naturalWidth;
+    lpCanvas.height = img.lava.naturalHeight;
+    lpCtx.imageSmoothingEnabled = false;
+    lpCtx.drawImage(img.lava, 0, 0);
+    lpCtx.strokeStyle = 'rgba(255,255,255,0.12)';
+    lpCtx.lineWidth = 0.5;
+    for (let x = 0; x <= cols; x++) { lpCtx.beginPath(); lpCtx.moveTo(x * T, 0); lpCtx.lineTo(x * T, img.lava.naturalHeight); lpCtx.stroke(); }
+    for (let y = 0; y <= rows; y++) { lpCtx.beginPath(); lpCtx.moveTo(0, y * T); lpCtx.lineTo(img.lava.naturalWidth, y * T); lpCtx.stroke(); }
+
+    for (const t of selectedTiles) {
+        if (t.tileset !== 'lava') continue;
+        lpCtx.strokeStyle = '#ffcc00';
+        lpCtx.lineWidth = 2;
+        lpCtx.strokeRect(t.ax * T, t.ay * T, T, T);
     }
 }
 
-tpCanvas.addEventListener('click', e => {
-    const rect = tpCanvas.getBoundingClientRect();
-    const scaleX = tpCanvas.width / rect.width;
+function pickerClick(e, tileset) {
+    const cvs = tileset === 'env' ? tpCanvas : lpCanvas;
+    const rect = cvs.getBoundingClientRect();
+    const scaleX = cvs.width / rect.width;
     const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
     const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
-    selectedTile = { ax, ay, tileset: 'env' };
-    selectedEntity = null;
-    highlightTilePicker();
-    document.getElementById('tile-info').textContent = `Tile: env (${ax}, ${ay})`;
-    clearEntitySelection();
-});
 
-lpCanvas.addEventListener('click', e => {
-    const rect = lpCanvas.getBoundingClientRect();
-    const scaleX = lpCanvas.width / rect.width;
-    const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
-    const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
-    selectedTile = { ax, ay, tileset: 'lava' };
-    selectedEntity = null;
-    highlightTilePicker();
-    clearEntitySelection();
-});
+    const tile = { ax, ay, tileset, dx: 0, dy: 0 };
 
-function highlightTilePicker() {
-    // Redraw pickers with selection highlight
-    setupTilePicker();
-    if (selectedTile) {
-        const cvs = selectedTile.tileset === 'env' ? tpCtx : lpCtx;
-        cvs.strokeStyle = '#ffcc00';
-        cvs.lineWidth = 2;
-        cvs.strokeRect(selectedTile.ax * T, selectedTile.ay * T, T, T);
-        cvs.lineWidth = 1;
+    if (e.shiftKey && selectedTiles.length > 0 && selectedTiles[0].tileset === tileset) {
+        // Multi-select: toggle this tile in the selection
+        const idx = selectedTiles.findIndex(t => t.ax === ax && t.ay === ay);
+        if (idx >= 0) {
+            selectedTiles.splice(idx, 1);
+        } else {
+            selectedTiles.push(tile);
+        }
+        // Recalculate dx/dy offsets from top-left of bounding box
+        if (selectedTiles.length > 0) {
+            const minAx = Math.min(...selectedTiles.map(t => t.ax));
+            const minAy = Math.min(...selectedTiles.map(t => t.ay));
+            selectedTiles.forEach(t => { t.dx = t.ax - minAx; t.dy = t.ay - minAy; });
+        }
+    } else {
+        // Single select (or switching tileset)
+        selectedTiles = [tile];
     }
+
+    selectedEntity = null;
+    clearEntitySelection();
+    drawTilePicker();
+    drawLavaPicker();
+
+    const solid = isSolidAtlas(ax, ay) ? ' SOLID' : ' passthrough';
+    document.getElementById('tile-info').textContent = `Tile: ${tileset} (${ax},${ay})${solid} · ${selectedTiles.length} selected`;
 }
+
+tpCanvas.addEventListener('click', e => pickerClick(e, 'env'));
+lpCanvas.addEventListener('click', e => pickerClick(e, 'lava'));
 
 // ---- ENTITY PICKER ----
 function setupEntityPicker() {
@@ -352,7 +449,6 @@ function setupEntityPicker() {
         btn.dataset.type = type;
         btn.onclick = () => selectEntity(type);
 
-        // Preview canvas
         const pc = document.createElement('canvas');
         pc.width = 48; pc.height = 48;
         pc.style.width = '48px'; pc.style.height = '48px';
@@ -360,11 +456,13 @@ function setupEntityPicker() {
         pctx.imageSmoothingEnabled = false;
 
         if (type === 'spawn') {
-            pctx.fillStyle = '#0f0';
-            pctx.fillRect(18, 5, 12, 43);
-            pctx.fillStyle = '#fff';
-            pctx.font = '8px monospace';
-            pctx.fillText('G', 20, 30);
+            // Draw a mini Gary
+            if (img.gary && img.gary.complete) {
+                pctx.drawImage(img.gary, 0, 0, 61, 61, 0, 0, 48, 48);
+            } else {
+                pctx.fillStyle = '#0f0';
+                pctx.fillRect(18, 5, 12, 43);
+            }
         } else if (def.img && img[def.img] && img[def.img].complete) {
             const scale = Math.min(44 / def.sw, 44 / def.sh);
             const dw = def.sw * scale, dh = def.sh * scale;
@@ -374,34 +472,17 @@ function setupEntityPicker() {
 
         const label = document.createElement('span');
         label.textContent = def.label;
-
         btn.appendChild(pc);
         btn.appendChild(label);
         list.appendChild(btn);
     }
-
-    // Eraser entity
-    const btn = document.createElement('div');
-    btn.className = 'entity-btn';
-    btn.dataset.type = 'eraser';
-    btn.onclick = () => selectEntity('eraser');
-    const pc = document.createElement('canvas');
-    pc.width = 48; pc.height = 48; pc.style.width = '48px'; pc.style.height = '48px';
-    const pctx = pc.getContext('2d');
-    pctx.fillStyle = '#f00';
-    pctx.font = '20px monospace';
-    pctx.fillText('X', 16, 32);
-    const label = document.createElement('span');
-    label.textContent = 'Erase Object';
-    btn.appendChild(pc);
-    btn.appendChild(label);
-    list.appendChild(btn);
 }
 
 function selectEntity(type) {
     selectedEntity = type;
-    selectedTile = null;
-    highlightTilePicker();
+    selectedTiles = [];
+    drawTilePicker();
+    drawLavaPicker();
     document.querySelectorAll('.entity-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.type === type);
     });
@@ -457,13 +538,6 @@ function toggleGrid() {
     document.getElementById('btn-grid').classList.toggle('active', showGridLines);
 }
 
-function setTool(t) {
-    tool = t;
-    document.querySelectorAll('.tool-row button').forEach(b => {
-        b.classList.toggle('active', b.id === 'tool-' + t);
-    });
-}
-
 // ---- CANVAS EVENTS ----
 function canvasToWorld(e) {
     const rect = canvas.getBoundingClientRect();
@@ -476,7 +550,8 @@ canvas.addEventListener('mousedown', e => {
     if (mode === 'play') return;
     const w = canvasToWorld(e);
 
-    if (e.button === 1) { // middle click = pan
+    // Middle click OR spacebar held = pan
+    if (e.button === 1 || (e.button === 0 && spaceHeld)) {
         panning = true;
         panStartX = e.clientX; panStartY = e.clientY;
         panCamX = camX; panCamY = camY;
@@ -484,23 +559,28 @@ canvas.addEventListener('mousedown', e => {
         return;
     }
 
-    if (e.button === 2) { // right click = erase
-        erasing = true;
-        eraseTile(w.tx, w.ty);
-        return;
-    }
+    if (e.button === 0) {
+        // Ctrl+click = erase
+        if (e.ctrlKey || e.metaKey) {
+            eraseAt(w.tx, w.ty);
+            painting = 'erase';
+            return;
+        }
 
-    if (e.button === 0) { // left click
+        // Normal click = place
         if (selectedEntity) {
             placeEntity(w);
-        } else if (selectedTile) {
-            painting = true;
-            placeTile(w.tx, w.ty);
+        } else if (selectedTiles.length > 0) {
+            painting = 'paint';
+            placeTiles(w.tx, w.ty);
         }
     }
 });
 
 canvas.addEventListener('mousemove', e => {
+    lastMouseX = e.clientX;
+    lastMouseY = e.clientY;
+
     if (mode === 'play') return;
 
     if (panning) {
@@ -511,18 +591,17 @@ canvas.addEventListener('mousemove', e => {
 
     const w = canvasToWorld(e);
 
-    if (painting && selectedTile) {
-        placeTile(w.tx, w.ty);
+    if (painting === 'paint' && selectedTiles.length > 0) {
+        placeTiles(w.tx, w.ty);
     }
-    if (erasing) {
-        eraseTile(w.tx, w.ty);
+    if (painting === 'erase') {
+        eraseAt(w.tx, w.ty);
     }
 });
 
 canvas.addEventListener('mouseup', e => {
-    if (e.button === 1) panning = false;
+    if (e.button === 1 || (e.button === 0 && panning)) panning = false;
     if (e.button === 0) painting = false;
-    if (e.button === 2) erasing = false;
 });
 
 canvas.addEventListener('wheel', e => {
@@ -530,8 +609,6 @@ canvas.addEventListener('wheel', e => {
     const oldZoom = zoom;
     if (e.deltaY < 0) zoom = Math.min(8, zoom * 1.15);
     else zoom = Math.max(0.5, zoom / 1.15);
-
-    // Zoom toward mouse
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left;
     const my = e.clientY - rect.top;
@@ -541,45 +618,46 @@ canvas.addEventListener('wheel', e => {
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// ---- TILE / ENTITY PLACEMENT ----
-function placeTile(tx, ty) {
-    if (tx < 0 || ty < 0 || tx >= LVL_W || ty >= LVL_H) return;
-    if (!selectedTile) return;
-    const key = tx + ',' + ty;
-
-    if (tool === 'fill') {
-        floodFill(tx, ty, selectedTile);
-        return;
+// Space key tracking for pan
+window.addEventListener('keydown', e => {
+    if (e.code === 'Space' && mode === 'edit') {
+        spaceHeld = true;
+        canvas.style.cursor = 'grab';
+        e.preventDefault();
     }
+});
+window.addEventListener('keyup', e => {
+    if (e.code === 'Space' && mode === 'edit') {
+        spaceHeld = false;
+        if (!panning) canvas.style.cursor = 'crosshair';
+    }
+});
 
-    layers[activeLayer].tiles.set(key, { ...selectedTile });
+// ---- TILE / ENTITY PLACEMENT ----
+function placeTiles(tx, ty) {
+    if (selectedTiles.length === 0) return;
+    for (const t of selectedTiles) {
+        const px = tx + t.dx;
+        const py = ty + t.dy;
+        if (px < 0 || py < 0 || px >= LVL_W || py >= LVL_H) continue;
+        layers[activeLayer].tiles.set(px + ',' + py, { ax: t.ax, ay: t.ay, tileset: t.tileset });
+    }
 }
 
-function eraseTile(tx, ty) {
+function eraseAt(tx, ty) {
     const key = tx + ',' + ty;
     layers[activeLayer].tiles.delete(key);
-    // Also check entities
+
+    // Also erase nearby entities (within this tile cell)
+    const cellL = tx * T, cellR = (tx + 1) * T;
+    const cellT = ty * T, cellB = (ty + 1) * T;
     entities = entities.filter(e => {
-        const etx = Math.floor(e.x / T);
-        const ety = Math.floor(e.y / T);
-        return !(etx === tx && ety === ty);
+        return !(e.x >= cellL && e.x < cellR && e.y > cellT && e.y <= cellB);
     });
 }
 
 function placeEntity(w) {
-    if (selectedEntity === 'eraser') {
-        // Remove entity nearest to click
-        let best = -1, bestD = 30;
-        entities.forEach((e, i) => {
-            const d = Math.hypot(e.x - w.px, e.y - w.py);
-            if (d < bestD) { bestD = d; best = i; }
-        });
-        if (best >= 0) entities.splice(best, 1);
-        return;
-    }
-
     if (selectedEntity === 'spawn') {
-        // Snap to grid, bottom of tile
         spawnX = w.tx;
         spawnY = w.ty;
         return;
@@ -588,42 +666,9 @@ function placeEntity(w) {
     const def = ENTITY_DEFS[selectedEntity];
     if (!def) return;
 
-    // Place at pixel position, snapped to grid center-bottom
     const ex = w.tx * T + T / 2;
-    const ey = (w.ty + 1) * T; // bottom of tile
+    const ey = (w.ty + 1) * T;
     entities.push({ type: selectedEntity, x: ex, y: ey });
-}
-
-function floodFill(startX, startY, tile) {
-    const layer = layers[activeLayer];
-    const startKey = startX + ',' + startY;
-    const startTile = layer.tiles.get(startKey);
-    // If clicking on same tile, bail
-    if (startTile && startTile.ax === tile.ax && startTile.ay === tile.ay && startTile.tileset === tile.tileset) return;
-
-    const visited = new Set();
-    const queue = [[startX, startY]];
-    let count = 0;
-    const maxFill = 5000;
-
-    while (queue.length > 0 && count < maxFill) {
-        const [cx, cy] = queue.shift();
-        const k = cx + ',' + cy;
-        if (visited.has(k)) continue;
-        if (cx < 0 || cy < 0 || cx >= LVL_W || cy >= LVL_H) continue;
-
-        const current = layer.tiles.get(k);
-        // Match: both empty, or both same tile
-        if (startTile === undefined && current !== undefined) continue;
-        if (startTile !== undefined && (current === undefined ||
-            current.ax !== startTile.ax || current.ay !== startTile.ay || current.tileset !== startTile.tileset)) continue;
-
-        visited.add(k);
-        layer.tiles.set(k, { ...tile });
-        count++;
-
-        queue.push([cx + 1, cy], [cx - 1, cy], [cx, cy + 1], [cx, cy - 1]);
-    }
 }
 
 // ---- RESIZE ----
@@ -715,6 +760,7 @@ function drawEditor() {
 
     // Level bounds
     ctx.strokeStyle = 'rgba(255,204,0,0.3)';
+    ctx.lineWidth = 1 / zoom;
     ctx.strokeRect(0, 0, LVL_W * T, LVL_H * T);
 
     // Draw tile layers
@@ -733,29 +779,30 @@ function drawEditor() {
     for (const ent of entities) {
         const def = ENTITY_DEFS[ent.type];
         if (!def) continue;
-
         if (def.img && img[def.img] && img[def.img].complete) {
-            const dx = ent.x - def.w / 2;
-            const dy = ent.y - def.h;
-            ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh, dx, dy, def.sw, def.sh);
+            ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh,
+                ent.x - def.sw / 2, ent.y - def.sh, def.sw, def.sh);
         }
-
-        // Debug outline
         ctx.strokeStyle = def.color;
-        ctx.globalAlpha = 0.5;
+        ctx.globalAlpha = 0.4;
+        ctx.lineWidth = 1 / zoom;
         ctx.strokeRect(ent.x - def.w / 2, ent.y - def.h, def.w, def.h);
         ctx.globalAlpha = 1;
     }
 
-    // Gary spawn marker
+    // Gary spawn marker — draw actual Gary idle frame
     const sx = spawnX * T + T / 2, sy = (spawnY + 1) * T;
-    ctx.fillStyle = 'rgba(0,255,0,0.3)';
-    ctx.fillRect(sx - 6, sy - 43, 12, 43);
+    if (img.gary && img.gary.complete) {
+        ctx.globalAlpha = 0.6;
+        ctx.drawImage(img.gary, 0, 0, 61, 61, sx - 30, sy - 61, 61, 61);
+        ctx.globalAlpha = 1;
+    }
     ctx.strokeStyle = '#0f0';
+    ctx.lineWidth = 1 / zoom;
     ctx.strokeRect(sx - 6, sy - 43, 12, 43);
     ctx.fillStyle = '#0f0';
     ctx.font = '8px monospace';
-    ctx.fillText('GARY', sx - 12, sy - 46);
+    ctx.fillText('SPAWN', sx - 14, sy - 46);
 
     // Grid
     if (showGridLines) {
@@ -769,30 +816,48 @@ function drawEditor() {
         }
     }
 
-    // Hover tile highlight
-    const rect = canvas.getBoundingClientRect();
-    // We'll draw this in the main loop using last known mouse pos
+    // Hover preview: show where tiles would be placed
+    if (selectedTiles.length > 0 && !spaceHeld && !panning) {
+        const rect = canvas.getBoundingClientRect();
+        const wpx = (lastMouseX - rect.left) / zoom + camX;
+        const wpy = (lastMouseY - rect.top) / zoom + camY;
+        const htx = Math.floor(wpx / T);
+        const hty = Math.floor(wpy / T);
+        ctx.globalAlpha = 0.4;
+        for (const t of selectedTiles) {
+            const px = htx + t.dx, py = hty + t.dy;
+            const tileset = t.tileset === 'lava' ? img.lava : img.env;
+            if (tileset && tileset.complete) {
+                ctx.drawImage(tileset, t.ax * T, t.ay * T, T, T, px * T, py * T, T, T);
+            }
+        }
+        ctx.globalAlpha = 1;
+    }
 
     ctx.restore();
 
     // HUD
     ctx.fillStyle = '#ffcc00';
     ctx.font = '12px monospace';
-    ctx.fillText(`EDIT | Layer: ${layers[activeLayer].name} | Zoom: ${zoom.toFixed(1)}x | Level: ${LVL_W}x${LVL_H}`, 100, 20);
+    ctx.fillText(`EDIT | Layer: ${layers[activeLayer].name} | Zoom: ${zoom.toFixed(1)}x | ${LVL_W}x${LVL_H}`, 100, 20);
+
+    // Info bar
+    document.getElementById('info-bar').textContent =
+        `Tiles: ${selectedTiles.length} selected | Entities: ${entities.length} | ` +
+        (spaceHeld ? 'PAN MODE' : 'Click=place  Ctrl+Click=erase  Space+drag=pan');
 }
 
 
 // ============================================================
-// PLAY MODE — Full Gary Engine (from testbed)
+// PLAY MODE — Full Gary Engine
 // ============================================================
 
 let playActive = false;
 let playLast = 0;
 let videoOpen = false;
 
-// Gary play state
 const GRAV = 600, SPD = 220, JUMP = -350, ROLL_SPD = 220, AIR_SPD = 170;
-let gx, gy, gvx, gvy, gDir, gFloor, gState, gaFrame, gaTimer, gaDone, gScore, gDead, gDeadT;
+let gx, gy, gvx, gvy, gDir, gFloor, gState, gaFrame, gaTimer, gaDone, gScore;
 let showHitboxes = false;
 
 const pKeys = {};
@@ -818,34 +883,31 @@ const ANIMS = {
     push:      { fr: [f(305,244),f(366,244),f(427,244),f(488,244),f(549,244)], fps: 4, loop: true },
 };
 
-// Play-mode entity instances (cloned from editor entities at play start)
 let pCoins, pRods, pChests, pArcades, pPlatforms;
-
-// Build collision set from tiles
 let solidSet;
 
+// Build collision set using ACTUAL Godot physics data — only tiles whose atlas
+// position is in SOLID_ATLAS get collision. Everything else is passthrough.
 function buildSolidSet() {
     solidSet = new Set();
-    // All tiles on all visible layers are solid by default
-    // (Later: we can mark specific tiles as non-solid / passthrough)
     for (const layer of layers) {
         if (!layer.visible) continue;
-        for (const key of layer.tiles.keys()) {
-            solidSet.add(key);
+        for (const [key, tile] of layer.tiles) {
+            if (tile.tileset === 'lava') {
+                solidSet.add(key); // all lava is solid
+            } else if (isSolidAtlas(tile.ax, tile.ay)) {
+                solidSet.add(key);
+            }
+            // Tiles not in SOLID_ATLAS are passthrough (bushes, details, sky, etc.)
         }
     }
 }
 
-function isSolid(tx, ty) {
-    return solidSet.has(tx + ',' + ty);
-}
+function isSolid(tx, ty) { return solidSet.has(tx + ',' + ty); }
 
 // Sounds
 let audioCtx = null;
-function getAC() {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    return audioCtx;
-}
+function getAC() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
 
 function makeClick(ac, time, freq) {
     const bufLen = ac.sampleRate * 0.015;
@@ -862,30 +924,30 @@ function makeClick(ac, time, freq) {
 function playChestOpen() {
     const ac = getAC(); const now = ac.currentTime;
     makeClick(ac, now, 1800);
-    const creakStart = now + 0.07;
-    const osc1 = ac.createOscillator(), osc2 = ac.createOscillator();
+    const t = now + 0.07;
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator();
     const g1 = ac.createGain(), g2 = ac.createGain();
-    const filt = ac.createBiquadFilter();
-    osc1.type = 'sawtooth'; osc1.frequency.setValueAtTime(80, creakStart); osc1.frequency.linearRampToValueAtTime(220, creakStart + 0.12); osc1.frequency.linearRampToValueAtTime(100, creakStart + 0.25);
-    g1.gain.setValueAtTime(0.06, creakStart); g1.gain.linearRampToValueAtTime(0.03, creakStart + 0.25); g1.gain.linearRampToValueAtTime(0, creakStart + 0.35);
-    osc2.type = 'square'; osc2.frequency.setValueAtTime(180, creakStart); osc2.frequency.linearRampToValueAtTime(400, creakStart + 0.1); osc2.frequency.linearRampToValueAtTime(200, creakStart + 0.2);
-    g2.gain.setValueAtTime(0.015, creakStart); g2.gain.linearRampToValueAtTime(0.008, creakStart + 0.2); g2.gain.linearRampToValueAtTime(0, creakStart + 0.3);
-    filt.type = 'bandpass'; filt.frequency.setValueAtTime(400, creakStart); filt.Q.setValueAtTime(2, creakStart);
-    osc1.connect(g1); osc2.connect(g2); g1.connect(filt); g2.connect(filt); filt.connect(ac.destination);
-    osc1.start(creakStart); osc2.start(creakStart); osc1.stop(creakStart + 0.5); osc2.stop(creakStart + 0.5);
+    const fl = ac.createBiquadFilter();
+    o1.type = 'sawtooth'; o1.frequency.setValueAtTime(80, t); o1.frequency.linearRampToValueAtTime(220, t+0.12); o1.frequency.linearRampToValueAtTime(100, t+0.25);
+    g1.gain.setValueAtTime(0.06, t); g1.gain.linearRampToValueAtTime(0, t+0.35);
+    o2.type = 'square'; o2.frequency.setValueAtTime(180, t); o2.frequency.linearRampToValueAtTime(400, t+0.1); o2.frequency.linearRampToValueAtTime(200, t+0.2);
+    g2.gain.setValueAtTime(0.015, t); g2.gain.linearRampToValueAtTime(0, t+0.3);
+    fl.type = 'bandpass'; fl.frequency.setValueAtTime(400, t); fl.Q.setValueAtTime(2, t);
+    o1.connect(g1); o2.connect(g2); g1.connect(fl); g2.connect(fl); fl.connect(ac.destination);
+    o1.start(t); o2.start(t); o1.stop(t+0.5); o2.stop(t+0.5);
 }
 
 function playChestClose() {
     const ac = getAC(); const now = ac.currentTime;
-    const osc1 = ac.createOscillator(), osc2 = ac.createOscillator();
-    const g1 = ac.createGain(), g2 = ac.createGain(), filt = ac.createBiquadFilter();
-    osc1.type = 'sawtooth'; osc1.frequency.setValueAtTime(200, now); osc1.frequency.linearRampToValueAtTime(90, now + 0.15); osc1.frequency.linearRampToValueAtTime(60, now + 0.22);
-    g1.gain.setValueAtTime(0.05, now); g1.gain.linearRampToValueAtTime(0.02, now + 0.2); g1.gain.linearRampToValueAtTime(0, now + 0.28);
-    osc2.type = 'square'; osc2.frequency.setValueAtTime(350, now); osc2.frequency.linearRampToValueAtTime(150, now + 0.15);
-    g2.gain.setValueAtTime(0.012, now); g2.gain.linearRampToValueAtTime(0, now + 0.22);
-    filt.type = 'bandpass'; filt.frequency.setValueAtTime(350, now); filt.Q.setValueAtTime(2, now);
-    osc1.connect(g1); osc2.connect(g2); g1.connect(filt); g2.connect(filt); filt.connect(ac.destination);
-    osc1.start(now); osc2.start(now); osc1.stop(now + 0.4); osc2.stop(now + 0.4);
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+    const g1 = ac.createGain(), g2 = ac.createGain(), fl = ac.createBiquadFilter();
+    o1.type = 'sawtooth'; o1.frequency.setValueAtTime(200, now); o1.frequency.linearRampToValueAtTime(60, now+0.22);
+    g1.gain.setValueAtTime(0.05, now); g1.gain.linearRampToValueAtTime(0, now+0.28);
+    o2.type = 'square'; o2.frequency.setValueAtTime(350, now); o2.frequency.linearRampToValueAtTime(150, now+0.15);
+    g2.gain.setValueAtTime(0.012, now); g2.gain.linearRampToValueAtTime(0, now+0.22);
+    fl.type = 'bandpass'; fl.frequency.setValueAtTime(350, now); fl.Q.setValueAtTime(2, now);
+    o1.connect(g1); o2.connect(g2); g1.connect(fl); g2.connect(fl); fl.connect(ac.destination);
+    o1.start(now); o2.start(now); o1.stop(now+0.4); o2.stop(now+0.4);
     makeClick(ac, now + 0.28, 1400);
 }
 
@@ -908,15 +970,12 @@ function closeVideo() {
 
 function startPlay() {
     buildSolidSet();
-
-    // Init Gary at spawn
     gx = spawnX * T + T / 2;
     gy = (spawnY + 1) * T;
     gvx = 0; gvy = 0; gDir = 1; gFloor = false;
     gState = 'idle'; gaFrame = 0; gaTimer = 0; gaDone = false;
-    gScore = 0; gDead = false; gDeadT = 0;
+    gScore = 0;
 
-    // Clone entities
     pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
     pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5 }));
     pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false }));
@@ -925,7 +984,6 @@ function startPlay() {
 
     Object.keys(pKeys).forEach(k => delete pKeys[k]);
     pJumpBuf = 0;
-
     playActive = true;
     playLast = performance.now();
 }
@@ -941,78 +999,67 @@ function pSetState(s) {
     gState = s; gaFrame = 0; gaTimer = 0; gaDone = false;
 }
 
-// Collision helpers
-function resolveY(x, y, vy, hTop, hBot) {
-    // Check tiles below feet
-    const feetY = y;
-    const headY = y + hTop; // hTop is negative
-    const tx = Math.floor(x / T);
-
-    if (vy >= 0) {
-        // Falling — check floor
-        const ty = Math.floor(feetY / T);
-        for (let dx = -1; dx <= 0; dx++) {
-            const checkX = Math.floor((x + dx * 5) / T);
-            if (isSolid(checkX, ty)) {
-                const tileTop = ty * T;
-                if (feetY >= tileTop && feetY - vy * 0.017 <= tileTop + 2) {
-                    return { y: tileTop, floor: true };
-                }
-            }
-        }
-    } else {
-        // Rising — check ceiling
-        const ty = Math.floor(headY / T);
-        for (let dx = -1; dx <= 0; dx++) {
-            const checkX = Math.floor((x + dx * 5) / T);
-            if (isSolid(checkX, ty)) {
-                const tileBot = (ty + 1) * T;
-                if (headY <= tileBot) {
-                    return { y: tileBot - hTop, vy: 0 };
-                }
-            }
-        }
+// Collision — matches the proven game.js approach
+function colBox() {
+    switch (gState) {
+        case 'roll': case 'into_roll': return [-7, -15, 14, 15];
+        case 'kneel': case 'crouch': return [-6, -22, 12, 22];
+        case 'push': return [-5, -45, 10, 45];
+        default: return [-6, -43, 12, 43];
     }
-    return null;
 }
 
-function resolveX(x, y, vx, hLeft, hRight, hTop) {
-    const headY = y + hTop;
-    const midY = y + hTop / 2;
+function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[3]]; }
 
-    const checkYs = [y - 2, midY, headY + 2];
-
-    if (vx > 0) {
-        const rightEdge = x + hRight;
-        const tx = Math.floor(rightEdge / T);
-        for (const cy of checkYs) {
-            const ty = Math.floor(cy / T);
-            if (isSolid(tx, ty)) {
-                return tx * T - hRight;
-            }
-        }
-    } else if (vx < 0) {
-        const leftEdge = x + hLeft;
-        const tx = Math.floor(leftEdge / T);
-        for (const cy of checkYs) {
-            const ty = Math.floor(cy / T);
-            if (isSolid(tx, ty)) {
-                return (tx + 1) * T - hLeft;
-            }
-        }
+function rectHit(x, y, w, h) {
+    const l = Math.floor(x / T), r = Math.floor((x + w) / T);
+    const t = Math.floor(y / T), b = Math.floor((y + h - 1) / T);
+    for (let ty = t; ty <= b; ty++) for (let tx = l; tx <= r; tx++) {
+        if (isSolid(tx, ty)) return true;
     }
-    return null;
+    return false;
 }
 
-function checkFloor(x, y) {
-    const ty = Math.floor(y / T);
-    // Check one pixel below feet
-    const belowTy = Math.floor((y + 1) / T);
-    for (let dx = -1; dx <= 0; dx++) {
-        const checkX = Math.floor((x + dx * 5) / T);
-        if (isSolid(checkX, belowTy)) {
-            return true;
+function resolveX() {
+    const [bx, by, bw, bh] = worldBox();
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    const t = Math.floor(by / T), bt = Math.floor((by + bh - 1) / T);
+    for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        const rx = tx * T;
+        if (bx < rx + T && bx + bw > rx) {
+            const c = colBox();
+            if (gvx > 0) gx = rx - c[2] - c[0] - 0.01;
+            else if (gvx < 0) gx = rx + T - c[0] + 0.01;
+            gvx = 0; return;
         }
+    }
+}
+
+function resolveY() {
+    const [bx, by, bw, bh] = worldBox();
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    const t = Math.floor(by / T), bt = Math.floor((by + bh - 1) / T);
+    for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        const ry = ty * T;
+        if (!(bx < tx * T + T && bx + bw > tx * T)) continue;
+        if (by < ry + T && by + bh > ry) {
+            if (gvy > 0) { gy = ry; gvy = 0; gFloor = true; }
+            else if (gvy < 0) { const c = colBox(); gy = ry + T - c[1] + 0.01; gvy = 0; }
+            return;
+        }
+    }
+}
+
+function checkFloor() {
+    const c = colBox();
+    const bx = gx + c[0], bw = c[2];
+    const feetY = gy + 1;
+    const ty = Math.floor(feetY / T);
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    for (let tx = l; tx <= r; tx++) {
+        if (isSolid(tx, ty)) return true;
     }
     return false;
 }
@@ -1044,12 +1091,8 @@ const pkSp = () => pKeys['Space'];
 function pUseJump() { if (pJumpBuf > 0) { pJumpBuf = 0; return true; } return false; }
 
 function nearPressable() {
-    for (const c of pChests) {
-        if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) return true;
-    }
-    for (const a of pArcades) {
-        if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) return true;
-    }
+    for (const c of pChests) { if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) return true; }
+    for (const a of pArcades) { if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) return true; }
     return false;
 }
 
@@ -1061,12 +1104,7 @@ function playTick(ts) {
 
     if (videoOpen) { requestAnimationFrame(playTick); return; }
 
-    // Hitbox based on state
-    let hLeft = -6, hRight = 6, hTop = -43, hBot = 0;
-    if (gState === 'roll' || gState === 'into_roll') { hLeft = -7; hRight = 7; hTop = -15; }
-    else if (gState === 'kneel' || gState === 'crouch') { hLeft = -6; hRight = 6; hTop = -22; }
-
-    // STATE MACHINE
+    // STATE MACHINE (identical to proven testbed)
     switch (gState) {
         case 'idle':
             gvx = 0;
@@ -1156,21 +1194,13 @@ function playTick(ts) {
     gx += gvx * dt;
     gy += gvy * dt;
 
-    // X collision
-    const xResult = resolveX(gx, gy, gvx, hLeft, hRight, hTop);
-    if (xResult !== null) { gx = xResult; gvx = 0; }
+    // Collision (using proven game.js approach)
+    resolveX();
+    resolveY();
 
-    // Y collision
-    const yResult = resolveY(gx, gy, gvy, hTop, hBot);
-    if (yResult) {
-        if (yResult.floor) { gy = yResult.y; gvy = 0; gFloor = true; }
-        else if (yResult.vy !== undefined) { gy = yResult.y; gvy = yResult.vy; }
-    } else {
-        gFloor = checkFloor(gx, gy);
-        if (!gFloor && gvy === 0 && (gState === 'idle' || gState === 'run' || gState === 'roll')) {
-            // Walk off edge
-            gFloor = false;
-        }
+    // Floor check when not actively colliding
+    if (gvy === 0 && gFloor) {
+        gFloor = checkFloor();
     }
 
     // Fall death
@@ -1182,11 +1212,10 @@ function playTick(ts) {
     }
 
     // Level bounds
-    if (gx < hRight) gx = hRight;
-    if (gx > LVL_W * T + hLeft) gx = LVL_W * T + hLeft;
+    if (gx < 6) gx = 6;
+    if (gx > LVL_W * T - 6) gx = LVL_W * T - 6;
 
     // Entity interactions
-    // Coins
     for (const c of pCoins) {
         if (c.gone) continue;
         c.t += dt;
@@ -1197,19 +1226,14 @@ function playTick(ts) {
             const s = coinSfx.cloneNode(); s.volume = 0.4; s.play().catch(() => {});
         }
     }
-
-    // Rods
     for (const r of pRods) {
         if (r.gone) continue;
         r.t += dt;
-        const dx = gx - r.x, dy = (gy - 15) - (r.y - 15);
-        if (Math.abs(dx) < 20 && Math.abs(dy) < 25) {
+        if (Math.abs(gx - r.x) < 20 && Math.abs((gy - 15) - (r.y - 15)) < 25) {
             r.gone = true; gScore++;
             const s = rodSfx.cloneNode(); s.volume = 0.4; s.play().catch(() => {});
         }
     }
-
-    // Chests
     for (const c of pChests) {
         c.t += dt;
         if (gState === 'press' && !c.acted) {
@@ -1220,8 +1244,6 @@ function playTick(ts) {
         }
         if (gState !== 'press') c.acted = false;
     }
-
-    // Arcades
     for (const a of pArcades) {
         a.t += dt;
         if (gState === 'press' && !a.acted) {
@@ -1233,7 +1255,7 @@ function playTick(ts) {
         if (gState !== 'press') a.acted = false;
     }
 
-    // Animate Gary
+    // Animate
     const anim = ANIMS[gState];
     if (anim) {
         gaTimer += dt;
@@ -1249,19 +1271,19 @@ function playTick(ts) {
     }
     if (pJumpBuf > 0) pJumpBuf--;
 
-    // ---- DRAW PLAY MODE ----
-    const cw = canvas.width, ch = canvas.height;
+    // ---- DRAW ----
+    // Set canvas size each frame (fixes Gary not rendering)
+    const cw = canvas.parentElement.clientWidth;
+    const ch = canvas.parentElement.clientHeight;
+    canvas.width = cw;
+    canvas.height = ch;
+
     const playW = cw / zoom;
     const playH = ch / zoom;
-
-    // Camera follows Gary
     const pcamX = gx - playW / 2;
     const pcamY = gy - 50 - playH / 2;
 
     ctx.imageSmoothingEnabled = false;
-    ctx.clearRect(0, 0, cw, ch);
-
-    // Background
     ctx.fillStyle = document.getElementById('bg-color').value;
     ctx.fillRect(0, 0, cw, ch);
 
@@ -1269,8 +1291,7 @@ function playTick(ts) {
     ctx.scale(zoom, zoom);
     ctx.translate(-pcamX, -pcamY);
 
-    // Draw tile layers
-    // Only draw visible tiles for performance
+    // Tiles
     const startTX = Math.max(0, Math.floor(pcamX / T) - 1);
     const endTX = Math.min(LVL_W, Math.ceil((pcamX + playW) / T) + 1);
     const startTY = Math.max(0, Math.floor(pcamY / T) - 1);
@@ -1290,42 +1311,29 @@ function playTick(ts) {
         }
     }
 
-    // Draw entities
-    // Coins
+    // Entities
     for (const c of pCoins) {
         if (c.gone) continue;
         const fr = Math.floor(c.t * 6) % 7;
         ctx.drawImage(img.coin, 192 + fr * 16, 0, 8, 48, Math.round(c.x) - 4, Math.round(c.y) - 48, 8, 48);
     }
-
-    // Rods
     for (const r of pRods) {
         if (r.gone) continue;
         const fr = Math.floor(r.t * 8) % 9;
         ctx.drawImage(img.rod, fr * 14, 0, 14, 30, Math.round(r.x) - 8, Math.round(r.y) - 30, 14, 30);
     }
-
-    // Chests
     for (const c of pChests) {
         let fr;
-        if (c.open) {
-            fr = Math.min(5, 3 + Math.floor(c.t * 6));
-        } else if (c.t < 0.5) {
-            fr = Math.max(0, 5 - Math.floor(c.t * 6));
-        } else {
-            fr = Math.floor(c.t * 3) % 3;
-        }
+        if (c.open) fr = Math.min(5, 3 + Math.floor(c.t * 6));
+        else if (c.t < 0.5) fr = Math.max(0, 5 - Math.floor(c.t * 6));
+        else fr = Math.floor(c.t * 3) % 3;
         ctx.drawImage(img.chest, fr * 48, 24, 48, 24, Math.round(c.x) - 24, Math.round(c.y) - 24, 48, 24);
     }
-
-    // Arcades
     for (const a of pArcades) {
         const pat = [0,0,1,2,2,3,4,5,5];
         const afr = pat[Math.floor(a.t * 8) % 9];
         ctx.drawImage(img.arcade, afr * 48, 0, 48, 47, Math.round(a.x) - 23, Math.round(a.y) - 47, 48, 47);
     }
-
-    // Platforms
     for (const p of pPlatforms) {
         ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
     }
@@ -1345,15 +1353,27 @@ function playTick(ts) {
         ctx.restore();
     }
 
-    // Debug hitboxes
+    // Hitboxes
     if (showHitboxes) {
         ctx.globalAlpha = 0.5;
+        const c = colBox();
         ctx.strokeStyle = '#0f0';
-        ctx.strokeRect(Math.round(gx) + hLeft, Math.round(gy) + hTop, hRight - hLeft, -hTop);
-        for (const c of pCoins) {
-            if (c.gone) continue;
+        ctx.strokeRect(Math.round(gx) + c[0], Math.round(gy) + c[1], c[2], c[3]);
+
+        // Show solid tiles
+        ctx.strokeStyle = 'rgba(255,0,0,0.3)';
+        for (let ty = startTY; ty < endTY; ty++) {
+            for (let tx = startTX; tx < endTX; tx++) {
+                if (isSolid(tx, ty)) {
+                    ctx.strokeRect(tx * T, ty * T, T, T);
+                }
+            }
+        }
+
+        for (const c2 of pCoins) {
+            if (c2.gone) continue;
             ctx.strokeStyle = '#ff0';
-            ctx.strokeRect(Math.round(c.x) - 6, Math.round(c.y) - 18, 12, 18);
+            ctx.strokeRect(Math.round(c2.x) - 6, Math.round(c2.y) - 18, 12, 18);
         }
         for (const r of pRods) {
             if (r.gone) continue;
@@ -1376,11 +1396,6 @@ function playTick(ts) {
     requestAnimationFrame(playTick);
 }
 
-// ---- EXPORT PLAYABLE ----
-function exportPlayable() {
-    alert('Export coming soon — for now, save the JSON and use it with the game engine.');
-}
-
 // ---- MAIN LOOP ----
 function mainLoop() {
     if (mode === 'edit') {
@@ -1391,11 +1406,11 @@ function mainLoop() {
 
 // ---- INIT ----
 Promise.all(imgLoads).then(() => {
-    setupTilePicker();
+    drawTilePicker();
+    drawLavaPicker();
     setupEntityPicker();
     setupLayerPicker();
 
-    // Center camera on spawn
     camX = spawnX * T - 200;
     camY = spawnY * T - 100;
 
@@ -1409,9 +1424,9 @@ window.setMode = function(m) {
     if (m === 'play') requestAnimationFrame(playTick);
 };
 
-// Keyboard shortcuts
+// Keyboard shortcuts (edit mode)
 window.addEventListener('keydown', e => {
-    if (mode === 'edit') {
+    if (mode === 'edit' && e.code !== 'Space') {
         if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) { setMode('play'); e.preventDefault(); }
         if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey) { toggleGrid(); e.preventDefault(); }
         if (e.code === 'Digit1') { activeLayer = 0; setupLayerPicker(); }
