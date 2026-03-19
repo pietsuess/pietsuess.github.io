@@ -10461,13 +10461,34 @@ function _buildGateRun(){
     const difficulty = Math.sin(gt * Math.PI) * 0.4; // 0 at ends, 0.4 in middle
     const gapSize = 280 - difficulty * 120; // 280px easy, 160px hard at peak
     const wallLen = 1200; // total wall length — extends well past corridor borders
+    // Funnel geometry: outer wall ends tilt backward (against travel direction)
+    // so ships hitting the outer edge get scooped toward the gap
+    const halfGap = gapSize / 2;
+    const halfWall = wallLen / 2;
+    const gax = Math.cos(gateAngle), gay = Math.sin(gateAngle);
+    // Path unit vector (travel direction)
+    const pLen = Math.sqrt(dx*dx + dy*dy) || 1;
+    const px = dx/pLen, py = dy/pLen;
+    // Funnel offset: outer ends shift backward by 250px along path
+    const funnelDepth = 250;
+    // For each side (+1 and -1), compute inner point (at gap edge) and outer point (at wall end, funneled back)
+    const wallPts = [];
+    for(let side = -1; side <= 1; side += 2){
+      const innerX = waypoints[i].wx + gax * halfGap * side;
+      const innerY = waypoints[i].wy + gay * halfGap * side;
+      const outerX = waypoints[i].wx + gax * halfWall * side - px * funnelDepth;
+      const outerY = waypoints[i].wy + gay * halfWall * side - py * funnelDepth;
+      wallPts.push({ ix: innerX, iy: innerY, ox: outerX, oy: outerY, side: side });
+    }
     gates.push({
       wx: waypoints[i].wx, wy: waypoints[i].wy,
       angle: gateAngle,
       gapSize: gapSize,
       wallLen: wallLen,
       passed: false,
-      pathAngle: pathAngle // store for chevron direction
+      pathAngle: pathAngle,
+      wallPts: wallPts, // funnel wall line segments
+      gax: gax, gay: gay, px: px, py: py
     });
   }
 
@@ -10622,7 +10643,7 @@ function updateGateCollisions(){
     const g = course.gates[i];
     // Skip gates far from ship
     const gdx = state.x - g.wx, gdy = state.y - g.wy;
-    if(gdx*gdx + gdy*gdy > 500*500) continue;
+    if(gdx*gdx + gdy*gdy > 800*800) continue;
 
     // Gate axis unit vector (along the wall)
     const gax = Math.cos(g.angle), gay = Math.sin(g.angle);
@@ -10673,29 +10694,44 @@ function updateGateCollisions(){
     }
     _race._gateSides[i] = side;
 
-    // Wall collision — thick zone so boost x2 can't fly through
-    if(Math.abs(localPerp) < shipR + 40){
-      const halfGap = g.gapSize / 2;
-      const halfWall = g.wallLen / 2;
-      // Ship is in wall zone if along-axis is outside gap but inside wall
-      if(Math.abs(localAlong) > halfGap && Math.abs(localAlong) < halfWall){
-        // Funnel: deflect ship toward the gap center, slow down but keep moving
-        const pushDir = localPerp > 0 ? 1 : -1;
-        const pushDist = (shipR + 40) - Math.abs(localPerp);
-        state.x += gnx * pushDir * (pushDist + 2);
-        state.y += gny * pushDir * (pushDist + 2);
-
-        // Redirect velocity toward the gap center
-        const toGapX = g.wx - state.x, toGapY = g.wy - state.y;
-        const toGapDist = Math.sqrt(toGapX * toGapX + toGapY * toGapY) || 1;
-        const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
-        // Blend: 60% current direction + 40% toward gap, at 65% speed
-        const keepFrac = 0.6, gapFrac = 0.4;
-        state.vx = (state.vx * keepFrac + (toGapX / toGapDist) * spd * gapFrac) * 0.65;
-        state.vy = (state.vy * keepFrac + (toGapY / toGapDist) * spd * gapFrac) * 0.65;
-        state.collisionFlash = 4;
-        if(audioCtx && !state.sfxMuted){
-          playBeep(100, audioCtx.currentTime, 0.06, 'sawtooth', 0.08);
+    // Funnel wall collision — test against each angled wall segment
+    if(g.wallPts){
+      for(let w = 0; w < g.wallPts.length; w++){
+        const wp = g.wallPts[w];
+        // Line segment from inner (gap edge) to outer (funneled end)
+        const ex = wp.ox - wp.ix, ey = wp.oy - wp.iy;
+        const segLen = Math.sqrt(ex*ex + ey*ey) || 1;
+        // Wall tangent and normal
+        const wtx = ex/segLen, wty = ey/segLen;
+        const wnx = -wty, wny = wtx;
+        // Project ship onto wall line
+        const dx2 = state.x - wp.ix, dy2 = state.y - wp.iy;
+        const along = dx2 * wtx + dy2 * wty; // distance along wall
+        const perp = dx2 * wnx + dy2 * wny;  // distance from wall line
+        // Only collide if ship is within the wall segment length and close enough
+        if(along > -20 && along < segLen + 20 && Math.abs(perp) < shipR + 30){
+          // Push ship out along wall normal
+          const pushSign = perp > 0 ? 1 : -1;
+          const pushAmt = (shipR + 32) - Math.abs(perp);
+          if(pushAmt > 0){
+            state.x += wnx * pushSign * pushAmt;
+            state.y += wny * pushSign * pushAmt;
+            // Deflect: cancel into-wall velocity, slide along wall toward gap
+            const vPerp = state.vx * wnx + state.vy * wny;
+            const vPerpSign = vPerp > 0 ? 1 : -1;
+            if(vPerpSign !== pushSign){
+              // Ship is moving into the wall — cancel that component
+              state.vx -= vPerp * wnx;
+              state.vy -= vPerp * wny;
+            }
+            // The wall angle naturally redirects sliding toward the gap
+            state.vx *= 0.8;
+            state.vy *= 0.8;
+            state.collisionFlash = 3;
+            if(audioCtx && !state.sfxMuted){
+              playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
+            }
+          }
         }
       }
     }
@@ -10823,62 +10859,60 @@ function updateRace(){
 // ── Draw a single gate (wall with gap) ──
 function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
   const sx = g.wx - state.x + cx, sy = g.wy - state.y + cy;
-  if(sx < -500 || sx > canvas.width+500 || sy < -500 || sy > canvas.height+500) return;
+  if(sx < -600 || sx > canvas.width+600 || sy < -600 || sy > canvas.height+600) return;
 
-  const halfGap = g.gapSize / 2;
-  const halfWall = g.wallLen / 2;
-  const gax = Math.cos(g.angle), gay = Math.sin(g.angle);
   const pulse = 0.5 + Math.sin(state.frameCount * 0.05 + idx * 1.3) * 0.4;
-
   const col = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#3388aa');
-  const wallCol = isPassed ? 'rgba(0,255,136,0.3)' : (isNext ? 'rgba(0,255,204,0.5)' : 'rgba(50,100,150,0.25)');
 
   ctx.save();
 
-  // Draw two wall segments (above and below the gap)
-  for(let side = -1; side <= 1; side += 2){
-    // Wall runs from halfGap to halfWall on each side of center
-    const startAlong = halfGap * side;
-    const endAlong = halfWall * side;
-    const x1 = sx + gax * startAlong, y1 = sy + gay * startAlong;
-    const x2 = sx + gax * endAlong, y2 = sy + gay * endAlong;
+  // Draw funnel wall segments using wallPts (angled inner→outer)
+  if(g.wallPts){
+    for(let w = 0; w < g.wallPts.length; w++){
+      const wp = g.wallPts[w];
+      const x1 = wp.ix - state.x + cx, y1 = wp.iy - state.y + cy;
+      const x2 = wp.ox - state.x + cx, y2 = wp.oy - state.y + cy;
 
-    // Bloom (3x width)
-    ctx.globalAlpha = 0.06 + pulse * 0.03;
-    ctx.lineWidth = 42;
-    ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      // Bloom
+      ctx.globalAlpha = 0.06 + pulse * 0.03;
+      ctx.lineWidth = 42;
+      ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 
-    // Core wall (3x width)
-    ctx.globalAlpha = 0.4 + pulse * 0.25;
-    ctx.shadowColor = col; ctx.shadowBlur = 18;
-    ctx.lineWidth = 12;
-    ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      // Core wall
+      ctx.globalAlpha = 0.4 + pulse * 0.25;
+      ctx.shadowColor = col; ctx.shadowBlur = 18;
+      ctx.lineWidth = 12;
+      ctx.strokeStyle = col;
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
 
-    // Hot center line (3x width)
-    ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 4.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    ctx.shadowBlur = 0;
+      // Hot center line
+      ctx.globalAlpha = 0.6;
+      ctx.lineWidth = 4.5;
+      ctx.strokeStyle = 'rgba(255,255,255,0.4)';
+      ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
+      ctx.shadowBlur = 0;
 
-    // End cap orb (larger)
-    ctx.globalAlpha = 0.6 + pulse * 0.3;
-    ctx.shadowColor = col; ctx.shadowBlur = 18;
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
+      // End cap orb at outer end
+      ctx.globalAlpha = 0.6 + pulse * 0.3;
+      ctx.shadowColor = col; ctx.shadowBlur = 18;
+      ctx.fillStyle = col;
+      ctx.beginPath(); ctx.arc(x2, y2, 8, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
   }
 
-  // Gap markers — small orbs at gap edges
-  for(let side = -1; side <= 1; side += 2){
-    const gx = sx + gax * halfGap * side, gy = sy + gay * halfGap * side;
-    ctx.globalAlpha = isNext ? 0.8 + pulse * 0.2 : 0.5;
-    ctx.shadowColor = isNext ? '#ff4400' : col; ctx.shadowBlur = isNext ? 16 : 8;
-    ctx.fillStyle = isNext ? '#ff4400' : col;
-    ctx.beginPath(); ctx.arc(gx, gy, isNext ? 8 : 5, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
+  // Gap markers — orbs at the inner gap edges
+  if(g.wallPts){
+    for(let w = 0; w < g.wallPts.length; w++){
+      const wp = g.wallPts[w];
+      const gx = wp.ix - state.x + cx, gy = wp.iy - state.y + cy;
+      ctx.globalAlpha = isNext ? 0.8 + pulse * 0.2 : 0.5;
+      ctx.shadowColor = isNext ? '#ff4400' : col; ctx.shadowBlur = isNext ? 16 : 8;
+      ctx.fillStyle = isNext ? '#ff4400' : col;
+      ctx.beginPath(); ctx.arc(gx, gy, isNext ? 8 : 5, 0, Math.PI*2); ctx.fill();
+      ctx.shadowBlur = 0;
+    }
   }
 
   // Gate number (at center of gap)
