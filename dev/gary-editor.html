@@ -127,6 +127,9 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <span class="key">G</span> Toggle grid<br>
     <span class="key">1</span><span class="key">2</span><span class="key">3</span> Switch layer<br>
     <span class="key">Cmd+S</span> Save level<br>
+    <span class="key">Cmd+Z</span> Undo<br>
+    <span class="key">Cmd+Shift+Z</span> Redo<br>
+    <span class="key">V</span> Select/Move obj<br>
     <span class="key">P</span> Play mode<br>
     <div class="sep"></div>
     <h3>Play Mode</h3>
@@ -156,6 +159,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <div id="panel-tabs">
         <button class="active" onclick="showTab('tiles')">Tiles</button>
         <button onclick="showTab('entities')">Objects</button>
+        <button onclick="showTab('gary')">Gary</button>
         <button onclick="showTab('layers')">Layers</button>
         <button onclick="showTab('tools')">Tools</button>
     </div>
@@ -180,6 +184,31 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
         <div class="tool-section">
             <h3>Place Objects</h3>
             <div id="entity-list"></div>
+        </div>
+    </div>
+
+    <div id="tab-gary" class="tab-content">
+        <div class="tool-section">
+            <h3>Gary Sprite Sheet</h3>
+            <div style="margin-bottom:8px;">
+                <canvas id="gary-sheet-canvas" style="image-rendering:pixelated;width:100%;cursor:pointer;"></canvas>
+            </div>
+            <div id="gary-anim-info" style="font-size:10px;color:#888;margin-bottom:8px;">Click a frame to preview</div>
+        </div>
+        <div class="tool-section">
+            <h3>Animations (from Godot Gary.tscn)</h3>
+            <div id="gary-anim-list" style="font-size:10px;max-height:300px;overflow-y:auto;"></div>
+        </div>
+        <div class="tool-section">
+            <h3>Preview</h3>
+            <div style="text-align:center;background:#222;padding:16px;border:1px solid #333;">
+                <canvas id="gary-preview" width="122" height="122" style="image-rendering:pixelated;width:122px;height:122px;"></canvas>
+            </div>
+            <div style="margin-top:4px;display:flex;gap:4px;">
+                <button id="gary-play-btn" onclick="toggleGaryPreview()" style="flex:1;background:#333;color:#ccc;border:1px solid #555;padding:4px;font-family:monospace;font-size:10px;cursor:pointer;">Play Animation</button>
+                <select id="gary-anim-select" style="flex:1;background:#333;color:#ccc;border:1px solid #555;padding:4px;font-family:monospace;font-size:10px;">
+                </select>
+            </div>
         </div>
     </div>
 
@@ -327,6 +356,73 @@ let spaceHeld = false;
 
 // Mouse tracking
 let lastMouseX = 0, lastMouseY = 0;
+
+// ---- UNDO / REDO ----
+const undoStack = [];
+const redoStack = [];
+const MAX_UNDO = 50;
+
+function captureState() {
+    const state = {
+        layers: layers.map(l => new Map(l.tiles)),
+        entities: JSON.parse(JSON.stringify(entities)),
+        spawnX, spawnY,
+    };
+    return state;
+}
+
+function pushUndo() {
+    undoStack.push(captureState());
+    if (undoStack.length > MAX_UNDO) undoStack.shift();
+    redoStack.length = 0; // clear redo on new action
+}
+
+function undo() {
+    if (undoStack.length === 0) return;
+    redoStack.push(captureState());
+    const state = undoStack.pop();
+    restoreState(state);
+}
+
+function redo() {
+    if (redoStack.length === 0) return;
+    undoStack.push(captureState());
+    const state = redoStack.pop();
+    restoreState(state);
+}
+
+function restoreState(state) {
+    layers.forEach((l, i) => { l.tiles = state.layers[i]; });
+    entities = state.entities;
+    spawnX = state.spawnX;
+    spawnY = state.spawnY;
+}
+
+// ---- OBJECT SELECTION / DRAGGING ----
+let selectMode = false; // V key toggles
+let selectedObj = null; // { index, type: 'entity'|'spawn' }
+let draggingObj = false;
+let dragOffsetX = 0, dragOffsetY = 0;
+
+function findEntityAt(wx, wy) {
+    // Search entities in reverse (top-most first)
+    for (let i = entities.length - 1; i >= 0; i--) {
+        const e = entities[i];
+        const def = ENTITY_DEFS[e.type];
+        if (!def) continue;
+        const ex = e.x, ey = e.y;
+        const hw = def.w / 2, hh = def.h;
+        if (wx >= ex - hw && wx <= ex + hw && wy >= ey - hh && wy <= ey) {
+            return i;
+        }
+    }
+    // Check spawn
+    const sx = spawnX * T + T / 2, sy = (spawnY + 1) * T;
+    if (wx >= sx - 10 && wx <= sx + 10 && wy >= sy - 50 && wy <= sy) {
+        return -1; // spawn marker
+    }
+    return null;
+}
 
 // ---- ENTITY DEFINITIONS ----
 const ENTITY_DEFS = {
@@ -562,15 +658,38 @@ canvas.addEventListener('mousedown', e => {
     if (e.button === 0) {
         // Ctrl+click = erase
         if (e.ctrlKey || e.metaKey) {
+            pushUndo();
             eraseAt(w.tx, w.ty);
             painting = 'erase';
             return;
         }
 
+        // Select/Move mode (V key)
+        if (selectMode) {
+            const idx = findEntityAt(w.px, w.py);
+            if (idx !== null) {
+                selectedObj = idx === -1 ? { index: -1, type: 'spawn' } : { index: idx, type: 'entity' };
+                draggingObj = true;
+                if (idx === -1) {
+                    dragOffsetX = w.px - (spawnX * T + T / 2);
+                    dragOffsetY = w.py - ((spawnY + 1) * T);
+                } else {
+                    dragOffsetX = w.px - entities[idx].x;
+                    dragOffsetY = w.py - entities[idx].y;
+                }
+                pushUndo();
+            } else {
+                selectedObj = null;
+            }
+            return;
+        }
+
         // Normal click = place
         if (selectedEntity) {
+            pushUndo();
             placeEntity(w);
         } else if (selectedTiles.length > 0) {
+            pushUndo();
             painting = 'paint';
             placeTiles(w.tx, w.ty);
         }
@@ -591,6 +710,18 @@ canvas.addEventListener('mousemove', e => {
 
     const w = canvasToWorld(e);
 
+    // Dragging object
+    if (draggingObj && selectedObj) {
+        if (selectedObj.type === 'spawn') {
+            spawnX = Math.floor((w.px - dragOffsetX) / T);
+            spawnY = Math.floor((w.py - dragOffsetY) / T);
+        } else {
+            entities[selectedObj.index].x = Math.round(w.px - dragOffsetX);
+            entities[selectedObj.index].y = Math.round(w.py - dragOffsetY);
+        }
+        return;
+    }
+
     if (painting === 'paint' && selectedTiles.length > 0) {
         placeTiles(w.tx, w.ty);
     }
@@ -601,7 +732,7 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mouseup', e => {
     if (e.button === 1 || (e.button === 0 && panning)) panning = false;
-    if (e.button === 0) painting = false;
+    if (e.button === 0) { painting = false; draggingObj = false; }
 });
 
 canvas.addEventListener('wheel', e => {
@@ -841,10 +972,31 @@ function drawEditor() {
     ctx.font = '12px monospace';
     ctx.fillText(`EDIT | Layer: ${layers[activeLayer].name} | Zoom: ${zoom.toFixed(1)}x | ${LVL_W}x${LVL_H}`, 100, 20);
 
+    // Draw selection highlight on selected entity
+    if (selectMode && selectedObj) {
+        ctx.save();
+        ctx.scale(zoom, zoom);
+        ctx.translate(-camX, -camY);
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 2 / zoom;
+        if (selectedObj.type === 'spawn') {
+            const sx2 = spawnX * T + T / 2, sy2 = (spawnY + 1) * T;
+            ctx.strokeRect(sx2 - 10, sy2 - 50, 20, 50);
+        } else {
+            const e = entities[selectedObj.index];
+            const def = ENTITY_DEFS[e.type];
+            if (def) ctx.strokeRect(e.x - def.w / 2 - 2, e.y - def.h - 2, def.w + 4, def.h + 4);
+        }
+        ctx.setLineDash([]);
+        ctx.restore();
+    }
+
     // Info bar
-    document.getElementById('info-bar').textContent =
-        `Tiles: ${selectedTiles.length} selected | Entities: ${entities.length} | ` +
+    const modeStr = selectMode ? 'SELECT MODE (V to exit)' :
         (spaceHeld ? 'PAN MODE' : 'Click=place  Ctrl+Click=erase  Space+drag=pan');
+    document.getElementById('info-bar').textContent =
+        `Tiles: ${selectedTiles.length} | Entities: ${entities.length} | Undo: ${undoStack.length} | ` + modeStr;
 }
 
 
@@ -1397,9 +1549,13 @@ function playTick(ts) {
 }
 
 // ---- MAIN LOOP ----
-function mainLoop() {
+let mainLast = 0;
+function mainLoop(ts) {
+    const dt = mainLast ? Math.min((ts - mainLast) / 1000, 0.05) : 0.016;
+    mainLast = ts;
     if (mode === 'edit') {
         drawEditor();
+        updateGaryPreview(dt);
     }
     requestAnimationFrame(mainLoop);
 }
@@ -1410,6 +1566,7 @@ Promise.all(imgLoads).then(() => {
     drawLavaPicker();
     setupEntityPicker();
     setupLayerPicker();
+    setupGarySheet();
 
     camX = spawnX * T - 200;
     camY = spawnY * T - 100;
@@ -1429,12 +1586,124 @@ window.addEventListener('keydown', e => {
     if (mode === 'edit' && e.code !== 'Space') {
         if (e.code === 'KeyP' && !e.ctrlKey && !e.metaKey) { setMode('play'); e.preventDefault(); }
         if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey) { toggleGrid(); e.preventDefault(); }
+        if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey) {
+            selectMode = !selectMode;
+            if (!selectMode) { selectedObj = null; draggingObj = false; }
+            canvas.style.cursor = selectMode ? 'default' : 'crosshair';
+            e.preventDefault();
+        }
         if (e.code === 'Digit1') { activeLayer = 0; setupLayerPicker(); }
         if (e.code === 'Digit2') { activeLayer = 1; setupLayerPicker(); }
         if (e.code === 'Digit3') { activeLayer = 2; setupLayerPicker(); }
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyS') { e.preventDefault(); saveLevel(); }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ') {
+            e.preventDefault();
+            if (e.shiftKey) redo(); else undo();
+        }
+        // Delete selected object
+        if (selectMode && selectedObj && (e.code === 'Delete' || e.code === 'Backspace')) {
+            pushUndo();
+            if (selectedObj.type === 'entity') {
+                entities.splice(selectedObj.index, 1);
+            }
+            selectedObj = null;
+            e.preventDefault();
+        }
     }
 });
+
+// ---- GARY SPRITE SHEET VIEWER ----
+let garyPreviewPlaying = false;
+let garyPreviewAnim = 'idle';
+let garyPreviewFrame = 0;
+let garyPreviewTimer = 0;
+
+function setupGarySheet() {
+    const gc = document.getElementById('gary-sheet-canvas');
+    if (!gc || !img.gary || !img.gary.complete) return;
+
+    gc.width = img.gary.naturalWidth;
+    gc.height = img.gary.naturalHeight;
+    const gctx = gc.getContext('2d');
+    gctx.imageSmoothingEnabled = false;
+    gctx.drawImage(img.gary, 0, 0);
+
+    // Grid overlay (61x61 frames)
+    const fw = 61;
+    const cols = Math.floor(img.gary.naturalWidth / fw);
+    const rows = Math.floor(img.gary.naturalHeight / fw);
+    gctx.strokeStyle = 'rgba(255,255,255,0.2)';
+    gctx.lineWidth = 0.5;
+    for (let x = 0; x <= cols; x++) { gctx.beginPath(); gctx.moveTo(x * fw, 0); gctx.lineTo(x * fw, img.gary.naturalHeight); gctx.stroke(); }
+    for (let y = 0; y <= rows; y++) { gctx.beginPath(); gctx.moveTo(0, y * fw); gctx.lineTo(img.gary.naturalWidth, y * fw); gctx.stroke(); }
+
+    // Click handler
+    gc.onclick = e => {
+        const rect = gc.getBoundingClientRect();
+        const scaleX = gc.width / rect.width;
+        const fx = Math.floor((e.clientX - rect.left) * scaleX / fw);
+        const fy = Math.floor((e.clientY - rect.top) * scaleX / fw);
+        document.getElementById('gary-anim-info').textContent = `Frame at (${fx * fw}, ${fy * fw}) — 61x61`;
+        // Draw preview
+        const pc = document.getElementById('gary-preview');
+        const pctx = pc.getContext('2d');
+        pctx.imageSmoothingEnabled = false;
+        pctx.clearRect(0, 0, 122, 122);
+        pctx.drawImage(img.gary, fx * fw, fy * fw, fw, fw, 0, 0, 122, 122);
+    };
+
+    // Populate animation list and select
+    const animList = document.getElementById('gary-anim-list');
+    const animSelect = document.getElementById('gary-anim-select');
+    animList.innerHTML = '';
+    animSelect.innerHTML = '';
+    for (const [name, anim] of Object.entries(ANIMS)) {
+        const div = document.createElement('div');
+        div.style.cssText = 'padding:3px 0;color:#aaa;';
+        div.innerHTML = `<span style="color:#ffcc00;">${name}</span>: ${anim.fr.length} frames, ${anim.fps}fps, ${anim.loop ? 'loop' : 'once'}`;
+        animList.appendChild(div);
+
+        const opt = document.createElement('option');
+        opt.value = name;
+        opt.textContent = name;
+        animSelect.appendChild(opt);
+    }
+    animSelect.onchange = () => { garyPreviewAnim = animSelect.value; garyPreviewFrame = 0; };
+}
+
+function toggleGaryPreview() {
+    garyPreviewPlaying = !garyPreviewPlaying;
+    document.getElementById('gary-play-btn').textContent = garyPreviewPlaying ? 'Stop' : 'Play Animation';
+    if (garyPreviewPlaying) {
+        garyPreviewFrame = 0;
+        garyPreviewTimer = 0;
+    }
+}
+
+// Gary preview animation tick (called from main loop)
+function updateGaryPreview(dt) {
+    if (!garyPreviewPlaying) return;
+    const anim = ANIMS[garyPreviewAnim];
+    if (!anim) return;
+    garyPreviewTimer += dt;
+    const spf = 1 / anim.fps;
+    while (garyPreviewTimer >= spf) {
+        garyPreviewTimer -= spf;
+        garyPreviewFrame++;
+        if (garyPreviewFrame >= anim.fr.length) {
+            if (anim.loop) garyPreviewFrame = 0;
+            else { garyPreviewFrame = anim.fr.length - 1; garyPreviewPlaying = false; document.getElementById('gary-play-btn').textContent = 'Play Animation'; }
+        }
+    }
+    const fr = anim.fr[garyPreviewFrame];
+    const pc = document.getElementById('gary-preview');
+    if (pc && img.gary && img.gary.complete) {
+        const pctx = pc.getContext('2d');
+        pctx.imageSmoothingEnabled = false;
+        pctx.clearRect(0, 0, 122, 122);
+        pctx.drawImage(img.gary, fr[0], fr[1], 61, 61, 0, 0, 122, 122);
+    }
+}
 </script>
 </body>
 </html>
