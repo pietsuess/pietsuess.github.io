@@ -2974,20 +2974,21 @@ const MOODS=[
       });
     }
 
-    // Rhythmic drive — staccato energy (liftoff onward)
+    // Rhythmic drive — staccato energy (liftoff onward), consonant notes only
     if(phase==='liftoff'||phase==='ascent'||phase==='orbit'){
-      const chopPat= phase==='liftoff'?[0,4]: phase==='ascent'?[0,2,4,6]:[0,1,2,4,5,6];
-      chopPat.forEach(i=>{
+      const chopPat= phase==='liftoff'?[0,4]: phase==='ascent'?[0,2,4,6]:[0,2,4,6];
+      const chopNotes=[0,4,7]; // root, 3rd, 5th only — no dissonance
+      chopPat.forEach(ci=>{
         if(rng(0,2)>0){
-          const s=sc[rng(0,4)];
-          _v(root*fr(s), t0+i*bl, 0.04, bl*0.25, 0.16, 0.035*vol, 'sawtooth', 0.25);
+          const s=sc[chopNotes[rng(0,2)]];
+          _v(root*fr(s), t0+ci*bl, 0.04, bl*0.22, 0.14, 0.028*vol, 'sawtooth', 0.2);
         }
       });
     }
 
-    // Arpeggios — rolling energy in ascent+
+    // Arpeggios — rolling energy in ascent+ (no 7ths, just triads)
     if(phase==='ascent'||phase==='orbit'){
-      const arpPat=[0,4,7,11,7,4,0,7,4,11,7,0,4,7,11,4];
+      const arpPat=[0,4,7,4,0,7,4,0,7,4,7,0,4,7,4,0];
       const ai=B%arpPat.length;
       const nArp= phase==='ascent'?8:12;
       for(let i=0;i<nArp;i++){
@@ -10437,14 +10438,14 @@ function _buildGateRun(){
   // Waypoints define the flight path — gentle S-curves that suit arc-based flight
   // Each waypoint becomes a gate location; gates are perpendicular to the path
   const waypoints = [];
-  const count = 12;
-  const spacing = 1800; // wide spacing — plenty of room to arc into gates
+  const count = 120;
+  const spacing = 220; // tight spacing — constant gate threading
   const amplitude = 600; // Y swing — generous curves
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 800 + i * spacing;
-    // Gentle 2-wave S-curve with growing amplitude
-    const wy = sy + Math.sin(t * Math.PI * 2.5) * amplitude * (0.4 + t * 0.6);
+    // Flowing S-curves — more waves for the longer course
+    const wy = sy + Math.sin(t * Math.PI * 8) * amplitude * (0.4 + t * 0.6);
     waypoints.push({ wx, wy });
   }
 
@@ -10481,8 +10482,9 @@ function _buildGateRun(){
       const kinkDist = halfGap + wallSegLen * kinkFrac;
       const kinkX = waypoints[i].wx + gax * kinkDist * side;
       const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      // Tip: kink point shifted forward along flight path
-      const tipLen = 80;
+      // Tip: kink point shifted forward ~30 degrees along flight path
+      const kinkSegLen = wallSegLen * kinkFrac;
+      const tipLen = Math.round(kinkSegLen * 0.577); // tan(30°) ≈ 0.577
       const tipX = kinkX + px * tipLen;
       const tipY = kinkY + py * tipLen;
       // ox,oy = outer end; ix,iy = kink; tx,ty = tip (gap end)
@@ -10502,7 +10504,7 @@ function _buildGateRun(){
 
   // Boost pads — placed between every 3rd gate pair, amplify current velocity
   const boostPads = [];
-  for(let i = 2; i < gates.length - 1; i += 3){
+  for(let i = 8; i < gates.length - 1; i += 15){
     const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
     const midX = (g.wx + gn.wx) / 2, midY = (g.wy + gn.wy) / 2;
     boostPads.push({ wx: midX, wy: midY, angle: 0, power: 18, phase: 0, _cooldown: 0 });
@@ -10522,14 +10524,14 @@ function _buildDriftCorridor(){
   // Parallel to Track 1, offset 2000px south
   const sx = EARTH_WX + 2800, sy = EARTH_WY + 2000;
   const waypoints = [];
-  const count = 10;
-  const spacing = 2200;
-  const kinkFrac = 0.10, tipLen = 80;
-  const amplitude = 800;
+  const count = 100;
+  const spacing = 260;
+  const kinkFrac = 0.10;
+  const amplitude = 700;
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 800 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 1.8) * amplitude * (0.5 + t * 0.5);
+    const wy = sy + Math.sin(t * Math.PI * 6) * amplitude * (0.5 + t * 0.5);
     waypoints.push({ wx, wy });
   }
   const gates = [];
@@ -10555,14 +10557,16 @@ function _buildDriftCorridor(){
       const kinkDist = halfGap + wallSegLen * kinkFrac;
       const kinkX = waypoints[i].wx + gax * kinkDist * side;
       const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      const tX = kinkX + px * tipLen;
-      const tY = kinkY + py * tipLen;
+      const kinkSegLen2 = wallSegLen * kinkFrac;
+      const tipLen2 = Math.round(kinkSegLen2 * 0.577);
+      const tX = kinkX + px * tipLen2;
+      const tY = kinkY + py * tipLen2;
       wallPts.push({ ox: outerX, oy: outerY, ix: kinkX, iy: kinkY, tx: tX, ty: tY, side: side });
     }
     gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
   }
   const boostPads = [];
-  for(let i = 2; i < gates.length - 1; i += 3){
+  for(let i = 5; i < gates.length - 1; i += 8){
     const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
     boostPads.push({ wx: (g.wx+gn.wx)/2, wy: (g.wy+gn.wy)/2, angle: 0, power: 18, phase: 0, _cooldown: 0 });
   }
@@ -10573,15 +10577,15 @@ function _buildDriftCorridor(){
 function _buildNeedleRun(){
   // Parallel to Track 1, offset 2000px north
   const sx = EARTH_WX + 2800, sy = EARTH_WY - 2000;
-  const kinkFrac = 0.10, tipLen = 80;
+  const kinkFrac = 0.10;
   const waypoints = [];
-  const count = 14;
-  const spacing = 1400;
-  const amplitude = 500;
+  const count = 140;
+  const spacing = 180;
+  const amplitude = 400;
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
     const wx = sx + 600 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * 3.5) * amplitude * (0.3 + t * 0.7);
+    const wy = sy + Math.sin(t * Math.PI * 10) * amplitude * (0.3 + t * 0.7);
     waypoints.push({ wx, wy });
   }
   const gates = [];
@@ -10607,8 +10611,10 @@ function _buildNeedleRun(){
       const kinkDist = halfGap + wallSegLen * kinkFrac;
       const kinkX = waypoints[i].wx + gax * kinkDist * side;
       const kinkY = waypoints[i].wy + gay * kinkDist * side;
-      const tX = kinkX + px * tipLen;
-      const tY = kinkY + py * tipLen;
+      const kinkSegLen3 = wallSegLen * kinkFrac;
+      const tipLen3 = Math.round(kinkSegLen3 * 0.577);
+      const tX = kinkX + px * tipLen3;
+      const tY = kinkY + py * tipLen3;
       wallPts.push({ ox: outerX, oy: outerY, ix: kinkX, iy: kinkY, tx: tX, ty: tY, side: side });
     }
     gates.push({ wx: waypoints[i].wx, wy: waypoints[i].wy, angle: gateAngle, gapSize, wallLen, passed: false, pathAngle, wallPts, gax, gay, px, py });
@@ -10937,7 +10943,8 @@ function updateRace(){
         state.fuelObjects.push({
           wx: course.finishWX + 100 + _fi * 120,
           wy: course.finishWY + (_fi - 1) * 80,
-          collected: false, _outerLaunchpadFuel: false
+          size: 14, rotation: 0, liquidPhase: 0,
+          collected: false, _permanent: true
         });
       }
       state.fuel = Math.min(1, state.fuel + 0.5); // immediate 50% refuel bonus too
