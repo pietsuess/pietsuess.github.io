@@ -148,11 +148,13 @@
     font-family: 'Urbanist', sans-serif;
     font-size: 1.1em;
     font-weight: 600;
-    text-align: center;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
   }
-  #header { display: flex; align-items: center; justify-content: center; position: relative; }
   #status { font-size: 0.7em; font-weight: 400; opacity: 0.5; margin-left: 10px; letter-spacing: 0.05em; }
   #reset-btn {
     position: absolute;
@@ -198,20 +200,12 @@
     from { opacity: 0; transform: translateY(12px); }
     to { opacity: 1; transform: translateY(0); }
   }
-  .msg.mine {
-    background: linear-gradient(135deg, rgba(232,115,90,0.25), rgba(244,197,66,0.15));
-    border-color: rgba(244,197,66,0.2);
-    align-self: flex-end;
-  }
-  .msg.theirs {
-    background: var(--glass);
-    align-self: flex-start;
-  }
+  .msg.mine { align-self: flex-end; }
+  .msg.theirs { align-self: flex-start; }
   .msg .name {
     font-family: 'Urbanist', sans-serif;
     font-size: 0.7em;
     font-weight: 600;
-    opacity: 0.6;
     margin-bottom: 4px;
     letter-spacing: 0.1em;
     text-transform: uppercase;
@@ -219,6 +213,37 @@
   .msg .text { font-size: 1rem; line-height: 1.6; }
   .msg img { max-width: 100%; border-radius: 10px; margin-top: 8px; cursor: pointer; transition: transform 0.2s; }
   .msg img:hover { transform: scale(1.02); }
+
+  /* User color themes */
+  .msg.user-gold {
+    background: linear-gradient(135deg, rgba(244,197,66,0.2), rgba(232,115,90,0.1));
+    border-color: rgba(244,197,66,0.25);
+  }
+  .msg.user-gold .name { color: var(--gold); }
+
+  .msg.user-coral {
+    background: linear-gradient(135deg, rgba(232,115,90,0.2), rgba(212,84,122,0.1));
+    border-color: rgba(232,115,90,0.25);
+  }
+  .msg.user-coral .name { color: var(--coral); }
+
+  .msg.user-rose {
+    background: linear-gradient(135deg, rgba(212,84,122,0.2), rgba(184,61,142,0.1));
+    border-color: rgba(212,84,122,0.25);
+  }
+  .msg.user-rose .name { color: var(--rose); }
+
+  .msg.user-magenta {
+    background: linear-gradient(135deg, rgba(184,61,142,0.2), rgba(42,26,62,0.15));
+    border-color: rgba(184,61,142,0.25);
+  }
+  .msg.user-magenta .name { color: var(--magenta); }
+
+  .msg.user-cream {
+    background: linear-gradient(135deg, rgba(254,249,240,0.12), rgba(244,197,66,0.08));
+    border-color: rgba(254,249,240,0.2);
+  }
+  .msg.user-cream .name { color: var(--cream); }
 
   /* Input Bar */
   #input-bar {
@@ -374,11 +399,11 @@
   @media (max-width: 768px) {
     body { height: 100dvh; }
     .join-btn { font-size: 1.1em; padding: 20px 36px; }
-    #gate input, #other-input input { font-size: 16px; } /* prevents iOS zoom */
+    #gate input, #other-input input { font-size: 16px; }
     #chat { height: 100dvh; }
     .msg { max-width: 85%; padding: 10px 14px; }
     #input-bar { padding: 10px; gap: 8px; }
-    #input-bar input[type="text"] { padding: 12px 14px; font-size: 16px; } /* 16px prevents iOS zoom */
+    #input-bar input[type="text"] { padding: 12px 14px; font-size: 16px; }
     #send-btn { padding: 12px 18px; font-size: 0.85rem; }
     #img-btn { padding: 10px 14px; }
     #header { padding: 12px 16px; font-size: 0.95em; }
@@ -406,7 +431,11 @@
   </div>
 </div>
 <div id="chat">
-  <div id="header"><span>Chat <span id="status">connecting...</span></span><button id="reset-btn" onclick="resetChat()">Clear</button></div>
+  <div id="header">
+    <span id="header-text">Chat</span>
+    <span id="status">connecting...</span>
+    <button id="reset-btn" onclick="resetChat()">Clear</button>
+  </div>
   <div id="messages"></div>
   <div class="drop-overlay" id="drop-overlay">Drop image here</div>
   <div id="preview"></div>
@@ -428,6 +457,38 @@ let name = '';
 let seen = new Set();
 let pendingImage = null;
 let allMessages = [];
+let audioCtx = null;
+
+// User color palette from pietsuess.com
+const USER_COLORS = ['gold', 'coral', 'rose', 'magenta', 'cream'];
+const userColorMap = {};
+
+function getUserColor(userName) {
+  if (!userColorMap[userName]) {
+    let hash = 0;
+    for (let i = 0; i < userName.length; i++) hash = ((hash << 5) - hash) + userName.charCodeAt(i);
+    userColorMap[userName] = USER_COLORS[Math.abs(hash) % USER_COLORS.length];
+  }
+  return userColorMap[userName];
+}
+
+// Notification sound using Web Audio API
+function playNotifSound() {
+  try {
+    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, audioCtx.currentTime);
+    osc.frequency.setValueAtTime(1100, audioCtx.currentTime + 0.08);
+    gain.gain.setValueAtTime(0.15, audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+    osc.start(audioCtx.currentTime);
+    osc.stop(audioCtx.currentTime + 0.3);
+  } catch(e) {}
+}
 
 function loadMessages() {
   try {
@@ -497,7 +558,6 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('other-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.stopPropagation(); joinOther(); }
   });
-  // Skip gate if already authed
   if (localStorage.getItem(PASS_KEY)) {
     document.getElementById('gate').style.display = 'none';
     document.getElementById('setup').style.display = 'flex';
@@ -511,7 +571,7 @@ function join(n) {
   localStorage.setItem(NAME_KEY, n);
   document.getElementById('setup').style.display = 'none';
   document.getElementById('chat').style.display = 'flex';
-  document.getElementById('header').innerHTML = 'Chat — ' + name + ' <span id="status">connecting...</span>';
+  document.getElementById('header-text').textContent = n;
   document.getElementById('msg').focus();
   loadMessages();
   listen();
@@ -538,6 +598,7 @@ function listen() {
         const stored = { id, name: sender, text, image: data.attachment.url };
         storeMessage(stored);
         addMessage(sender, text, data.attachment.url, sender === name);
+        if (sender !== name) playNotifSound();
         return;
       }
       if (!msg || !msg.id) return;
@@ -545,6 +606,7 @@ function listen() {
       seen.add(msg.id);
       storeMessage(msg);
       addMessage(msg.name, msg.text, msg.image, msg.name === name);
+      if (msg.name !== name) playNotifSound();
     } catch(err) {}
   });
   es.onerror = () => {
@@ -596,7 +658,8 @@ function dataURLtoBlob(dataURL) {
 function addMessage(sender, text, image, mine, skipScroll) {
   const container = document.getElementById('messages');
   const div = document.createElement('div');
-  div.className = 'msg ' + (mine ? 'mine' : 'theirs');
+  const colorClass = 'user-' + getUserColor(sender);
+  div.className = 'msg ' + (mine ? 'mine' : 'theirs') + ' ' + colorClass;
   let html = '<div class="name">' + sender + '</div>';
   if (text) {
     const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
