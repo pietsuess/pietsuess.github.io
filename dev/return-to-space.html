@@ -10745,19 +10745,22 @@ function updateRaceBorderCollision(){
   const shipDx = state.x - cp.wx, shipDy = state.y - cp.wy;
   const perpDist = shipDx * cp.nx + shipDy * cp.ny;
 
+  // Gentle center magnetism — always pulls toward corridor center
+  const magnetStrength = 0.15;
+  state.vx -= perpDist * cp.nx * magnetStrength * 0.001;
+  state.vy -= perpDist * cp.ny * magnetStrength * 0.001;
+
   const wallLimit = RACE_BORDER_HALF - 14;
   if(Math.abs(perpDist) > wallLimit){
-    // Soft border: drag + gentle push back, no hard clamp, no collision flash
+    // Hard clamp: force position back to the wall limit
     const sign = perpDist > 0 ? 1 : -1;
-    const overshoot = Math.abs(perpDist) - wallLimit;
-    // Strong push back into the corridor — ship should not leave
-    state.x -= sign * cp.nx * (overshoot + 4);
-    state.y -= sign * cp.ny * (overshoot + 4);
-    // Cancel outward velocity component, keep tangential
+    state.x = cp.wx + sign * cp.nx * wallLimit;
+    state.y = cp.wy + sign * cp.ny * wallLimit;
+    // Cancel outward velocity component completely
     const vOut = (state.vx * cp.nx + state.vy * cp.ny) * sign;
     if(vOut > 0){
-      state.vx -= vOut * cp.nx * sign * 0.8;
-      state.vy -= vOut * cp.ny * sign * 0.8;
+      state.vx -= vOut * cp.nx * sign;
+      state.vy -= vOut * cp.ny * sign;
     }
   }
 }
@@ -10892,6 +10895,36 @@ function updateGateCollisions(){
     }
     _race._gateSides[i] = side;
 
+    // Auto-skip missed gates: if ship is 400+ px past a gate that hasn't been passed
+    if(!g.passed && _race.started && !_race.finished && i < _race.nextGate === false){
+      // Check if ship has gone well past this gate's X position
+      const pastDx = state.x - g.wx;
+      const pastDy = state.y - g.wy;
+      // Use the gate's normal direction to determine "past" (dot product with path direction)
+      const gnxG = -Math.sin(g.angle), gnyG = Math.cos(g.angle);
+      const pastDist = pastDx * gnxG + pastDy * gnyG;
+      if(Math.abs(pastDist) > 400 && i < _race.nextGate + 5){
+        // This gate was missed — auto-skip it
+        g.passed = true;
+        if(i === _race.nextGate){
+          // Skip all consecutive missed gates
+          while(_race.nextGate < course.gates.length && course.gates[_race.nextGate].passed){
+            _race.nextGate++;
+          }
+        }
+        const penalty = 200;
+        _race.score -= penalty;
+        state.score -= penalty;
+        document.getElementById('score').textContent = String(Math.max(0, state.score)).padStart(6,'0');
+        state.zoneCrossFlash = { lvl:-3, timer:60, msg:'GATE MISSED -200', _col:'#ff4444' };
+        if(audioCtx && !state.sfxMuted){
+          const _t = audioCtx.currentTime;
+          playBeep(200, _t, 0.15, 'sawtooth', 0.08);
+          playBeep(120, _t + 0.1, 0.2, 'sawtooth', 0.06);
+        }
+      }
+    }
+
     // Funnel wall collision — test against each angled wall segment + tip
     if(g.wallPts){
       // Helper: test ship against a single line segment, push out + slide
@@ -11007,8 +11040,17 @@ function updateRace(){
     // Check finish line
     const fDx = state.x - course.finishWX, fDy = state.y - course.finishWY;
     const fDist = Math.sqrt(fDx*fDx + fDy*fDy);
-    const allGatesPassed = course.gates ? _race.nextGate >= course.gates.length : true;
-    if(allGatesPassed && fDist < 250){
+    if(fDist < 250){
+      // Penalty for missed gates
+      const missedGates = course.gates ? course.gates.length - _race.nextGate : 0;
+      if(missedGates > 0){
+        const penalty = missedGates * 200;
+        _race.score -= penalty;
+        state.score -= penalty;
+        // Mark all remaining gates as passed
+        if(course.gates) course.gates.forEach(g => { g.passed = true; });
+        _race.nextGate = course.gates ? course.gates.length : 0;
+      }
       _race.finished = true;
       _race.finishTimer = 300;
       _race.zoomTarget = 1.0; // zoom back out on finish
