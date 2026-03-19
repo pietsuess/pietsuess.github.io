@@ -291,8 +291,6 @@ let levelMenuScroll = 0;
 
 // Show goal preview
 let goalPreview = false;
-let goalPreviewTimer = 0;
-const GOAL_PREVIEW_DUR = 2.0; // seconds to hold on goal
 
 // ─── LEVEL DEFINITIONS ───
 // backWall: flush with goal right edge, full height, seals the end
@@ -980,11 +978,13 @@ canvas.addEventListener('touchmove',(e)=>{e.preventDefault();onMove(e);},{passiv
 canvas.addEventListener('touchend',(e)=>{onUp(e);});
 
 // Button bounds
-function resetBtnBounds(){
-  const rbw=120,rbh=40;
+// Stacked buttons just right of throw line
+const SIDE_BTN_W = 110, SIDE_BTN_H = 34, SIDE_BTN_GAP = 6;
+function sideBtnBounds(index) {
   const tlScreen = getThrowLine() - camX;
-  return {x: Math.max(10, tlScreen/2 - rbw/2), y: 100, w:rbw, h:rbh};
+  return { x: tlScreen + 15, y: 15 + index * (SIDE_BTN_H + SIDE_BTN_GAP), w: SIDE_BTN_W, h: SIDE_BTN_H };
 }
+function resetBtnBounds(){ return sideBtnBounds(0); }
 function nextBtnBounds(){
   const nbw=220,nbh=56;
   return {x:(W-nbw)/2, y:H*0.52, w:nbw, h:nbh};
@@ -1051,12 +1051,16 @@ function onDown(e){
     levelMenuOpen = true; levelMenuScroll = 0; return;
   }
 
-  // Editor toggle button (top right, next to hints)
-  const ebw=80,ebh=32,ebx=W-ebw-105,eby=15;
-  if(p.x>=ebx&&p.x<=ebx+ebw&&p.y>=eby&&p.y<=eby+ebh){
+  // Side button hit tests
+  function hitSideBtn(index) {
+    const b = sideBtnBounds(index);
+    return p.x>=b.x&&p.x<=b.x+b.w&&p.y>=b.y&&p.y<=b.y+b.h;
+  }
+  // EDIT (index 3)
+  if(hitSideBtn(3)){
     editorMode=!editorMode;
-    if(editorMode){state='ready';cube=null;camX=0;camTargetX=0;edSel=null;edAddMode=null;}
-    else{edSel=null;edAddMode=null;}
+    if(editorMode){state='ready';cube=null;camX=0;camY=0;camTargetX=0;edSel=null;edAddMode=null;}
+    else{edSel=null;edAddMode=null;camY=0;}
     return;
   }
 
@@ -1194,15 +1198,10 @@ function onDown(e){
     return;
   }
 
-  // Show goal button
-  const gbw=80,gbh=32,gbx=W-gbw-195,gby=15;
-  if(p.x>=gbx&&p.x<=gbx+gbw&&p.y>=gby&&p.y<=gby+gbh&&state==='ready'){
-    goalPreview=true; goalPreviewTimer=GOAL_PREVIEW_DUR; return;
-  }
-
-  // Hints toggle button (top right)
-  const hbw=80,hbh=32,hbx=W-hbw-15,hby=15;
-  if(p.x>=hbx&&p.x<=hbx+hbw&&p.y>=hby&&p.y<=hby+hbh){showHints=!showHints;return;}
+  // GOAL HINT (index 1)
+  if(hitSideBtn(1)){ goalPreview=!goalPreview; return; }
+  // HINTS (index 2)
+  if(hitSideBtn(2)){ showHints=!showHints; return; }
 
   if(state==='thrown'||state==='lost'||state==='won'||state==='aiming'){
     const rb=resetBtnBounds();
@@ -1829,21 +1828,20 @@ function animate(time){
       // Pan to goal
       const g = getCurrentLevel().goal;
       const goalCamX = Math.max(0, g.x + g.w/2 - W * 0.5);
-      const goalCamY = Math.max(0, g.y + g.h/2 - H * 0.5);
+      const goalCamY = g.y + g.h/2 - H * 0.5;
       camX += (goalCamX - camX) * 0.08;
       camY += (goalCamY - camY) * 0.08;
-      goalPreviewTimer -= dt;
-      if (goalPreviewTimer <= 0) { goalPreview = false; }
     } else if(state==='thrown'&&cube){
       const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
       camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
-      const dY = getDeathY();
-      if (dY > H) {
-        if (cube.y > H * 0.9 + camY) {
-          camY += (cube.y - H * 0.5 - camY) * 0.04;
-        } else if (cube.y < camY + H * 0.2 && camY > 0) {
-          camY += (0 - camY) * 0.06;
-        }
+      // Follow cube vertically if it goes near edges
+      const ceil = getCeilingY();
+      if (cube.y > H * 0.85 + camY) {
+        camY += (cube.y - H * 0.5 - camY) * 0.04;
+      } else if (cube.y < camY + H * 0.15 && camY > ceil) {
+        camY += (Math.max(ceil, cube.y - H * 0.3) - camY) * 0.04;
+      } else if (state !== 'thrown' && camY !== 0) {
+        camY += (0 - camY) * 0.06;
       }
     } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
     if (!goalPreview) camX+=(camTargetX-camX)*0.08;
@@ -2280,57 +2278,31 @@ function animate(time){
     edDrawToolbar();
   }
 
-  // ─── EDIT TOGGLE BUTTON — top right ───
-  const ebw = 80, ebh = 32, ebx = W - ebw - 105, eby = 15;
-  roundRectPath(ebx, eby, ebw, ebh, 10);
-  ctx.fillStyle = editorMode ? 'rgba(0,255,255,0.2)' : 'rgba(255,255,255,0.06)';
-  ctx.fill();
-  ctx.strokeStyle = editorMode ? 'rgba(0,255,255,0.4)' : 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = editorMode ? 'rgba(0,255,255,0.85)' : 'rgba(254,249,240,0.4)';
-  ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
-  ctx.fillText('EDIT', ebx + ebw / 2, eby + ebh / 2 + 4);
-
-  // ─── SHOW GOAL BUTTON — top right ───
-  const gbw = 80, gbh = 32, gbx = W - gbw - 195, gby = 15;
-  roundRectPath(gbx, gby, gbw, gbh, 10);
-  ctx.fillStyle = goalPreview ? 'rgba(244,197,66,0.2)' : 'rgba(255,255,255,0.06)';
-  ctx.fill();
-  ctx.strokeStyle = goalPreview ? 'rgba(244,197,66,0.4)' : 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1; ctx.stroke();
-  ctx.fillStyle = goalPreview ? 'rgba(244,197,66,0.85)' : 'rgba(254,249,240,0.4)';
-  ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
-  ctx.fillText('GOAL', gbx + gbw / 2, gby + gbh / 2 + 4);
-
-  // ─── HINTS TOGGLE BUTTON — top right ───
-  const hbw = 80, hbh = 32, hbx = W - hbw - 15, hby = 15;
-  roundRectPath(hbx, hby, hbw, hbh, 10);
-  ctx.fillStyle = showHints ? 'rgba(244,197,66,0.2)' : 'rgba(255,255,255,0.06)';
-  ctx.fill();
-  ctx.strokeStyle = showHints ? 'rgba(244,197,66,0.4)' : 'rgba(255,255,255,0.12)';
-  ctx.lineWidth = 1;
-  ctx.stroke();
-  ctx.fillStyle = showHints ? 'rgba(244,197,66,0.85)' : 'rgba(254,249,240,0.4)';
-  ctx.font = '600 12px Urbanist';
-  ctx.textAlign = 'center';
-  ctx.fillText('HINTS', hbx + hbw / 2, hby + hbh / 2 + 4);
-
-  // ─── RESET BUTTON — glassmorphism, center page ───
-  if(state==='thrown'||state==='lost'||state==='won'||state==='aiming'){
-    const rb=resetBtnBounds();
-    const rbr=14;
-    // Glass bg
-    const rbG=ctx.createLinearGradient(rb.x,rb.y,rb.x,rb.y+rb.h);
-    rbG.addColorStop(0,'rgba(232,115,90,0.2)');rbG.addColorStop(1,'rgba(184,61,142,0.12)');
-    roundRectPath(rb.x,rb.y,rb.w,rb.h,rbr);
-    ctx.fillStyle=rbG;ctx.fill();
-    ctx.strokeStyle='rgba(254,249,240,0.15)';ctx.lineWidth=1;ctx.stroke();
-    // Highlight
-    ctx.fillStyle='rgba(254,249,240,0.04)';ctx.fillRect(rb.x+4,rb.y+2,rb.w-8,rb.h*0.4);
-    // Text
-    ctx.fillStyle='rgba(254,249,240,0.85)';ctx.font='700 16px Urbanist';ctx.textAlign='center';
-    ctx.fillText('RESET',rb.x+rb.w/2,rb.y+rb.h/2+6);
+  // ─── STACKED SIDE BUTTONS — just right of throw line ───
+  function drawSideBtn(index, label, active) {
+    const b = sideBtnBounds(index);
+    const rbG = ctx.createLinearGradient(b.x, b.y, b.x, b.y + b.h);
+    rbG.addColorStop(0, active ? 'rgba(244,197,66,0.25)' : 'rgba(232,115,90,0.2)');
+    rbG.addColorStop(1, active ? 'rgba(244,197,66,0.12)' : 'rgba(184,61,142,0.12)');
+    roundRectPath(b.x, b.y, b.w, b.h, 10);
+    ctx.fillStyle = rbG; ctx.fill();
+    ctx.strokeStyle = active ? 'rgba(244,197,66,0.4)' : 'rgba(254,249,240,0.15)';
+    ctx.lineWidth = 1; ctx.stroke();
+    ctx.fillStyle = active ? 'rgba(244,197,66,0.9)' : 'rgba(254,249,240,0.75)';
+    ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
+    ctx.fillText(label, b.x + b.w/2, b.y + b.h/2 + 4);
   }
+
+  // 0: RESET (only when active)
+  if (state==='thrown'||state==='lost'||state==='won'||state==='aiming') {
+    drawSideBtn(0, 'RESET', false);
+  }
+  // 1: GOAL HINT
+  drawSideBtn(1, 'GOAL HINT', goalPreview);
+  // 2: HINTS
+  drawSideBtn(2, 'HINTS', showHints);
+  // 3: EDIT
+  drawSideBtn(3, 'EDIT', editorMode);
 
   // ─── WIN SCREEN (always visible while state==='won') ───
   if (state==='won') {
