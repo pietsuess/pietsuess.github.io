@@ -16,11 +16,25 @@
 <script>
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let W, H;
+
+// ─── VIRTUAL RESOLUTION ───
+// Game logic works in this coordinate space. Scales to fit any screen.
+const DESIGN_W = 1440;
+const DESIGN_H = 900;
+let W = DESIGN_W, H = DESIGN_H; // game logic always uses these
+let realW, realH, gameScale = 1, gameOffX = 0, gameOffY = 0;
 
 function resize() {
-  W = canvas.width = window.innerWidth;
-  H = canvas.height = window.innerHeight;
+  realW = canvas.width = window.innerWidth;
+  realH = canvas.height = window.innerHeight;
+  // Uniform scale to fit, letterbox if needed
+  gameScale = Math.min(realW / DESIGN_W, realH / DESIGN_H);
+  // Center the game area
+  gameOffX = (realW - DESIGN_W * gameScale) / 2;
+  gameOffY = (realH - DESIGN_H * gameScale) / 2;
+  // W and H stay as virtual resolution for all game logic
+  W = DESIGN_W;
+  H = DESIGN_H;
 }
 resize();
 window.addEventListener('resize', resize);
@@ -943,7 +957,11 @@ function showMsg(text,dur){showMessage=text;messageTimer=dur;}
 
 // ─── INPUT ───
 let mouseX=0,mouseY=0,prevMX=0,prevMY=0,grabbing=false;
-function getPos(e){const t=e.touches?e.touches[0]:e;return{x:t.clientX,y:t.clientY};}
+function getPos(e){
+  const t=e.touches?e.touches[0]:e;
+  // Convert screen coords to virtual game coords
+  return{x:(t.clientX-gameOffX)/gameScale, y:(t.clientY-gameOffY)/gameScale};
+}
 function worldX(sx){return sx+camX;}
 
 canvas.addEventListener('mousedown',onDown);
@@ -1766,7 +1784,13 @@ function animate(time){
   }
   if(messageTimer>0)messageTimer-=dt;
 
-  ctx.clearRect(0,0,W,H);
+  // Clear real canvas and apply virtual resolution scaling
+  ctx.clearRect(0,0,realW,realH);
+  // Letterbox fill
+  ctx.fillStyle='#0d0719';ctx.fillRect(0,0,realW,realH);
+  ctx.save();
+  ctx.translate(gameOffX,gameOffY);
+  ctx.scale(gameScale,gameScale);
 
   // ─── ANIMATED GRADIENT BACKGROUND (PietSuess dark gradient) ───
   const shift = (Math.sin(gradPhase) + 1) * 0.5; // 0-1 oscillation
@@ -2261,6 +2285,7 @@ function animate(time){
     ctx.globalAlpha=1;
   }
 
+  ctx.restore(); // undo virtual resolution scaling
   requestAnimationFrame(animate);
 }
 
