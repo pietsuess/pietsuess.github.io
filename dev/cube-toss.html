@@ -133,10 +133,12 @@ function updateAirborne(speed, vy) {
 }
 function airborneHit() { airborneHitCount++; }
 function stopAirborne() {
-  if (airborneOsc) {
-    try { airborneOsc.stop(); airborneOsc._osc2.stop(); airborneOsc._noise.stop(); } catch(e){}
-    airborneOsc = null; airborneGain = null; airborneFilter = null;
-  }
+  try {
+    if (airborneOsc) { airborneOsc.stop(); }
+    if (airborneOsc && airborneOsc._osc2) { airborneOsc._osc2.stop(); }
+    if (airborneOsc && airborneOsc._noise) { airborneOsc._noise.stop(); }
+  } catch(e) {}
+  airborneOsc = null; airborneGain = null; airborneFilter = null;
 }
 
 function playSound(type) {
@@ -893,6 +895,9 @@ function updateCube(c, dt) {
     c.y += c.vy * subDt;
     collideCubeWalls(c, getCurrentLevel());
 
+    // Death zone — break out immediately
+    if (c._fellOff) break;
+
     // Check goal — cube center must be inside (supports rotation)
     const lv = getCurrentLevel(), g = lv.goal;
     let inGoal = false;
@@ -926,8 +931,9 @@ function updateCube(c, dt) {
   for(const t of c.trail) t.t*=0.97;
 
   // Fell off bottom — instant reset
-  if (c._fellOff && state==='thrown') {
-    resetCube(); return;
+  if (c._fellOff) {
+    try { resetCube(); } catch(e) { cube=null; state='ready'; camTargetX=0; }
+    return;
   }
 
   // Settle check
