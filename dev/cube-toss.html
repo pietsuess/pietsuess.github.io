@@ -73,9 +73,9 @@ const BOUNCE = 0.85;
 const FRICTION = 0.985;
 const ANG_FRICTION = 0.96;
 const CUBE_SIZE = 36;
-const DEFAULT_THROW_LINE = 420;
-const DEFAULT_RELEASE_LINE = 190;
-const WALK_LINE_X = 60;
+const DEFAULT_THROW_LINE = 300;
+const DEFAULT_RELEASE_LINE = 140;
+const WALK_LINE_X = 40;
 const WALK_LINE_Y_START = 170;
 const WALK_LINE_LEN = 360;
 
@@ -91,6 +91,8 @@ let level = 0;
 let attempts = 0;
 let showMessage = '';
 let messageTimer = 0;
+let peekPanning = false;
+let peekStart = null; // {mx, my, camX, camY}
 
 // ─── SCORECARD ───
 let scorecard = []; // [{throws, par, name}] per completed level
@@ -1111,17 +1113,10 @@ function onDown(e){
 
   // Side buttons — check all positions, determine which button by label
   {
-    const gV = getCurrentLevel().goal;
-    const goalVis2 = !goalPreview && (gV.x + gV.w - camX > 0 && gV.x - camX < W && gV.y + (gV.h||0) - camY > 0 && gV.y - camY < H);
     let bi = 0;
     // RESET at 0
     if (hitSideBtn(bi) && (state==='thrown'||state==='lost'||state==='won'||state==='aiming')) { resetCube(); return; }
     bi++;
-    // GOAL HINT
-    if (!goalVis2 || goalPreview) {
-      if (hitSideBtn(bi)) { goalPreview = !goalPreview; return; }
-      bi++;
-    }
     // HINTS
     if (hitSideBtn(bi)) { showHints = !showHints; return; }
     bi++;
@@ -1363,10 +1358,19 @@ function onDown(e){
       if(d<bestDist){bestDist=d;bestWk=wk;}
     }
     // Only grab if click is close to an actual walking cube
-    if (bestDist > 80) return;
+    if (bestDist > 80) {
+      // Not near a cube — start peek panning
+      peekPanning = true;
+      peekStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
+      return;
+    }
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
     cube=spawnCube(wx,p.y,bestWk);
     state='aiming';canvas.style.cursor='grabbing';
+  } else {
+    // Clicked past throw zone — peek pan
+    peekPanning = true;
+    peekStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
   }
 }
 
@@ -1401,6 +1405,13 @@ function onMove(e){
     return;
   }
 
+  // Peek panning (no cube in hand)
+  if(peekPanning && peekStart){
+    camX = Math.max(0, peekStart.camX - (p.x - peekStart.mx));
+    camY = peekStart.camY - (p.y - peekStart.my);
+    return;
+  }
+
   if(state==='aiming'&&cube&&grabbing){
     cube.x=worldX(mouseX);cube.y=mouseY;
     if(moveDt>0&&moveDt<0.2){
@@ -1409,13 +1420,14 @@ function onMove(e){
     }
     if(cube.x>getThrowLine())doThrow();
   }
-  if(state==='ready'&&!grabbing){
+  if(state==='ready'&&!grabbing&&!peekPanning){
     canvas.style.cursor=worldX(p.x)<getThrowLine()+100?'grab':'default';
   }
 }
 
 function onUp(e){
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
+  if(peekPanning){ peekPanning=false; peekStart=null; /* camera snaps back via animate loop */ return; }
   if(state==='aiming'&&cube&&grabbing){
     // Throw if in the right half of throw zone or past it. Cancel only if near the walk line.
     if(cube.x >= getReleaseLine()){
@@ -1999,14 +2011,7 @@ function animate(time){
   lastTime=time; elapsed+=dt; gradPhase+=dt*0.05;
 
   if (!editorMode) {
-    if (goalPreview) {
-      // Pan to center goal on screen
-      const g = getCurrentLevel().goal;
-      const goalCamX = Math.max(0, g.x + g.w/2 - W * 0.5);
-      const goalCamY = g.y + g.h/2 - H * 0.5;
-      camX += (goalCamX - camX) * 0.12;
-      camY += (goalCamY - camY) * 0.12;
-    } else if(state==='thrown'&&cube){
+    if(state==='thrown'&&cube){
       const cf = getCamFlags();
       if (cf.panRight) {
         const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
@@ -2022,7 +2027,7 @@ function animate(time){
         camY += (0 - camY) * 0.05;
       }
     } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
-    if (!goalPreview) camX+=(camTargetX-camX)*0.08;
+    if (!peekPanning) camX+=(camTargetX-camX)*0.08;
   }
 
   if(state==='thrown'&&cube){
@@ -2534,22 +2539,12 @@ function animate(time){
     ctx.fillText(label, b.x + b.w/2, b.y + b.h/2 + 4);
   }
 
-  // Check if goal is visible on screen (ignore when goalPreview is active)
-  const gVis = lv.goal;
-  const goalOnScreen = !goalPreview && (gVis.x + gVis.w - camX > 0 && gVis.x - camX < W &&
-    gVis.y + (gVis.h||0) - camY > 0 && gVis.y - camY < H);
-
   let btnIdx = 0;
   // RESET (only when active)
   if (state==='thrown'||state==='lost'||state==='won'||state==='aiming') {
     drawSideBtn(btnIdx, 'RESET', false);
   }
   btnIdx++;
-  // GOAL HINT (show when goal not visible OR when preview is active)
-  if (!goalOnScreen || goalPreview) {
-    drawSideBtn(btnIdx, 'GOAL HINT', goalPreview);
-    btnIdx++;
-  }
   // HINTS
   drawSideBtn(btnIdx, 'HINTS', showHints);
   btnIdx++;
