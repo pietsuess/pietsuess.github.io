@@ -1234,10 +1234,8 @@ function loadLevel() {
 
 // ---- EDITOR DRAW ----
 function drawEditor() {
-    const cw = canvas.parentElement.clientWidth;
-    const ch = canvas.parentElement.clientHeight;
-    canvas.width = cw;
-    canvas.height = ch;
+    const cw = canvasW;
+    const ch = canvasH;
 
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = document.getElementById('bg-color').value;
@@ -1363,7 +1361,6 @@ function drawEditor() {
 // ============================================================
 
 let playActive = false;
-let playLast = 0;
 let videoOpen = false;
 
 const GRAV = 600, SPD = 220, JUMP = -350, ROLL_SPD = 220, AIR_SPD = 170;
@@ -1517,7 +1514,6 @@ function startPlay() {
     Object.keys(pKeys).forEach(k => delete pKeys[k]);
     pJumpBuf = 0;
     playActive = true;
-    playLast = performance.now();
 }
 
 function stopPlay() {
@@ -1707,13 +1703,8 @@ function nearPressable() {
     return false;
 }
 
-function playTick(ts) {
-    if (!playActive) return;
-
-    const dt = Math.min((ts - playLast) / 1000, 0.05);
-    playLast = ts;
-
-    if (videoOpen) { requestAnimationFrame(playTick); return; }
+function playFrame(dt) {
+    if (!playActive || videoOpen) return;
 
     // STATE MACHINE (identical to proven testbed)
     switch (gState) {
@@ -1898,11 +1889,8 @@ function playTick(ts) {
     if (pJumpBuf > 0) pJumpBuf--;
 
     // ---- DRAW ----
-    // Set canvas size each frame (fixes Gary not rendering)
-    const cw = canvas.parentElement.clientWidth;
-    const ch = canvas.parentElement.clientHeight;
-    canvas.width = cw;
-    canvas.height = ch;
+    const cw = canvasW;
+    const ch = canvasH;
 
     const playW = cw / zoom;
     const playH = ch / zoom;
@@ -2046,18 +2034,33 @@ function playTick(ts) {
     ctx.font = '11px monospace';
     const cb = colBox();
     ctx.fillText('State: ' + gState + '  Box: ' + cb[2] + 'x' + cb[3] + 'px  [ESC] edit  [H] hitboxes', 10, ch - 10);
-
-    requestAnimationFrame(playTick);
 }
 
-// ---- MAIN LOOP ----
+// ---- SINGLE MAIN LOOP ----
+// One rAF loop handles both edit and play. No duplicate loops.
 let mainLast = 0;
+let canvasW = 0, canvasH = 0;
+
+function resizeCanvas() {
+    const cw = canvas.parentElement.clientWidth;
+    const ch = canvas.parentElement.clientHeight;
+    if (cw !== canvasW || ch !== canvasH) {
+        canvasW = cw; canvasH = ch;
+        canvas.width = cw; canvas.height = ch;
+    }
+}
+window.addEventListener('resize', resizeCanvas);
+
 function mainLoop(ts) {
     const dt = mainLast ? Math.min((ts - mainLast) / 1000, 0.05) : 0.016;
     mainLast = ts;
+    resizeCanvas();
+    ctx.clearRect(0, 0, canvasW, canvasH);
     if (mode === 'edit') {
         drawEditor();
         updateGaryPreview(dt);
+    } else if (mode === 'play') {
+        playFrame(dt);
     }
     requestAnimationFrame(mainLoop);
 }
@@ -2106,12 +2109,7 @@ Promise.all(imgLoads).then(() => {
     requestAnimationFrame(mainLoop);
 });
 
-// When switching to play, start the play loop
-const origSetMode = setMode;
-window.setMode = function(m) {
-    origSetMode(m);
-    if (m === 'play') requestAnimationFrame(playTick);
-};
+// Play mode is now handled by the single mainLoop — no separate rAF needed.
 
 // Keyboard shortcuts (edit mode)
 window.addEventListener('keydown', e => {
