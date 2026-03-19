@@ -1658,6 +1658,20 @@ function resolveY() {
     }
 }
 
+// Check if ground is within `dist` pixels below Gary's feet
+function nearGround(dist) {
+    const c = colBox();
+    const bx = gx + c[0], bw = c[2];
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    for (let d = 1; d <= dist; d++) {
+        const ty = Math.floor((gy + d) / T);
+        for (let tx = l; tx <= r; tx++) {
+            if (isSolid(tx, ty) && cellOverlap(tx, ty, gy + d - 1, gy + d + 1)) return true;
+        }
+    }
+    return false;
+}
+
 function checkFloor() {
     const c = colBox();
     const bx = gx + c[0], bw = c[2];
@@ -1784,6 +1798,7 @@ function playFrame(dt) {
             else if (pkL()) { gDir = -1; gvx = -AIR_SPD; }
             else gvx = 0;
             if (gFloor) pSetState('land');
+            else if (gvy > 0 && nearGround(6)) pSetState('land'); // foot-reach starts early
             else if (gvy > 0 && gvx === 0) pSetState('fall');
             break;
         case 'fall':
@@ -1791,12 +1806,17 @@ function playFrame(dt) {
             else if (pkL()) { gDir = -1; gvx = -AIR_SPD; }
             else gvx = 0;
             if (gFloor) pSetState('land');
+            else if (gvy > 0 && nearGround(6)) pSetState('land'); // foot-reach starts early
             break;
         case 'land':
-            gvx = 0;
+            // Foot-reach landing: play full 3-frame animation before allowing exit
+            // Slide forward slightly with momentum
+            gvx *= 0.85; // decelerate
             if (!canStandUp()) { pSetState('kneel'); break; }
-            if (gaDone) pSetState('idle');
-            if (pkR() || pkL()) pSetState('run');
+            if (gaDone) {
+                if (pkR() || pkL()) pSetState('run');
+                else pSetState('idle');
+            }
             break;
         case 'press':
             gvx = 0;
