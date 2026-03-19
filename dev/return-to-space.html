@@ -4147,7 +4147,7 @@ function update(){
   }
   if(!wormholeTransition){
     const _inRace = _race.active || _race.showApproach;
-    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.035:0.06);
+    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.028:0.06);
     if(state.keys['ArrowLeft'])state.angle-=turnRate;
     if(state.keys['ArrowRight'])state.angle+=turnRate;
   }
@@ -8411,6 +8411,9 @@ function drawGame(){
   // Close race zoom
   if(_race.zoom > 1.01){ ctx.restore(); }
 
+  // Race HUD — drawn outside zoom so text stays screen-fixed
+  drawRaceHUD(ctx);
+
   if(state._victoryPhase==='zoom'){
     ctx.restore();
   }
@@ -10708,14 +10711,16 @@ function updateRace(){
   // Show instructions when approaching start area + start zooming in
   if(!_race.active && !_race.finished && distToStart < 500){
     _race.showApproach = true;
-    _race.zoomTarget = 1.8; // zoom in as you approach
+    _race.zoomTarget = 1.4; // zoom in as you approach
   } else if(distToStart > 600 && !_race.active){
     _race.showApproach = false;
     _race.zoomTarget = 1.0; // zoom back out
   }
 
-  // Approach start gate — trigger countdown
-  if(!_race.active && !_race.finished && distToStart < 120){
+  // Enter staging box — trigger countdown
+  // Box is 200x160, centered at startWX-140, startWY
+  const _inBox = Math.abs(state.x - (course.startWX - 140)) < 100 && Math.abs(state.y - course.startWY) < 80;
+  if(!_race.active && !_race.finished && _inBox){
     if(!_race.nearStart){
       _race.nearStart = true;
       _race.active = true;
@@ -11068,6 +11073,43 @@ function drawRaceCourse(ctx, cx, cy){
     ctx.restore();
   }
 
+  // Checkered start box — staging area before the start gate
+  {
+    const boxW = 200, boxH = 160;
+    const bsx = course.startWX - boxW - 40 - state.x + cx;
+    const bsy = course.startWY - state.y + cy;
+    if(bsx > -400 && bsx < canvas.width+400 && bsy > -400 && bsy < canvas.height+400){
+      ctx.save();
+      const cellSize = 20;
+      const cols = Math.ceil(boxW / cellSize), rows = Math.ceil(boxH / cellSize);
+      const pulse = 0.4 + Math.sin(state.frameCount * 0.04) * 0.15;
+      for(let r = 0; r < rows; r++){
+        for(let c = 0; c < cols; c++){
+          const isWhite = (r + c) % 2 === 0;
+          ctx.globalAlpha = isWhite ? pulse * 0.35 : pulse * 0.12;
+          ctx.fillStyle = isWhite ? '#ffffff' : '#00ffcc';
+          ctx.fillRect(bsx - boxW/2 + c * cellSize, bsy - boxH/2 + r * cellSize, cellSize, cellSize);
+        }
+      }
+      // Border
+      ctx.globalAlpha = pulse * 0.6;
+      ctx.strokeStyle = '#00ffcc';
+      ctx.lineWidth = 2;
+      ctx.strokeRect(bsx - boxW/2, bsy - boxH/2, boxW, boxH);
+      // Label
+      if(!_race.active){
+        ctx.globalAlpha = 0.8;
+        ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+        ctx.fillStyle = '#00ffcc';
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 8;
+        ctx.fillText('STAGING', bsx, bsy);
+        ctx.shadowBlur = 0;
+      }
+      ctx.restore();
+    }
+  }
+
   // Start and finish gates
   drawStartFinishGate(ctx, cx, cy, course.startWX, course.startWY, 'START', _race.started);
   const allPassed = course.gates ? _race.nextGate >= course.gates.length : true;
@@ -11130,8 +11172,7 @@ function drawRaceCourse(ctx, cx, cy){
     }
   }
 
-  // Race HUD
-  drawRaceHUD(ctx);
+  // Race HUD drawn separately, outside zoom transform (see drawGame)
 }
 
 // Wait for Press Start 2P before starting loop — fixes canvas font on Android
