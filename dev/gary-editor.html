@@ -502,6 +502,11 @@ let spaceHeld = false;
 // Mouse tracking
 let lastMouseX = 0, lastMouseY = 0;
 
+// Entity drag-box: drag out a rectangle to fill with entities
+let entityBoxStart = null; // {tx, ty} or null
+let entityBoxEnd = null;   // {tx, ty} or null
+let entityBoxDragging = false;
+
 // ---- UNDO / REDO ----
 const undoStack = [];
 const redoStack = [];
@@ -1059,8 +1064,15 @@ canvas.addEventListener('mousedown', e => {
 
         // Normal click = place
         if (selectedEntity) {
-            pushUndo();
-            placeEntity(w);
+            if (selectedEntity === 'spawn') {
+                pushUndo();
+                placeEntity(w);
+            } else {
+                // Start drag box for entities
+                entityBoxStart = { tx: w.tx, ty: w.ty };
+                entityBoxEnd = { tx: w.tx, ty: w.ty };
+                entityBoxDragging = true;
+            }
         } else if (selectedTiles.length > 0) {
             pushUndo();
             painting = 'paint';
@@ -1082,6 +1094,12 @@ canvas.addEventListener('mousemove', e => {
     }
 
     const w = canvasToWorld(e);
+
+    // Entity drag box
+    if (entityBoxDragging && entityBoxStart) {
+        entityBoxEnd = { tx: w.tx, ty: w.ty };
+        return;
+    }
 
     // Dragging object
     if (draggingObj && selectedObj) {
@@ -1105,7 +1123,38 @@ canvas.addEventListener('mousemove', e => {
 
 canvas.addEventListener('mouseup', e => {
     if (e.button === 1 || (e.button === 0 && panning)) panning = false;
-    if (e.button === 0) { painting = false; draggingObj = false; }
+    if (e.button === 0) {
+        painting = false;
+        draggingObj = false;
+
+        // Finalize entity drag box
+        if (entityBoxDragging && entityBoxStart && entityBoxEnd && selectedEntity) {
+            pushUndo();
+            const x1 = Math.min(entityBoxStart.tx, entityBoxEnd.tx);
+            const y1 = Math.min(entityBoxStart.ty, entityBoxEnd.ty);
+            const x2 = Math.max(entityBoxStart.tx, entityBoxEnd.tx);
+            const y2 = Math.max(entityBoxStart.ty, entityBoxEnd.ty);
+
+            if (x1 === x2 && y1 === y2) {
+                // Single click — place one entity
+                const ex = x1 * T + T / 2;
+                const ey = (y1 + 1) * T;
+                entities.push({ type: selectedEntity, x: ex, y: ey });
+            } else {
+                // Box — fill with entities, one per tile cell
+                for (let ty = y1; ty <= y2; ty++) {
+                    for (let tx = x1; tx <= x2; tx++) {
+                        const ex = tx * T + T / 2;
+                        const ey = (ty + 1) * T;
+                        entities.push({ type: selectedEntity, x: ex, y: ey });
+                    }
+                }
+            }
+            entityBoxDragging = false;
+            entityBoxStart = null;
+            entityBoxEnd = null;
+        }
+    }
 });
 
 canvas.addEventListener('wheel', e => {
@@ -1319,6 +1368,30 @@ function drawEditor() {
             }
         }
         ctx.globalAlpha = 1;
+    }
+
+    // Entity drag box preview
+    if (entityBoxDragging && entityBoxStart && entityBoxEnd && selectedEntity) {
+        const x1 = Math.min(entityBoxStart.tx, entityBoxEnd.tx);
+        const y1 = Math.min(entityBoxStart.ty, entityBoxEnd.ty);
+        const x2 = Math.max(entityBoxStart.tx, entityBoxEnd.tx);
+        const y2 = Math.max(entityBoxStart.ty, entityBoxEnd.ty);
+        ctx.strokeStyle = '#ffcc00';
+        ctx.lineWidth = 1 / zoom;
+        ctx.setLineDash([4 / zoom, 4 / zoom]);
+        ctx.strokeRect(x1 * T, y1 * T, (x2 - x1 + 1) * T, (y2 - y1 + 1) * T);
+        ctx.setLineDash([]);
+        const def = ENTITY_DEFS[selectedEntity];
+        if (def && def.img && img[def.img] && img[def.img].complete) {
+            ctx.globalAlpha = 0.4;
+            for (let ty = y1; ty <= y2; ty++) {
+                for (let tx = x1; tx <= x2; tx++) {
+                    ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh,
+                        tx * T + T / 2 - def.sw / 2, (ty + 1) * T - def.sh, def.sw, def.sh);
+                }
+            }
+            ctx.globalAlpha = 1;
+        }
     }
 
     ctx.restore();
