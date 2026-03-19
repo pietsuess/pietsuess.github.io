@@ -1901,14 +1901,18 @@ function playTick(ts) {
     ctx.scale(zoom, zoom);
     ctx.translate(-pcamX, -pcamY);
 
-    // Tiles
+    // Draw order matches Godot z-indices:
+    // Background (z=0) → Midground (z=1) → Entities → Gary (z=5) → Foreground (z=7)
+    // This lets Foreground tiles (tunnels, overlays) draw IN FRONT of Gary.
+
     const startTX = Math.max(0, Math.floor(pcamX / T) - 1);
     const endTX = Math.min(LVL_W, Math.ceil((pcamX + playW) / T) + 1);
     const startTY = Math.max(0, Math.floor(pcamY / T) - 1);
     const endTY = Math.min(LVL_H, Math.ceil((pcamY + playH) / T) + 1);
 
-    for (const layer of layers) {
-        if (!layer.visible) continue;
+    function drawLayerTiles(layerIdx) {
+        const layer = layers[layerIdx];
+        if (!layer.visible) return;
         for (let ty = startTY; ty < endTY; ty++) {
             for (let tx = startTX; tx < endTX; tx++) {
                 const tile = layer.tiles.get(tx + ',' + ty);
@@ -1921,7 +1925,13 @@ function playTick(ts) {
         }
     }
 
-    // Entities
+    // 1. Background layer (z=0)
+    drawLayerTiles(0);
+
+    // 2. Midground layer (z=1)
+    drawLayerTiles(1);
+
+    // 3. Entities (between mid and foreground)
     for (const c of pCoins) {
         if (c.gone) continue;
         const fr = Math.floor(c.t * 6) % 7;
@@ -1948,7 +1958,7 @@ function playTick(ts) {
         ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
     }
 
-    // Gary
+    // 4. Gary (z=5)
     if (img.gary && img.gary.complete) {
         const fr = ANIMS[gState].fr[gaFrame];
         const px = Math.round(gx), py = Math.round(gy);
@@ -1962,6 +1972,9 @@ function playTick(ts) {
         }
         ctx.restore();
     }
+
+    // 5. Foreground layer (z=7) — draws ON TOP of Gary (tunnels, overlays)
+    drawLayerTiles(2);
 
     // Hitboxes
     if (showHitboxes) {
