@@ -169,9 +169,16 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <span class="key">Esc</span> Back to edit<br>
     <div class="sep"></div>
     <h3>Tileset</h3>
-    <span style="color:#f44;">Red</span> = fully solid<br>
-    <span style="color:#fa0;">Orange bar</span> = partial<br>
-    <span style="color:#888;">No color</span> = passthrough
+    <span style="color:#f44;">Red</span> = solid (Godot)<br>
+    <span style="color:#fa0;">Orange</span> = partial<br>
+    <span style="color:#0cf;">Cyan</span> = custom override<br>
+    <span style="color:#888;">None</span> = passthrough<br>
+    <div class="sep"></div>
+    <h3>Collision Edit</h3>
+    <span class="key">Ctrl</span>+Click Remove<br>
+    <span class="key">Ctrl+C</span> Copy collision<br>
+    <span class="key">Ctrl+V</span> Paste collision<br>
+    <span class="key">Ctrl+Shift+S</span> Make solid
 </div>
 
 <div id="canvas-wrap">
@@ -383,8 +390,63 @@ const TILE_SIZES = {
     '0,22':[3,2],'3,22':[3,2],'6,22':[3,2],'9,22':[3,2],'12,22':[3,2],'15,22':[3,2],'18,22':[3,2],'21,22':[3,2]
 };
 
+// Custom collision overrides — user can add/remove/copy collision per atlas cell.
+// Overrides take precedence over the Godot defaults above.
+// Maps "ax,ay" -> null (removed) | 'solid' | [[minY,maxY],...] (partial)
+const collisionOverrides = {};
+
+// Clipboard for copy/paste
+let collisionClipboard = null; // null | 'none' | 'solid' | [[minY,maxY],...]
+
 function isSolidAtlas(ax, ay) {
-    return SOLID_ATLAS.has(ax + ',' + ay);
+    const key = ax + ',' + ay;
+    if (key in collisionOverrides) {
+        return collisionOverrides[key] !== null;
+    }
+    return SOLID_ATLAS.has(key);
+}
+
+function getCollisionData(ax, ay) {
+    const key = ax + ',' + ay;
+    if (key in collisionOverrides) {
+        const ov = collisionOverrides[key];
+        if (ov === null) return { type: 'none' };
+        if (ov === 'solid') return { type: 'solid' };
+        return { type: 'partial', ranges: ov };
+    }
+    if (!SOLID_ATLAS.has(key)) return { type: 'none' };
+    if (PARTIAL_CELLS[key]) return { type: 'partial', ranges: PARTIAL_CELLS[key] };
+    return { type: 'solid' };
+}
+
+function setCollisionOverride(ax, ay, value) {
+    collisionOverrides[ax + ',' + ay] = value;
+}
+
+function removeCollisionOverride(ax, ay) {
+    delete collisionOverrides[ax + ',' + ay];
+}
+
+function copyCollision(ax, ay) {
+    const data = getCollisionData(ax, ay);
+    if (data.type === 'none') collisionClipboard = 'none';
+    else if (data.type === 'solid') collisionClipboard = 'solid';
+    else collisionClipboard = JSON.parse(JSON.stringify(data.ranges));
+}
+
+function pasteCollision(ax, ay) {
+    if (collisionClipboard === null) return;
+    if (collisionClipboard === 'none') setCollisionOverride(ax, ay, null);
+    else if (collisionClipboard === 'solid') setCollisionOverride(ax, ay, 'solid');
+    else setCollisionOverride(ax, ay, JSON.parse(JSON.stringify(collisionClipboard)));
+}
+
+function deleteCollision(ax, ay) {
+    setCollisionOverride(ax, ay, null); // mark as passthrough
+}
+
+function makeFullSolid(ax, ay) {
+    setCollisionOverride(ax, ay, 'solid');
 }
 
 // ---- IMAGES ----
@@ -538,26 +600,28 @@ function drawTilePicker() {
     for (let x = 0; x <= cols; x++) { tpCtx.beginPath(); tpCtx.moveTo(x * T, 0); tpCtx.lineTo(x * T, img.env.naturalHeight); tpCtx.stroke(); }
     for (let y = 0; y <= rows; y++) { tpCtx.beginPath(); tpCtx.moveTo(0, y * T); tpCtx.lineTo(img.env.naturalWidth, y * T); tpCtx.stroke(); }
 
-    // Mark solid tiles with red tint, partial tiles with orange stripe
-    for (const key of SOLID_ATLAS) {
-        const [ax, ay] = key.split(',').map(Number);
-        const partial = PARTIAL_CELLS[key];
-        if (partial) {
-            // Partial: draw orange bars where the collision actually is
-            for (const [y0, y1] of partial) {
-                tpCtx.fillStyle = 'rgba(255,160,0,0.4)';
-                tpCtx.fillRect(ax * T, ay * T + y0, T, y1 - y0);
+    // Mark solid/partial tiles — uses overrides when present
+    const envCols = Math.floor(img.env.naturalWidth / T);
+    const envRows = Math.floor(img.env.naturalHeight / T);
+    for (let ay = 0; ay < envRows; ay++) {
+        for (let ax = 0; ax < envCols; ax++) {
+            const data = getCollisionData(ax, ay);
+            const isOverridden = (ax + ',' + ay) in collisionOverrides;
+            if (data.type === 'partial') {
+                for (const [y0, y1] of data.ranges) {
+                    tpCtx.fillStyle = isOverridden ? 'rgba(0,200,255,0.4)' : 'rgba(255,160,0,0.4)';
+                    tpCtx.fillRect(ax * T, ay * T + y0, T, y1 - y0);
+                }
+                tpCtx.strokeStyle = isOverridden ? 'rgba(0,200,255,0.7)' : 'rgba(255,160,0,0.7)';
+                tpCtx.lineWidth = 1;
+                tpCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
+            } else if (data.type === 'solid') {
+                tpCtx.fillStyle = isOverridden ? 'rgba(0,200,255,0.25)' : 'rgba(255,50,50,0.25)';
+                tpCtx.fillRect(ax * T, ay * T, T, T);
+                tpCtx.strokeStyle = isOverridden ? 'rgba(0,200,255,0.6)' : 'rgba(255,50,50,0.6)';
+                tpCtx.lineWidth = 1;
+                tpCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
             }
-            tpCtx.strokeStyle = 'rgba(255,160,0,0.7)';
-            tpCtx.lineWidth = 1;
-            tpCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
-        } else {
-            // Fully solid: red tint
-            tpCtx.fillStyle = 'rgba(255,50,50,0.25)';
-            tpCtx.fillRect(ax * T, ay * T, T, T);
-            tpCtx.strokeStyle = 'rgba(255,50,50,0.6)';
-            tpCtx.lineWidth = 1;
-            tpCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
         }
     }
 
@@ -597,6 +661,15 @@ function pickerClick(e, tileset) {
     const scaleX = cvs.width / rect.width;
     const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
     const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+
+    // Ctrl+click = delete collision (make passthrough)
+    if ((e.ctrlKey || e.metaKey) && tileset === 'env') {
+        deleteCollision(ax, ay);
+        drawTilePicker();
+        const data = getCollisionData(ax, ay);
+        document.getElementById('tile-info').textContent = `Tile (${ax},${ay}): collision REMOVED (passthrough)`;
+        return;
+    }
 
     const tile = { ax, ay, tileset, dx: 0, dy: 0 };
 
@@ -686,23 +759,26 @@ function drawTileZoom() {
 
     // Solid/partial overlay (only for env tileset)
     if (tileZoomTileset === 'env') {
-        for (const key of SOLID_ATLAS) {
-            const [ax, ay] = key.split(',').map(Number);
-            const partial = PARTIAL_CELLS[key];
-            if (partial) {
-                for (const [y0, y1] of partial) {
-                    tzCtx.fillStyle = 'rgba(255,160,0,0.4)';
-                    tzCtx.fillRect(ax * T, ay * T + y0, T, y1 - y0);
+        const zCols = Math.floor(w / T), zRows = Math.floor(h / T);
+        for (let ay = 0; ay < zRows; ay++) {
+            for (let ax = 0; ax < zCols; ax++) {
+                const data = getCollisionData(ax, ay);
+                const isOv = (ax + ',' + ay) in collisionOverrides;
+                if (data.type === 'partial') {
+                    for (const [y0, y1] of data.ranges) {
+                        tzCtx.fillStyle = isOv ? 'rgba(0,200,255,0.4)' : 'rgba(255,160,0,0.4)';
+                        tzCtx.fillRect(ax * T, ay * T + y0, T, y1 - y0);
+                    }
+                    tzCtx.strokeStyle = isOv ? 'rgba(0,200,255,0.7)' : 'rgba(255,160,0,0.7)';
+                    tzCtx.lineWidth = 1;
+                    tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
+                } else if (data.type === 'solid') {
+                    tzCtx.fillStyle = isOv ? 'rgba(0,200,255,0.25)' : 'rgba(255,50,50,0.25)';
+                    tzCtx.fillRect(ax * T, ay * T, T, T);
+                    tzCtx.strokeStyle = isOv ? 'rgba(0,200,255,0.6)' : 'rgba(255,50,50,0.6)';
+                    tzCtx.lineWidth = 1;
+                    tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
                 }
-                tzCtx.strokeStyle = 'rgba(255,160,0,0.7)';
-                tzCtx.lineWidth = 1;
-                tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
-            } else {
-                tzCtx.fillStyle = 'rgba(255,50,50,0.25)';
-                tzCtx.fillRect(ax * T, ay * T, T, T);
-                tzCtx.strokeStyle = 'rgba(255,50,50,0.6)';
-                tzCtx.lineWidth = 1;
-                tzCtx.strokeRect(ax * T + 0.5, ay * T + 0.5, T - 1, T - 1);
             }
         }
     }
@@ -726,12 +802,20 @@ tzBody.addEventListener('mousedown', e => {
         return;
     }
     if (e.button === 0) {
-        // Click to select tile
         const rect = tzCanvas.getBoundingClientRect();
         const scaleX = tzCanvas.width / rect.width;
         const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
         const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
-        // Reuse the same logic as the panel picker
+
+        // Ctrl+click = delete collision in zoom popup
+        if ((e.ctrlKey || e.metaKey) && tileZoomTileset === 'env') {
+            deleteCollision(ax, ay);
+            drawTileZoom();
+            drawTilePicker();
+            document.getElementById('tile-zoom-info').textContent = `Tile (${ax},${ay}): collision REMOVED`;
+            return;
+        }
+
         const tile = { ax, ay, tileset: tileZoomTileset, dx: 0, dy: 0 };
         if (e.shiftKey && selectedTiles.length > 0 && selectedTiles[0].tileset === tileZoomTileset) {
             const idx = selectedTiles.findIndex(t => t.ax === ax && t.ay === ay);
@@ -779,6 +863,45 @@ window.addEventListener('keydown', e => {
     if (tileZoomOpen) {
         if (e.code === 'Space') { tzSpaceHeld = true; e.preventDefault(); }
         if (e.code === 'Escape') { closeTileZoom(); e.preventDefault(); }
+        // Ctrl+C = copy collision from selected tile
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC' && selectedTiles.length > 0 && tileZoomTileset === 'env') {
+            const t = selectedTiles[0];
+            copyCollision(t.ax, t.ay);
+            const data = getCollisionData(t.ax, t.ay);
+            document.getElementById('tile-zoom-info').textContent = `Copied collision: ${data.type}` +
+                (data.type === 'partial' ? ' ' + JSON.stringify(data.ranges) : '');
+            e.preventDefault();
+        }
+        // Ctrl+V = paste collision to selected tile(s)
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV' && selectedTiles.length > 0 && tileZoomTileset === 'env') {
+            for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
+            drawTileZoom(); drawTilePicker();
+            document.getElementById('tile-zoom-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
+            e.preventDefault();
+        }
+        // Ctrl+Shift+S = make selected tile(s) fully solid
+        if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.code === 'KeyS' && tileZoomTileset === 'env') {
+            for (const t of selectedTiles) makeFullSolid(t.ax, t.ay);
+            drawTileZoom(); drawTilePicker();
+            document.getElementById('tile-zoom-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
+            e.preventDefault();
+        }
+    }
+
+    // Same shortcuts in panel when not zoomed
+    if (!tileZoomOpen && mode === 'edit' && selectedTiles.length > 0 && selectedTiles[0].tileset === 'env') {
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyC' && !e.shiftKey) {
+            const t = selectedTiles[0];
+            copyCollision(t.ax, t.ay);
+            const data = getCollisionData(t.ax, t.ay);
+            document.getElementById('tile-info').textContent = `Copied collision: ${data.type}`;
+            // Don't preventDefault — let Cmd+C work normally elsewhere
+        }
+        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
+            for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
+            drawTilePicker(); drawLavaPicker();
+            document.getElementById('tile-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
+        }
     }
 });
 window.addEventListener('keyup', e => {
@@ -1079,6 +1202,7 @@ function saveLevel() {
             tiles: Object.fromEntries(l.tiles),
         })),
         entities: entities,
+        collisionOverrides: Object.keys(collisionOverrides).length > 0 ? collisionOverrides : undefined,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1115,6 +1239,12 @@ function loadLevel() {
                     }
                 });
                 entities = data.entities || [];
+                // Restore collision overrides
+                Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
+                if (data.collisionOverrides) {
+                    Object.assign(collisionOverrides, data.collisionOverrides);
+                }
+                drawTilePicker(); drawLavaPicker();
             } catch (err) {
                 alert('Failed to load: ' + err.message);
             }
@@ -1300,13 +1430,13 @@ function buildSolidSet() {
         for (const [key, tile] of layer.tiles) {
             if (tile.tileset === 'lava') {
                 solidSet.add(key);
-            } else if (isSolidAtlas(tile.ax, tile.ay)) {
-                solidSet.add(key);
-                // Check if this atlas cell has partial collision
-                const atlasKey = tile.ax + ',' + tile.ay;
-                const partial = PARTIAL_CELLS[atlasKey];
-                if (partial) {
-                    cellCol[key] = partial;
+            } else {
+                const data = getCollisionData(tile.ax, tile.ay);
+                if (data.type === 'solid') {
+                    solidSet.add(key);
+                } else if (data.type === 'partial') {
+                    solidSet.add(key);
+                    cellCol[key] = data.ranges;
                 }
             }
         }
@@ -1445,6 +1575,11 @@ function rectHit(x, y, w, h) {
     return false;
 }
 
+// Step-up tolerance: if Gary's feet barely clip a collision bar (<=STEP_UP px),
+// nudge him up over it instead of blocking horizontal movement.
+// This lets Gary roll over the thin bottom pipe bar (~3px).
+const STEP_UP = 5;
+
 function resolveX() {
     const [bx, by, bw, bh] = worldBox();
     const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
@@ -1454,6 +1589,39 @@ function resolveX() {
         if (!cellOverlap(tx, ty, by, by + bh)) continue;
         const rx = tx * T;
         if (bx < rx + T && bx + bw > rx) {
+            // Before blocking, check if we can step up over this obstacle
+            const k = tx + ',' + ty;
+            const ranges = cellCol[k];
+            if (ranges && gFloor) {
+                // Find the highest collision bar top that Gary's feet overlap
+                let maxBarTop = -Infinity;
+                for (const r2 of ranges) {
+                    const barTop = ty * T + r2[0];
+                    const barBot = ty * T + r2[1];
+                    // Only care about bars that Gary's feet actually clip
+                    if (by + bh > barTop && by + bh < barBot + STEP_UP) {
+                        maxBarTop = Math.max(maxBarTop, barTop);
+                    }
+                }
+                // If the clip is small enough, step up instead of blocking
+                if (maxBarTop > -Infinity) {
+                    const stepAmount = (by + bh) - maxBarTop;
+                    if (stepAmount > 0 && stepAmount <= STEP_UP) {
+                        gy -= stepAmount;
+                        return; // don't block horizontal movement
+                    }
+                }
+            }
+            // Also try step-up for full cells — check if just feet clipping top edge
+            if (!ranges && gFloor) {
+                const cellTop = ty * T;
+                const feetOverlap = (by + bh) - cellTop;
+                if (feetOverlap > 0 && feetOverlap <= STEP_UP) {
+                    gy -= feetOverlap;
+                    return;
+                }
+            }
+
             const c = colBox();
             if (gvx > 0) gx = rx - c[2] - c[0] - 0.01;
             else if (gvx < 0) gx = rx + T - c[0] + 0.01;
