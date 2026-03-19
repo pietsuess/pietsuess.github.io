@@ -459,6 +459,12 @@ let pendingImage = null;
 let allMessages = [];
 let audioCtx = null;
 
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+  return audioCtx;
+}
+
 // User color palette from pietsuess.com
 const USER_COLORS = ['gold', 'coral', 'rose', 'magenta', 'cream'];
 const userColorMap = {};
@@ -475,72 +481,64 @@ function getUserColor(userName) {
 // Sound effects using Web Audio API
 function playReceiveSound() {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime;
-    // Convolver for reverb
-    const convolver = audioCtx.createConvolver();
-    const rate = audioCtx.sampleRate;
+    const c = ensureAudio();
+    const t = c.currentTime;
+    const convolver = c.createConvolver();
+    const rate = c.sampleRate;
     const len = rate * 1.2;
-    const impulse = audioCtx.createBuffer(2, len, rate);
+    const impulse = c.createBuffer(2, len, rate);
     for (let ch = 0; ch < 2; ch++) {
       const d = impulse.getChannelData(ch);
-      for (let i = 0; i < len; i++) {
-        d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
-      }
+      for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.5);
     }
     convolver.buffer = impulse;
-    // Two tiny bell tones
-    const freqs = [2400, 3200];
-    freqs.forEach((f, i) => {
-      const osc = audioCtx.createOscillator();
-      const gain = audioCtx.createGain();
+    [2400, 3200].forEach((f, i) => {
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      const dry = c.createGain();
+      dry.gain.value = 0.4;
       osc.connect(gain);
       gain.connect(convolver);
-      convolver.connect(audioCtx.destination);
-      // Also dry signal, quieter
-      const dry = audioCtx.createGain();
-      dry.gain.value = 0.4;
+      convolver.connect(c.destination);
       gain.connect(dry);
-      dry.connect(audioCtx.destination);
+      dry.connect(c.destination);
       osc.type = 'sine';
       osc.frequency.value = f;
-      const offset = i * 0.07;
-      gain.gain.setValueAtTime(0, t + offset);
-      gain.gain.linearRampToValueAtTime(0.06, t + offset + 0.003);
-      gain.gain.exponentialRampToValueAtTime(0.001, t + offset + 0.4);
-      osc.start(t + offset);
-      osc.stop(t + offset + 0.5);
+      const off = i * 0.07;
+      gain.gain.setValueAtTime(0, t + off);
+      gain.gain.linearRampToValueAtTime(0.06, t + off + 0.003);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + off + 0.4);
+      osc.start(t + off);
+      osc.stop(t + off + 0.5);
     });
-  } catch(e) {}
+  } catch(e) { console.log('receive sound error', e); }
 }
 
 function playSendSound() {
   try {
-    if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    const t = audioCtx.currentTime;
-    // Noise-based woosh
-    const bufLen = audioCtx.sampleRate * 0.15;
-    const buf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const c = ensureAudio();
+    const t = c.currentTime;
+    const bufLen = c.sampleRate * 0.15;
+    const buf = c.createBuffer(1, bufLen, c.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
-    const noise = audioCtx.createBufferSource();
+    const noise = c.createBufferSource();
     noise.buffer = buf;
-    // Bandpass filter sweeps up for woosh effect
-    const filter = audioCtx.createBiquadFilter();
+    const filter = c.createBiquadFilter();
     filter.type = 'bandpass';
     filter.Q.value = 2;
     filter.frequency.setValueAtTime(400, t);
     filter.frequency.exponentialRampToValueAtTime(3000, t + 0.1);
-    const gain = audioCtx.createGain();
+    const gain = c.createGain();
     gain.gain.setValueAtTime(0.08, t);
     gain.gain.linearRampToValueAtTime(0.04, t + 0.04);
     gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
     noise.connect(filter);
     filter.connect(gain);
-    gain.connect(audioCtx.destination);
+    gain.connect(c.destination);
     noise.start(t);
     noise.stop(t + 0.15);
-  } catch(e) {}
+  } catch(e) { console.log('send sound error', e); }
 }
 
 function loadMessages() {
