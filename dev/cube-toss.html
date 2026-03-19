@@ -289,6 +289,11 @@ let showHints = false;
 let levelMenuOpen = false;
 let levelMenuScroll = 0;
 
+// Show goal preview
+let goalPreview = false;
+let goalPreviewTimer = 0;
+const GOAL_PREVIEW_DUR = 2.0; // seconds to hold on goal
+
 // ─── LEVEL DEFINITIONS ───
 // backWall: flush with goal right edge, full height, seals the end
 const LEVELS = [
@@ -973,9 +978,9 @@ canvas.addEventListener('touchend',(e)=>{onUp(e);});
 
 // Button bounds
 function resetBtnBounds(){
-  const rbw=120,rbh=44;
-  const tlx = getThrowLine() - camX;
-  return {x: Math.max(10, tlx/2 - rbw/2), y:H*0.5 - rbh/2, w:rbw, h:rbh};
+  const rbw=120,rbh=40;
+  const tlScreen = getThrowLine() - camX;
+  return {x: Math.max(10, tlScreen/2 - rbw/2), y: 100, w:rbw, h:rbh};
 }
 function nextBtnBounds(){
   const nbw=220,nbh=56;
@@ -1178,6 +1183,12 @@ function onDown(e){
       canvas.style.cursor = 'move';
     }
     return;
+  }
+
+  // Show goal button
+  const gbw=80,gbh=32,gbx=W-gbw-195,gby=15;
+  if(p.x>=gbx&&p.x<=gbx+gbw&&p.y>=gby&&p.y<=gby+gbh&&state==='ready'){
+    goalPreview=true; goalPreviewTimer=GOAL_PREVIEW_DUR; return;
   }
 
   // Hints toggle button (top right)
@@ -1779,13 +1790,20 @@ function animate(time){
   lastTime=time; elapsed+=dt; gradPhase+=dt*0.05;
 
   if (!editorMode) {
-    if(state==='thrown'&&cube){
+    if (goalPreview) {
+      // Pan to goal
+      const g = getCurrentLevel().goal;
+      const goalCamX = Math.max(0, g.x + g.w/2 - W * 0.5);
+      const goalCamY = Math.max(0, g.y + g.h/2 - H * 0.5);
+      camX += (goalCamX - camX) * 0.08;
+      camY += (goalCamY - camY) * 0.08;
+      goalPreviewTimer -= dt;
+      if (goalPreviewTimer <= 0) { goalPreview = false; }
+    } else if(state==='thrown'&&cube){
       const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
       camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
-      // Only follow Y if the level extends below the screen (death zone below H)
       const dY = getDeathY();
       if (dY > H) {
-        // Shift down only when cube is near the bottom edge
         if (cube.y > H * 0.9 + camY) {
           camY += (cube.y - H * 0.5 - camY) * 0.04;
         } else if (cube.y < camY + H * 0.2 && camY > 0) {
@@ -1793,7 +1811,7 @@ function animate(time){
         }
       }
     } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
-    camX+=(camTargetX-camX)*0.08;
+    if (!goalPreview) camX+=(camTargetX-camX)*0.08;
   }
 
   if(state==='thrown'&&cube){
@@ -1825,11 +1843,11 @@ function animate(time){
   bg.addColorStop(1, '#f4c542');
   ctx.globalAlpha = 1;
   ctx.fillStyle = bg;
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(-200,-200,W+400,H+2000);
 
   // Darken overlay for playability
   ctx.fillStyle = 'rgba(26,14,46,0.65)';
-  ctx.fillRect(0,0,W,H);
+  ctx.fillRect(-200,-200,W+400,H+2000);
 
   // Noise texture (subtle grain)
   ctx.fillStyle = 'rgba(255,255,255,0.015)';
@@ -2213,6 +2231,17 @@ function animate(time){
   ctx.fillStyle = editorMode ? 'rgba(0,255,255,0.85)' : 'rgba(254,249,240,0.4)';
   ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
   ctx.fillText('EDIT', ebx + ebw / 2, eby + ebh / 2 + 4);
+
+  // ─── SHOW GOAL BUTTON — top right ───
+  const gbw = 80, gbh = 32, gbx = W - gbw - 195, gby = 15;
+  roundRectPath(gbx, gby, gbw, gbh, 10);
+  ctx.fillStyle = goalPreview ? 'rgba(244,197,66,0.2)' : 'rgba(255,255,255,0.06)';
+  ctx.fill();
+  ctx.strokeStyle = goalPreview ? 'rgba(244,197,66,0.4)' : 'rgba(255,255,255,0.12)';
+  ctx.lineWidth = 1; ctx.stroke();
+  ctx.fillStyle = goalPreview ? 'rgba(244,197,66,0.85)' : 'rgba(254,249,240,0.4)';
+  ctx.font = '600 12px Urbanist'; ctx.textAlign = 'center';
+  ctx.fillText('GOAL', gbx + gbw / 2, gby + gbh / 2 + 4);
 
   // ─── HINTS TOGGLE BUTTON — top right ───
   const hbw = 80, hbh = 32, hbx = W - hbw - 15, hby = 15;
