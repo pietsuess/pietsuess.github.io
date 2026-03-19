@@ -694,8 +694,12 @@ function join(n) {
 }
 
 let retryDelay = 1000;
+let lastEventTime = 0;
 function listen() {
-  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse');
+  if (currentES) { try { currentES.close(); } catch(e) {} }
+  const since = lastEventTime ? (lastEventTime + 's') : '30m';
+  const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse?since=' + since);
+  currentES = es;
   es.onopen = () => {
     document.getElementById('status').textContent = 'connected';
     retryDelay = 1000;
@@ -704,6 +708,7 @@ function listen() {
     try {
       const data = JSON.parse(e.data);
       if (data.event !== 'message') return;
+      if (data.time) lastEventTime = data.time;
       let msg = null;
       try { msg = JSON.parse(data.message); } catch(e) {}
       // Handle reactions
@@ -966,6 +971,14 @@ function resetChat() {
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.activeElement.id === 'msg') send();
+});
+
+// Reconnect when tab becomes visible again (mobile background fix)
+let currentES = null;
+document.addEventListener('visibilitychange', () => {
+  if (!document.hidden && name) {
+    listen();
+  }
 });
 
 document.addEventListener('click', e => {
