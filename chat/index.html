@@ -213,6 +213,60 @@
   .msg .text { font-size: 1rem; line-height: 1.6; }
   .msg img { max-width: 100%; border-radius: 10px; margin-top: 8px; cursor: pointer; transition: transform 0.2s; }
   .msg img:hover { transform: scale(1.02); }
+  .msg .reactions { display: flex; gap: 4px; margin-top: 6px; flex-wrap: wrap; }
+  .msg .reactions .reaction {
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    font-size: 0.85em;
+    cursor: pointer;
+    transition: all 0.2s;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .msg .reactions .reaction:hover { background: rgba(255,255,255,0.2); }
+  .msg .reactions .reaction.mine { border-color: var(--gold); background: rgba(244,197,66,0.15); }
+  .msg .reactions .reaction .count { font-size: 0.75em; margin-left: 2px; opacity: 0.7; }
+  .msg .react-btn {
+    opacity: 0;
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    padding: 2px 6px;
+    border-radius: 8px;
+    background: rgba(255,255,255,0.1);
+    border: 1px solid rgba(255,255,255,0.15);
+    cursor: pointer;
+    font-size: 0.75em;
+    transition: opacity 0.2s;
+    color: var(--cream);
+  }
+  .msg { position: relative; }
+  .msg:hover .react-btn { opacity: 1; }
+  .react-picker {
+    display: none;
+    position: absolute;
+    top: -40px;
+    right: 0;
+    background: rgba(26,14,46,0.95);
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    padding: 6px 8px;
+    gap: 4px;
+    z-index: 50;
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+  }
+  .react-picker.show { display: flex; }
+  .react-picker span {
+    cursor: pointer;
+    font-size: 1.2em;
+    padding: 2px 4px;
+    border-radius: 6px;
+    transition: background 0.15s;
+  }
+  .react-picker span:hover { background: rgba(255,255,255,0.15); }
 
   /* User color themes */
   .msg.user-gold {
@@ -402,13 +456,15 @@
     #gate input, #other-input input { font-size: 16px; }
     #chat { height: 100dvh; }
     .msg { max-width: 85%; padding: 10px 14px; }
+    .msg .react-btn { opacity: 0.6; }
     #input-bar { padding: 10px; gap: 8px; }
     #input-bar input[type="text"] { padding: 12px 14px; font-size: 16px; }
     #send-btn { padding: 12px 18px; font-size: 0.85rem; }
     #img-btn { padding: 10px 14px; }
-    #header { padding: 12px 16px; font-size: 0.95em; }
-    #reset-btn { right: 10px; padding: 5px 10px; font-size: 0.6em; }
+    #header { padding: 10px 60px 10px 16px; font-size: 0.9em; }
+    #reset-btn { right: 8px; padding: 6px 12px; font-size: 0.65em; }
     #messages { padding: 14px; }
+    .react-picker span { font-size: 1.4em; padding: 4px 6px; }
   }
 </style>
 </head>
@@ -556,7 +612,7 @@ function loadMessages() {
       allMessages = JSON.parse(stored);
       allMessages.forEach(m => {
         seen.add(m.id);
-        addMessage(m.name, m.text, m.image, m.name === name, true);
+        addMessage(m.name, m.text, m.image, m.name === name, true, m.id);
       });
       const container = document.getElementById('messages');
       container.scrollTop = container.scrollHeight;
@@ -632,6 +688,7 @@ function join(n) {
   document.getElementById('chat').style.display = 'flex';
   document.getElementById('header-text').textContent = n;
   document.getElementById('msg').focus();
+  loadReactions();
   loadMessages();
   listen();
 }
@@ -649,6 +706,18 @@ function listen() {
       if (data.event !== 'message') return;
       let msg = null;
       try { msg = JSON.parse(data.message); } catch(e) {}
+      // Handle reactions
+      if (msg && msg.type === 'react') {
+        if (seen.has(msg.id)) return;
+        seen.add(msg.id);
+        if (!allReactions[msg.msgId]) allReactions[msg.msgId] = {};
+        if (!allReactions[msg.msgId][msg.emoji]) allReactions[msg.msgId][msg.emoji] = [];
+        const arr = allReactions[msg.msgId][msg.emoji];
+        if (!arr.includes(msg.user)) arr.push(msg.user);
+        saveReactions();
+        renderReactions(msg.msgId);
+        return;
+      }
       if (data.attachment && data.attachment.url) {
         const id = data.title || data.id;
         const parts = (data.message || '').split('\n');
@@ -658,7 +727,7 @@ function listen() {
         seen.add(id);
         const stored = { id, name: sender, text, image: data.attachment.url };
         storeMessage(stored);
-        addMessage(sender, text, data.attachment.url, sender === name);
+        addMessage(sender, text, data.attachment.url, sender === name, false, id);
         if (sender !== name) playReceiveSound();
         return;
       }
@@ -666,7 +735,7 @@ function listen() {
       if (seen.has(msg.id)) return;
       seen.add(msg.id);
       storeMessage(msg);
-      addMessage(msg.name, msg.text, msg.image, msg.name === name);
+      addMessage(msg.name, msg.text, msg.image, msg.name === name, false, msg.id);
       if (msg.name !== name) playReceiveSound();
     } catch(err) {}
   });
@@ -721,11 +790,73 @@ function dataURLtoBlob(dataURL) {
   return new Blob([arr], { type: mime });
 }
 
-function addMessage(sender, text, image, mine, skipScroll) {
+const REACT_EMOJIS = ['\u2764\uFE0F', '\uD83D\uDE02', '\uD83D\uDC4D', '\uD83D\uDD25', '\uD83D\uDE2E', '\uD83D\uDE22'];
+const REACTIONS_KEY = 'chat-reactions';
+let allReactions = {};
+
+function loadReactions() {
+  try {
+    const stored = localStorage.getItem(REACTIONS_KEY);
+    if (stored) allReactions = JSON.parse(stored);
+  } catch(e) {}
+}
+
+function saveReactions() {
+  try {
+    localStorage.setItem(REACTIONS_KEY, JSON.stringify(allReactions));
+  } catch(e) {}
+}
+
+function toggleReaction(msgId, emoji) {
+  if (!allReactions[msgId]) allReactions[msgId] = {};
+  if (!allReactions[msgId][emoji]) allReactions[msgId][emoji] = [];
+  const idx = allReactions[msgId][emoji].indexOf(name);
+  if (idx >= 0) {
+    allReactions[msgId][emoji].splice(idx, 1);
+    if (allReactions[msgId][emoji].length === 0) delete allReactions[msgId][emoji];
+  } else {
+    allReactions[msgId][emoji].push(name);
+  }
+  saveReactions();
+  renderReactions(msgId);
+  // Broadcast reaction
+  const rMsg = { type: 'react', msgId, emoji, user: name, id: Date.now() + '-r-' + Math.random().toString(36).slice(2,6) };
+  fetch('https://ntfy.sh/' + TOPIC, { method: 'POST', body: JSON.stringify(rMsg) });
+}
+
+function renderReactions(msgId) {
+  const el = document.querySelector('[data-msg-id="' + msgId + '"] .reactions');
+  if (!el) return;
+  const r = allReactions[msgId] || {};
+  let html = '';
+  for (const emoji in r) {
+    if (r[emoji].length === 0) continue;
+    const isMine = r[emoji].includes(name);
+    html += '<span class="reaction' + (isMine ? ' mine' : '') + '" onclick="toggleReaction(\'' + msgId + '\',\'' + emoji + '\')">' + emoji;
+    if (r[emoji].length > 1) html += '<span class="count">' + r[emoji].length + '</span>';
+    html += '</span>';
+  }
+  el.innerHTML = html;
+}
+
+function showReactPicker(btn) {
+  const picker = btn.nextElementSibling;
+  document.querySelectorAll('.react-picker.show').forEach(p => p.classList.remove('show'));
+  picker.classList.toggle('show');
+}
+
+function pickReact(span, msgId, emoji) {
+  span.parentElement.classList.remove('show');
+  toggleReaction(msgId, emoji);
+}
+
+function addMessage(sender, text, image, mine, skipScroll, msgId) {
   const container = document.getElementById('messages');
   const div = document.createElement('div');
   const colorClass = 'user-' + getUserColor(sender);
   div.className = 'msg ' + (mine ? 'mine' : 'theirs') + ' ' + colorClass;
+  const id = msgId || '';
+  div.setAttribute('data-msg-id', id);
   let html = '<div class="name">' + sender + '</div>';
   if (text) {
     const safe = text.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
@@ -734,8 +865,18 @@ function addMessage(sender, text, image, mine, skipScroll) {
   if (image) {
     html += '<img src="' + image + '" onclick="openLightbox(this.src)">';
   }
+  html += '<div class="reactions"></div>';
+  if (id) {
+    html += '<button class="react-btn" onclick="showReactPicker(this)">+</button>';
+    html += '<div class="react-picker">';
+    REACT_EMOJIS.forEach(e => {
+      html += '<span onclick="pickReact(this,\'' + id + '\',\'' + e + '\')">' + e + '</span>';
+    });
+    html += '</div>';
+  }
   div.innerHTML = html;
   container.appendChild(div);
+  if (id) renderReactions(id);
   if (!skipScroll) container.scrollTop = container.scrollHeight;
 }
 
@@ -815,11 +956,22 @@ function resetChat() {
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(NAME_KEY);
   localStorage.removeItem(PASS_KEY);
+  localStorage.removeItem(REACTIONS_KEY);
+  allMessages = [];
+  allReactions = {};
+  seen.clear();
+  document.getElementById('messages').innerHTML = '';
   location.reload();
 }
 
 document.addEventListener('keydown', e => {
   if (e.key === 'Enter' && document.activeElement.id === 'msg') send();
+});
+
+document.addEventListener('click', e => {
+  if (!e.target.closest('.react-btn') && !e.target.closest('.react-picker')) {
+    document.querySelectorAll('.react-picker.show').forEach(p => p.classList.remove('show'));
+  }
 });
 </script>
 </body>
