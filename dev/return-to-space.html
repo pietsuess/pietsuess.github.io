@@ -5717,9 +5717,10 @@ function update(){
 
   // Race camera — fixed offset, ship at 10% from left edge. No bouncing.
   if(_race.active || _race.showApproach){
-    const targetX = -(canvas.width * 0.35); // push ship 35% left of center = ~15% from edge
-    _raceLeadX += (targetX - _raceLeadX) * 0.03; // smooth once, then hold
-    _raceLeadY += (0 - _raceLeadY) * 0.03;
+    // Ship at bottom 15% of screen — course goes upward
+    _raceLeadX += (0 - _raceLeadX) * 0.03;
+    const targetY = canvas.height * 0.35; // push ship 35% below center = ~85% down
+    _raceLeadY += (targetY - _raceLeadY) * 0.03;
   } else {
     _raceLeadX += (0 - _raceLeadX) * 0.03;
     _raceLeadY += (0 - _raceLeadY) * 0.03;
@@ -10476,11 +10477,11 @@ function _buildCheckpointCourse(opts){
   const amp = opts.curveAmp || 600;
   const freq = opts.curveFreq || 3;
 
-  // Build checkpoint positions — eastward path with vertical curves
+  // Build checkpoint positions — NORTHWARD (upward, -Y) path with horizontal curves
   for(let i = 0; i < count; i++){
     const t = i / (count - 1);
-    const wx = sx + 800 + i * spacing;
-    const wy = sy + Math.sin(t * Math.PI * freq) * amp * (0.4 + t * 0.6);
+    const wx = sx + Math.sin(t * Math.PI * freq) * amp * (0.4 + t * 0.6);
+    const wy = sy - 800 - i * spacing;
     checkpoints.push({ wx, wy, passed: false });
   }
 
@@ -10511,8 +10512,8 @@ function _buildCheckpointCourse(opts){
   }
 
   const lastCp = checkpoints[count - 1];
-  const finishWX = lastCp.wx + spacing * 0.6;
-  const finishWY = lastCp.wy;
+  const finishWX = lastCp.wx;
+  const finishWY = lastCp.wy - spacing * 0.6;
 
   return {
     name: opts.name,
@@ -10622,7 +10623,7 @@ function updateRace(){
   }
 
   // Enter staging box — trigger countdown
-  const _inBox = Math.abs(state.x - (course.startWX - 235)) < 175 && Math.abs(state.y - course.startWY) < 140;
+  const _inBox = Math.abs(state.x - course.startWX) < 175 && Math.abs(state.y - (course.startWY + 200)) < 140;
   if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && _inBox){
     if(!_race.nearStart){
       _race.nearStart = true;
@@ -10652,15 +10653,15 @@ function updateRace(){
   }
   if(distToStart > 400) _race.nearStart = false;
 
-  // Start gate barrier — block ship during countdown
+  // Start gate barrier — block upward travel during countdown
   if(_race.active && !_race.started){
-    const gateX = course.startWX;
-    const gateHalfH = 450;
-    const bdy = state.y - course.startWY;
-    if(Math.abs(bdy) < gateHalfH && state.x > gateX - 60){
-      state.x = gateX - 62;
-      state.vx = Math.min(state.vx, 0);
-      state.vy *= 0.9;
+    const gateY = course.startWY;
+    const gateHalfW = 450;
+    const bdx = state.x - course.startWX;
+    if(Math.abs(bdx) < gateHalfW && state.y < gateY + 60){
+      state.y = gateY + 62;
+      state.vy = Math.max(state.vy, 0); // kill upward velocity
+      state.vx *= 0.9;
       state.collisionFlash = 3;
     }
   }
@@ -10739,10 +10740,10 @@ function updateRace(){
         break;
       }
 
-      // Auto-complete missed checkpoint (X position 500px+ past)
+      // Auto-complete missed checkpoint (Y position 500px+ past — course goes upward so ship Y < cp Y)
       if(ci === _race.nextCheckpoint && !cp.passed){
-        const pastX = state.x - cp.wx;
-        if(pastX > 500){
+        const pastY = cp.wy - state.y; // positive when ship is above (north of) checkpoint
+        if(pastY > 500){
           cp.passed = true;
           _race.nextCheckpoint++;
           // No bonus, just advance
@@ -11017,8 +11018,8 @@ function drawRaceCourse(ctx, cx, cy){
   // Checkered start box
   {
     var boxW = 350, boxH = 280;
-    var bsx = course.startWX - boxW/2 - 60 - state.x + cx;
-    var bsy = course.startWY - state.y + cy;
+    var bsx = course.startWX - state.x + cx;
+    var bsy = course.startWY + boxH/2 + 60 - state.y + cy;
     if(bsx > -500 && bsx < canvas.width+500 && bsy > -500 && bsy < canvas.height+500){
       ctx.save();
       var cellSize = 28;
@@ -11053,32 +11054,32 @@ function drawRaceCourse(ctx, cx, cy){
   {
     var stSx = course.startWX - state.x + cx, stSy = course.startWY - state.y + cy;
     if(stSx > -600 && stSx < canvas.width+600 && stSy > -600 && stSy < canvas.height+600){
-      var stH = 900;
+      var stW = 900; // horizontal beam
       var stPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
       var stCol = _race.started ? '#00ff88' : '#ffcc00';
       ctx.save();
       ctx.translate(stSx, stSy);
       ctx.globalAlpha = 0.06 + stPulse * 0.04;
       ctx.lineWidth = 36; ctx.strokeStyle = stCol;
-      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
       ctx.globalAlpha = 0.4 + stPulse * 0.3;
       ctx.shadowColor = stCol; ctx.shadowBlur = 30;
       ctx.lineWidth = 10; ctx.strokeStyle = stCol;
-      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
       ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.beginPath(); ctx.moveTo(0, -stH/2); ctx.lineTo(0, stH/2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 0.7 + stPulse * 0.3;
       ctx.shadowColor = stCol; ctx.shadowBlur = 22;
       ctx.fillStyle = stCol;
-      ctx.beginPath(); ctx.arc(0, -stH/2, 10, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(0, stH/2, 10, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(-stW/2, 0, 10, 0, Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(stW/2, 0, 10, 0, Math.PI*2); ctx.fill();
       ctx.shadowBlur = 0;
       ctx.globalAlpha = 0.85;
       ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
       ctx.fillStyle = stCol; ctx.textAlign = 'center';
       ctx.shadowColor = stCol; ctx.shadowBlur = 10;
-      ctx.fillText('START', 0, -stH/2 - 24);
+      ctx.fillText('START', 0, -24);
       ctx.shadowBlur = 0;
       ctx.restore();
     }
@@ -11137,18 +11138,25 @@ function drawRaceCourse(ctx, cx, cy){
       astAlpha = ast.hitTimer / 30;
       if(astAlpha <= 0){ ctx.restore(); continue; }
     }
-    ctx.globalAlpha = astAlpha * 0.7;
-    // Shadow/glow
-    ctx.shadowColor = 'rgba(80,80,80,0.4)'; ctx.shadowBlur = 6;
-    // Dark grey body
-    ctx.fillStyle = '#3a3a3a';
+    // Outer glow
+    ctx.globalAlpha = astAlpha * 0.15;
+    ctx.fillStyle = '#ff6644';
+    ctx.beginPath(); ctx.arc(asx, asy, ast.r + 8, 0, Math.PI*2); ctx.fill();
+    // Solid body — bright enough to see against space
+    ctx.globalAlpha = astAlpha * 0.85;
+    ctx.shadowColor = '#ff4422'; ctx.shadowBlur = 10;
+    ctx.fillStyle = '#6a4a3a';
     ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
-    // Lighter edge
-    ctx.globalAlpha = astAlpha * 0.4;
-    ctx.strokeStyle = '#5a5a5a';
-    ctx.lineWidth = 1.5;
+    // Highlight edge
+    ctx.globalAlpha = astAlpha * 0.6;
+    ctx.strokeStyle = '#aa7755';
+    ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(asx, asy, ast.r, 0, Math.PI*2); ctx.stroke();
+    // Inner highlight
+    ctx.globalAlpha = astAlpha * 0.3;
+    ctx.fillStyle = '#aa8866';
+    ctx.beginPath(); ctx.arc(asx - ast.r * 0.25, asy - ast.r * 0.25, ast.r * 0.4, 0, Math.PI*2); ctx.fill();
     ctx.restore();
   }
 
