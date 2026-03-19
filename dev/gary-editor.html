@@ -607,6 +607,7 @@ const ENTITY_DEFS = {
     chest:    { label: 'Chest', color: '#f0f', w: 48, h: 24, img: 'chest', sx: 0, sy: 24, sw: 48, sh: 24, gapX: 3, gapY: 2 },
     arcade:   { label: 'Arcade', color: '#fa0', w: 48, h: 47, img: 'arcade', sx: 0, sy: 0, sw: 48, sh: 47, gapX: 3, gapY: 3 },
     platform: { label: 'Platform', color: '#fff', w: 76, h: 9, img: 'platform', sx: 37, sy: 26, sw: 76, sh: 9, gapX: 5, gapY: 1 },
+    block:    { label: 'Block', color: '#a86', w: 16, h: 16, gapX: 1, gapY: 1 },
 };
 
 // ---- TILE PICKER ----
@@ -1371,7 +1372,13 @@ function drawEditor() {
     for (const ent of entities) {
         const def = ENTITY_DEFS[ent.type];
         if (!def) continue;
-        if (def.img && img[def.img] && img[def.img].complete) {
+        if (ent.type === 'block') {
+            ctx.fillStyle = '#8B5E3C';
+            ctx.fillRect(ent.x - 8, ent.y - 16, 16, 16);
+            ctx.strokeStyle = '#5C3A1E';
+            ctx.lineWidth = 1 / zoom;
+            ctx.strokeRect(ent.x - 8, ent.y - 16, 16, 16);
+        } else if (def.img && img[def.img] && img[def.img].complete) {
             ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh,
                 ent.x - def.sw / 2, ent.y - def.sh, def.sw, def.sh);
         }
@@ -1553,7 +1560,8 @@ const ANIMS = {
     push:      { fr: [f(305,244),f(366,244),f(427,244),f(488,244),f(549,244)], fps: 4, loop: true },
 };
 
-let pCoins, pRods, pChests, pArcades, pPlatforms;
+let pCoins, pRods, pChests, pArcades, pPlatforms, pBlocks;
+let pushingBlock = null; // reference to block being pushed
 let solidSet;
 
 // Build collision set using ACTUAL Godot physics data.
@@ -1673,6 +1681,7 @@ function startPlay() {
     pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false, label: e.label, props: e.props }));
     pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false, label: e.label, props: e.props }));
     pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0, label: e.label, props: e.props }));
+    pBlocks = entities.filter(e => e.type === 'block').map(e => ({ x: e.x, y: e.y, label: e.label, props: e.props }));
 
     Object.keys(pKeys).forEach(k => delete pKeys[k]);
     pJumpBuf = 0;
@@ -1986,8 +1995,8 @@ function playFrame(dt) {
             if (gaDone) pSetState('idle');
             break;
         case 'push':
-            gvx = gDir * SPD;
-            if (!(pkR() || pkL())) pSetState('idle');
+            gvx = gDir * SPD * 0.5; // push is slower
+            if (!(pkR() || pkL())) { pushingBlock = null; pSetState('idle'); }
             break;
     }
 
@@ -2005,6 +2014,19 @@ function playFrame(dt) {
         gFloor = checkFloor();
     }
 
+    // Gary stands on blocks
+    if (gvy >= 0) {
+        for (const b of pBlocks) {
+            if (b === pushingBlock) continue; // don't land on block you're pushing
+            const bL = b.x - 8, bR = b.x + 8, bT = b.y - 16;
+            if (gx >= bL - 4 && gx <= bR + 4 && gy >= bT - 2 && gy <= bT + 4 && gvy >= 0) {
+                gy = bT;
+                gvy = 0;
+                gFloor = true;
+            }
+        }
+    }
+
     // Fall death
     if (gy > LVL_H * T + 100) {
         gx = spawnX * T + T / 2;
@@ -2016,6 +2038,93 @@ function playFrame(dt) {
     // Level bounds
     if (gx < 6) gx = 6;
     if (gx > LVL_W * T - 6) gx = LVL_W * T - 6;
+
+    // Block push logic
+    // Check if Gary is walking into a block
+    if (gState !== 'push') pushingBlock = null;
+    const PUSH_SPD = SPD * 0.5;
+    for (const b of pBlocks) {
+        const bL = b.x - 8, bR = b.x + 8, bT = b.y - 16, bB = b.y;
+        const gL = gx - 6, gR = gx + 6;
+        // Gary's feet must be near block bottom (standing on same ground)
+        if (gy > bT && gy <= bB + 4) {
+            // Walking right into block
+            if (gvx > 0 && gR >= bL - 1 && gR <= bL + 4 && gx < b.x) {
+                if (gState === 'run' || gState === 'start' || gState === 'push') {
+                    // Check if block can move right
+                    const nextBTx = Math.floor((b.x + 8) / T);
+                    const bTy1 = Math.floor(bT / T), bTy2 = Math.floor((bB - 1) / T);
+                    let blocked = false;
+                    for (let ty = bTy1; ty <= bTy2; ty++) {
+                        if (isSolid(nextBTx, ty)) { blocked = true; break; }
+                    }
+                    // Check against other blocks
+                    for (const ob of pBlocks) {
+                        if (ob === b) continue;
+                        if (Math.abs(ob.y - b.y) < 16 && ob.x > b.x && ob.x - b.x < 20) { blocked = true; break; }
+                    }
+                    if (!blocked) {
+                        gDir = 1;
+                        pSetState('push');
+                        pushingBlock = b;
+                        b.x += PUSH_SPD * dt;
+                        gx = b.x - 8 - 6;
+                    } else {
+                        // Block can't move — stop Gary
+                        gx = bL - 6 - 0.01;
+                        gvx = 0;
+                    }
+                }
+            }
+            // Walking left into block
+            if (gvx < 0 && gL <= bR + 1 && gL >= bR - 4 && gx > b.x) {
+                if (gState === 'run' || gState === 'start' || gState === 'push') {
+                    const nextBTx = Math.floor((b.x - 9) / T);
+                    const bTy1 = Math.floor(bT / T), bTy2 = Math.floor((bB - 1) / T);
+                    let blocked = false;
+                    for (let ty = bTy1; ty <= bTy2; ty++) {
+                        if (isSolid(nextBTx, ty)) { blocked = true; break; }
+                    }
+                    for (const ob of pBlocks) {
+                        if (ob === b) continue;
+                        if (Math.abs(ob.y - b.y) < 16 && ob.x < b.x && b.x - ob.x < 20) { blocked = true; break; }
+                    }
+                    if (!blocked) {
+                        gDir = -1;
+                        pSetState('push');
+                        pushingBlock = b;
+                        b.x -= PUSH_SPD * dt;
+                        gx = b.x + 8 + 6;
+                    } else {
+                        gx = bR + 6 + 0.01;
+                        gvx = 0;
+                    }
+                }
+            }
+        }
+    }
+    // Blocks fall with gravity
+    for (const b of pBlocks) {
+        const belowTy = Math.floor(b.y / T);
+        const bTx1 = Math.floor((b.x - 8) / T), bTx2 = Math.floor((b.x + 7) / T);
+        let onGround = false;
+        for (let tx = bTx1; tx <= bTx2; tx++) {
+            if (isSolid(tx, belowTy)) { onGround = true; break; }
+        }
+        // Check if on another block
+        for (const ob of pBlocks) {
+            if (ob === b) continue;
+            if (Math.abs(ob.x - b.x) < 16 && b.y >= ob.y - 16 && b.y <= ob.y - 14) { onGround = true; break; }
+        }
+        if (!onGround) {
+            b.y += GRAV * dt * 0.5; // blocks fall slower
+            // Snap to ground
+            const snapTy = Math.floor(b.y / T);
+            for (let tx = bTx1; tx <= bTx2; tx++) {
+                if (isSolid(tx, snapTy)) { b.y = snapTy * T; break; }
+            }
+        }
+    }
 
     // Entity interactions
     for (const c of pCoins) {
@@ -2148,6 +2257,23 @@ function playFrame(dt) {
     }
     for (const p of pPlatforms) {
         ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
+    }
+    // Blocks
+    for (const b of pBlocks) {
+        ctx.fillStyle = '#8B5E3C';
+        ctx.fillRect(Math.round(b.x) - 8, Math.round(b.y) - 16, 16, 16);
+        ctx.strokeStyle = '#5C3A1E';
+        ctx.strokeRect(Math.round(b.x) - 8, Math.round(b.y) - 16, 16, 16);
+        // Brick pattern
+        ctx.strokeStyle = '#6B4A2E';
+        ctx.beginPath();
+        ctx.moveTo(Math.round(b.x) - 8, Math.round(b.y) - 8);
+        ctx.lineTo(Math.round(b.x) + 8, Math.round(b.y) - 8);
+        ctx.moveTo(Math.round(b.x), Math.round(b.y) - 16);
+        ctx.lineTo(Math.round(b.x), Math.round(b.y) - 8);
+        ctx.moveTo(Math.round(b.x) - 4, Math.round(b.y) - 8);
+        ctx.lineTo(Math.round(b.x) - 4, Math.round(b.y));
+        ctx.stroke();
     }
 
     // 4. Gary (z=5)
