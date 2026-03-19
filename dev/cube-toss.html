@@ -955,9 +955,35 @@ function updateCube(c, dt) {
     return;
   }
 
-  // Settle check
+  // Check if cube is supported — is there a surface directly below it?
+  const half2 = c.size / 2;
+  let supported = false;
+  const checkY = c.y + half2 + 3; // just below the cube
+  const lv2 = getCurrentLevel();
+  // Check walls
+  for (const w of lv2.walls) {
+    if (!w.rot && c.x + half2 > w.x + 4 && c.x - half2 < w.x + w.w - 4 && Math.abs(checkY - w.y) < 6) {
+      supported = true; break;
+    }
+  }
+  // Check platforms
+  if (!supported) {
+    for (const p of lv2.platforms) {
+      if (!p.rot && c.x + half2 > p.x + 4 && c.x - half2 < p.x + p.w - 4 && Math.abs(checkY - p.y) < 8) {
+        supported = true; break;
+      }
+    }
+  }
+
+  // If not supported and slow, give a sideways nudge to slide off
   const finalSpeed = Math.sqrt(c.vx*c.vx+c.vy*c.vy);
-  if(finalSpeed<12&&Math.abs(c.angVel)<0.3&&state==='thrown'){
+  if (!supported && finalSpeed < 30 && Math.abs(c.vy) < 20) {
+    // Nudge in whatever direction has less wall
+    if (Math.abs(c.vx) < 5) c.vx = (Math.random() > 0.5 ? 1 : -1) * 15;
+  }
+
+  // Settle check — only if actually supported on a surface
+  if(finalSpeed<12&&Math.abs(c.angVel)<0.3&&state==='thrown'&&supported){
     c._settleTime=(c._settleTime||0)+dt;
     if(c._settleTime>0.5){state='lost';showMsg('MISSED! TAP TO RETRY',99);stopAirborne();}
   }else{c._settleTime=0;}
