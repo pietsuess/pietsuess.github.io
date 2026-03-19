@@ -5720,8 +5720,8 @@ function update(){
 
   // Race camera lead — offset view in direction of travel
   if(_race.active || _race.showApproach){
-    const leadTarget_x = -state.vx * 8;
-    const leadTarget_y = -state.vy * 8;
+    const leadTarget_x = -state.vx * 20;
+    const leadTarget_y = -state.vy * 20;
     _raceLeadX += (leadTarget_x - _raceLeadX) * 0.08;
     _raceLeadY += (leadTarget_y - _raceLeadY) * 0.08;
   } else {
@@ -5739,35 +5739,7 @@ function update(){
     }
   }
 
-  // Speed particles — spawn and update during race
-  if(_race.active || _race.showApproach){
-    const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
-    // Spawn new particles proportional to speed
-    if(spd > 1 && _race.speedParticles.length < 40){
-      const spawnCount = Math.min(3, 40 - _race.speedParticles.length);
-      for(let sp = 0; sp < spawnCount; sp++){
-        // Spawn at random edge opposite to velocity direction
-        const angle = Math.atan2(state.vy, state.vx) + Math.PI + (Math.random() - 0.5) * 1.5;
-        const dist = 300 + Math.random() * 200;
-        _race.speedParticles.push({
-          sx: Math.cos(angle) * dist, sy: Math.sin(angle) * dist,
-          vx: -state.vx * (0.3 + Math.random() * 0.4),
-          vy: -state.vy * (0.3 + Math.random() * 0.4),
-          age: 0, maxAge: 15 + Math.random() * 10,
-          size: 1 + Math.random()
-        });
-      }
-    }
-    // Update existing
-    for(let sp = _race.speedParticles.length - 1; sp >= 0; sp--){
-      const p = _race.speedParticles[sp];
-      p.sx += p.vx; p.sy += p.vy;
-      p.age++;
-      if(p.age > p.maxAge) _race.speedParticles.splice(sp, 1);
-    }
-  } else {
-    _race.speedParticles.length = 0;
-  }
+  // (Speed particles removed — motion blur used instead)
 
   // Gate burst particles — update
   for(let gp = _race.gateParticles.length - 1; gp >= 0; gp--){
@@ -7240,7 +7212,18 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Motion blur during race — draw semi-transparent overlay instead of full clear
+  if((_race.active || _race.showApproach) && !state.paused){
+    const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
+    if(spd > 2){
+      ctx.fillStyle = 'rgba(0,8,20,' + Math.max(0.3, 1 - spd/40) + ')';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+    } else {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+    }
+  } else {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
   if(!state.started)return;
   // Screen shake from BH flash or boss capture
   const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
@@ -7259,26 +7242,7 @@ function drawGame(){
     ctx.translate(-cx, -cy);
   }
 
-  // Speed particles — small dots streaking past during race
-  if((_race.active || _race.showApproach) && _race.speedParticles.length > 0){
-    ctx.save();
-    const spd = Math.sqrt(state.vx * state.vx + state.vy * state.vy);
-    for(let sp = 0; sp < _race.speedParticles.length; sp++){
-      const p = _race.speedParticles[sp];
-      const alpha = (1 - p.age / p.maxAge) * Math.min(spd / 8, 1) * 0.7;
-      const streakLen = Math.min(spd * 1.5, 20);
-      const px = cx + p.sx, py = cy + p.sy;
-      ctx.globalAlpha = alpha;
-      ctx.strokeStyle = '#88ccff';
-      ctx.lineWidth = p.size;
-      ctx.beginPath();
-      ctx.moveTo(px, py);
-      const vLen = Math.sqrt(p.vx * p.vx + p.vy * p.vy) || 1;
-      ctx.lineTo(px + (p.vx / vLen) * streakLen, py + (p.vy / vLen) * streakLen);
-      ctx.stroke();
-    }
-    ctx.restore();
-  }
+  // (Speed particles removed — motion blur handles this now)
 
   // Victory zoom: scale world around Earth center
   if(state._victoryPhase==='zoom'){
@@ -10951,8 +10915,8 @@ function updateGateCollisions(){
               state.vx -= vPerp * wnx;
               state.vy -= vPerp * wny;
             }
-            state.vx *= 0.90;
-            state.vy *= 0.90;
+            state.vx *= 0.97;
+            state.vy *= 0.97;
             state.collisionFlash = 3;
             if(audioCtx && !state.sfxMuted) playBeep(120, audioCtx.currentTime, 0.05, 'sawtooth', 0.06);
           }
@@ -10978,7 +10942,7 @@ function updateRace(){
   const distToStart = Math.sqrt(dx*dx + dy*dy);
 
   // Show instructions when approaching start area + start zooming in
-  if(!_race.active && !_race.finished && distToStart < 500){
+  if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && distToStart < 500){
     _race.showApproach = true;
     _race.zoomTarget = 1.35; // zoom in as you approach
   } else if(distToStart > 600 && !_race.active){
@@ -10989,7 +10953,7 @@ function updateRace(){
   // Enter staging box — trigger countdown
   // Box is 350x280, centered at startWX-235, startWY
   const _inBox = Math.abs(state.x - (course.startWX - 235)) < 175 && Math.abs(state.y - course.startWY) < 140;
-  if(!_race.active && !_race.finished && _inBox){
+  if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && _inBox){
     if(!_race.nearStart){
       _race.nearStart = true;
       _race.active = true;
@@ -11094,8 +11058,15 @@ function updateRace(){
       _race.active = false;
       _race.finished = false;
       _race.started = false;
+      _race.showApproach = false;
+      _race.nearStart = false;
+      _race.zoomTarget = 1.0;
+      _race._finishCooldown = 600; // 10 second cooldown before race can retrigger
     }
   }
+
+  // Decrement finish cooldown
+  if(_race._finishCooldown > 0) _race._finishCooldown--;
 
   // Auto-switch course based on proximity to start gates (when not racing)
   if(!_race.active && !_race.finished){
