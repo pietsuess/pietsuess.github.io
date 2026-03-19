@@ -1750,23 +1750,43 @@ function edImport() {
 const _origPushUndo = edPushUndo;
 edPushUndo = function() { _origPushUndo(); edSaveLocal(); };
 
-// Load levels: try JSON file first (same directory), then localStorage
+// Load levels: JSON is the base, localStorage adds/overrides on top
 (async function loadLevels() {
+  let jsonLevels = null;
   try {
     const resp = await fetch('cube-toss-levels.json');
     if (resp.ok) {
       const data = await resp.json();
-      if (Array.isArray(data) && data.length > 0) {
-        LEVELS.length = 0;
-        for (const d of data) LEVELS.push(deserializeLevel(d));
-        console.log(`Loaded ${LEVELS.length} levels from JSON`);
-        return;
-      }
+      if (Array.isArray(data) && data.length > 0) jsonLevels = data;
     }
   } catch(e) {}
-  // Fallback to localStorage
-  if (edLoadLocal()) {
+
+  // Check localStorage for extra levels or edits
+  const localRaw = localStorage.getItem('cubeTossLevels');
+  let localLevels = null;
+  try {
+    if (localRaw) {
+      const parsed = JSON.parse(localRaw);
+      if (Array.isArray(parsed) && parsed.length > 0) localLevels = parsed;
+    }
+  } catch(e) {}
+
+  if (localLevels && localLevels.length >= (jsonLevels ? jsonLevels.length : 0)) {
+    // localStorage has same or more levels (user added some) — use it
+    LEVELS.length = 0;
+    for (const d of localLevels) LEVELS.push(deserializeLevel(d));
     console.log(`Loaded ${LEVELS.length} levels from localStorage`);
+  } else if (jsonLevels) {
+    // JSON is the base
+    LEVELS.length = 0;
+    for (const d of jsonLevels) LEVELS.push(deserializeLevel(d));
+    // Append any extra levels from localStorage beyond the JSON count
+    if (localLevels && localLevels.length > jsonLevels.length) {
+      for (let i = jsonLevels.length; i < localLevels.length; i++) {
+        LEVELS.push(deserializeLevel(localLevels[i]));
+      }
+    }
+    console.log(`Loaded ${LEVELS.length} levels from JSON + localStorage`);
   }
 })();
 
