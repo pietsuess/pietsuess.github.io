@@ -518,26 +518,34 @@ function playSendSound() {
   try {
     const c = ensureAudio();
     const t = c.currentTime;
-    const bufLen = c.sampleRate * 0.15;
+    // Gentle airy woosh - longer, softer, filtered noise that fades out
+    const bufLen = c.sampleRate * 0.35;
     const buf = c.createBuffer(1, bufLen, c.sampleRate);
     const data = buf.getChannelData(0);
     for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
     const noise = c.createBufferSource();
     noise.buffer = buf;
-    const filter = c.createBiquadFilter();
-    filter.type = 'bandpass';
-    filter.Q.value = 2;
-    filter.frequency.setValueAtTime(400, t);
-    filter.frequency.exponentialRampToValueAtTime(3000, t + 0.1);
+    // Highpass to remove the smacky low end
+    const hp = c.createBiquadFilter();
+    hp.type = 'highpass';
+    hp.frequency.value = 1500;
+    // Gentle bandpass sweep
+    const bp = c.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.Q.value = 0.5;
+    bp.frequency.setValueAtTime(2000, t);
+    bp.frequency.exponentialRampToValueAtTime(5000, t + 0.25);
     const gain = c.createGain();
-    gain.gain.setValueAtTime(0.08, t);
-    gain.gain.linearRampToValueAtTime(0.04, t + 0.04);
-    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.15);
-    noise.connect(filter);
-    filter.connect(gain);
+    gain.gain.setValueAtTime(0, t);
+    gain.gain.linearRampToValueAtTime(0.03, t + 0.05);
+    gain.gain.linearRampToValueAtTime(0.02, t + 0.15);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.35);
+    noise.connect(hp);
+    hp.connect(bp);
+    bp.connect(gain);
     gain.connect(c.destination);
     noise.start(t);
-    noise.stop(t + 0.15);
+    noise.stop(t + 0.35);
   } catch(e) { console.log('send sound error', e); }
 }
 
