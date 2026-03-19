@@ -149,6 +149,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <h3>Edit Mode</h3>
     <span class="key">Click</span> Paint tile<br>
     <span class="key">Ctrl</span>+Click Erase<br>
+    <span class="key">[</span><span class="key">]</span> Eraser size<br>
     <span class="key">Space</span>+Drag Pan<br>
     <span class="key">Scroll</span> Zoom<br>
     <span class="key">Shift</span>+Click Multi-select tiles<br>
@@ -506,6 +507,9 @@ let lastMouseX = 0, lastMouseY = 0;
 let entityBoxStart = null; // {tx, ty} or null
 let entityBoxEnd = null;   // {tx, ty} or null
 let entityBoxDragging = false;
+
+// Eraser brush size (in tiles). [ and ] to resize.
+let eraserSize = 1;
 
 // ---- UNDO / REDO ----
 const undoStack = [];
@@ -1166,18 +1170,35 @@ canvas.addEventListener('wheel', e => {
 
 canvas.addEventListener('contextmenu', e => e.preventDefault());
 
-// Space key tracking for pan
+// Space key tracking for pan, Ctrl for eraser visibility
+let eraserVisible = false;
+
 window.addEventListener('keydown', e => {
     if (e.code === 'Space' && mode === 'edit') {
         spaceHeld = true;
         canvas.style.cursor = 'grab';
         e.preventDefault();
     }
+    if ((e.key === 'Control' || e.key === 'Meta') && mode === 'edit') {
+        eraserVisible = true;
+    }
+    // [ and ] resize eraser
+    if (e.code === 'BracketLeft' && mode === 'edit') {
+        eraserSize = Math.max(1, eraserSize - 1);
+        e.preventDefault();
+    }
+    if (e.code === 'BracketRight' && mode === 'edit') {
+        eraserSize = Math.min(20, eraserSize + 1);
+        e.preventDefault();
+    }
 });
 window.addEventListener('keyup', e => {
     if (e.code === 'Space' && mode === 'edit') {
         spaceHeld = false;
-        if (!panning) canvas.style.cursor = 'crosshair';
+        if (!panning) canvas.style.cursor = selectMode ? 'default' : 'crosshair';
+    }
+    if ((e.key === 'Control' || e.key === 'Meta') && mode === 'edit') {
+        eraserVisible = false;
     }
 });
 
@@ -1193,14 +1214,19 @@ function placeTiles(tx, ty) {
 }
 
 function eraseAt(tx, ty) {
-    const key = tx + ',' + ty;
-    layers[activeLayer].tiles.delete(key);
-
-    // Also erase nearby entities (within this tile cell)
-    const cellL = tx * T, cellR = (tx + 1) * T;
-    const cellT = ty * T, cellB = (ty + 1) * T;
+    const half = Math.floor(eraserSize / 2);
+    const x1 = tx - half, y1 = ty - half;
+    const x2 = x1 + eraserSize - 1, y2 = y1 + eraserSize - 1;
+    for (let ey = y1; ey <= y2; ey++) {
+        for (let ex = x1; ex <= x2; ex++) {
+            layers[activeLayer].tiles.delete(ex + ',' + ey);
+        }
+    }
+    // Erase entities within the brush area
+    const pixL = x1 * T, pixR = (x2 + 1) * T;
+    const pixT = y1 * T, pixB = (y2 + 1) * T;
     entities = entities.filter(e => {
-        return !(e.x >= cellL && e.x < cellR && e.y > cellT && e.y <= cellB);
+        return !(e.x >= pixL && e.x < pixR && e.y > pixT && e.y <= pixB);
     });
 }
 
@@ -1365,6 +1391,33 @@ function drawEditor() {
         ctx.globalAlpha = 1;
     }
 
+    // Eraser cursor preview (when Ctrl/Cmd held)
+    if (!spaceHeld && !panning) {
+        const rect = canvas.getBoundingClientRect();
+        const wpx = (lastMouseX - rect.left) / zoom + camX;
+        const wpy = (lastMouseY - rect.top) / zoom + camY;
+        const htx = Math.floor(wpx / T);
+        const hty = Math.floor(wpy / T);
+
+        // Show eraser brush when Ctrl is likely (we track it via a flag)
+        if (eraserVisible) {
+            const half = Math.floor(eraserSize / 2);
+            const ex1 = (htx - half) * T, ey1 = (hty - half) * T;
+            ctx.strokeStyle = 'rgba(255,60,60,0.8)';
+            ctx.lineWidth = 2 / zoom;
+            ctx.setLineDash([3 / zoom, 3 / zoom]);
+            ctx.strokeRect(ex1, ey1, eraserSize * T, eraserSize * T);
+            ctx.setLineDash([]);
+            // X through it
+            ctx.beginPath();
+            ctx.moveTo(ex1 + 2/zoom, ey1 + 2/zoom);
+            ctx.lineTo(ex1 + eraserSize * T - 2/zoom, ey1 + eraserSize * T - 2/zoom);
+            ctx.moveTo(ex1 + eraserSize * T - 2/zoom, ey1 + 2/zoom);
+            ctx.lineTo(ex1 + 2/zoom, ey1 + eraserSize * T - 2/zoom);
+            ctx.stroke();
+        }
+    }
+
     // Entity drag box preview
     if (entityBoxDragging && entityBoxStart && entityBoxEnd && selectedEntity) {
         const x1 = Math.min(entityBoxStart.tx, entityBoxEnd.tx);
@@ -1418,6 +1471,7 @@ function drawEditor() {
 
     // Info bar
     const modeStr = selectMode ? 'SELECT MODE (V to exit)' :
+        eraserVisible ? `ERASER ${eraserSize}x${eraserSize}  [ ] to resize` :
         (spaceHeld ? 'PAN MODE' : 'Click=place  Ctrl+Click=erase  Space+drag=pan');
     document.getElementById('info-bar').textContent =
         `Tiles: ${selectedTiles.length} | Entities: ${entities.length} | Undo: ${undoStack.length} | ` + modeStr;
