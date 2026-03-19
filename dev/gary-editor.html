@@ -1222,29 +1222,7 @@ function loadLevel() {
         const reader = new FileReader();
         reader.onload = ev => {
             try {
-                const data = JSON.parse(ev.target.result);
-                LVL_W = data.width || 60;
-                LVL_H = data.height || 30;
-                document.getElementById('lvl-w').value = LVL_W;
-                document.getElementById('lvl-h').value = LVL_H;
-                if (data.bgColor) document.getElementById('bg-color').value = data.bgColor;
-                spawnX = data.spawn?.x ?? 4;
-                spawnY = data.spawn?.y ?? LVL_H - 5;
-                layers.forEach((l, i) => {
-                    l.tiles.clear();
-                    if (data.layers[i]?.tiles) {
-                        for (const [k, v] of Object.entries(data.layers[i].tiles)) {
-                            l.tiles.set(k, v);
-                        }
-                    }
-                });
-                entities = data.entities || [];
-                // Restore collision overrides
-                Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
-                if (data.collisionOverrides) {
-                    Object.assign(collisionOverrides, data.collisionOverrides);
-                }
-                drawTilePicker(); drawLavaPicker();
+                applyLevelData(JSON.parse(ev.target.result));
             } catch (err) {
                 alert('Failed to load: ' + err.message);
             }
@@ -2085,12 +2063,42 @@ function mainLoop(ts) {
 }
 
 // ---- INIT ----
+function applyLevelData(data) {
+    LVL_W = data.width || 60;
+    LVL_H = data.height || 30;
+    document.getElementById('lvl-w').value = LVL_W;
+    document.getElementById('lvl-h').value = LVL_H;
+    if (data.bgColor) document.getElementById('bg-color').value = data.bgColor;
+    spawnX = data.spawn?.x ?? 4;
+    spawnY = data.spawn?.y ?? LVL_H - 5;
+    layers.forEach((l, i) => {
+        l.tiles.clear();
+        if (data.layers[i]?.tiles) {
+            for (const [k, v] of Object.entries(data.layers[i].tiles)) {
+                l.tiles.set(k, v);
+            }
+        }
+    });
+    entities = data.entities || [];
+    Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
+    if (data.collisionOverrides) Object.assign(collisionOverrides, data.collisionOverrides);
+    drawTilePicker(); drawLavaPicker();
+    camX = spawnX * T - 200;
+    camY = spawnY * T - 100;
+}
+
 Promise.all(imgLoads).then(() => {
     drawTilePicker();
     drawLavaPicker();
     setupEntityPicker();
     setupLayerPicker();
     setupGarySheet();
+
+    // Auto-load Level1.json
+    fetch('levels/Level1.json')
+        .then(r => { if (r.ok) return r.json(); throw new Error('Not found'); })
+        .then(data => { applyLevelData(data); console.log('Loaded Level1.json'); })
+        .catch(() => { console.log('No Level1.json found, starting blank'); });
 
     camX = spawnX * T - 200;
     camY = spawnY * T - 100;
