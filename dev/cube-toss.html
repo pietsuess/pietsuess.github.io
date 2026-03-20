@@ -843,23 +843,31 @@ function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
   c.angVel += j * rxn / inertia;
 }
 
-// Settle flat: apply torque toward nearest 90° when slow and on surface
+// Settle flat: when slow, snap angle to nearest 90° and drop to surface
 function settleFlat(c, dt) {
   const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (speed > 80 || Math.abs(c.angVel) > 3) return;
+  if (speed > 60) return;
 
   const nearest90 = Math.round(c.angle / (Math.PI/2)) * (Math.PI/2);
   const diff = nearest90 - c.angle;
+  const half = c.size / 2;
 
-  if (speed < 15 && Math.abs(diff) < 0.05) {
-    // Very close and very slow — just snap
+  if (speed < 40 && Math.abs(diff) > 0.01) {
+    // Calculate how much the lowest point changes when we flatten
+    const cosA = Math.abs(Math.cos(c.angle)), sinA = Math.abs(Math.sin(c.angle));
+    const oldLowest = half * (cosA + sinA); // distance from center to lowest point
+    const newLowest = half; // when flat, lowest point is just half
+
+    // Snap angle toward flat
+    c.angle += diff * 0.15; // smooth rotation (15% per frame)
+    c.angVel *= 0.5;
+
+    // Drop y so the bottom stays on the same surface
+    c.y += (oldLowest - newLowest) * 0.15;
+  }
+  if (speed < 15 && Math.abs(diff) < 0.08) {
     c.angle = nearest90;
     c.angVel = 0;
-  } else {
-    // Strong torque toward flat, scales up as cube slows
-    const strength = Math.max(0, 1 - speed / 80) * 25;
-    c.angVel += diff * strength * dt;
-    c.angVel *= 0.85;
   }
 }
 
@@ -1530,8 +1538,9 @@ function onDown(e){
       peekStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
       return;
     }
+    camX=0;camY=0;camTargetX=0; // reset camera so worldX works correctly
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
-    cube=spawnCube(wx,p.y,bestWk);
+    cube=spawnCube(p.x,p.y,bestWk); // use screen pos since camX is now 0
     state='aiming';canvas.style.cursor='grabbing';
   } else {
     // Clicked past throw zone — peek pan
