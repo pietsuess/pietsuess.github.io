@@ -814,11 +814,10 @@ function getCubeCorners(c) {
   ];
 }
 
-// Apply rigid body impulse at a contact point
+// Apply rigid body impulse at a contact point (normal bounce + surface friction)
 function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
-  const half = c.size / 2;
   const mass = 1;
-  const inertia = mass * (c.size * c.size) / 6; // moment of inertia for square
+  const inertia = mass * (c.size * c.size) / 6;
 
   // Contact point relative to center
   const rx = contactX - c.x, ry = contactY - c.y;
@@ -827,20 +826,30 @@ function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
   const vpx = c.vx - c.angVel * ry;
   const vpy = c.vy + c.angVel * rx;
 
-  // Relative velocity along normal
+  // --- Normal impulse (bounce) ---
   const vn = vpx * normalX + vpy * normalY;
   if (vn > 0) return; // moving away
 
-  // Cross product r x n (scalar in 2D)
   const rxn = rx * normalY - ry * normalX;
-
-  // Impulse magnitude
   const j = -(1 + restitution) * vn / (1/mass + rxn * rxn / inertia);
 
-  // Apply impulse
   c.vx += j * normalX / mass;
   c.vy += j * normalY / mass;
   c.angVel += j * rxn / inertia;
+
+  // --- Tangential friction (makes cube roll with travel direction) ---
+  const tx = -normalY, ty = normalX; // tangent vector
+  const vt = vpx * tx + vpy * ty; // sliding velocity along surface
+  const rxt = rx * ty - ry * tx;
+  const frictionCoeff = 0.4;
+  let jt = -vt * frictionCoeff / (1/mass + rxt * rxt / inertia);
+  // Clamp friction to not exceed normal impulse (Coulomb friction)
+  const maxFriction = Math.abs(j) * frictionCoeff;
+  jt = Math.max(-maxFriction, Math.min(maxFriction, jt));
+
+  c.vx += jt * tx / mass;
+  c.vy += jt * ty / mass;
+  c.angVel += jt * rxt / inertia;
 }
 
 // Settle flat: align to the surface the cube is resting on
