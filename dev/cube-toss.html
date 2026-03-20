@@ -1008,18 +1008,23 @@ function collideCubeWalls(c, lv) {
       if (corner.x > w.x && corner.x < w.x+w.w && corner.y > w.y && corner.y < w.y+w.h) {
         const dl = corner.x - w.x, dr = w.x+w.w - corner.x;
         const dt2 = corner.y - w.y, db = w.y+w.h - corner.y;
-        const minD = Math.min(dl, dr, dt2, db);
         let nx=0, ny=0;
-        if (minD === dt2) { c.y -= dt2; ny = -1; }
-        else if (minD === db) { c.y += db; ny = 1; }
-        else if (minD === dl) { c.x -= dl; nx = -1; }
-        else { c.x += dr; nx = 1; }
-        const wSpd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-        if (ny === -1 && wSpd < 60 && c.vy > 0) {
-          c.vy = 0; // rest solid on top of wall
+        // Use velocity to pick push direction for top/bottom
+        if (c.vy > 0 && dt2 < db) {
+          // Falling and near top — always push up
+          c.y -= dt2; ny = -1;
+        } else if (c.vy < 0 && db < dt2) {
+          // Rising and near bottom — push down
+          c.y += db; ny = 1;
         } else {
-          applyImpulse(c, corner.x, corner.y, nx, ny, B);
+          // Use min penetration for sides
+          const minD = Math.min(dl, dr, dt2, db);
+          if (minD === dt2) { c.y -= dt2; ny = -1; }
+          else if (minD === db) { c.y += db; ny = 1; }
+          else if (minD === dl) { c.x -= dl; nx = -1; }
+          else { c.x += dr; nx = 1; }
         }
+        applyImpulse(c, corner.x, corner.y, nx, ny, B);
         hit = true; break;
       }
     }
