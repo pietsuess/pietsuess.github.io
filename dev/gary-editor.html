@@ -159,6 +159,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <span class="key">Cmd+Z</span> Undo<br>
     <span class="key">Cmd+Shift+Z</span> Redo<br>
     <span class="key">V</span> Select/Move obj<br>
+    <span class="key">B</span> Pushable paint<br>
     <span class="key">P</span> Play mode<br>
     <div class="sep"></div>
     <h3>Play Mode</h3>
@@ -257,6 +258,11 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     </div>
 
     <div id="tab-tools" class="tab-content">
+        <div class="tool-section">
+            <h3>Pushable</h3>
+            <div style="font-size:11px;margin-bottom:4px;">Press <span class="key">B</span> to toggle pushable paint mode. Click cells to mark/unmark as pushable. Connected pushable cells move as one group.</div>
+            <button id="btn-pushable" onclick="togglePushableMode()" style="width:100%;background:#333;color:#ccc;border:1px solid #555;padding:4px;font-family:monospace;font-size:11px;cursor:pointer;">Pushable Mode: OFF</button>
+        </div>
         <div class="tool-section">
             <h3>Level Size</h3>
             <div style="font-size:11px;">
@@ -488,6 +494,19 @@ let activeLayer = 0;
 
 let entities = [];
 let spawnX = 4, spawnY = 25;
+
+// Pushable cells: Set of "tx,ty" keys. Connected pushable cells move as one group.
+const pushableCells = new Set();
+let pushableMode = false;
+
+function togglePushableMode() {
+    pushableMode = !pushableMode;
+    selectMode = false; selectedObj = null;
+    document.getElementById('btn-pushable').textContent = 'Pushable Mode: ' + (pushableMode ? 'ON' : 'OFF');
+    document.getElementById('btn-pushable').style.background = pushableMode ? '#ffcc00' : '#333';
+    document.getElementById('btn-pushable').style.color = pushableMode ? '#000' : '#ccc';
+    canvas.style.cursor = pushableMode ? 'pointer' : 'crosshair';
+}
 let nextEntityId = 1;
 
 function createEntity(type, x, y) {
@@ -607,7 +626,6 @@ const ENTITY_DEFS = {
     chest:    { label: 'Chest', color: '#f0f', w: 48, h: 24, img: 'chest', sx: 0, sy: 24, sw: 48, sh: 24, gapX: 3, gapY: 2 },
     arcade:   { label: 'Arcade', color: '#fa0', w: 48, h: 47, img: 'arcade', sx: 0, sy: 0, sw: 48, sh: 47, gapX: 3, gapY: 3 },
     platform: { label: 'Platform', color: '#fff', w: 76, h: 9, img: 'platform', sx: 37, sy: 26, sw: 76, sh: 9, gapX: 5, gapY: 1 },
-    block:    { label: 'Block', color: '#a86', w: 16, h: 16, gapX: 1, gapY: 1 },
 };
 
 // ---- TILE PICKER ----
@@ -1068,6 +1086,15 @@ canvas.addEventListener('mousedown', e => {
             return;
         }
 
+        // Pushable paint mode (B key)
+        if (pushableMode) {
+            const key = w.tx + ',' + w.ty;
+            if (pushableCells.has(key)) pushableCells.delete(key);
+            else pushableCells.add(key);
+            painting = 'pushable';
+            return;
+        }
+
         // Select/Move mode (V key)
         if (selectMode) {
             const idx = findEntityAt(w.px, w.py);
@@ -1120,6 +1147,12 @@ canvas.addEventListener('mousemove', e => {
     }
 
     const w = canvasToWorld(e);
+
+    // Pushable paint drag
+    if (painting === 'pushable' && pushableMode) {
+        pushableCells.add(w.tx + ',' + w.ty);
+        return;
+    }
 
     // Entity drag box
     if (entityBoxDragging && entityBoxStart) {
@@ -1279,6 +1312,7 @@ function clearLevel() {
     if (!confirm('Clear entire level?')) return;
     layers.forEach(l => l.tiles.clear());
     entities = [];
+    pushableCells.clear();
     spawnX = 4; spawnY = LVL_H - 5;
 }
 
@@ -1297,6 +1331,7 @@ function saveLevel() {
         })),
         entities: entities,
         collisionOverrides: Object.keys(collisionOverrides).length > 0 ? collisionOverrides : undefined,
+        pushable: pushableCells.size > 0 ? [...pushableCells] : undefined,
     };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const a = document.createElement('a');
@@ -1372,13 +1407,7 @@ function drawEditor() {
     for (const ent of entities) {
         const def = ENTITY_DEFS[ent.type];
         if (!def) continue;
-        if (ent.type === 'block') {
-            ctx.fillStyle = '#8B5E3C';
-            ctx.fillRect(ent.x - 8, ent.y - 16, 16, 16);
-            ctx.strokeStyle = '#5C3A1E';
-            ctx.lineWidth = 1 / zoom;
-            ctx.strokeRect(ent.x - 8, ent.y - 16, 16, 16);
-        } else if (def.img && img[def.img] && img[def.img].complete) {
+        if (def.img && img[def.img] && img[def.img].complete) {
             ctx.drawImage(img[def.img], def.sx, def.sy, def.sw, def.sh,
                 ent.x - def.sw / 2, ent.y - def.sh, def.sw, def.sh);
         }
@@ -1437,6 +1466,20 @@ function drawEditor() {
             }
         }
         ctx.globalAlpha = 1;
+    }
+
+    // Pushable cell overlay — blue-green tint with P marker
+    for (const key of pushableCells) {
+        const [px, py] = key.split(',').map(Number);
+        ctx.fillStyle = 'rgba(0,200,150,0.25)';
+        ctx.fillRect(px * T, py * T, T, T);
+        ctx.strokeStyle = 'rgba(0,200,150,0.6)';
+        ctx.lineWidth = 1 / zoom;
+        ctx.strokeRect(px * T + 0.5, py * T + 0.5, T - 1, T - 1);
+        // Small P in corner
+        ctx.fillStyle = 'rgba(0,200,150,0.8)';
+        ctx.font = (5 / Math.max(zoom, 1)) + 'px monospace';
+        ctx.fillText('P', px * T + 1, py * T + T - 1);
     }
 
     // Eraser cursor preview (when Ctrl/Cmd held)
@@ -1560,8 +1603,11 @@ const ANIMS = {
     push:      { fr: [f(305,244),f(366,244),f(427,244),f(488,244),f(549,244)], fps: 4, loop: true },
 };
 
-let pCoins, pRods, pChests, pArcades, pPlatforms, pBlocks;
-let pushingBlock = null; // reference to block being pushed
+let pCoins, pRods, pChests, pArcades, pPlatforms;
+
+// Pushable groups in play mode: array of { cells: [{tx,ty},...], offsetX, offsetY }
+let pushGroups = [];
+let pushingGroup = null; // group being pushed
 let solidSet;
 
 // Build collision set using ACTUAL Godot physics data.
@@ -1681,7 +1727,31 @@ function startPlay() {
     pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false, label: e.label, props: e.props }));
     pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false, label: e.label, props: e.props }));
     pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0, label: e.label, props: e.props }));
-    pBlocks = entities.filter(e => e.type === 'block').map(e => ({ x: e.x, y: e.y, label: e.label, props: e.props }));
+
+    // Build pushable groups by flood-filling connected pushable cells
+    pushGroups = [];
+    pushingGroup = null;
+    const visited = new Set();
+    for (const key of pushableCells) {
+        if (visited.has(key)) continue;
+        // Flood fill to find connected group
+        const group = { cells: [], offsetX: 0, offsetY: 0 };
+        const queue = [key];
+        while (queue.length > 0) {
+            const k = queue.pop();
+            if (visited.has(k)) continue;
+            if (!pushableCells.has(k)) continue;
+            visited.add(k);
+            const [tx, ty] = k.split(',').map(Number);
+            group.cells.push({ tx, ty });
+            queue.push((tx+1)+','+ty, (tx-1)+','+ty, tx+','+(ty+1), tx+','+(ty-1));
+        }
+        if (group.cells.length > 0) pushGroups.push(group);
+    }
+    // Remove pushable cells from solidSet — they move independently
+    for (const key of pushableCells) {
+        solidSet.delete(key);
+    }
 
     Object.keys(pKeys).forEach(k => delete pKeys[k]);
     pJumpBuf = 0;
@@ -1995,8 +2065,8 @@ function playFrame(dt) {
             if (gaDone) pSetState('idle');
             break;
         case 'push':
-            gvx = gDir * SPD * 0.5; // push is slower
-            if (!(pkR() || pkL())) { pushingBlock = null; pSetState('idle'); }
+            gvx = gDir * SPD * 0.5;
+            if (!(pkR() || pkL())) { pushingGroup = null; pSetState('idle'); }
             break;
     }
 
@@ -2014,15 +2084,86 @@ function playFrame(dt) {
         gFloor = checkFloor();
     }
 
-    // Gary stands on blocks
-    if (gvy >= 0) {
-        for (const b of pBlocks) {
-            if (b === pushingBlock) continue; // don't land on block you're pushing
-            const bL = b.x - 8, bR = b.x + 8, bT = b.y - 16;
-            if (gx >= bL - 4 && gx <= bR + 4 && gy >= bT - 2 && gy <= bT + 4 && gvy >= 0) {
-                gy = bT;
-                gvy = 0;
-                gFloor = true;
+    // Pushable group interaction
+    if (gState !== 'push') pushingGroup = null;
+    const PUSH_SPD = SPD * 0.5;
+    for (const g of pushGroups) {
+        // Compute group bounding box in world pixels
+        let minTx = Infinity, maxTx = -Infinity, minTy = Infinity, maxTy = -Infinity;
+        for (const c of g.cells) {
+            const wx = c.tx * T + g.offsetX, wy = c.ty * T + g.offsetY;
+            minTx = Math.min(minTx, wx);
+            maxTx = Math.max(maxTx, wx + T);
+            minTy = Math.min(minTy, wy);
+            maxTy = Math.max(maxTy, wy + T);
+        }
+
+        // Gary stands on top of group
+        if (gvy >= 0 && g !== pushingGroup) {
+            if (gx >= minTx - 2 && gx <= maxTx + 2 && gy >= minTy - 2 && gy <= minTy + 4) {
+                // Check Gary is actually above a cell in this group
+                const checkTx = Math.floor((gx - g.offsetX) / T);
+                const topRow = Math.min(...g.cells.map(c => c.ty));
+                const inGroup = g.cells.some(c => c.tx === checkTx && c.ty === topRow);
+                if (inGroup) {
+                    gy = minTy;
+                    gvy = 0;
+                    gFloor = true;
+                }
+            }
+        }
+
+        // Push detection — Gary walking into side of group
+        if (gState === 'run' || gState === 'start' || gState === 'push') {
+            const gR = gx + 6, gL = gx - 6;
+            if (gy > minTy && gy <= maxTy + 4) {
+                // Push right
+                if (gvx > 0 && gR >= minTx - 1 && gR <= minTx + 4 && gx < minTx) {
+                    // Check if group can move right
+                    let blocked = false;
+                    for (const c of g.cells) {
+                        const wx = c.tx * T + g.offsetX + T; // right edge + 1
+                        const wy = c.ty * T + g.offsetY;
+                        const checkTx = Math.floor(wx / T);
+                        const checkTy = Math.floor(wy / T);
+                        // Only check rightmost cells
+                        const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
+                        if (!hasRight && isSolid(checkTx, checkTy)) { blocked = true; break; }
+                    }
+                    if (!blocked) {
+                        gDir = 1;
+                        pSetState('push');
+                        pushingGroup = g;
+                        g.offsetX += PUSH_SPD * dt;
+                        gx = minTx + g.offsetX - (minTx - g.offsetX + g.offsetX) + minTx - 6; // stay at left edge
+                        gx = (Math.min(...g.cells.map(c => c.tx)) * T + g.offsetX) - 6;
+                    } else {
+                        gx = minTx - 6 - 0.01;
+                        gvx = 0;
+                    }
+                }
+                // Push left
+                if (gvx < 0 && gL <= maxTx + 1 && gL >= maxTx - 4 && gx > maxTx) {
+                    let blocked = false;
+                    for (const c of g.cells) {
+                        const wx = c.tx * T + g.offsetX - 1; // left edge - 1
+                        const wy = c.ty * T + g.offsetY;
+                        const checkTx = Math.floor(wx / T);
+                        const checkTy = Math.floor(wy / T);
+                        const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                        if (!hasLeft && isSolid(checkTx, checkTy)) { blocked = true; break; }
+                    }
+                    if (!blocked) {
+                        gDir = -1;
+                        pSetState('push');
+                        pushingGroup = g;
+                        g.offsetX -= PUSH_SPD * dt;
+                        gx = (Math.max(...g.cells.map(c => c.tx)) * T + T + g.offsetX) + 6;
+                    } else {
+                        gx = maxTx + 6 + 0.01;
+                        gvx = 0;
+                    }
+                }
             }
         }
     }
@@ -2038,93 +2179,6 @@ function playFrame(dt) {
     // Level bounds
     if (gx < 6) gx = 6;
     if (gx > LVL_W * T - 6) gx = LVL_W * T - 6;
-
-    // Block push logic
-    // Check if Gary is walking into a block
-    if (gState !== 'push') pushingBlock = null;
-    const PUSH_SPD = SPD * 0.5;
-    for (const b of pBlocks) {
-        const bL = b.x - 8, bR = b.x + 8, bT = b.y - 16, bB = b.y;
-        const gL = gx - 6, gR = gx + 6;
-        // Gary's feet must be near block bottom (standing on same ground)
-        if (gy > bT && gy <= bB + 4) {
-            // Walking right into block
-            if (gvx > 0 && gR >= bL - 1 && gR <= bL + 4 && gx < b.x) {
-                if (gState === 'run' || gState === 'start' || gState === 'push') {
-                    // Check if block can move right
-                    const nextBTx = Math.floor((b.x + 8) / T);
-                    const bTy1 = Math.floor(bT / T), bTy2 = Math.floor((bB - 1) / T);
-                    let blocked = false;
-                    for (let ty = bTy1; ty <= bTy2; ty++) {
-                        if (isSolid(nextBTx, ty)) { blocked = true; break; }
-                    }
-                    // Check against other blocks
-                    for (const ob of pBlocks) {
-                        if (ob === b) continue;
-                        if (Math.abs(ob.y - b.y) < 16 && ob.x > b.x && ob.x - b.x < 20) { blocked = true; break; }
-                    }
-                    if (!blocked) {
-                        gDir = 1;
-                        pSetState('push');
-                        pushingBlock = b;
-                        b.x += PUSH_SPD * dt;
-                        gx = b.x - 8 - 6;
-                    } else {
-                        // Block can't move — stop Gary
-                        gx = bL - 6 - 0.01;
-                        gvx = 0;
-                    }
-                }
-            }
-            // Walking left into block
-            if (gvx < 0 && gL <= bR + 1 && gL >= bR - 4 && gx > b.x) {
-                if (gState === 'run' || gState === 'start' || gState === 'push') {
-                    const nextBTx = Math.floor((b.x - 9) / T);
-                    const bTy1 = Math.floor(bT / T), bTy2 = Math.floor((bB - 1) / T);
-                    let blocked = false;
-                    for (let ty = bTy1; ty <= bTy2; ty++) {
-                        if (isSolid(nextBTx, ty)) { blocked = true; break; }
-                    }
-                    for (const ob of pBlocks) {
-                        if (ob === b) continue;
-                        if (Math.abs(ob.y - b.y) < 16 && ob.x < b.x && b.x - ob.x < 20) { blocked = true; break; }
-                    }
-                    if (!blocked) {
-                        gDir = -1;
-                        pSetState('push');
-                        pushingBlock = b;
-                        b.x -= PUSH_SPD * dt;
-                        gx = b.x + 8 + 6;
-                    } else {
-                        gx = bR + 6 + 0.01;
-                        gvx = 0;
-                    }
-                }
-            }
-        }
-    }
-    // Blocks fall with gravity
-    for (const b of pBlocks) {
-        const belowTy = Math.floor(b.y / T);
-        const bTx1 = Math.floor((b.x - 8) / T), bTx2 = Math.floor((b.x + 7) / T);
-        let onGround = false;
-        for (let tx = bTx1; tx <= bTx2; tx++) {
-            if (isSolid(tx, belowTy)) { onGround = true; break; }
-        }
-        // Check if on another block
-        for (const ob of pBlocks) {
-            if (ob === b) continue;
-            if (Math.abs(ob.x - b.x) < 16 && b.y >= ob.y - 16 && b.y <= ob.y - 14) { onGround = true; break; }
-        }
-        if (!onGround) {
-            b.y += GRAV * dt * 0.5; // blocks fall slower
-            // Snap to ground
-            const snapTy = Math.floor(b.y / T);
-            for (let tx = bTx1; tx <= bTx2; tx++) {
-                if (isSolid(tx, snapTy)) { b.y = snapTy * T; break; }
-            }
-        }
-    }
 
     // Entity interactions
     for (const c of pCoins) {
@@ -2216,6 +2270,7 @@ function playFrame(dt) {
         if (!layer.visible) return;
         for (let ty = startTY; ty < endTY; ty++) {
             for (let tx = startTX; tx < endTX; tx++) {
+                if (pushableCells.has(tx + ',' + ty)) continue; // drawn separately with offset
                 const tile = layer.tiles.get(tx + ',' + ty);
                 if (!tile) continue;
                 const tileset = tile.tileset === 'lava' ? img.lava : img.env;
@@ -2258,22 +2313,22 @@ function playFrame(dt) {
     for (const p of pPlatforms) {
         ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
     }
-    // Blocks
-    for (const b of pBlocks) {
-        ctx.fillStyle = '#8B5E3C';
-        ctx.fillRect(Math.round(b.x) - 8, Math.round(b.y) - 16, 16, 16);
-        ctx.strokeStyle = '#5C3A1E';
-        ctx.strokeRect(Math.round(b.x) - 8, Math.round(b.y) - 16, 16, 16);
-        // Brick pattern
-        ctx.strokeStyle = '#6B4A2E';
-        ctx.beginPath();
-        ctx.moveTo(Math.round(b.x) - 8, Math.round(b.y) - 8);
-        ctx.lineTo(Math.round(b.x) + 8, Math.round(b.y) - 8);
-        ctx.moveTo(Math.round(b.x), Math.round(b.y) - 16);
-        ctx.lineTo(Math.round(b.x), Math.round(b.y) - 8);
-        ctx.moveTo(Math.round(b.x) - 4, Math.round(b.y) - 8);
-        ctx.lineTo(Math.round(b.x) - 4, Math.round(b.y));
-        ctx.stroke();
+    // Pushable groups — draw tiles at their offset positions
+    for (const g of pushGroups) {
+        for (const c of g.cells) {
+            const wx = Math.round(c.tx * T + g.offsetX);
+            const wy = Math.round(c.ty * T + g.offsetY);
+            // Draw all layers for this cell
+            for (const layer of layers) {
+                if (!layer.visible) continue;
+                const tile = layer.tiles.get(c.tx + ',' + c.ty);
+                if (!tile) continue;
+                const tileset = tile.tileset === 'lava' ? img.lava : img.env;
+                if (tileset && tileset.complete) {
+                    ctx.drawImage(tileset, tile.ax * T, tile.ay * T, T, T, wx, wy, T, T);
+                }
+            }
+        }
     }
 
     // 4. Gary (z=5)
@@ -2418,6 +2473,8 @@ function applyLevelData(data) {
     reindexEntities();
     Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
     if (data.collisionOverrides) Object.assign(collisionOverrides, data.collisionOverrides);
+    pushableCells.clear();
+    if (data.pushable) data.pushable.forEach(k => pushableCells.add(k));
     drawTilePicker(); drawLavaPicker();
     camX = spawnX * T - 200;
     camY = spawnY * T - 100;
@@ -2451,8 +2508,14 @@ window.addEventListener('keydown', e => {
         if (e.code === 'KeyG' && !e.ctrlKey && !e.metaKey) { toggleGrid(); e.preventDefault(); }
         if (e.code === 'KeyV' && !e.ctrlKey && !e.metaKey) {
             selectMode = !selectMode;
+            pushableMode = false; document.getElementById('btn-pushable').textContent = 'Pushable Mode: OFF'; document.getElementById('btn-pushable').style.background = '#333'; document.getElementById('btn-pushable').style.color = '#ccc';
             if (!selectMode) { selectedObj = null; draggingObj = false; }
             canvas.style.cursor = selectMode ? 'default' : 'crosshair';
+            e.preventDefault();
+        }
+        if (e.code === 'KeyB' && !e.ctrlKey && !e.metaKey) {
+            togglePushableMode();
+            selectMode = false; selectedObj = null;
             e.preventDefault();
         }
         if (e.code === 'Digit1') { activeLayer = 0; setupLayerPicker(); }
