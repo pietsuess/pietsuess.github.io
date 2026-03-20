@@ -961,8 +961,8 @@ function collideCubeWalls(c, lv) {
   if (lv.backWall) {
     const bw = lv.backWall;
     if (rectOverlap(c.x - half, c.y - half, c.size, c.size, bw.x, bw.y, bw.w, bw.h)) {
-      if (c.vx > 0) { c.x = bw.x - half; c.vx *= -B; c.angVel -= c.vy * 0.005; }
-      else { c.x = bw.x + bw.w + half; c.vx *= -B; c.angVel += c.vy * 0.005; }
+      if (c.vx > 0) { c.x = bw.x - half; applyImpulse(c, bw.x, c.y, -1, 0, B); }
+      else { c.x = bw.x + bw.w + half; applyImpulse(c, bw.x + bw.w, c.y, 1, 0, B); }
     }
   }
 
@@ -1053,7 +1053,7 @@ function collideCubeWalls(c, lv) {
       if(spd<minKick){
         c.vx=nx*minKick; c.vy=ny*minKick;
       }
-      c.angVel+=(nx*c.vy-ny*c.vx)*0.03;
+      c.angVel+=(nx*c.vy-ny*c.vx)*0.01; // light spin from bumper
     }
   }
 }
@@ -1067,14 +1067,15 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
   if (!rot) {
     // No rotation — use fast AABB
     if (!rectOverlap(c.x-half, c.y-half, half*2, half*2, rx, ry, rw, rh)) return;
-    const spd=Math.sqrt(c.vx*c.vx+c.vy*c.vy);
     const ol=(c.x+half)-rx, or2=(rx+rw)-(c.x-half);
     const ot=(c.y+half)-ry, ob=(ry+rh)-(c.y-half);
     const m=Math.min(ol,or2,ot,ob);
-    if(m===ol&&c.vx>0){c.x=rx-half;c.vx*=-B;c.angVel-=c.vy*0.005;}
-    else if(m===or2&&c.vx<0){c.x=rx+rw+half;c.vx*=-B;c.angVel+=c.vy*0.005;}
-    else if(m===ot&&c.vy>0){c.y=ry-half;c.vy*=-B;c.angVel+=c.vx*0.008;}
-    else if(m===ob&&c.vy<0){c.y=ry+rh+half;c.vy*=-B;}
+    let nx=0, ny=0;
+    if(m===ol){c.x=rx-half;nx=-1;}
+    else if(m===or2){c.x=rx+rw+half;nx=1;}
+    else if(m===ot){c.y=ry-half;ny=-1;}
+    else{c.y=ry+rh+half;ny=1;}
+    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
     return;
   }
 
@@ -1109,17 +1110,11 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
   c.x += pushWX;
   c.y += pushWY;
 
-  // Reflect velocity along the push direction
+  // Apply impulse along push direction
   const pushLen = Math.sqrt(pushWX*pushWX + pushWY*pushWY);
   if (pushLen > 0) {
     const nx = pushWX/pushLen, ny = pushWY/pushLen;
-    const dot = c.vx*nx + c.vy*ny;
-    if (dot < 0) { // only if moving into the wall
-      c.vx -= 2 * dot * nx;
-      c.vy -= 2 * dot * ny;
-      c.vx *= B; c.vy *= B;
-      c.angVel += (c.vx * ny - c.vy * nx) * 0.005;
-    }
+    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
   }
 }
 
