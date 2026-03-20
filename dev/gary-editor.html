@@ -558,6 +558,9 @@ let entityBoxDragging = false;
 // Eraser brush size (in tiles). [ and ] to resize.
 let eraserSize = 1;
 
+// Level resize drag
+let resizingLevel = null; // 'right', 'bottom', 'corner', or null
+
 // ---- UNDO / REDO ----
 const undoStack = [];
 const redoStack = [];
@@ -1104,6 +1107,18 @@ canvas.addEventListener('mousedown', e => {
     }
 
     if (e.button === 0) {
+        // Check if dragging level edge to resize
+        const rightEdge = LVL_W * T;
+        const bottomEdge = LVL_H * T;
+        const threshold = 6 / zoom;
+        if (Math.abs(w.px - rightEdge) < threshold && Math.abs(w.py - bottomEdge) < threshold) {
+            resizingLevel = 'corner'; return;
+        } else if (Math.abs(w.px - rightEdge) < threshold && w.py > 0 && w.py < bottomEdge) {
+            resizingLevel = 'right'; return;
+        } else if (Math.abs(w.py - bottomEdge) < threshold && w.px > 0 && w.px < rightEdge) {
+            resizingLevel = 'bottom'; return;
+        }
+
         // Ctrl+click = erase
         if (e.ctrlKey || e.metaKey) {
             pushUndo();
@@ -1174,6 +1189,21 @@ canvas.addEventListener('mousemove', e => {
 
     const w = canvasToWorld(e);
 
+    // Level resize drag
+    if (resizingLevel) {
+        const newW = Math.max(10, Math.round(w.px / T));
+        const newH = Math.max(10, Math.round(w.py / T));
+        if (resizingLevel === 'right' || resizingLevel === 'corner') {
+            LVL_W = newW;
+            document.getElementById('lvl-w').value = LVL_W;
+        }
+        if (resizingLevel === 'bottom' || resizingLevel === 'corner') {
+            LVL_H = newH;
+            document.getElementById('lvl-h').value = LVL_H;
+        }
+        return;
+    }
+
     // Pushable paint drag
     if (painting === 'pushable' && pushableMode) {
         pushableCells.add(w.tx + ',' + w.ty);
@@ -1211,6 +1241,7 @@ canvas.addEventListener('mouseup', e => {
     if (e.button === 0) {
         painting = false;
         draggingObj = false;
+        resizingLevel = null;
 
         // Finalize entity drag box
         if (entityBoxDragging && entityBoxStart && entityBoxEnd && selectedEntity) {
@@ -1412,10 +1443,17 @@ function drawEditor() {
     ctx.scale(zoom, zoom);
     ctx.translate(-camX, -camY);
 
-    // Level bounds
+    // Level bounds with drag handles
     ctx.strokeStyle = 'rgba(255,204,0,0.3)';
     ctx.lineWidth = 1 / zoom;
     ctx.strokeRect(0, 0, LVL_W * T, LVL_H * T);
+    // Right edge handle
+    ctx.fillStyle = 'rgba(255,204,0,0.5)';
+    ctx.fillRect(LVL_W * T - 2/zoom, LVL_H * T / 2 - 20/zoom, 4/zoom, 40/zoom);
+    // Bottom edge handle
+    ctx.fillRect(LVL_W * T / 2 - 20/zoom, LVL_H * T - 2/zoom, 40/zoom, 4/zoom);
+    // Corner handle
+    ctx.fillRect(LVL_W * T - 4/zoom, LVL_H * T - 4/zoom, 8/zoom, 8/zoom);
 
     // Draw tile layers
     for (const layer of layers) {
@@ -1635,6 +1673,9 @@ let pCoins, pRods, pChests, pArcades, pPlatforms;
 let pushGroups = [];
 let pushingGroup = null; // group being pushed
 let pushSolidKeys = []; // temp solid keys for current frame
+let wallPushTimer = 0; // how long Gary has been running into a wall
+let wallBlocked = false; // set by resolveX when Gary hits a wall
+const WALL_PUSH_DELAY = 0.35; // seconds before push animation starts
 let solidSet;
 
 // Build collision set using ACTUAL Godot physics data.
@@ -1894,6 +1935,7 @@ function resolveX() {
             const c = colBox();
             if (gvx > 0) gx = rx - c[2] - c[0] - 0.01;
             else if (gvx < 0) gx = rx + T - c[0] + 0.01;
+            wallBlocked = true;
             gvx = 0; return;
         }
     }
@@ -2130,6 +2172,17 @@ function playFrame(dt) {
 
     // Remove temporary push solid keys (so push detection can still move them)
     for (const k of pushSolidKeys) solidSet.delete(k);
+
+    // Wall push timer — if Gary is running into a wall, switch to push anim after delay
+    if (wallBlocked && gFloor && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
+        wallPushTimer += dt;
+        if (wallPushTimer >= WALL_PUSH_DELAY) {
+            pSetState('push');
+        }
+    } else {
+        wallPushTimer = 0;
+    }
+    wallBlocked = false;
 
     // Pushable group interaction
     if (gState !== 'push') pushingGroup = null;
