@@ -966,42 +966,45 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — hard constraint, nothing passes through
+  // Platform collision — clamp position, impulse for velocity (once)
   for (const p of lv.platforms) {
     if (p.rot) {
       collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
       continue;
     }
 
-    // TOP SURFACE: hard clamp — no corner can be below p.y
     let pCorners = getCubeCorners(c);
-    let deepest = 0;
+
+    // TOP: clamp position, apply impulse only if newly penetrating
+    let deepest = 0, deepCorner = null;
     for (const corner of pCorners) {
       if (corner.x > p.x && corner.x < p.x + p.w) {
         const pen = corner.y - p.y;
-        if (pen > deepest) deepest = pen;
+        if (pen > deepest) { deepest = pen; deepCorner = corner; }
       }
     }
     if (deepest > 0) {
-      c.y -= deepest; // hard clamp, no overshoot
+      c.y -= deepest;
       if (c.vy > 0) {
-        const bounce = c.vy * B * (c.bounce || 1);
-        c.vy = bounce > 5 ? -bounce : 0;
-        // Surface friction: slow horizontal slide and add roll
-        c.vx *= 0.95;
-        c.angVel += c.vx * 0.01;
+        // Only apply impulse once (when actually hitting, not resting)
+        if (c.vy > 5) {
+          applyImpulse(c, deepCorner.x, p.y, 0, -1, B);
+        }
+        // Hard floor: vy can never be positive after clamp
+        if (c.vy > 0) c.vy = 0;
       }
     }
 
-    // BOTTOM SURFACE: only when rising, thin 6px zone
+    // BOTTOM: clamp + impulse when rising
     if (c.vy < 0) {
-      pCorners = getCubeCorners(c); // refresh after top clamp
+      pCorners = getCubeCorners(c);
       for (const corner of pCorners) {
         if (corner.x > p.x && corner.x < p.x + p.w) {
           const pen = (p.y + 6) - corner.y;
           if (pen > 0 && pen < half * 2) {
             c.y += pen;
-            c.vy = -c.vy * B * (c.bounce || 1);
+            applyImpulse(c, corner.x, p.y + 6, 0, 1, B);
+            if (c.vy < 0) c.vy = 0;
             break;
           }
         }
