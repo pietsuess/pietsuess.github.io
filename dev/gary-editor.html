@@ -2582,6 +2582,43 @@ function playFrame(dt) {
         }
     }
 
+    // Pushable group gravity — groups fall when unsupported
+    for (const g of pushGroups) {
+        // Find bottom edge cells of the group
+        let onGround = false;
+        for (const c of g.cells) {
+            const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
+            if (hasBelow) continue; // not a bottom cell
+            const wx = c.tx * T + g.offsetX;
+            const wy = c.ty * T + g.offsetY + T; // bottom of this cell
+            // Check if there's solid ground below
+            const checkTx = Math.floor((wx + T / 2) / T);
+            const checkTy = Math.floor(wy / T);
+            if (isSolid(checkTx, checkTy)) { onGround = true; break; }
+            // Check ground at left and right edges
+            const checkTxL = Math.floor(wx / T);
+            const checkTxR = Math.floor((wx + T - 1) / T);
+            if (isSolid(checkTxL, checkTy) || isSolid(checkTxR, checkTy)) { onGround = true; break; }
+        }
+        if (!onGround) {
+            g.offsetY += GRAV * dt * 0.4; // fall slower than Gary
+            // Snap to ground
+            for (const c of g.cells) {
+                const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
+                if (hasBelow) continue;
+                const wy = c.ty * T + g.offsetY + T;
+                const checkTy = Math.floor(wy / T);
+                const wx = c.tx * T + g.offsetX;
+                const checkTxL = Math.floor(wx / T);
+                const checkTxR = Math.floor((wx + T - 1) / T);
+                if (isSolid(checkTxL, checkTy) || isSolid(checkTxR, checkTy) || isSolid(Math.floor((wx + T/2) / T), checkTy)) {
+                    g.offsetY = checkTy * T - (c.ty * T + T); // snap
+                    break;
+                }
+            }
+        }
+    }
+
     // Fall death
     if (gy > LVL_H * T + 100) {
         gx = spawnX * T + T / 2;
@@ -2681,7 +2718,7 @@ function playFrame(dt) {
 
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = document.getElementById('bg-color').value;
-    ctx.fillRect(0, 0, cw, ch);
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
 
     ctx.save();
     ctx.scale(zoom, zoom);
