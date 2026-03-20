@@ -966,40 +966,45 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — slightly thicker than visual for reliable detection
+  // Platform collision — impenetrable surface, no thickness needed
+  // Check if any corner has crossed the platform top or bottom surface
   for (const p of lv.platforms) {
-    const platH = 12; // visual is 6px, collision is 12px
     if (p.rot) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, platH, p.rot);
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
       continue;
     }
-    // Recompute corners fresh for each platform
     const pCorners = getCubeCorners(c);
-    let hit = false;
-    for (const corner of pCorners) {
-      if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y && corner.y < p.y + platH) {
-        const dt2 = corner.y - p.y; // distance from platform top
-        const db = p.y + platH - corner.y; // distance from platform bottom
-        // Use velocity to determine direction, not penetration depth
-        if (c.vy >= 0) {
-          // Moving down or stationary — hit from above, push up
-          c.y -= dt2;
-          const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-          if (spd < 60) {
-            if (c.vy > 0) c.vy = 0;
-          } else {
-            applyImpulse(c, corner.x, corner.y, 0, -1, B);
-          }
-        } else {
-          // Moving up — hit from below, push down
-          c.y += db;
-          applyImpulse(c, corner.x, corner.y, 0, 1, B);
+
+    if (c.vy >= 0) {
+      // Falling or resting — check if any corner crossed below platform top
+      let deepest = 0, deepCorner = null;
+      for (const corner of pCorners) {
+        if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y) {
+          const pen = corner.y - p.y;
+          if (pen > deepest) { deepest = pen; deepCorner = corner; }
         }
-        hit = true; break;
       }
-    }
-    if (!hit) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, platH, 0);
+      if (deepCorner) {
+        c.y -= deepest;
+        const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+        if (spd < 60) {
+          if (c.vy > 0) c.vy = 0;
+        } else {
+          applyImpulse(c, deepCorner.x, deepCorner.y, 0, -1, B);
+        }
+      }
+    } else {
+      // Rising — check if any corner crossed above platform bottom
+      for (const corner of pCorners) {
+        if (corner.x > p.x && corner.x < p.x + p.w && corner.y < p.y + 6 && corner.y > p.y - c.size) {
+          const pen = (p.y + 6) - corner.y;
+          if (pen > 0) {
+            c.y += pen;
+            applyImpulse(c, corner.x, corner.y, 0, 1, B);
+            break;
+          }
+        }
+      }
     }
   }
 
