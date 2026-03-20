@@ -42,6 +42,8 @@ resize();
 window.addEventListener('resize', resize);
 
 
+const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
+
 // Prevent pull-to-refresh and overscroll on mobile
 document.body.style.overscrollBehavior = 'none';
 document.addEventListener('touchmove', (e) => { if(e.target === canvas) e.preventDefault(); }, {passive: false});
@@ -597,7 +599,7 @@ function getCamFlags() {
   return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
 }
 
-function resetCube() { cube = null; state = 'ready'; camTargetX = Math.max(0, getWalkLineX() - 20); hintCache = {}; stopAirborne(); }
+function resetCube() { cube = null; state = 'ready'; camTargetX = isMobile ? Math.max(0, getWalkLineX() - 20) : 0; hintCache = {}; stopAirborne(); }
 // Only reset camera when changing levels
 function resetLevel() { camX = 0; camY = 0; resetCube(); }
 
@@ -2129,44 +2131,58 @@ function animate(time){
     const cf = getCamFlags();
     const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
 
-    if (state === 'ready' || state === 'aiming') {
-      // Pin walk line to far left — show maximum level area ahead
-      if (cf.panRight) {
-        const walkCam = Math.max(0, getWalkLineX() - 20);
-        camTargetX = Math.min(maxCam, walkCam);
+    if (isMobile) {
+      // ── MOBILE CAMERA: staged behavior, goal framing ──
+      if (state === 'ready' || state === 'aiming') {
+        if (cf.panRight) {
+          const walkCam = Math.max(0, getWalkLineX() - 20);
+          camTargetX = Math.min(maxCam, walkCam);
+        }
+      } else if (state === 'thrown' && cube) {
+        if (cf.panRight) {
+          camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.2));
+        }
+      } else if (state === 'won' || state === 'lost') {
+        const g = getCurrentLevel().goal;
+        if (g && cf.panRight) {
+          const goalCenterX = g.x + g.w / 2;
+          camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
+        }
       }
-    } else if (state === 'thrown' && cube) {
-      // Follow cube during flight — keep it at 20% from left for max lookahead
-      if (cf.panRight) {
-        camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.2));
-      }
-    } else if (state === 'won' || state === 'lost') {
-      // Frame the goal after throw ends
-      const g = getCurrentLevel().goal;
-      if (g && cf.panRight) {
-        const goalCenterX = g.x + g.w / 2;
-        camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
-      }
-    }
-
-    // Vertical follow only if flags enabled
-    if (cube && (state === 'thrown' || state === 'aiming')) {
-      const targetY = cube.y - H * 0.4;
-      if (cf.panDown && cube.y > H * 0.75 + camY) {
-        camY += (targetY - camY) * 0.04;
-      } else if (cf.panUp && cube.y < camY + H * 0.25) {
-        camY += (targetY - camY) * 0.04;
-      } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
+      // Vertical follow
+      if (cube && (state === 'thrown' || state === 'aiming')) {
+        const targetY = cube.y - H * 0.4;
+        if (cf.panDown && cube.y > H * 0.75 + camY) {
+          camY += (targetY - camY) * 0.04;
+        } else if (cf.panUp && cube.y < camY + H * 0.25) {
+          camY += (targetY - camY) * 0.04;
+        } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
+          camY += (0 - camY) * 0.03;
+        }
+      } else if ((state === 'won' || state === 'lost' || state === 'ready') && camY !== 0) {
         camY += (0 - camY) * 0.03;
       }
-    } else if ((state === 'won' || state === 'lost' || state === 'ready') && camY !== 0) {
-      camY += (0 - camY) * 0.03;
-    }
-
-    // Smooth horizontal follow — gentler during throw, snappier for framing
-    if (!peekPanning) {
-      const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
-      camX += (camTargetX - camX) * lerpRate;
+      // Smooth horizontal follow
+      if (!peekPanning) {
+        const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
+        camX += (camTargetX - camX) * lerpRate;
+      }
+    } else {
+      // ── DESKTOP CAMERA: original behavior ──
+      if ((state === 'thrown' || state === 'aiming') && cube) {
+        if (cf.panRight) {
+          camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.35));
+        }
+        const targetY = cube.y - H * 0.4;
+        if (cf.panDown && cube.y > H * 0.75 + camY) {
+          camY += (targetY - camY) * 0.08;
+        } else if (cf.panUp && cube.y < camY + H * 0.25) {
+          camY += (targetY - camY) * 0.08;
+        } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
+          camY += (0 - camY) * 0.05;
+        }
+        if (!peekPanning) camX += (camTargetX - camX) * 0.08;
+      }
     }
   }
 
