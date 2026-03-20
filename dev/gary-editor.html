@@ -61,7 +61,6 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 #tile-picker-wrap { position: relative; }
 #tile-picker-canvas { image-rendering: pixelated; cursor: pointer; width: 100%; }
 #tile-picker-canvas:hover { outline: 1px solid #ffcc00; }
-#lava-picker-canvas { image-rendering: pixelated; cursor: pointer; width: 100%; }
 
 /* Entity picker */
 .entity-btn {
@@ -216,12 +215,6 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
                 <canvas id="tile-picker-canvas"></canvas>
             </div>
             <div id="tile-info" style="margin-top:4px;font-size:10px;color:#888;">Click tile to select · Shift+click to multi-select · Double-click to zoom</div>
-        </div>
-        <div class="tool-section">
-            <h3 style="display:flex;justify-content:space-between;align-items:center;">Lava Tileset <button onclick="openTileZoom('lava')" style="background:#333;color:#ffcc00;border:1px solid #555;padding:1px 8px;font-family:monospace;font-size:9px;cursor:pointer;">ZOOM</button></h3>
-            <div id="lava-picker-wrap">
-                <canvas id="lava-picker-canvas"></canvas>
-            </div>
         </div>
     </div>
 
@@ -607,8 +600,7 @@ function restoreState(state) {
     // Restore pushable cells
     pushableCells.clear();
     for (const k of state.pushable) pushableCells.add(k);
-    drawTilePicker(); drawLavaPicker();
-}
+    drawTilePicker();}
 
 // ---- OBJECT SELECTION / DRAGGING ----
 let selectMode = false; // V key toggles
@@ -649,8 +641,6 @@ const ENTITY_DEFS = {
 // ---- TILE PICKER ----
 const tpCanvas = document.getElementById('tile-picker-canvas');
 const tpCtx = tpCanvas.getContext('2d');
-const lpCanvas = document.getElementById('lava-picker-canvas');
-const lpCtx = lpCanvas.getContext('2d');
 
 function drawTilePicker() {
     if (!img.env.complete || img.env.naturalWidth === 0) return;
@@ -701,26 +691,6 @@ function drawTilePicker() {
     }
 }
 
-function drawLavaPicker() {
-    if (!img.lava.complete || img.lava.naturalWidth === 0) return;
-    const cols = Math.floor(img.lava.naturalWidth / T);
-    const rows = Math.floor(img.lava.naturalHeight / T);
-    lpCanvas.width = img.lava.naturalWidth;
-    lpCanvas.height = img.lava.naturalHeight;
-    lpCtx.imageSmoothingEnabled = false;
-    lpCtx.drawImage(img.lava, 0, 0);
-    lpCtx.strokeStyle = 'rgba(255,255,255,0.12)';
-    lpCtx.lineWidth = 0.5;
-    for (let x = 0; x <= cols; x++) { lpCtx.beginPath(); lpCtx.moveTo(x * T, 0); lpCtx.lineTo(x * T, img.lava.naturalHeight); lpCtx.stroke(); }
-    for (let y = 0; y <= rows; y++) { lpCtx.beginPath(); lpCtx.moveTo(0, y * T); lpCtx.lineTo(img.lava.naturalWidth, y * T); lpCtx.stroke(); }
-
-    for (const t of selectedTiles) {
-        if (t.tileset !== 'lava') continue;
-        lpCtx.strokeStyle = '#ffcc00';
-        lpCtx.lineWidth = 2;
-        lpCtx.strokeRect(t.ax * T, t.ay * T, T, T);
-    }
-}
 
 function pickerClick(e, tileset) {
     const cvs = tileset === 'env' ? tpCanvas : lpCanvas;
@@ -763,18 +733,66 @@ function pickerClick(e, tileset) {
     selectedEntity = null;
     clearEntitySelection();
     drawTilePicker();
-    drawLavaPicker();
-
+   
     const atlasKey = ax + ',' + ay;
     const solid = !isSolidAtlas(ax, ay) ? ' passthrough' :
         (PARTIAL_CELLS[atlasKey] ? ' PARTIAL (' + PARTIAL_CELLS[atlasKey].map(r => r[0]+'-'+r[1]+'px').join(', ') + ')' : ' SOLID');
     document.getElementById('tile-info').textContent = `Tile: ${tileset} (${ax},${ay})${solid} · ${selectedTiles.length} selected`;
 }
 
-tpCanvas.addEventListener('click', e => pickerClick(e, 'env'));
-lpCanvas.addEventListener('click', e => pickerClick(e, 'lava'));
+// Tileset picker: click to select, shift+drag to select range
+let tpDragging = false;
+let tpDragStart = null;
+
+tpCanvas.addEventListener('mousedown', e => {
+    const rect = tpCanvas.getBoundingClientRect();
+    const scaleX = tpCanvas.width / rect.width;
+    const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
+    const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+
+    if (e.shiftKey) {
+        // Start drag selection
+        tpDragging = true;
+        tpDragStart = { ax, ay };
+        selectedTiles = [{ ax, ay, tileset: 'env', dx: 0, dy: 0 }];
+        selectedEntity = null;
+        clearEntitySelection();
+        drawTilePicker();
+        e.preventDefault();
+        return;
+    }
+});
+
+tpCanvas.addEventListener('mousemove', e => {
+    if (!tpDragging || !tpDragStart) return;
+    const rect = tpCanvas.getBoundingClientRect();
+    const scaleX = tpCanvas.width / rect.width;
+    const ax = Math.floor((e.clientX - rect.left) * scaleX / T);
+    const ay = Math.floor((e.clientY - rect.top) * scaleX / T);
+
+    // Select rectangle from drag start to current
+    const x1 = Math.min(tpDragStart.ax, ax);
+    const y1 = Math.min(tpDragStart.ay, ay);
+    const x2 = Math.max(tpDragStart.ax, ax);
+    const y2 = Math.max(tpDragStart.ay, ay);
+
+    selectedTiles = [];
+    for (let ty = y1; ty <= y2; ty++) {
+        for (let tx = x1; tx <= x2; tx++) {
+            selectedTiles.push({ ax: tx, ay: ty, tileset: 'env', dx: tx - x1, dy: ty - y1 });
+        }
+    }
+    drawTilePicker();
+    document.getElementById('tile-info').textContent = `Selected ${selectedTiles.length} tiles (${x2-x1+1}x${y2-y1+1})`;
+});
+
+tpCanvas.addEventListener('mouseup', () => { tpDragging = false; });
+
+tpCanvas.addEventListener('click', e => {
+    if (tpDragging) return; // handled by mousedown/move/up
+    pickerClick(e, 'env');
+});
 tpCanvas.addEventListener('dblclick', () => openTileZoom('env'));
-lpCanvas.addEventListener('dblclick', () => openTileZoom('lava'));
 
 // ---- TILE ZOOM POPUP ----
 let tileZoomOpen = false;
@@ -902,8 +920,7 @@ tzBody.addEventListener('mousedown', e => {
         clearEntitySelection();
         drawTileZoom();
         drawTilePicker();
-        drawLavaPicker();
-        const atlasKey = ax + ',' + ay;
+               const atlasKey = ax + ',' + ay;
         const solid = !isSolidAtlas(ax, ay) ? ' passthrough' :
             (PARTIAL_CELLS[atlasKey] ? ' PARTIAL (' + PARTIAL_CELLS[atlasKey].map(r => r[0]+'-'+r[1]+'px').join(', ') + ')' : ' SOLID');
         document.getElementById('tile-zoom-info').textContent = `Tile (${ax},${ay})${solid} · ${selectedTiles.length} selected`;
@@ -970,14 +987,12 @@ window.addEventListener('keydown', e => {
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
             pushUndo();
             for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
-            drawTilePicker(); drawLavaPicker();
-            document.getElementById('tile-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
+            drawTilePicker();            document.getElementById('tile-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
         }
         if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS') {
             pushUndo();
             for (const t of selectedTiles) makeFullSolid(t.ax, t.ay);
-            drawTilePicker(); drawLavaPicker();
-            document.getElementById('tile-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
+            drawTilePicker();            document.getElementById('tile-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
             e.preventDefault();
         }
     }
@@ -1029,8 +1044,7 @@ function selectEntity(type) {
     selectedEntity = type;
     selectedTiles = [];
     drawTilePicker();
-    drawLavaPicker();
-    document.querySelectorAll('.entity-btn').forEach(b => {
+       document.querySelectorAll('.entity-btn').forEach(b => {
         b.classList.toggle('active', b.dataset.type === type);
     });
 }
@@ -2575,15 +2589,13 @@ function applyLevelData(data) {
     if (data.collisionOverrides) Object.assign(collisionOverrides, data.collisionOverrides);
     pushableCells.clear();
     if (data.pushable) data.pushable.forEach(k => pushableCells.add(k));
-    drawTilePicker(); drawLavaPicker();
-    camX = spawnX * T - 200;
+    drawTilePicker();    camX = spawnX * T - 200;
     camY = spawnY * T - 100;
 }
 
 Promise.all(imgLoads).then(() => {
     drawTilePicker();
-    drawLavaPicker();
-    setupEntityPicker();
+       setupEntityPicker();
     setupLayerPicker();
     setupGarySheet();
 
@@ -2758,8 +2770,7 @@ document.addEventListener('mousemove', e => {
     canvasWrap.style.width = canvasW2 + 'px';
     canvasW = 0; canvasH = 0;
     drawTilePicker();
-    drawLavaPicker();
-});
+   });
 document.addEventListener('mouseup', () => {
     if (panelDragging) {
         panelDragging = false;
