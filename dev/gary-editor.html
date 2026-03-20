@@ -34,9 +34,15 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     position: absolute; bottom: 8px; left: 8px; font-size: 10px; color: #888; z-index: 10;
 }
 
+/* Panel resize handle */
+#panel-resize {
+    width: 5px; cursor: col-resize; background: #333; flex-shrink: 0;
+}
+#panel-resize:hover { background: #ffcc00; }
+
 /* RIGHT: Tool Panel */
 #panel {
-    width: 320px; background: #1a1a1a; border-left: 2px solid #333;
+    width: 320px; background: #1a1a1a;
     display: flex; flex-direction: column; overflow: hidden; flex-shrink: 0;
 }
 #panel-tabs {
@@ -193,6 +199,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     <div id="info-bar"></div>
 </div>
 
+<div id="panel-resize"></div>
 <div id="panel">
     <div id="panel-tabs">
         <button class="active" onclick="showTab('tiles')">Tiles</button>
@@ -944,12 +951,17 @@ window.addEventListener('keydown', e => {
             copyCollision(t.ax, t.ay);
             const data = getCollisionData(t.ax, t.ay);
             document.getElementById('tile-info').textContent = `Copied collision: ${data.type}`;
-            // Don't preventDefault — let Cmd+C work normally elsewhere
         }
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
             for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
             drawTilePicker(); drawLavaPicker();
             document.getElementById('tile-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
+        }
+        if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS') {
+            for (const t of selectedTiles) makeFullSolid(t.ax, t.ay);
+            drawTilePicker(); drawLavaPicker();
+            document.getElementById('tile-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
+            e.preventDefault();
         }
     }
 });
@@ -2652,6 +2664,25 @@ function updateGaryPreview(dt) {
         pctx.drawImage(img.gary, fr[0], fr[1], 61, 61, 0, 0, 122, 122);
     }
 }
+
+// ---- PANEL RESIZE ----
+const panelResize = document.getElementById('panel-resize');
+const panel = document.getElementById('panel');
+let panelDragging = false;
+
+panelResize.addEventListener('mousedown', e => {
+    panelDragging = true;
+    e.preventDefault();
+});
+window.addEventListener('mousemove', e => {
+    if (!panelDragging) return;
+    const newWidth = window.innerWidth - e.clientX;
+    panel.style.width = Math.max(200, Math.min(800, newWidth)) + 'px';
+    // Redraw tileset pickers at new size
+    drawTilePicker();
+    drawLavaPicker();
+});
+window.addEventListener('mouseup', () => { panelDragging = false; });
 </script>
 </body>
 </html>
