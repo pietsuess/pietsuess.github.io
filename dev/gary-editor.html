@@ -2150,7 +2150,7 @@ function colBox() {
     switch (gState) {
         case 'roll': case 'into_roll': return [-7, -15, 14, 15];
         case 'roll_out': case 'kneel': case 'crouch': return [-6, -22, 12, 22];
-        case 'push': return [-6, -43, 12, 43]; // same as standing so no hitbox bounce
+        case 'push': return [-8, -43, 16, 43]; // wider to reach pushable objects
         default: return [-6, -43, 12, 43];
     }
 }
@@ -2473,9 +2473,10 @@ function playFrame(dt) {
     }
 
     // Direct collision against pushable groups (pixel-accurate, not grid-snapped)
-    // Skip the group Gary is actively pushing
+    // Skip when Gary is pushing or trying to push (prevents bounce)
     for (const g of pushGroups) {
         if (g === pushingGroup) continue;
+        if (gState === 'push') continue; // in push state, let push code handle all groups
         let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
         for (const c of g.cells) {
             gl = Math.min(gl, c.tx * T + g.offsetX);
@@ -2542,10 +2543,8 @@ function playFrame(dt) {
             }
         }
 
-        // Push detection: Gary is against the wall (resolveX stopped him)
-        // and keeps pressing toward the group. The wallPushTimer handles the delay.
-        // Here we just need to move the group when Gary is in push state near it.
-        if (gState === 'push' || ((gState === 'run' || gState === 'start') && wallBlocked)) {
+        // Push detection: enter push state immediately for pushable groups (no timer delay)
+        if (gState === 'push' || gState === 'run' || gState === 'start') {
             if (gy > gTop && gy <= gBot + 4) {
                 const pushC = colBox();
                 const garyRight = gx + pushC[0] + pushC[2];
