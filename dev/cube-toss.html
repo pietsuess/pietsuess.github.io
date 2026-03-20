@@ -966,49 +966,31 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — clamp position, impulse for velocity (once)
+  // Platform collision — thick solid collision, same as walls
+  const PLAT_H = 20; // collision AND visual height
   for (const p of lv.platforms) {
     if (p.rot) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, p.rot);
       continue;
     }
-
-    let pCorners = getCubeCorners(c);
-
-    // TOP: clamp position, apply impulse only if newly penetrating
-    let deepest = 0, deepCorner = null;
+    const pCorners = getCubeCorners(c);
+    let hit = false;
     for (const corner of pCorners) {
-      if (corner.x > p.x && corner.x < p.x + p.w) {
-        const pen = corner.y - p.y;
-        if (pen > deepest) { deepest = pen; deepCorner = corner; }
+      if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y && corner.y < p.y + PLAT_H) {
+        const dl = corner.x - p.x, dr = p.x + p.w - corner.x;
+        const dt2 = corner.y - p.y, db = p.y + PLAT_H - corner.y;
+        const minD = Math.min(dl, dr, dt2, db);
+        let nx = 0, ny = 0;
+        if (minD === dt2) { c.y -= dt2; ny = -1; }
+        else if (minD === db) { c.y += db; ny = 1; }
+        else if (minD === dl) { c.x -= dl; nx = -1; }
+        else { c.x += dr; nx = 1; }
+        applyImpulse(c, corner.x, corner.y, nx, ny, B);
+        hit = true; break;
       }
     }
-    if (deepest > 0) {
-      c.y -= deepest;
-      if (c.vy > 0) {
-        // Only apply impulse once (when actually hitting, not resting)
-        if (c.vy > 5) {
-          applyImpulse(c, deepCorner.x, p.y, 0, -1, B);
-        }
-        // Hard floor: vy can never be positive after clamp
-        if (c.vy > 0) c.vy = 0;
-      }
-    }
-
-    // BOTTOM: clamp + impulse when rising
-    if (c.vy < 0) {
-      pCorners = getCubeCorners(c);
-      for (const corner of pCorners) {
-        if (corner.x > p.x && corner.x < p.x + p.w) {
-          const pen = (p.y + 6) - corner.y;
-          if (pen > 0 && pen < half * 2) {
-            c.y += pen;
-            applyImpulse(c, corner.x, p.y + 6, 0, 1, B);
-            if (c.vy < 0) c.vy = 0;
-            break;
-          }
-        }
-      }
+    if (!hit) {
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, 0);
     }
   }
 
@@ -2464,20 +2446,25 @@ function animate(time){
     ctx.restore();
   }
 
-  // ─── PLATFORMS — cyan/blue glow ledge (supports rotation) ───
+  // ─── PLATFORMS — solid 20px ledge (supports rotation) ───
   for(const p of lv.platforms){
     ctx.save();
-    const pcx=p.x+p.w/2-camX, pcy=p.y+3;
+    const pcx=p.x+p.w/2-camX, pcy=p.y+10;
     ctx.translate(pcx,pcy);
     if(p.rot)ctx.rotate(p.rot);
-    const pG=ctx.createLinearGradient(0,0,0,18);
-    pG.addColorStop(0,'rgba(100,200,240,0.2)');pG.addColorStop(1,'rgba(100,200,240,0)');
-    ctx.fillStyle=pG;ctx.fillRect(-p.w/2,-3,p.w,18);
-    ctx.fillStyle='rgba(100,200,240,0.45)';ctx.fillRect(-p.w/2,-3,p.w,3);
-    ctx.fillStyle='rgba(180,230,255,0.5)';ctx.fillRect(-p.w/2,-3,p.w,1);
+    // Solid body
+    const pG=ctx.createLinearGradient(0,-10,0,10);
+    pG.addColorStop(0,'rgba(100,200,240,0.35)');pG.addColorStop(1,'rgba(60,140,200,0.15)');
+    ctx.fillStyle=pG;ctx.fillRect(-p.w/2,-10,p.w,20);
+    // Top edge highlight
+    ctx.fillStyle='rgba(180,230,255,0.5)';ctx.fillRect(-p.w/2,-10,p.w,2);
+    // Border
+    ctx.strokeStyle='rgba(100,200,240,0.4)';ctx.lineWidth=1;
+    ctx.strokeRect(-p.w/2,-10,p.w,20);
+    // End caps
     ctx.fillStyle='rgba(100,200,240,0.5)';
-    ctx.beginPath();ctx.arc(-p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(-p.w/2,-0,4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(p.w/2,-0,4,0,Math.PI*2);ctx.fill();
     ctx.restore();
   }
 
