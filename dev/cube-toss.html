@@ -913,12 +913,13 @@ function collideCubeWalls(c, lv) {
       collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
       continue;
     }
+    // Recompute corners fresh for each platform (position may have changed)
+    const pCorners = getCubeCorners(c);
     // Find the deepest corner penetration below platform top
     let deepestPen = 0, deepestCorner = null;
-    for (const corner of corners) {
+    for (const corner of pCorners) {
       if (corner.x > p.x && corner.x < p.x + p.w) {
         const pen = corner.y - p.y;
-        // Corner below platform top but not too far below (within cube size = still a valid hit)
         if (pen > 0 && pen < c.size && pen > deepestPen) {
           deepestPen = pen;
           deepestCorner = corner;
@@ -926,16 +927,19 @@ function collideCubeWalls(c, lv) {
       }
     }
     if (deepestCorner) {
-      c.y -= deepestPen;
+      c.y -= deepestPen + 1; // +1 safety margin so it's clearly above
       applyImpulse(c, deepestCorner.x, deepestCorner.y, 0, -1, B);
+      // Guarantee cube is moving upward after hitting platform top
+      if (c.vy > 0) c.vy = -c.vy * B;
     } else {
       // Check underside — corner hitting platform bottom (coming from below)
-      for (const corner of corners) {
+      for (const corner of pCorners) {
         if (corner.x > p.x && corner.x < p.x + p.w) {
           const pen = (p.y + 6) - corner.y;
           if (pen > 0 && pen < c.size && c.vy < 0) {
-            c.y += pen;
+            c.y += pen + 1;
             applyImpulse(c, corner.x, corner.y, 0, 1, B);
+            if (c.vy < 0) c.vy = Math.abs(c.vy) * B;
             break;
           }
         }
