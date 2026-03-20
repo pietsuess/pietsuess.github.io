@@ -2193,7 +2193,7 @@ function resolveX() {
             // Before blocking, check if we can step up over this obstacle
             // Skip step-up for pushable group cells — those are solid walls
             const k = tx + ',' + ty;
-            const isPushCell = pushSolidKeys && pushSolidKeys.indexOf(k) >= 0;
+            const isPushCell = false; // push groups use direct collision, not grid
             const ranges = cellCol[k];
             if (ranges && gFloor && !isPushCell) {
                 // Find the highest collision bar top that Gary's feet overlap
@@ -2440,21 +2440,8 @@ function playFrame(dt) {
     gx += gvx * dt;
     gy += gvy * dt;
 
-    // Add pushable groups to solid set at their current positions (so Gary can't walk through)
-    pushSolidKeys = [];
-    for (const g of pushGroups) {
-        for (const c of g.cells) {
-            const wx = Math.floor((c.tx * T + g.offsetX) / T);
-            const wy = Math.floor((c.ty * T + g.offsetY) / T);
-            const k = wx + ',' + wy;
-            if (!solidSet.has(k)) {
-                solidSet.add(k);
-                pushSolidKeys.push(k);
-            }
-        }
-    }
-
     // Collision (using proven game.js approach)
+    pushSolidKeys = []; // keep empty — push groups use direct collision below
     resolveX();
     resolveY();
 
@@ -2463,8 +2450,35 @@ function playFrame(dt) {
         gFloor = checkFloor();
     }
 
-    // Remove temporary push solid keys (so push detection can still move them)
-    for (const k of pushSolidKeys) solidSet.delete(k);
+    // Direct collision against pushable groups (pixel-accurate, not grid-snapped)
+    for (const g of pushGroups) {
+        let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
+        for (const c of g.cells) {
+            gl = Math.min(gl, c.tx * T + g.offsetX);
+            gr = Math.max(gr, c.tx * T + g.offsetX + T);
+            gt = Math.min(gt, c.ty * T + g.offsetY);
+            gb = Math.max(gb, c.ty * T + g.offsetY + T);
+        }
+        const cb = colBox();
+        const garyL = gx + cb[0], garyR = gx + cb[0] + cb[2];
+        const garyT = gy + cb[1], garyB = gy + cb[1] + cb[3];
+
+        // Only check if Gary overlaps vertically with group
+        if (garyB <= gt || garyT >= gb) continue;
+
+        // X collision: push Gary out of the group
+        if (garyR > gl && garyL < gr) {
+            const overlapR = garyR - gl; // Gary overlapping from left
+            const overlapL = gr - garyL; // Gary overlapping from right
+            if (overlapR < overlapL && overlapR < 20) {
+                gx = gl + cb[0] * -1 - cb[2] - 0.01; // push Gary left
+                if (gvx > 0) gvx = 0;
+            } else if (overlapL < 20) {
+                gx = gr - cb[0] + 0.01; // push Gary right
+                if (gvx < 0) gvx = 0;
+            }
+        }
+    }
 
     // Wall push timer — if Gary is running into a wall, switch to push anim after delay
     if (wallBlocked && gFloor && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
@@ -2481,80 +2495,74 @@ function playFrame(dt) {
     if (gState !== 'push') pushingGroup = null;
     const PUSH_SPD = SPD * 0.5;
     for (const g of pushGroups) {
-        // Compute group bounding box in world pixels
-        let minTx = Infinity, maxTx = -Infinity, minTy = Infinity, maxTy = -Infinity;
+        // Group bounding box in world pixels (with current offset)
+        let gLeft = Infinity, gRight = -Infinity, gTop = Infinity, gBot = -Infinity;
         for (const c of g.cells) {
-            const wx = c.tx * T + g.offsetX, wy = c.ty * T + g.offsetY;
-            minTx = Math.min(minTx, wx);
-            maxTx = Math.max(maxTx, wx + T);
-            minTy = Math.min(minTy, wy);
-            maxTy = Math.max(maxTy, wy + T);
+            const wx = c.tx * T + g.offsetX;
+            const wy = c.ty * T + g.offsetY;
+            gLeft = Math.min(gLeft, wx);
+            gRight = Math.max(gRight, wx + T);
+            gTop = Math.min(gTop, wy);
+            gBot = Math.max(gBot, wy + T);
         }
 
         // Gary stands on top of group
         if (gvy >= 0 && g !== pushingGroup) {
-            if (gx >= minTx - 2 && gx <= maxTx + 2 && gy >= minTy - 2 && gy <= minTy + 4) {
-                // Check Gary is actually above a cell in this group
-                const checkTx = Math.floor((gx - g.offsetX) / T);
-                const topRow = Math.min(...g.cells.map(c => c.ty));
-                const inGroup = g.cells.some(c => c.tx === checkTx && c.ty === topRow);
-                if (inGroup) {
-                    gy = minTy;
-                    gvy = 0;
-                    gFloor = true;
-                }
+            if (gx >= gLeft - 2 && gx <= gRight + 2 && gy >= gTop - 2 && gy <= gTop + 4) {
+                gy = gTop;
+                gvy = 0;
+                gFloor = true;
             }
         }
 
-        // Push detection — Gary walking into side of group
-        if (gState === 'run' || gState === 'start' || gState === 'push') {
-            const gR = gx + 6, gL = gx - 6;
-            if (gy > minTy && gy <= maxTy + 4) {
-                // Push right
-                if (gvx > 0 && gR >= minTx - 1 && gR <= minTx + 4 && gx < minTx) {
-                    // Check if group can move right
-                    let blocked = false;
+        // Push detection: Gary is against the wall (resolveX stopped him)
+        // and keeps pressing toward the group. The wallPushTimer handles the delay.
+        // Here we just need to move the group when Gary is in push state near it.
+        if (gState === 'push' || ((gState === 'run' || gState === 'start') && wallBlocked)) {
+            if (gy > gTop && gy <= gBot + 4) {
+                const pushC = colBox();
+                const garyRight = gx + pushC[0] + pushC[2];
+                const garyLeft = gx + pushC[0];
+
+                // Push right: Gary's right edge is at group's left edge
+                if ((pkR()) && garyRight >= gLeft - 2 && garyRight <= gLeft + 2 && gx < gLeft) {
+                    let canMove = true;
                     for (const c of g.cells) {
-                        const wx = c.tx * T + g.offsetX + T; // right edge + 1
-                        const wy = c.ty * T + g.offsetY;
-                        const checkTx = Math.floor(wx / T);
-                        const checkTy = Math.floor(wy / T);
-                        // Only check rightmost cells
                         const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
-                        if (!hasRight && isSolid(checkTx, checkTy)) { blocked = true; break; }
+                        if (!hasRight) {
+                            const checkX = Math.floor((c.tx * T + g.offsetX + T + 1) / T);
+                            const checkY = Math.floor((c.ty * T + g.offsetY) / T);
+                            if (isSolid(checkX, checkY)) { canMove = false; break; }
+                        }
                     }
-                    if (!blocked) {
+                    if (canMove) {
                         gDir = 1;
                         pSetState('push');
                         pushingGroup = g;
-                        g.offsetX += PUSH_SPD * dt;
-                        gx = minTx + g.offsetX - (minTx - g.offsetX + g.offsetX) + minTx - 6; // stay at left edge
-                        gx = (Math.min(...g.cells.map(c => c.tx)) * T + g.offsetX) - 6;
-                    } else {
-                        gx = minTx - 6 - 0.01;
-                        gvx = 0;
+                        const moveAmt = PUSH_SPD * dt;
+                        g.offsetX += moveAmt;
+                        gx += moveAmt;
                     }
                 }
-                // Push left
-                if (gvx < 0 && gL <= maxTx + 1 && gL >= maxTx - 4 && gx > maxTx) {
-                    let blocked = false;
+
+                // Push left: Gary's left edge is at group's right edge
+                if ((pkL()) && garyLeft <= gRight + 2 && garyLeft >= gRight - 2 && gx > gRight) {
+                    let canMove = true;
                     for (const c of g.cells) {
-                        const wx = c.tx * T + g.offsetX - 1; // left edge - 1
-                        const wy = c.ty * T + g.offsetY;
-                        const checkTx = Math.floor(wx / T);
-                        const checkTy = Math.floor(wy / T);
                         const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
-                        if (!hasLeft && isSolid(checkTx, checkTy)) { blocked = true; break; }
+                        if (!hasLeft) {
+                            const checkX = Math.floor((c.tx * T + g.offsetX - 1) / T);
+                            const checkY = Math.floor((c.ty * T + g.offsetY) / T);
+                            if (isSolid(checkX, checkY)) { canMove = false; break; }
+                        }
                     }
-                    if (!blocked) {
+                    if (canMove) {
                         gDir = -1;
                         pSetState('push');
                         pushingGroup = g;
-                        g.offsetX -= PUSH_SPD * dt;
-                        gx = (Math.max(...g.cells.map(c => c.tx)) * T + T + g.offsetX) + 6;
-                    } else {
-                        gx = maxTx + 6 + 0.01;
-                        gvx = 0;
+                        const moveAmt = PUSH_SPD * dt;
+                        g.offsetX -= moveAmt;
+                        gx -= moveAmt;
                     }
                 }
             }
