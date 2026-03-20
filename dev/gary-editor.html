@@ -1608,6 +1608,7 @@ let pCoins, pRods, pChests, pArcades, pPlatforms;
 // Pushable groups in play mode: array of { cells: [{tx,ty},...], offsetX, offsetY }
 let pushGroups = [];
 let pushingGroup = null; // group being pushed
+let pushSolidKeys = []; // temp solid keys for current frame
 let solidSet;
 
 // Build collision set using ACTUAL Godot physics data.
@@ -1817,7 +1818,8 @@ function rectHit(x, y, w, h) {
 // Step-up tolerance: if Gary's feet barely clip a collision bar (<=STEP_UP px),
 // nudge him up over it instead of blocking horizontal movement.
 // This lets Gary roll over the thin bottom pipe bar (~3px).
-const STEP_UP = 5;
+// Does NOT apply to pushable group cells.
+const STEP_UP = 4;
 
 function resolveX() {
     const [bx, by, bw, bh] = worldBox();
@@ -1829,9 +1831,11 @@ function resolveX() {
         const rx = tx * T;
         if (bx < rx + T && bx + bw > rx) {
             // Before blocking, check if we can step up over this obstacle
+            // Skip step-up for pushable group cells — those are solid walls
             const k = tx + ',' + ty;
+            const isPushCell = pushSolidKeys && pushSolidKeys.indexOf(k) >= 0;
             const ranges = cellCol[k];
-            if (ranges && gFloor) {
+            if (ranges && gFloor && !isPushCell) {
                 // Find the highest collision bar top that Gary's feet overlap
                 let maxBarTop = -Infinity;
                 for (const r2 of ranges) {
@@ -1852,7 +1856,7 @@ function resolveX() {
                 }
             }
             // Also try step-up for full cells — check if just feet clipping top edge
-            if (!ranges && gFloor) {
+            if (!ranges && gFloor && !isPushCell) {
                 const cellTop = ty * T;
                 const feetOverlap = (by + bh) - cellTop;
                 if (feetOverlap > 0 && feetOverlap <= STEP_UP) {
@@ -2075,6 +2079,20 @@ function playFrame(dt) {
     gx += gvx * dt;
     gy += gvy * dt;
 
+    // Add pushable groups to solid set at their current positions (so Gary can't walk through)
+    pushSolidKeys = [];
+    for (const g of pushGroups) {
+        for (const c of g.cells) {
+            const wx = Math.floor((c.tx * T + g.offsetX) / T);
+            const wy = Math.floor((c.ty * T + g.offsetY) / T);
+            const k = wx + ',' + wy;
+            if (!solidSet.has(k)) {
+                solidSet.add(k);
+                pushSolidKeys.push(k);
+            }
+        }
+    }
+
     // Collision (using proven game.js approach)
     resolveX();
     resolveY();
@@ -2083,6 +2101,9 @@ function playFrame(dt) {
     if (gvy === 0 && gFloor) {
         gFloor = checkFloor();
     }
+
+    // Remove temporary push solid keys (so push detection can still move them)
+    for (const k of pushSolidKeys) solidSet.delete(k);
 
     // Pushable group interaction
     if (gState !== 'push') pushingGroup = null;
