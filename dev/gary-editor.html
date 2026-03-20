@@ -2472,11 +2472,14 @@ function playFrame(dt) {
         gFloor = checkFloor();
     }
 
-    // Direct collision against pushable groups (pixel-accurate, not grid-snapped)
-    // Skip when Gary is pushing or trying to push (prevents bounce)
+    // ---- UNIFIED PUSHABLE GROUP SYSTEM ----
+    // One pass: collision + push + stand-on for all groups
+    if (gState !== 'push') pushingGroup = null;
+    const PUSH_SPD = SPD * 0.5;
+    const PUSH_DIST = 24; // distance from group edge to Gary's gx when pushing
+
     for (const g of pushGroups) {
-        if (g === pushingGroup) continue;
-        if (gState === 'push') continue; // in push state, let push code handle all groups
+        // Group bounding box
         let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
         for (const c of g.cells) {
             gl = Math.min(gl, c.tx * T + g.offsetX);
@@ -2484,116 +2487,76 @@ function playFrame(dt) {
             gt = Math.min(gt, c.ty * T + g.offsetY);
             gb = Math.max(gb, c.ty * T + g.offsetY + T);
         }
-        const cb = colBox();
-        const garyL = gx + cb[0], garyR = gx + cb[0] + cb[2];
-        const garyT = gy + cb[1], garyB = gy + cb[1] + cb[3];
 
-        // Only check if Gary overlaps vertically with group
-        if (garyB <= gt || garyT >= gb) continue;
+        // Stand on top
+        if (gvy >= 0 && g !== pushingGroup) {
+            if (gx >= gl - 4 && gx <= gr + 4 && gy >= gt - 3 && gy <= gt + 4) {
+                gy = gt; gvy = 0; gFloor = true;
+            }
+        }
 
-        // X collision: keep Gary's sprite visually outside the group
-        // Gary sprite is 61px wide, drawn from gx-30 to gx+31
-        // Push sprite arms extend ~25px ahead of gx
-        const PUSH_MARGIN = 27;
-        if (garyR > gl - 2 && garyL < gr + 2) {
-            if (gx < (gl + gr) / 2) {
-                // Gary is to the left of the group
-                gx = gl - PUSH_MARGIN;
-                if (gvx > 0) { gvx = 0; wallBlocked = true; }
-            } else {
-                // Gary is to the right
-                gx = gr + PUSH_MARGIN;
-                if (gvx < 0) { gvx = 0; wallBlocked = true; }
+        // Skip if Gary isn't at the same vertical range
+        if (gy <= gt || gy > gb + 8) continue;
+
+        // Is Gary touching or overlapping this group?
+        const touching = (gx + 30 > gl && gx - 30 < gr); // sprite overlap check (30px each side)
+        if (!touching) continue;
+
+        const garyIsLeft = gx < (gl + gr) / 2;
+
+        if (g === pushingGroup) {
+            // Already pushing — move group and keep Gary locked at distance
+            let canMove = true;
+            const pushDir = gDir;
+            for (const c of g.cells) {
+                if (pushDir === 1) {
+                    const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
+                    if (!hasRight) {
+                        if (isSolid(Math.floor((c.tx * T + g.offsetX + T + 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                            { canMove = false; break; }
+                    }
+                } else {
+                    const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                    if (!hasLeft) {
+                        if (isSolid(Math.floor((c.tx * T + g.offsetX - 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                            { canMove = false; break; }
+                    }
+                }
+            }
+            if (canMove) {
+                const amt = PUSH_SPD * dt;
+                g.offsetX += pushDir * amt;
+                gx = pushDir === 1 ? gl - PUSH_DIST + pushDir * amt : gr + PUSH_DIST + pushDir * amt;
+            }
+            // Recalculate bounds after move
+            continue;
+        }
+
+        // Not yet pushing — block Gary and check for push entry
+        if (garyIsLeft) {
+            gx = gl - PUSH_DIST;
+            if (gvx > 0) gvx = 0;
+            // Enter push if running into it
+            if ((gState === 'run' || gState === 'start') && pkR()) {
+                gDir = 1; pSetState('push'); pushingGroup = g;
+            }
+        } else {
+            gx = gr + PUSH_DIST;
+            if (gvx < 0) gvx = 0;
+            if ((gState === 'run' || gState === 'start') && pkL()) {
+                gDir = -1; pSetState('push'); pushingGroup = g;
             }
         }
     }
 
-    // Wall push timer — if Gary is running into a wall, switch to push anim after delay
-    if (wallBlocked && gFloor && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
+    // Wall push timer — only for immovable walls (not pushable groups)
+    if (wallBlocked && gFloor && !pushingGroup && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
         wallPushTimer += dt;
-        if (wallPushTimer >= WALL_PUSH_DELAY) {
-            pSetState('push');
-        }
-    } else {
+        if (wallPushTimer >= WALL_PUSH_DELAY) { pSetState('push'); }
+    } else if (!pushingGroup) {
         wallPushTimer = 0;
     }
     wallBlocked = false;
-
-    // Pushable group interaction
-    if (gState !== 'push') pushingGroup = null;
-    const PUSH_SPD = SPD * 0.5;
-    for (const g of pushGroups) {
-        // Group bounding box in world pixels (with current offset)
-        let gLeft = Infinity, gRight = -Infinity, gTop = Infinity, gBot = -Infinity;
-        for (const c of g.cells) {
-            const wx = c.tx * T + g.offsetX;
-            const wy = c.ty * T + g.offsetY;
-            gLeft = Math.min(gLeft, wx);
-            gRight = Math.max(gRight, wx + T);
-            gTop = Math.min(gTop, wy);
-            gBot = Math.max(gBot, wy + T);
-        }
-
-        // Gary stands on top of group
-        if (gvy >= 0 && g !== pushingGroup) {
-            if (gx >= gLeft - 2 && gx <= gRight + 2 && gy >= gTop - 2 && gy <= gTop + 4) {
-                gy = gTop;
-                gvy = 0;
-                gFloor = true;
-            }
-        }
-
-        // Push detection: enter push state immediately for pushable groups (no timer delay)
-        if (gState === 'push' || gState === 'run' || gState === 'start') {
-            if (gy > gTop && gy <= gBot + 4) {
-                const pushC = colBox();
-                const garyRight = gx + pushC[0] + pushC[2];
-                const garyLeft = gx + pushC[0];
-
-                // Push right: Gary is near group's left edge
-                if ((pkR()) && gx < gLeft && gLeft - gx < 32) {
-                    let canMove = true;
-                    for (const c of g.cells) {
-                        const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
-                        if (!hasRight) {
-                            const checkX = Math.floor((c.tx * T + g.offsetX + T + 1) / T);
-                            const checkY = Math.floor((c.ty * T + g.offsetY) / T);
-                            if (isSolid(checkX, checkY)) { canMove = false; break; }
-                        }
-                    }
-                    if (canMove) {
-                        gDir = 1;
-                        pSetState('push');
-                        pushingGroup = g;
-                        const moveAmt = PUSH_SPD * dt;
-                        g.offsetX += moveAmt;
-                        gx += moveAmt;
-                    }
-                }
-
-                // Push left: Gary is near group's right edge
-                if ((pkL()) && gx > gRight && gx - gRight < 32) {
-                    let canMove = true;
-                    for (const c of g.cells) {
-                        const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
-                        if (!hasLeft) {
-                            const checkX = Math.floor((c.tx * T + g.offsetX - 1) / T);
-                            const checkY = Math.floor((c.ty * T + g.offsetY) / T);
-                            if (isSolid(checkX, checkY)) { canMove = false; break; }
-                        }
-                    }
-                    if (canMove) {
-                        gDir = -1;
-                        pSetState('push');
-                        pushingGroup = g;
-                        const moveAmt = PUSH_SPD * dt;
-                        g.offsetX -= moveAmt;
-                        gx -= moveAmt;
-                    }
-                }
-            }
-        }
-    }
 
     // Pushable group gravity — groups fall when unsupported
     for (const g of pushGroups) {
