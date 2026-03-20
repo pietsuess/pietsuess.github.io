@@ -905,45 +905,35 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — surface-crossing check using corners
-  // Platforms are thin (6px) so corner-inside-rect fails for rotated cubes.
-  // Instead: check if any corner has crossed below the platform top surface.
+  // Platform collision — treat as thick wall for collision, thin for visuals
+  // Using cube size as collision height prevents any corner from skipping through
   for (const p of lv.platforms) {
+    const platH = c.size + 6; // thick enough that no corner can straddle it
     if (p.rot) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, platH, p.rot);
       continue;
     }
-    // Recompute corners fresh for each platform (position may have changed)
+    // Recompute corners fresh for each platform
     const pCorners = getCubeCorners(c);
-    // Find the deepest corner penetration below platform top
-    let deepestPen = 0, deepestCorner = null;
+    let hit = false;
     for (const corner of pCorners) {
-      if (corner.x > p.x && corner.x < p.x + p.w) {
-        const pen = corner.y - p.y;
-        if (pen > 0 && pen < c.size && pen > deepestPen) {
-          deepestPen = pen;
-          deepestCorner = corner;
+      if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y && corner.y < p.y + platH) {
+        const dt2 = corner.y - p.y;
+        const db = p.y + platH - corner.y;
+        if (dt2 < db) {
+          // Hit from above — push up to platform top
+          c.y -= dt2;
+          applyImpulse(c, corner.x, corner.y, 0, -1, B);
+        } else {
+          // Hit from below — push down below platform
+          c.y += db;
+          applyImpulse(c, corner.x, corner.y, 0, 1, B);
         }
+        hit = true; break;
       }
     }
-    if (deepestCorner) {
-      c.y -= deepestPen + 1; // +1 safety margin so it's clearly above
-      applyImpulse(c, deepestCorner.x, deepestCorner.y, 0, -1, B);
-      // Guarantee cube is moving upward after hitting platform top
-      if (c.vy > 0) c.vy = -c.vy * B;
-    } else {
-      // Check underside — corner hitting platform bottom (coming from below)
-      for (const corner of pCorners) {
-        if (corner.x > p.x && corner.x < p.x + p.w) {
-          const pen = (p.y + 6) - corner.y;
-          if (pen > 0 && pen < c.size && c.vy < 0) {
-            c.y += pen + 1;
-            applyImpulse(c, corner.x, corner.y, 0, 1, B);
-            if (c.vy < 0) c.vy = Math.abs(c.vy) * B;
-            break;
-          }
-        }
-      }
+    if (!hit) {
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, platH, 0);
     }
   }
 
