@@ -1536,8 +1536,8 @@ document.addEventListener('visibilitychange', () => {
 });
 // Camera offset — smoothly shifts player off-center near large bodies
 var _camOffX = 0, _camOffY = 0, _camBoostKilled = false;
-const CX = () => canvas.width/2 + _camOffX + _raceLeadX;
-const CY = () => canvas.height/2 + _camOffY + _raceLeadY;
+const CX = () => canvas.width/2 + _camOffX;
+const CY = () => canvas.height/2 + _camOffY;
 
 //  STARS — per-level colour palettes
 const LEVEL_BG = {
@@ -2256,6 +2256,7 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
     state._debrisChain = false;
     initBarrierObjects(); // rebuild debris wall
+    initScoopCollectible(); // respawn scoop near moon
     updateFuelBar();
     state.zoneCrossFlash={lvl:-3,timer:320,pre:'YOU TRIGGERED',msg:'THE KESSLER SYNDROME',sub:'ORBITAL DEBRIS CASCADE',_col:'#ff6600'};
     resumeMusic();
@@ -2339,6 +2340,12 @@ function initBarrierObjects(){
   // Regular fuel canister sitting ON the outer launchpad
   state.fuelObjects.push({wx:OUTER_TARGET_WX,wy:OUTER_TARGET_WY,size:22,rotation:0,liquidPhase:0,collected:false,_permanent:true,_outerLaunchpadFuel:true});
   initDebrisWall();
+  // Count non-dot debris for the cleanup game
+  _debrisTotal = state.debrisWall.filter(p => p.shape !== 9).length;
+  _debrisCaptured = 0;
+  _debrisMilestones = [false, false, false, false];
+  _hasScoop = false;
+  _capturedDebris = [];
 }
 
 let wormholeCooldown = 0;
@@ -4076,9 +4083,8 @@ function update(){
   const BOOST_MAX=(state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
-  const _inRaceFric = _race.active || _race.showApproach;
-  const _normalFric = _inRaceFric ? 0.98 : 0.965; // drifty race feel — momentum carries
-  const _boostFric = _inRaceFric ? 0.998 : 0.9995; // boost keeps speed longer in race
+  const _normalFric = 0.965;
+  const _boostFric = 0.9995;
   const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
@@ -4147,8 +4153,7 @@ function update(){
     if(state.keys['ArrowDown']){state.vx-=Math.sin(state.angle)*BASE_ACCEL*0.5;state.vy+=Math.cos(state.angle)*BASE_ACCEL*0.5;}
   }
   if(!wormholeTransition){
-    const _inRace = _race.active || _race.showApproach;
-    const turnRate=state.cheat==='peanut'?0.13:(_inRace?0.022:0.06);
+    const turnRate=state.cheat==='peanut'?0.13:0.06;
     if(state.keys['ArrowLeft'])state.angle-=turnRate;
     if(state.keys['ArrowRight'])state.angle+=turnRate;
   }
@@ -5073,7 +5078,7 @@ function update(){
     const _rx=state.x, _ry=state.y;
     const _rockCullR = (CELL_RADIUS+2)*CELL_SIZE;
     state.spaceRocks=(state.spaceRocks||[]).filter(r=>{
-      if(r._interzoneCluster || r._raceRock) return true;
+      if(r._interzoneCluster) return true;
       const adx=Math.abs(r.wx-_rx), ady=Math.abs(r.wy-_ry);
       const keep = adx<_rockCullR && ady<_rockCullR;
       if(!keep && r._ambientCellKey){
@@ -5711,41 +5716,9 @@ function update(){
   // Wave beams
   updateWaveBeams();
   updateDebrisWall();
-  updateRace();
-  // Race zoom lerp — smooth transition
-  _race.zoom += (_race.zoomTarget - _race.zoom) * 0.04;
-
-  // Race camera — fixed offset, ship at 10% from left edge. No bouncing.
-  if(_race.active || _race.showApproach){
-    // Ship at bottom 15% of screen — course goes upward
-    _raceLeadX += (0 - _raceLeadX) * 0.03;
-    const targetY = canvas.height * 0.35; // push ship 35% below center = ~85% down
-    _raceLeadY += (targetY - _raceLeadY) * 0.03;
-  } else {
-    _raceLeadX += (0 - _raceLeadX) * 0.03;
-    _raceLeadY += (0 - _raceLeadY) * 0.03;
-    if(Math.abs(_raceLeadX) < 0.5) _raceLeadX = 0;
-    if(Math.abs(_raceLeadY) < 0.5) _raceLeadY = 0;
-  }
-
-  // Race zoom pulse decay (gate pass effect)
-  if(_race.zoomPulseTimer > 0){
-    _race.zoomPulseTimer--;
-    if(_race.zoomPulseTimer <= 0){
-      _race.zoomTarget = _race.zoomPulseBase;
-    }
-  }
-
-  // (Speed particles removed — motion blur used instead)
-
-  // Checkpoint burst particles — update
-  for(let gp = _race.checkpointParticles.length - 1; gp >= 0; gp--){
-    const p = _race.checkpointParticles[gp];
-    p.wx += p.vx; p.wy += p.vy;
-    p.vx *= 0.95; p.vy *= 0.95;
-    p.age++;
-    if(p.age > p.maxAge) _race.checkpointParticles.splice(gp, 1);
-  }
+  updateScoopCollectible();
+  updateMoonCapture();
+  if(_scoopFlashTimer > 0) _scoopFlashTimer--;
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -7209,18 +7182,7 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  // Motion blur during race — draw semi-transparent overlay instead of full clear
-  if((_race.active || _race.showApproach) && !state.paused){
-    const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-    if(spd > 2){
-      ctx.fillStyle = 'rgba(0,8,20,' + Math.max(0.3, 1 - spd/40) + ')';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-    } else {
-      ctx.clearRect(0,0,canvas.width,canvas.height);
-    }
-  } else {
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-  }
+  ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!state.started)return;
   // Screen shake from BH flash or boss capture
   const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
@@ -7231,13 +7193,7 @@ function drawGame(){
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
 
-  // Race zoom: scale world around player (screen center)
-  if(_race.zoom > 1.01){
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(_race.zoom, _race.zoom);
-    ctx.translate(-cx, -cy);
-  }
+  // (zoom transform removed — race system deleted)
 
   // (Speed particles removed — motion blur handles this now)
 
@@ -8449,13 +8405,10 @@ function drawGame(){
   drawMoon(ctx, cx, cy);
   // drawMars(ctx, cx, cy);  // HIDDEN FOR NOW
   drawDebrisWall(ctx, cx, cy);
-  drawRaceCourse(ctx, cx, cy);
+  drawScoopCollectible(ctx, cx, cy);
 
-  // Close race zoom
-  if(_race.zoom > 1.01){ ctx.restore(); }
-
-  // Race HUD — drawn outside zoom so text stays screen-fixed
-  drawRaceHUD(ctx);
+  // Debris cleanup HUD
+  drawDebrisHUD(ctx);
 
   if(state._victoryPhase==='zoom'){
     ctx.restore();
@@ -8877,8 +8830,6 @@ function drawGame(){
     const _bhOfsX = _bhCap ? (_bhCap._ofsX||0) : 0;
     const _bhOfsY = _bhCap ? (_bhCap._ofsY||0) : 0;
     ctx.save(); ctx.translate(cx+_bhOfsX,cy+_bhOfsY);
-    // Race zoom: scale the ship up to match the world zoom
-    if(_race.zoom > 1.01) ctx.scale(_race.zoom, _race.zoom);
     // Pre-capture stretch: ship elongates toward BH while in gravity well
     const _preBH = !_bhCap && state.secretBlackHole && state.inSecretLevel;
     const _preStrY = _preBH ? (state.secretBlackHole._preStretchY||1) : 1;
@@ -8995,6 +8946,21 @@ function drawGame(){
       ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
+    }
+    // Scoop visual on ship nose
+    if(_hasScoop){
+      ctx.save();
+      ctx.translate(0, -ps.size - 2); // nose tip
+      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.85 + Math.sin(state.frameCount * 0.08) * 0.15;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 10, 5, 0, Math.PI, 0); // half-ellipse, open toward front (up = ship nose)
+      ctx.stroke();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#00ffcc';
+      ctx.fill();
+      ctx.restore();
     }
     ctx.restore();
     }
@@ -10379,15 +10345,8 @@ function startGame(){
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = false;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
-  // Spawn race course asteroids as real spaceRocks — part of the world from the start
-  RACE_COURSES.forEach(function(c){
-    if(!c.asteroidSpawns) return;
-    c.asteroidSpawns.forEach(function(asp){
-      const rock = makeRock(asp.wx, asp.wy, asp.sz, (Math.random()-0.5)*0.4, (Math.random()-0.5)*0.4);
-      rock._raceRock = true;
-      state.spaceRocks.push(rock);
-    });
-  });
+  // Init debris cleanup game
+  initScoopCollectible();
   state.collectedItems = [];
   // Start just outside Earth's surface, inside debris field
   state.x = EARTH_WX + 320; state.y = EARTH_WY;
@@ -10472,734 +10431,177 @@ function loop(timestamp) {
 initLeaderboard();
 
 // ══════════════════════════════════════════════════════════════
-//  RACE SYSTEM — checkpoint ring courses with asteroid obstacles
+//  DEBRIS CLEANUP GAME — scoop debris, push it to the moon
 // ══════════════════════════════════════════════════════════════
 
-// ── Course builder helpers ──
-function _buildCheckpointCourse(opts){
-  // opts: { name, sx, sy, checkpoints (count), spacing, asteroidsPer, curveAmp, curveFreq }
-  const sx = opts.sx, sy = opts.sy;
-  const checkpoints = [];
-  const count = opts.checkpoints;
-  const spacing = opts.spacing;
-  const amp = opts.curveAmp || 600;
-  const freq = opts.curveFreq || 3;
+// Scoop state
+var _hasScoop = false;
+var _debrisCaptured = 0;
+var _debrisTotal = 0; // set at game start from actual debris count
+var _scoopFlashTimer = 0;
+var _scoopCollectible = null; // world-space scoop pickup object
+var _debrisMilestones = [false, false, false, false]; // 25/50/75/100%
+var _capturedDebris = []; // debris locked to moon surface
 
-  // Build checkpoint positions — NORTHWARD (upward, -Y) path with horizontal curves
-  for(let i = 0; i < count; i++){
-    const t = i / (count - 1);
-    const wx = sx + Math.sin(t * Math.PI * freq) * amp * (0.4 + t * 0.6);
-    const wy = sy - 800 - i * spacing;
-    checkpoints.push({ wx, wy, passed: false });
-  }
-
-  // Store asteroid spawn positions — real spaceRocks will be created at race start
-  const asteroidSpawns = [];
-  for(let i = 0; i < count - 1; i++){
-    const a = checkpoints[i], b = checkpoints[i + 1];
-    const numAst = opts.asteroidsPer;
-    for(let j = 0; j < numAst; j++){
-      const t = (j + 0.5) / numAst + (Math.random() - 0.5) * 0.15;
-      const mx = a.wx + (b.wx - a.wx) * t;
-      const my = a.wy + (b.wy - a.wy) * t;
-      const perpAngle = Math.atan2(b.wy - a.wy, b.wx - a.wx) + Math.PI / 2;
-      const perpOfs = (Math.random() - 0.5) * 800;
-      const awx = mx + Math.cos(perpAngle) * perpOfs;
-      const awy = my + Math.sin(perpAngle) * perpOfs;
-      const sz = 20 + Math.random() * 40; // size for makeRock
-      asteroidSpawns.push({ wx: awx, wy: awy, sz: sz });
-    }
-  }
-
-  const lastCp = checkpoints[count - 1];
-  const finishWX = lastCp.wx;
-  const finishWY = lastCp.wy - spacing * 0.6;
-
-  return {
-    name: opts.name,
-    startWX: sx, startWY: sy,
-    finishWX: finishWX, finishWY: finishWY,
-    checkpoints: checkpoints,
-    asteroidSpawns: asteroidSpawns
+// Scoop collectible — spawned near the moon at game start
+function initScoopCollectible(){
+  const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+  const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+  // Place scoop 200px from moon, toward Earth
+  const ang = Math.atan2(EARTH_WY - moonWY, EARTH_WX - moonWX);
+  _scoopCollectible = {
+    wx: moonWX + Math.cos(ang) * 200,
+    wy: moonWY + Math.sin(ang) * 200,
+    bobPhase: 0,
+    collected: false
   };
 }
 
-// Build 3 courses
-const RACE_COURSES = [
-  _buildCheckpointCourse({
-    name: 'ASTEROID SLALOM',
-    sx: EARTH_WX + 2800, sy: EARTH_WY,
-    checkpoints: 8, spacing: 2500, asteroidsPer: 15,
-    curveAmp: 500, curveFreq: 3
-  }),
-  _buildCheckpointCourse({
-    name: 'DEBRIS FIELD',
-    sx: EARTH_WX + 2800, sy: EARTH_WY + 2000,
-    checkpoints: 10, spacing: 2000, asteroidsPer: 20,
-    curveAmp: 700, curveFreq: 4
-  }),
-  _buildCheckpointCourse({
-    name: 'DEEP SPACE RUN',
-    sx: EARTH_WX + 2800, sy: EARTH_WY - 2000,
-    checkpoints: 8, spacing: 3000, asteroidsPer: 25,
-    curveAmp: 800, curveFreq: 2.5
-  })
-];
-
-// Race state
-const _race = {
-  active: false,
-  courseIdx: 0,
-  countdown: 0,
-  countdownPhase: 0,
-  started: false,
-  timer: 0,
-  nextCheckpoint: 0,
-  score: 0,
-  bestTime: null,
-  finished: false,
-  finishTimer: 0,
-  nearStart: false,
-  showApproach: false,
-  zoom: 1.0,
-  zoomTarget: 1.0,
-  _finishCooldown: 0,
-  _preSongIdx: undefined,
-  hits: 0,
-  // Checkpoint pass burst particles
-  checkpointParticles: [],
-  // Zoom pulse timer
-  zoomPulseTimer: 0,
-  zoomPulseBase: 1.35,
-  // Screen shake
-  _shakeTimer: 0,
-  // HIT flash message
-  _hitMsg: null,
-};
-// Race camera lead — stored here so CX/CY can read them
-var _raceLeadX = 0, _raceLeadY = 0;
-
-function initRaceCourse(idx){
-  _race.courseIdx = idx;
-  _race.active = false;
-  _race.countdown = 0;
-  _race.started = false;
-  _race.timer = 0;
-  _race.nextCheckpoint = 0;
-  _race.score = 0;
-  _race.finished = false;
-  _race.finishTimer = 0;
-  _race.nearStart = false;
-  _race.showApproach = false;
-  _race.hits = 0;
-  _race.checkpointParticles = [];
-  _race.zoomPulseTimer = 0;
-  _race._shakeTimer = 0;
-  _race._hitMsg = null;
-  // Reset checkpoints and asteroids
-  const course = RACE_COURSES[idx];
-  if(course){
-    course.checkpoints.forEach(function(cp){ cp.passed = false; });
-    // Asteroids are real spaceRocks — no custom reset needed
+function updateScoopCollectible(){
+  if(!_scoopCollectible || _scoopCollectible.collected || _hasScoop) return;
+  // Bob animation
+  _scoopCollectible.bobPhase += 0.04;
+  // Pickup check
+  const dx = state.x - _scoopCollectible.wx;
+  const dy = state.y - _scoopCollectible.wy;
+  if(dx*dx + dy*dy < 50*50){
+    _hasScoop = true;
+    _scoopCollectible.collected = true;
+    _scoopFlashTimer = 90;
+    state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SCOOP ACQUIRED', _col:'#00ffcc' };
+    if(audioCtx && !state.sfxMuted){
+      const t = audioCtx.currentTime;
+      playBeep(523, t, 0.08, 'sine', 0.10);
+      playBeep(659, t+0.08, 0.08, 'sine', 0.10);
+      playBeep(784, t+0.16, 0.12, 'sine', 0.12);
+    }
   }
 }
-initRaceCourse(0);
 
-function updateRace(){
-  if(!state.started || state.paused || state.gameOver) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
+function drawScoopCollectible(ctx, cx, cy){
+  if(!_scoopCollectible || _scoopCollectible.collected) return;
+  const sx = _scoopCollectible.wx - state.x + cx;
+  const sy = _scoopCollectible.wy - state.y + cy + Math.sin(_scoopCollectible.bobPhase) * 6;
+  if(sx < -60 || sx > ctx.canvas.width+60 || sy < -60 || sy > ctx.canvas.height+60) return;
+  ctx.save();
+  ctx.translate(sx, sy);
+  // Pulsing cyan glow
+  const pulse = 0.6 + Math.sin(_scoopCollectible.bobPhase * 1.5) * 0.3;
+  ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16 * pulse;
+  ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2.5;
+  ctx.globalAlpha = 0.8 + pulse * 0.2;
+  // Half-ellipse shape (scoop)
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 18, 10, 0, Math.PI, 0);
+  ctx.stroke();
+  // Inner glow fill
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = '#00ffcc';
+  ctx.fill();
+  // Label
+  ctx.shadowBlur = 0; ctx.globalAlpha = 0.7;
+  ctx.font = '6px "Press Start 2P",monospace'; _curFont='';
+  ctx.fillStyle = '#00ffcc'; ctx.textAlign = 'center';
+  ctx.fillText('SCOOP', 0, 22);
+  ctx.restore();
+}
 
-  const dx = state.x - course.startWX, dy = state.y - course.startWY;
-  const distToStart = Math.sqrt(dx*dx + dy*dy);
+// Moon capture system — debris near moon gets captured
+function updateMoonCapture(){
+  if(!state.debrisWall || !state.debrisWall.length) return;
+  const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+  const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+  const CAPTURE_DIST = 100;
+  const CAPTURE_TIME = 120; // 2 seconds at 60fps
 
-  // Show instructions when approaching start area + start zooming in
-  if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && distToStart < 500){
-    _race.showApproach = true;
-    _race.zoomTarget = 1.0; // normal zoom — no zoom in
-  } else if(distToStart > 600 && !_race.active){
-    _race.showApproach = false;
-    _race.zoomTarget = 1.0;
-  }
-
-  // Enter staging box — trigger countdown
-  const _inBox = Math.abs(state.x - course.startWX) < 175 && Math.abs(state.y - (course.startWY + 200)) < 140;
-  if(!_race.active && !_race.finished && !(_race._finishCooldown > 0) && _inBox){
-    if(!_race.nearStart){
-      _race.nearStart = true;
-      _race.active = true;
-      _race.countdown = 180;
-      _race.countdownPhase = 3;
-      _race.started = false;
-      _race.timer = 0;
-      _race.nextCheckpoint = 0;
-      _race.score = 0;
-      _race.hits = 0;
-      _race.showApproach = false;
-      _race._hitMsg = null;
-      // Reset checkpoints and asteroids
-      course.checkpoints.forEach(function(cp){ cp.passed = false; });
-      // Asteroids are real spaceRocks — no custom reset needed
-      // Switch to LAUNCH track for race hype
-      _race._preSongIdx = state.songIndex;
-      const _launchIdx = MOODS.findIndex(function(m){return m.name==='LAUNCH';});
-      if(_launchIdx >= 0 && state.songIndex !== _launchIdx){
-        state.songIndex = _launchIdx;
-        musicBarCount = 0;
-        if(!state.musicMuted && !state.musicPaused) playSong(state.songIndex);
-        updateMusicDrawer();
-      }
-    }
-  }
-  if(distToStart > 400) _race.nearStart = false;
-
-  // Start gate barrier — block upward travel during countdown
-  if(_race.active && !_race.started){
-    const gateY = course.startWY;
-    const gateHalfW = 450;
-    const bdx = state.x - course.startWX;
-    if(Math.abs(bdx) < gateHalfW && state.y < gateY + 60){
-      state.y = gateY + 62;
-      state.vy = Math.max(state.vy, 0); // kill upward velocity
-      state.vx *= 0.9;
-      state.collisionFlash = 3;
-    }
-  }
-
-  // Countdown
-  if(_race.active && _race.countdown > 0){
-    _race.countdown--;
-    const prevPhase = _race.countdownPhase;
-    _race.countdownPhase = Math.ceil(_race.countdown / 60);
-    if(_race.countdownPhase !== prevPhase && _race.countdownPhase > 0 && audioCtx && !state.sfxMuted){
-      const _ct = audioCtx.currentTime;
-      playBeep(440, _ct, 0.12, 'sine', 0.10);
-      playBeep(220, _ct, 0.12, 'triangle', 0.06);
-    }
-    if(_race.countdown <= 0){
-      _race.started = true;
-      // Race rocks already spawned at game init (see startGame)
-      if(audioCtx && !state.sfxMuted){
-        const _gt = audioCtx.currentTime;
-        playBeep(660, _gt, 0.08, 'sine', 0.12);
-        playBeep(880, _gt + 0.08, 0.08, 'sine', 0.12);
-        playBeep(1100, _gt + 0.16, 0.15, 'sine', 0.14);
-      }
-      _race.countdownPhase = 0;
-    }
-    return;
-  }
-
-  // Race in progress
-  if(_race.started && !_race.finished){
-    _race.timer++;
-
-    // Checkpoint collision — distance check
-    const cpCount = course.checkpoints.length;
-    for(let ci = _race.nextCheckpoint; ci < cpCount; ci++){
-      const cp = course.checkpoints[ci];
-      if(cp.passed) continue;
-      const cdx = state.x - cp.wx, cdy = state.y - cp.wy;
-      const cDist = Math.sqrt(cdx*cdx + cdy*cdy);
-
-      if(ci === _race.nextCheckpoint && cDist < 350){
-        // Passed through checkpoint ring
-        cp.passed = true;
-        _race.nextCheckpoint++;
-        const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-        const speedBonus = Math.round(spd * 5);
-        const cpScore = 200 + speedBonus;
-        _race.score += cpScore;
-        state.score += cpScore;
+  for(const p of state.debrisWall){
+    if(p.exploding || p.shape === 9 || p._captured) continue;
+    const dx = p._wx - moonWX, dy = p._wy - moonWY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < CAPTURE_DIST){
+      if(!p._captureTimer) p._captureTimer = 0;
+      p._captureTimer++;
+      if(p._captureTimer >= CAPTURE_TIME){
+        // Captured!
+        p._captured = true;
+        _debrisCaptured++;
+        // Lock to moon surface
+        const lockAng = Math.atan2(dy, dx);
+        const lockDist = 85 + Math.random() * 10; // just outside moon radius (80)
+        _capturedDebris.push({
+          angOffset: lockAng - _moonOrbitAng, // relative to moon orbit angle
+          dist: lockDist,
+          sz: p.sz * 0.8,
+          rot: p.rot,
+          shape: p.shape
+        });
+        // Score
+        state.score += 50;
         document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-        state.zoneCrossFlash = { lvl:-3, timer:50, msg:'+' + cpScore, _col:'#00ffcc' };
-        // Particle burst — 20 particles outward
-        for(let bp = 0; bp < 20; bp++){
-          const bAngle = (bp / 20) * Math.PI * 2 + Math.random() * 0.3;
-          const bSpd = 4 + Math.random() * 6;
-          _race.checkpointParticles.push({
-            wx: cp.wx, wy: cp.wy,
-            vx: Math.cos(bAngle) * bSpd, vy: Math.sin(bAngle) * bSpd,
-            age: 0, maxAge: 18 + Math.random() * 8
-          });
-        }
-        // Shockwave ring
-        if(!state._raceRings) state._raceRings = [];
-        state._raceRings.push({ wx: cp.wx, wy: cp.wy, r: 0, maxR: 160, age: 0 });
         // Ascending chime
         if(audioCtx && !state.sfxMuted){
-          const _t = audioCtx.currentTime;
-          playBeep(400 + ci * 80, _t, 0.06, 'sine', 0.10);
-          playBeep(600 + ci * 80, _t + 0.05, 0.08, 'sine', 0.10);
-          playBeep(800 + ci * 80, _t + 0.10, 0.10, 'sine', 0.08);
-          playBeep(150, _t, 0.08, 'triangle', 0.05);
+          const t = audioCtx.currentTime;
+          const pitch = 400 + (_debrisCaptured % 12) * 40;
+          playBeep(pitch, t, 0.06, 'sine', 0.08);
+          playBeep(pitch * 1.5, t+0.06, 0.08, 'sine', 0.06);
         }
-        // Zoom pulse
-        _race.zoomPulseBase = _race.zoomTarget;
-        _race.zoomTarget = _race.zoom * 1.03;
-        _race.zoomPulseTimer = 8;
-        break;
+        // Check milestones
+        checkDebrisMilestones();
       }
-
-      // Auto-complete missed checkpoint (Y position 500px+ past — course goes upward so ship Y < cp Y)
-      if(ci === _race.nextCheckpoint && !cp.passed){
-        const pastY = cp.wy - state.y; // positive when ship is above (north of) checkpoint
-        if(pastY > 500){
-          cp.passed = true;
-          _race.nextCheckpoint++;
-          // No bonus, just advance
-          state.zoneCrossFlash = { lvl:-3, timer:60, msg:'CHECKPOINT MISSED', _col:'#ff4444' };
-          if(audioCtx && !state.sfxMuted){
-            const _t = audioCtx.currentTime;
-            playBeep(200, _t, 0.15, 'sawtooth', 0.08);
-            playBeep(120, _t + 0.1, 0.2, 'sawtooth', 0.06);
-          }
-        }
-      }
+    } else {
+      p._captureTimer = 0;
     }
+  }
 
-    // Asteroids are real spaceRocks — collision handled by the game's existing rock system
+  // Remove captured debris from the wall
+  for(let i = state.debrisWall.length - 1; i >= 0; i--){
+    if(state.debrisWall[i]._captured) state.debrisWall.splice(i, 1);
+  }
+}
 
-    // HIT message decay
-    if(_race._hitMsg && _race._hitMsg.timer > 0){
-      _race._hitMsg.timer--;
-      if(_race._hitMsg.timer <= 0) _race._hitMsg = null;
-    }
-
-    // Check finish line
-    const fDx = state.x - course.finishWX, fDy = state.y - course.finishWY;
-    const fDist = Math.sqrt(fDx*fDx + fDy*fDy);
-    if(fDist < 300){
-      _race.finished = true;
-      _race.finishTimer = 300;
-      _race.zoomTarget = 1.0;
-      // Refuel
-      for(let _fi = 0; _fi < 3; _fi++){
-        state.fuelObjects.push({
-          wx: course.finishWX + 100 + _fi * 120,
-          wy: course.finishWY + (_fi - 1) * 80,
-          size: 14, rotation: 0, liquidPhase: 0,
-          collected: false, _permanent: true
-        });
-      }
-      state.fuel = Math.min(1, state.fuel + 0.5);
-      state.zoneCrossFlash = { lvl:-3, timer:80, msg:'FUEL RESTORED', _col:'#44ddff' };
-      // Restore previous music track
-      if(_race._preSongIdx !== undefined && _race._preSongIdx !== state.songIndex){
-        state.songIndex = _race._preSongIdx;
-        musicBarCount = 0;
-        if(!state.musicMuted && !state.musicPaused) playSong(state.songIndex);
-        updateMusicDrawer();
-      }
-      const timeMs = Math.round(_race.timer / 60 * 1000);
-      if(!_race.bestTime || timeMs < _race.bestTime) _race.bestTime = timeMs;
-      const finishBonus = 500;
-      _race.score += finishBonus;
-      state.score += finishBonus;
+function checkDebrisMilestones(){
+  if(_debrisTotal <= 0) return;
+  const pct = _debrisCaptured / _debrisTotal;
+  const milestones = [0.25, 0.50, 0.75, 1.00];
+  const bonuses = [500, 1000, 2000, 5000];
+  const msgs = ['25% CLEARED!', '50% CLEARED!', '75% CLEARED!', 'DEBRIS FIELD CLEARED!'];
+  for(let i = 0; i < 4; i++){
+    if(!_debrisMilestones[i] && pct >= milestones[i]){
+      _debrisMilestones[i] = true;
+      state.score += bonuses[i];
       document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+      state.zoneCrossFlash = { lvl:-3, timer:120, msg:msgs[i] + ' +' + bonuses[i], _col: i === 3 ? '#00ff88' : '#ffcc00' };
       if(audioCtx && !state.sfxMuted){
-        const _t2 = audioCtx.currentTime;
-        playBeep(660, _t2, 0.1, 'sine', 0.12);
-        playBeep(880, _t2+0.12, 0.1, 'sine', 0.12);
-        playBeep(1100, _t2+0.24, 0.15, 'sine', 0.14);
-        playBeep(1320, _t2+0.38, 0.2, 'sine', 0.1);
-      }
-    }
-  }
-
-  // Finish display countdown
-  if(_race.finished){
-    _race.finishTimer--;
-    if(_race.finishTimer <= 0){
-      _race.active = false;
-      _race.finished = false;
-      _race.started = false;
-      _race.showApproach = false;
-      _race.nearStart = false;
-      _race.zoomTarget = 1.0;
-      _race._finishCooldown = 600;
-    }
-  }
-
-  // Decrement finish cooldown
-  if(_race._finishCooldown > 0) _race._finishCooldown--;
-
-  // Auto-switch course based on proximity to start positions (when not racing)
-  if(!_race.active && !_race.finished){
-    for(let ci = 0; ci < RACE_COURSES.length; ci++){
-      if(ci === _race.courseIdx) continue;
-      var c = RACE_COURSES[ci];
-      var cdx2 = state.x - c.startWX, cdy2 = state.y - c.startWY;
-      if(Math.sqrt(cdx2*cdx2 + cdy2*cdy2) < 800){
-        _race.courseIdx = ci;
-        initRaceCourse(ci);
-        break;
+        const t = audioCtx.currentTime;
+        playBeep(660, t, 0.1, 'sine', 0.12);
+        playBeep(880, t+0.12, 0.1, 'sine', 0.12);
+        playBeep(1100, t+0.24, 0.15, 'sine', 0.14);
+        if(i === 3) playBeep(1320, t+0.38, 0.2, 'sine', 0.1);
       }
     }
   }
 }
 
-// ── Draw race HUD (outside zoom transform) ──
-function drawRaceHUD(ctx){
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-
-  if(_race.showApproach && !_race.active && !_race.finished){
-    ctx.save();
-    ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10;
-    ctx.fillText(course.name, canvas.width/2, canvas.height * 0.22);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#aabb99';
-    ctx.fillText('FLY INTO THE STAGING AREA TO BEGIN', canvas.width/2, canvas.height * 0.22 + 24);
-    ctx.fillText('HIT CHECKPOINTS - DODGE ASTEROIDS', canvas.width/2, canvas.height * 0.22 + 40);
-    ctx.fillText('CROSS THE FINISH LINE TO COMPLETE', canvas.width/2, canvas.height * 0.22 + 56);
-    ctx.restore();
-  }
-
-  if(_race.active && _race.countdown > 0){
-    var num = _race.countdownPhase;
-    ctx.save();
-    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = num > 0 ? '#ff4400' : '#00ff88';
-    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20;
-    ctx.fillText(num > 0 ? String(num) : 'GO!', canvas.width/2, canvas.height * 0.3);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-    return;
-  }
-
-  if(_race.started && _race.timer < 40){
-    ctx.save();
-    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.globalAlpha = 1 - _race.timer/40;
-    ctx.fillStyle = '#00ff88';
-    ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 20;
-    ctx.fillText('GO!', canvas.width/2, canvas.height * 0.3);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
-
-  if(_race.started && !_race.finished){
-    var cpCount = course.checkpoints.length;
-    var secs = (_race.timer / 60).toFixed(2);
-    ctx.save();
-    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
-    ctx.fillText(secs + 's', canvas.width/2, 30);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#889999';
-    var allPassed = _race.nextCheckpoint >= cpCount;
-    ctx.fillText(
-      allPassed ? 'ALL CHECKPOINTS CLEARED - FIND THE FINISH!' :
-      'CHECKPOINT ' + (_race.nextCheckpoint + 1) + ' OF ' + cpCount,
-      canvas.width/2, 48
-    );
-    ctx.fillStyle = '#ffcc00';
-    ctx.fillText('SCORE: ' + _race.score, canvas.width/2, 64);
-    ctx.restore();
-  }
-
-  // HIT flash message
-  if(_race._hitMsg && _race._hitMsg.timer > 0){
-    ctx.save();
-    ctx.font = '10px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.globalAlpha = _race._hitMsg.timer / 40;
-    ctx.fillStyle = '#ff4444'; ctx.shadowColor = '#ff4444'; ctx.shadowBlur = 8;
-    ctx.fillText(_race._hitMsg.msg, canvas.width/2, 84);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
-
-  if(_race.finished){
-    var finSecs = (_race.timer / 60).toFixed(2);
-    var bestSecs = _race.bestTime ? (_race.bestTime / 1000).toFixed(2) : finSecs;
-    ctx.save();
-    ctx.font = '24px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00ff88'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 16;
-    ctx.fillText('RACE COMPLETE!', canvas.width/2, canvas.height * 0.26);
-    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 6;
-    ctx.fillText('TIME: ' + finSecs + 's', canvas.width/2, canvas.height * 0.26 + 40);
-    ctx.fillStyle = '#ffcc00';
-    ctx.fillText('SCORE: ' + _race.score, canvas.width/2, canvas.height * 0.26 + 64);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = '#889999'; ctx.shadowBlur = 0;
-    ctx.fillText('BEST: ' + bestSecs + 's', canvas.width/2, canvas.height * 0.26 + 86);
-    ctx.fillStyle = '#ff6644';
-    ctx.fillText('HITS: ' + _race.hits, canvas.width/2, canvas.height * 0.26 + 104);
-    ctx.restore();
-  }
-}
-
-// ── Draw race course (inside zoom transform) ──
-function drawRaceCourse(ctx, cx, cy){
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-
-  // Guide path through checkpoint centers (dashed line)
-  {
-    ctx.save();
-    ctx.strokeStyle = 'rgba(100,160,200,0.10)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([16, 10]);
-    var pts = [
-      { wx: course.startWX, wy: course.startWY },
-      ...course.checkpoints.map(function(cp){ return { wx: cp.wx, wy: cp.wy }; }),
-      { wx: course.finishWX, wy: course.finishWY }
-    ];
-    ctx.beginPath();
-    for(var i = 0; i < pts.length; i++){
-      var px = pts[i].wx - state.x + cx, py = pts[i].wy - state.y + cy;
-      if(i === 0) ctx.moveTo(px, py);
-      else if(i < pts.length - 1){
-        var nx = pts[i+1].wx - state.x + cx, ny = pts[i+1].wy - state.y + cy;
-        ctx.quadraticCurveTo(px, py, (px + nx) / 2, (py + ny) / 2);
-      } else {
-        ctx.lineTo(px, py);
-      }
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // Checkered start box
-  {
-    var boxW = 350, boxH = 280;
-    var bsx = course.startWX - state.x + cx;
-    var bsy = course.startWY + boxH/2 + 60 - state.y + cy;
-    if(bsx > -500 && bsx < canvas.width+500 && bsy > -500 && bsy < canvas.height+500){
-      ctx.save();
-      var cellSize = 28;
-      var cols = Math.ceil(boxW / cellSize), rows = Math.ceil(boxH / cellSize);
-      var pulse = 0.4 + Math.sin(state.frameCount * 0.04) * 0.15;
-      for(var r = 0; r < rows; r++){
-        for(var c = 0; c < cols; c++){
-          var isWhite = (r + c) % 2 === 0;
-          ctx.globalAlpha = isWhite ? pulse * 0.35 : pulse * 0.12;
-          ctx.fillStyle = isWhite ? '#ffffff' : '#00ffcc';
-          ctx.fillRect(bsx - boxW/2 + c * cellSize, bsy - boxH/2 + r * cellSize, cellSize, cellSize);
-        }
-      }
-      ctx.globalAlpha = pulse * 0.6;
-      ctx.strokeStyle = '#00ffcc';
-      ctx.lineWidth = 2;
-      ctx.strokeRect(bsx - boxW/2, bsy - boxH/2, boxW, boxH);
-      if(!_race.active){
-        ctx.globalAlpha = 0.8;
-        ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
-        ctx.fillStyle = '#00ffcc';
-        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
-        ctx.fillText('STAGING', bsx, bsy);
-        ctx.shadowBlur = 0;
-      }
-      ctx.restore();
-    }
-  }
-
-  // Start barrier beam
-  {
-    var stSx = course.startWX - state.x + cx, stSy = course.startWY - state.y + cy;
-    if(stSx > -600 && stSx < canvas.width+600 && stSy > -600 && stSy < canvas.height+600){
-      var stW = 900; // horizontal beam
-      var stPulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
-      var stCol = _race.started ? '#00ff88' : '#ffcc00';
-      ctx.save();
-      ctx.translate(stSx, stSy);
-      ctx.globalAlpha = 0.06 + stPulse * 0.04;
-      ctx.lineWidth = 36; ctx.strokeStyle = stCol;
-      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
-      ctx.globalAlpha = 0.4 + stPulse * 0.3;
-      ctx.shadowColor = stCol; ctx.shadowBlur = 30;
-      ctx.lineWidth = 10; ctx.strokeStyle = stCol;
-      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
-      ctx.lineWidth = 3; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.beginPath(); ctx.moveTo(-stW/2, 0); ctx.lineTo(stW/2, 0); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 0.7 + stPulse * 0.3;
-      ctx.shadowColor = stCol; ctx.shadowBlur = 22;
-      ctx.fillStyle = stCol;
-      ctx.beginPath(); ctx.arc(-stW/2, 0, 10, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(stW/2, 0, 10, 0, Math.PI*2); ctx.fill();
-      ctx.shadowBlur = 0;
-      ctx.globalAlpha = 0.85;
-      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-      ctx.fillStyle = stCol; ctx.textAlign = 'center';
-      ctx.shadowColor = stCol; ctx.shadowBlur = 10;
-      ctx.fillText('START', 0, -24);
-      ctx.shadowBlur = 0;
-      ctx.restore();
-    }
-  }
-
-  // Checkpoint rings
-  for(var ci = 0; ci < course.checkpoints.length; ci++){
-    var cp = course.checkpoints[ci];
-    var cpsx = cp.wx - state.x + cx, cpsy = cp.wy - state.y + cy;
-    if(cpsx < -400 || cpsx > canvas.width+400 || cpsy < -400 || cpsy > canvas.height+400) continue;
-
-    var isPassed = cp.passed;
-    var isNext = ci === _race.nextCheckpoint && _race.started;
-    var isUpcoming = !isPassed && _race.started && (ci === _race.nextCheckpoint + 1 || ci === _race.nextCheckpoint + 2);
-    var cpPulse = 0.5 + Math.sin(state.frameCount * 0.05 + ci * 1.3) * 0.4;
-    var cpCol = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : (isUpcoming ? '#2277aa' : '#3388aa'));
-    var cpAlpha = isPassed ? 0.15 : (isNext ? 0.7 + cpPulse * 0.3 : (isUpcoming ? 0.35 : 0.2));
-
-    ctx.save();
-    // Inner glow (radial gradient)
-    if(isNext){
-      var cpGrad = ctx.createRadialGradient(cpsx, cpsy, 0, cpsx, cpsy, 350);
-      cpGrad.addColorStop(0, 'rgba(0,255,204,0.06)');
-      cpGrad.addColorStop(0.7, 'rgba(0,255,204,0.02)');
-      cpGrad.addColorStop(1, 'rgba(0,255,204,0)');
-      ctx.globalAlpha = 0.5 + cpPulse * 0.3;
-      ctx.fillStyle = cpGrad;
-      ctx.beginPath(); ctx.arc(cpsx, cpsy, 350, 0, Math.PI*2); ctx.fill();
-    }
-    // Outer ring
-    ctx.globalAlpha = cpAlpha;
-    ctx.strokeStyle = cpCol;
-    ctx.shadowColor = cpCol; ctx.shadowBlur = isNext ? 20 : 8;
-    ctx.lineWidth = 3;
-    ctx.beginPath(); ctx.arc(cpsx, cpsy, 350, 0, Math.PI*2); ctx.stroke();
-    ctx.shadowBlur = 0;
-    // Number at center
-    if(!isPassed){
-      ctx.globalAlpha = isNext ? 0.9 : (isUpcoming ? 0.5 : 0.3);
-      ctx.font = '10px "Press Start 2P",monospace'; _curFont='';
-      ctx.fillStyle = isNext ? '#ffffff' : (isUpcoming ? '#88bbcc' : '#556677');
-      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-      ctx.fillText(String(ci + 1), cpsx, cpsy);
-    }
-    ctx.restore();
-  }
-
-  // Asteroids are real spaceRocks — drawn by the game's existing rock renderer
-
-  // Finish line — dotted yellow line + checkered area
-  {
-    var fsx = course.finishWX - state.x + cx, fsy = course.finishWY - state.y + cy;
-    if(fsx > -600 && fsx < canvas.width+600 && fsy > -600 && fsy < canvas.height+600){
-      var fW = 900; // horizontal finish line
-      var fpulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
-      var allCpPassed = _race.nextCheckpoint >= course.checkpoints.length;
-      var fcol = (allCpPassed && _race.started) ? '#00ff88' : '#ffcc00';
-      ctx.save();
-      // Horizontal dotted line
-      ctx.setLineDash([20, 14]);
-      ctx.globalAlpha = 0.5 + fpulse * 0.3;
-      ctx.shadowColor = fcol; ctx.shadowBlur = 16;
-      ctx.lineWidth = 8; ctx.strokeStyle = fcol;
-      ctx.beginPath(); ctx.moveTo(fsx - fW/2, fsy); ctx.lineTo(fsx + fW/2, fsy); ctx.stroke();
-      ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-      ctx.beginPath(); ctx.moveTo(fsx - fW/2, fsy); ctx.lineTo(fsx + fW/2, fsy); ctx.stroke();
-      ctx.setLineDash([]);
-      ctx.shadowBlur = 0;
-      // End caps
-      ctx.globalAlpha = 0.7 + fpulse * 0.3;
-      ctx.shadowColor = fcol; ctx.shadowBlur = 18;
-      ctx.fillStyle = fcol;
-      ctx.beginPath(); ctx.arc(fsx - fW/2, fsy, 8, 0, Math.PI*2); ctx.fill();
-      ctx.beginPath(); ctx.arc(fsx + fW/2, fsy, 8, 0, Math.PI*2); ctx.fill();
-      ctx.shadowBlur = 0;
-      // Label
-      ctx.globalAlpha = 0.85;
-      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-      ctx.fillStyle = fcol; ctx.textAlign = 'center';
-      ctx.shadowColor = fcol; ctx.shadowBlur = 10;
-      ctx.fillText('FINISH', fsx, fsy - 24);
-      ctx.shadowBlur = 0;
-      // Checkered area ABOVE finish line (since course goes upward)
-      var cBoxW = 400, cBoxH = 300, cellSz = 30;
-      var cby = fsy - cBoxH/2 - 20;
-      var fCols = Math.ceil(cBoxW / cellSz), fRows = Math.ceil(cBoxH / cellSz);
-      for(var fr = 0; fr < fRows; fr++){
-        for(var fc = 0; fc < fCols; fc++){
-          var isW = (fr + fc) % 2 === 0;
-          ctx.globalAlpha = isW ? fpulse * 0.25 : fpulse * 0.08;
-          ctx.fillStyle = isW ? '#ffffff' : '#ffcc00';
-          ctx.fillRect(fsx - cBoxW/2 + fc * cellSz, cby - cBoxH/2 + fr * cellSz, cellSz, cellSz);
-        }
-      }
-      ctx.restore();
-    }
-  }
-
-  // Shockwave rings from checkpoint passes
-  if(state._raceRings){
-    for(var ri = state._raceRings.length - 1; ri >= 0; ri--){
-      var ring = state._raceRings[ri];
-      ring.age++;
-      ring.r = ring.age * 4;
-      if(ring.r > ring.maxR){ state._raceRings.splice(ri, 1); continue; }
-      var rsx = ring.wx - state.x + cx, rsy = ring.wy - state.y + cy;
-      var rAlpha = 1 - ring.r / ring.maxR;
-      ctx.save();
-      ctx.globalAlpha = rAlpha * 0.6;
-      ctx.strokeStyle = '#00ffcc';
-      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
-      ctx.lineWidth = 3 * rAlpha;
-      ctx.beginPath(); ctx.arc(rsx, rsy, ring.r, 0, Math.PI*2); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-    }
-  }
-
-  // Checkpoint burst particles
-  if(_race.checkpointParticles.length > 0){
-    ctx.save();
-    for(var gp = 0; gp < _race.checkpointParticles.length; gp++){
-      var p = _race.checkpointParticles[gp];
-      var gpx = p.wx - state.x + cx, gpy = p.wy - state.y + cy;
-      if(gpx < -100 || gpx > canvas.width+100 || gpy < -100 || gpy > canvas.height+100) continue;
-      var pAlpha = (1 - p.age / p.maxAge) * 0.8;
-      ctx.globalAlpha = pAlpha;
-      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
-      ctx.fillStyle = '#00ffcc';
-      ctx.beginPath(); ctx.arc(gpx, gpy, 2.5 * (1 - p.age / p.maxAge), 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
-
-  // Chevron direction arrows toward next checkpoint
-  if(_race.started && !_race.finished && course.checkpoints.length > 0){
-    var cgi = _race.nextCheckpoint;
-    if(cgi < course.checkpoints.length){
-      var target = course.checkpoints[cgi];
-      var prevCp = cgi > 0 ? course.checkpoints[cgi-1] : { wx: course.startWX, wy: course.startWY };
-      for(var ch = 1; ch <= 3; ch++){
-        var cht = ch / 4;
-        var chx = prevCp.wx + (target.wx - prevCp.wx) * cht;
-        var chy = prevCp.wy + (target.wy - prevCp.wy) * cht;
-        var chsx = chx - state.x + cx, chsy = chy - state.y + cy;
-        if(chsx < -50 || chsx > canvas.width+50 || chsy < -50 || chsy > canvas.height+50) continue;
-        var chAng = Math.atan2(target.wy - prevCp.wy, target.wx - prevCp.wx);
-        var chWave = (state.frameCount * 0.04 + ch * 0.8) % 1;
-        var chAlpha = 0.15 + chWave * 0.15;
-        ctx.save();
-        ctx.translate(chsx, chsy); ctx.rotate(chAng);
-        ctx.globalAlpha = chAlpha;
-        ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-8, -6); ctx.lineTo(4, 0); ctx.lineTo(-8, 6);
-        ctx.stroke();
-        ctx.restore();
-      }
-    }
-  }
-
-  // Race HUD drawn separately, outside zoom transform (see drawGame)
+function drawDebrisHUD(ctx){
+  if(!_hasScoop || _debrisTotal <= 0) return;
+  ctx.save();
+  ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+  ctx.textAlign = 'right';
+  const pct = _debrisCaptured / _debrisTotal;
+  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 6;
+  ctx.fillText('DEBRIS: ' + _debrisCaptured + ' / ' + _debrisTotal, ctx.canvas.width - 20, 30);
+  // Progress bar
+  ctx.shadowBlur = 0;
+  const barW = 120, barH = 4;
+  const barX = ctx.canvas.width - 20 - barW, barY = 36;
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#334455';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.globalAlpha = 0.8;
+  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
+  ctx.fillRect(barX, barY, barW * Math.min(1, pct), barH);
+  ctx.restore();
 }
 
 // Wait for Press Start 2P before starting loop — fixes canvas font on Android
@@ -11584,11 +10986,14 @@ function updateDebrisWall(){
       p.vy += (_mgdy/_mgDist) * _gForce;
     }
     p.ox += p.vx; p.oy += p.vy;
-    p.vx *= 0.94; p.vy *= 0.94;
+    // Scooped debris has reduced friction so it carries to moon gravity well
+    const _debFric = (p._scoopedTimer && p._scoopedTimer > 0) ? 0.985 : 0.94;
+    p.vx *= _debFric; p.vy *= _debFric;
     p.ox *= 0.997; p.oy *= 0.997;
     p._wx = EARTH_WX + Math.cos(p.ang)*_pr + p.ox;
     p._wy = EARTH_WY + Math.sin(p.ang)*_pr + p.oy;
     if(p._hitCooldown>0) p._hitCooldown--;
+    if(p._scoopedTimer && p._scoopedTimer > 0) p._scoopedTimer--;
   }
 
   for(let i=state.debrisWall.length-1;i>=0;i--){
@@ -11620,36 +11025,60 @@ function updateDebrisWall(){
   const shipR=isBubble ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 12;
 
   for(const p of state.debrisWall){
-    if(p.exploding||p._hitCooldown>0||p.shape===9) continue; // dots are visual only
+    if(p.exploding||p._hitCooldown>0||p.shape===9||p._captured) continue; // dots are visual only
     const dx=p._wx-state.x, dy=p._wy-state.y;
     const dist2=dx*dx+dy*dy;
     const hitR=p.sz+shipR;
     if(dist2>=hitR*hitR) continue;
 
     const dist=Math.sqrt(dist2)||0.01;
-    // nx/ny points FROM ship TO piece
-    const nx=dx/dist, ny=dy/dist;
     const impactSpd=Math.sqrt(state.vx**2+state.vy**2)+3;
 
-    // Piece flies AWAY from ship (+nx direction)
-    p.vx = nx*(impactSpd*1.2+6);
-    p.vy = ny*(impactSpd*1.2+6);
-    // Ship bounces BACK (-nx direction)
-    state.x -= nx*(hitR-dist+3);
-    state.y -= ny*(hitR-dist+3);
-    const _debBounce = isBubble ? 1.5 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.4 : 1;
-    state.vx = -nx*(impactSpd*0.5+2)*_debBounce;
-    state.vy = -ny*(impactSpd*0.5+2)*_debBounce;
+    if(_hasScoop){
+      // SCOOP: push debris in ship's facing direction, no Kessler
+      const pushAngle = state.angle; // ship's facing direction
+      const pushSpd = impactSpd * 1.5;
+      p.vx = Math.sin(pushAngle) * pushSpd;
+      p.vy = -Math.cos(pushAngle) * pushSpd;
+      p._scoopedTimer = 300; // 5 seconds of reduced friction
+      // Ship loses 15% speed
+      state.vx *= 0.85;
+      state.vy *= 0.85;
+      // Separate ship from piece
+      const nx=dx/dist, ny=dy/dist;
+      state.x -= nx*(hitR-dist+3);
+      state.y -= ny*(hitR-dist+3);
+      p._hitCooldown = 20;
+      // Sound
+      if(audioCtx && !state.sfxMuted){
+        const t = audioCtx.currentTime;
+        playBeep(300, t, 0.06, 'triangle', 0.08);
+        playBeep(450, t+0.04, 0.06, 'sine', 0.06);
+      }
+      triggerCollision(state.x, state.y);
+    } else {
+      // NO SCOOP: original Kessler behavior
+      const nx=dx/dist, ny=dy/dist;
+      // Piece flies AWAY from ship (+nx direction)
+      p.vx = nx*(impactSpd*1.2+6);
+      p.vy = ny*(impactSpd*1.2+6);
+      // Ship bounces BACK (-nx direction)
+      state.x -= nx*(hitR-dist+3);
+      state.y -= ny*(hitR-dist+3);
+      const _debBounce = isBubble ? 1.5 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.4 : 1;
+      state.vx = -nx*(impactSpd*0.5+2)*_debBounce;
+      state.vy = -ny*(impactSpd*0.5+2)*_debBounce;
 
-    if(isBubble){
-      p._hitCooldown=30;
-      triggerCollision(state.x,state.y);
-    } else if(!state._debrisChain){
-      state._debrisChain=true; state._debrisChainTimer=0;
-      state._debrisKill=true;
-      p.exploding=true; p._expTimer=0;
-      triggerRockSplit(p._wx,p._wy,p.sz*2);
-      triggerHullImplosion();
+      if(isBubble){
+        p._hitCooldown=30;
+        triggerCollision(state.x,state.y);
+      } else if(!state._debrisChain){
+        state._debrisChain=true; state._debrisChainTimer=0;
+        state._debrisKill=true;
+        p.exploding=true; p._expTimer=0;
+        triggerRockSplit(p._wx,p._wy,p.sz*2);
+        triggerHullImplosion();
+      }
     }
     break;
   }
@@ -11965,6 +11394,27 @@ function drawMoon(ctx, cx, cy){
   // Draw offscreen canvas centred at screenX,screenY
   ctx.save();
   ctx.drawImage(_moonCache, screenX-CR, screenY-CR);
+
+  // Dust overlay proportional to captured debris
+  if(_capturedDebris.length > 0 && _debrisTotal > 0){
+    const dustAlpha = Math.min(0.35, (_capturedDebris.length / _debrisTotal) * 0.5);
+    ctx.globalAlpha = dustAlpha;
+    ctx.fillStyle = '#8a7e6a'; // dusty brown
+    ctx.beginPath(); ctx.arc(screenX, screenY, GR, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw captured debris locked to moon surface
+  for(const cd of _capturedDebris){
+    const cdAng = _moonOrbitAng + cd.angOffset;
+    const cdX = screenX + Math.cos(cdAng) * cd.dist;
+    const cdY = screenY + Math.sin(cdAng) * cd.dist;
+    if(cdX < -20 || cdX > ctx.canvas.width+20 || cdY < -20 || cdY > ctx.canvas.height+20) continue;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#8a7e6a';
+    ctx.beginPath(); ctx.arc(cdX, cdY, cd.sz * 0.5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
   // Subtle silver edge glow — clip outside the sphere
   const atmMax = GR * 1.4;
