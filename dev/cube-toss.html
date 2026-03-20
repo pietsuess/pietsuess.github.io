@@ -843,30 +843,66 @@ function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
   c.angVel += j * rxn / inertia;
 }
 
-// Settle flat: when slow, snap angle to nearest 90° and drop to surface
+// Settle flat: align to the surface the cube is resting on
 function settleFlat(c, dt) {
   const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
   if (speed > 60) return;
 
-  const nearest90 = Math.round(c.angle / (Math.PI/2)) * (Math.PI/2);
-  const diff = nearest90 - c.angle;
   const half = c.size / 2;
+  const lv = getCurrentLevel();
+
+  // Find the surface angle the cube is resting on
+  let surfaceAngle = 0;
+  const checkY = c.y + half + 5;
+
+  // Check platforms
+  for (const p of lv.platforms) {
+    const rot = p.rot || 0;
+    if (rot) {
+      // Rotated platform: transform cube into platform's local space
+      const cx = p.x + p.w/2, cy = p.y + 3;
+      const cos = Math.cos(-rot), sin = Math.sin(-rot);
+      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
+      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
+      if (Math.abs(lx) < p.w/2 + half && Math.abs(ly) < half + 10) {
+        surfaceAngle = rot;
+      }
+    } else {
+      if (c.x + half > p.x && c.x - half < p.x + p.w && Math.abs(checkY - p.y) < 10) {
+        surfaceAngle = 0;
+      }
+    }
+  }
+  // Check walls (cube can rest on top of a wall)
+  for (const w of lv.walls) {
+    const rot = w.rot || 0;
+    if (rot) {
+      const cx = w.x + w.w/2, cy = w.y + w.h/2;
+      const cos = Math.cos(-rot), sin = Math.sin(-rot);
+      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
+      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
+      if (Math.abs(lx) < w.w/2 + half && ly > 0 && ly < w.h/2 + half + 10) {
+        surfaceAngle = rot;
+      }
+    } else {
+      if (c.x + half > w.x && c.x - half < w.x + w.w && Math.abs(checkY - w.y) < 10) {
+        surfaceAngle = 0;
+      }
+    }
+  }
+
+  // Target angle: nearest 90° increment offset by surface angle
+  const relAngle = c.angle - surfaceAngle;
+  const nearest90 = Math.round(relAngle / (Math.PI/2)) * (Math.PI/2);
+  const targetAngle = surfaceAngle + nearest90;
+  const diff = targetAngle - c.angle;
 
   if (speed < 40 && Math.abs(diff) > 0.01) {
-    // Calculate how much the lowest point changes when we flatten
-    const cosA = Math.abs(Math.cos(c.angle)), sinA = Math.abs(Math.sin(c.angle));
-    const oldLowest = half * (cosA + sinA); // distance from center to lowest point
-    const newLowest = half; // when flat, lowest point is just half
-
-    // Snap angle toward flat
-    c.angle += diff * 0.15; // smooth rotation (15% per frame)
+    c.angle += diff * 0.15;
     c.angVel *= 0.5;
-
-    // Drop y so the bottom stays on the same surface
-    c.y += (oldLowest - newLowest) * 0.15;
   }
   if (speed < 15 && Math.abs(diff) < 0.08) {
-    c.angle = nearest90;
+    c.angle = targetAngle;
     c.angVel = 0;
   }
 }
