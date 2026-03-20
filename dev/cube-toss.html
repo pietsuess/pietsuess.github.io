@@ -597,7 +597,7 @@ function getCamFlags() {
   return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
 }
 
-function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; stopAirborne(); }
+function resetCube() { cube = null; state = 'ready'; camTargetX = Math.max(0, getWalkLineX() - 20); hintCache = {}; stopAirborne(); }
 // Only reset camera when changing levels
 function resetLevel() { camX = 0; camY = 0; resetCube(); }
 
@@ -2126,25 +2126,48 @@ function animate(time){
   lastTime=time; elapsed+=dt; gradPhase+=dt*0.05;
 
   if (!editorMode) {
-    if((state==='thrown'||state==='aiming')&&cube){
-      const cf = getCamFlags();
+    const cf = getCamFlags();
+    const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
+
+    if (state === 'ready' || state === 'aiming') {
+      // Pin walk line to far left — show maximum level area ahead
       if (cf.panRight) {
-        const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
-        camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
+        const walkCam = Math.max(0, getWalkLineX() - 20);
+        camTargetX = Math.min(maxCam, walkCam);
       }
-      // Vertical follow only if flags enabled
+    } else if (state === 'thrown' && cube) {
+      // Follow cube during flight — keep it at 20% from left for max lookahead
+      if (cf.panRight) {
+        camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.2));
+      }
+    } else if (state === 'won' || state === 'lost') {
+      // Frame the goal after throw ends
+      const g = getCurrentLevel().goal;
+      if (g && cf.panRight) {
+        const goalCenterX = g.x + g.w / 2;
+        camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
+      }
+    }
+
+    // Vertical follow only if flags enabled
+    if (cube && (state === 'thrown' || state === 'aiming')) {
       const targetY = cube.y - H * 0.4;
       if (cf.panDown && cube.y > H * 0.75 + camY) {
-        camY += (targetY - camY) * 0.08;
+        camY += (targetY - camY) * 0.04;
       } else if (cf.panUp && cube.y < camY + H * 0.25) {
-        camY += (targetY - camY) * 0.08;
+        camY += (targetY - camY) * 0.04;
       } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
-        camY += (0 - camY) * 0.05;
+        camY += (0 - camY) * 0.03;
       }
-      // Follow cube horizontally during throw
-      if (!peekPanning) camX+=(camTargetX-camX)*0.08;
+    } else if ((state === 'won' || state === 'lost' || state === 'ready') && camY !== 0) {
+      camY += (0 - camY) * 0.03;
     }
-    // All other states: leave camera where user panned it
+
+    // Smooth horizontal follow — gentler during throw, snappier for framing
+    if (!peekPanning) {
+      const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
+      camX += (camTargetX - camX) * lerpRate;
+    }
   }
 
   if(state==='thrown'&&cube){
