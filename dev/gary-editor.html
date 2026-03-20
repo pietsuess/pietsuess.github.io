@@ -72,6 +72,22 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 .entity-btn.active { border-color: #ffcc00; background: #2a2a00; }
 .entity-btn canvas { image-rendering: pixelated; }
 
+/* Instance list */
+.inst-group { margin-bottom: 4px; }
+.inst-group-header {
+    background: #222; padding: 4px 8px; cursor: pointer; display: flex;
+    justify-content: space-between; align-items: center; border: 1px solid #333;
+    font-size: 10px;
+}
+.inst-group-header:hover { border-color: #666; }
+.inst-group-body { display: none; }
+.inst-group.open .inst-group-body { display: block; }
+.inst-item {
+    padding: 2px 8px 2px 16px; cursor: pointer; font-size: 10px;
+    border-bottom: 1px solid #222;
+}
+.inst-item:hover { background: #2a2a00; color: #ffcc00; }
+
 /* Layer picker */
 .layer-row {
     display: flex; align-items: center; gap: 8px; padding: 6px 8px;
@@ -222,6 +238,10 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
         <div class="tool-section">
             <h3>Place Objects</h3>
             <div id="entity-list"></div>
+        </div>
+        <div class="tool-section">
+            <h3>Instances</h3>
+            <div id="instance-list" style="font-size:10px;max-height:400px;overflow-y:auto;"></div>
         </div>
     </div>
 
@@ -1054,6 +1074,66 @@ function clearEntitySelection() {
     document.querySelectorAll('.entity-btn').forEach(b => b.classList.remove('active'));
 }
 
+// Instance list — collapsible groups by type, click to pan to entity
+function updateInstanceList() {
+    const list = document.getElementById('instance-list');
+    if (!list) return;
+
+    // Group entities by type
+    const groups = {};
+    entities.forEach((e, i) => {
+        if (!groups[e.type]) groups[e.type] = [];
+        groups[e.type].push({ entity: e, index: i });
+    });
+
+    list.innerHTML = '';
+    const typeOrder = ['arcade', 'chest', 'platform', 'rod', 'coin'];
+    const allTypes = [...new Set([...typeOrder, ...Object.keys(groups)])];
+
+    for (const type of allTypes) {
+        const items = groups[type];
+        if (!items) continue;
+        const def = ENTITY_DEFS[type];
+        const color = def ? def.color : '#888';
+
+        const group = document.createElement('div');
+        group.className = 'inst-group' + (type !== 'coin' ? ' open' : ''); // coins collapsed by default
+
+        const header = document.createElement('div');
+        header.className = 'inst-group-header';
+        header.style.color = color;
+        header.innerHTML = `<span>${type} (${items.length})</span><span>${type === 'coin' ? '+' : '-'}</span>`;
+        header.onclick = () => {
+            group.classList.toggle('open');
+            header.querySelector('span:last-child').textContent = group.classList.contains('open') ? '-' : '+';
+        };
+
+        const body = document.createElement('div');
+        body.className = 'inst-group-body';
+
+        for (const { entity, index } of items) {
+            const item = document.createElement('div');
+            item.className = 'inst-item';
+            item.style.color = color;
+            item.textContent = entity.label || (type + ' ' + (index + 1));
+            item.onclick = () => {
+                // Pan camera to this entity
+                camX = entity.x / T * T - canvasW / zoom / 2;
+                camY = entity.y / T * T - canvasH / zoom / 2;
+                // Select it
+                selectMode = true;
+                selectedObj = { index, type: 'entity' };
+                canvas.style.cursor = 'default';
+            };
+            body.appendChild(item);
+        }
+
+        group.appendChild(header);
+        group.appendChild(body);
+        list.appendChild(group);
+    }
+}
+
 // ---- LAYER PICKER ----
 function setupLayerPicker() {
     const list = document.getElementById('layer-list');
@@ -1494,11 +1574,11 @@ function drawEditor() {
         ctx.lineWidth = 1 / zoom;
         ctx.strokeRect(ent.x - def.w / 2, ent.y - def.h, def.w, def.h);
         ctx.globalAlpha = 1;
-        // Instance label
+        // Instance label — fixed screen size so it's always readable
         if (ent.label) {
             ctx.fillStyle = def.color;
-            ctx.font = (6 / Math.max(zoom, 1.5)) + 'px monospace';
-            ctx.fillText(ent.label, ent.x - def.w / 2, ent.y - def.h - 2 / zoom);
+            ctx.font = (10 / zoom) + 'px monospace';
+            ctx.fillText(ent.label, ent.x - def.w / 2, ent.y - def.h - 3 / zoom);
         }
     }
 
@@ -1612,6 +1692,10 @@ function drawEditor() {
     }
 
     ctx.restore();
+
+    // Update instance list (throttled — every 30 frames)
+    if (!drawEditor._fc) drawEditor._fc = 0;
+    if (++drawEditor._fc % 30 === 0) updateInstanceList();
 
     // HUD
     ctx.fillStyle = '#ffcc00';
