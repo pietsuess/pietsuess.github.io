@@ -966,41 +966,43 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — impenetrable surface, no thickness needed
-  // Check if any corner has crossed the platform top or bottom surface
+  // Platform collision — hard constraint, nothing passes through
   for (const p of lv.platforms) {
     if (p.rot) {
       collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
       continue;
     }
-    const pCorners = getCubeCorners(c);
 
-    if (c.vy >= 0) {
-      // Falling or resting — check if any corner crossed below platform top
-      let deepest = 0, deepCorner = null;
-      for (const corner of pCorners) {
-        if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y) {
-          const pen = corner.y - p.y;
-          if (pen > deepest) { deepest = pen; deepCorner = corner; }
-        }
+    // TOP SURFACE: hard clamp — no corner can be below p.y
+    let pCorners = getCubeCorners(c);
+    let deepest = 0;
+    for (const corner of pCorners) {
+      if (corner.x > p.x && corner.x < p.x + p.w) {
+        const pen = corner.y - p.y;
+        if (pen > deepest) deepest = pen;
       }
-      if (deepCorner) {
-        c.y -= deepest;
-        const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-        if (spd < 60) {
-          if (c.vy > 0) c.vy = 0;
+    }
+    if (deepest > 0) {
+      c.y -= deepest; // hard clamp, no overshoot
+      if (c.vy > 0) {
+        // Fast hit: bounce, slow: absorb
+        if (c.vy > 40) {
+          c.vy = -c.vy * B * (c.bounce || 1);
         } else {
-          applyImpulse(c, deepCorner.x, deepCorner.y, 0, -1, B);
+          c.vy = 0;
         }
       }
-    } else {
-      // Rising — check if any corner crossed above platform bottom
+    }
+
+    // BOTTOM SURFACE: only when rising, thin 6px zone
+    if (c.vy < 0) {
+      pCorners = getCubeCorners(c); // refresh after top clamp
       for (const corner of pCorners) {
-        if (corner.x > p.x && corner.x < p.x + p.w && corner.y < p.y + 6 && corner.y > p.y - c.size) {
+        if (corner.x > p.x && corner.x < p.x + p.w) {
           const pen = (p.y + 6) - corner.y;
-          if (pen > 0) {
+          if (pen > 0 && pen < half * 2) {
             c.y += pen;
-            applyImpulse(c, corner.x, corner.y, 0, 1, B);
+            c.vy = -c.vy * B * (c.bounce || 1);
             break;
           }
         }
