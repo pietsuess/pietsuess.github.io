@@ -2256,6 +2256,7 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
     state._debrisChain = false;
     initBarrierObjects(); // rebuild debris wall
+    initScoopCollectible(); // respawn scoop near moon
     updateFuelBar();
     state.zoneCrossFlash={lvl:-3,timer:320,pre:'YOU TRIGGERED',msg:'THE KESSLER SYNDROME',sub:'ORBITAL DEBRIS CASCADE',_col:'#ff6600'};
     resumeMusic();
@@ -2339,6 +2340,12 @@ function initBarrierObjects(){
   // Regular fuel canister sitting ON the outer launchpad
   state.fuelObjects.push({wx:OUTER_TARGET_WX,wy:OUTER_TARGET_WY,size:22,rotation:0,liquidPhase:0,collected:false,_permanent:true,_outerLaunchpadFuel:true});
   initDebrisWall();
+  // Count non-dot debris for the cleanup game
+  _debrisTotal = state.debrisWall.filter(p => p.shape !== 9).length;
+  _debrisCaptured = 0;
+  _debrisMilestones = [false, false, false, false];
+  _hasScoop = false;
+  _capturedDebris = [];
 }
 
 let wormholeCooldown = 0;
@@ -2950,44 +2957,45 @@ const MOODS=[
       }
     }
 
-    // Pads — expand from thin to massive
+    // Pads — expand from thin to massive (durations trimmed to avoid bleed across chord changes)
     if(phase!=='ignition'){
       const nVoices= phase==='liftoff'?2: 3;
       prog[cIdx].slice(0,nVoices).forEach((s,i)=>{
-        _pad(root*fr(s), t0+i*0.25, barLen+2.0, 0.04*vol*(1-i*0.08), B*i+5);
+        _pad(root*fr(s), t0+i*0.25, barLen*0.9, 0.04*vol*(1-i*0.08), B*i+5);
       });
       if(phase==='ascent'||phase==='orbit'){
         prog[cIdx].forEach((s,i)=>{
-          _pad(root*2*fr(s), t0+i*0.35+0.5, barLen+1.5, 0.02*vol, B*i+13);
+          _pad(root*2*fr(s), t0+i*0.35+0.5, barLen*0.8, 0.02*vol, B*i+13);
         });
       }
     } else {
       // Ignition: single ominous pad
-      _pad(cRoot, t0, barLen+2.0, 0.03*vol);
+      _pad(cRoot, t0, barLen*0.9, 0.03*vol);
     }
 
-    // Strings — heroic, building
+    // Strings — heroic, building (trimmed to stay within chord boundaries)
     if(phase==='liftoff'||phase==='ascent'||phase==='orbit'){
       const nStr= phase==='liftoff'?2:3;
       prog[cIdx].slice(0,nStr).forEach((s,i)=>{
-        _str(root*fr(s), t0+i*0.15, barLen*0.85, 0.034*vol*(1-i*0.1));
+        _str(root*fr(s), t0+i*0.15, barLen*0.7, 0.034*vol*(1-i*0.1));
       });
     }
 
-    // Rhythmic drive — staccato energy (liftoff onward)
+    // Rhythmic drive — staccato energy (liftoff onward), consonant notes only
     if(phase==='liftoff'||phase==='ascent'||phase==='orbit'){
-      const chopPat= phase==='liftoff'?[0,4]: phase==='ascent'?[0,2,4,6]:[0,1,2,4,5,6];
-      chopPat.forEach(i=>{
+      const chopPat= phase==='liftoff'?[0,4]: phase==='ascent'?[0,2,4,6]:[0,2,4,6];
+      const chopNotes=[0,4,7]; // root, 3rd, 5th only — no dissonance
+      chopPat.forEach(ci=>{
         if(rng(0,2)>0){
-          const s=sc[rng(0,4)];
-          _v(root*fr(s), t0+i*bl, 0.04, bl*0.25, 0.16, 0.035*vol, 'sawtooth', 0.25);
+          const s=sc[chopNotes[rng(0,2)]];
+          _v(root*fr(s), t0+ci*bl, 0.04, bl*0.22, 0.14, 0.028*vol, 'sawtooth', 0.2);
         }
       });
     }
 
-    // Arpeggios — rolling energy in ascent+
+    // Arpeggios — rolling energy in ascent+ (no 7ths, just triads)
     if(phase==='ascent'||phase==='orbit'){
-      const arpPat=[0,4,7,11,7,4,0,7,4,11,7,0,4,7,11,4];
+      const arpPat=[0,4,7,4,0,7,4,0,7,4,7,0,4,7,4,0];
       const ai=B%arpPat.length;
       const nArp= phase==='ascent'?8:12;
       for(let i=0;i<nArp;i++){
@@ -3020,7 +3028,7 @@ const MOODS=[
       const ci=B%ctMel.length;
       [1,3,5].forEach((beat,i)=>{
         _str(root*2*fr(sc[ctMel[(ci+i)%ctMel.length]%sc.length]),
-             t0+beat*bl, bl*1.8, 0.024*vol);
+             t0+beat*bl, bl*1.2, 0.024*vol);
       });
       if(B%4===0){
         [0,4,7,11,12].forEach((s,i)=>_plk(root*2*fr(s), t0+i*bl*0.5, 0.035*vol));
@@ -3029,8 +3037,8 @@ const MOODS=[
 
     // Weightless: melody over warm pads, no rhythm — earned stillness
     if(phase==='weightless'){
-      _pad(cRoot, t0, barLen+3.0, 0.032*vol);
-      _pad(root*fr(7), t0+0.5, barLen+2.5, 0.022*vol);
+      _pad(cRoot, t0, barLen*0.9, 0.032*vol);
+      _pad(root*fr(7), t0+0.5, barLen*0.85, 0.022*vol);
       _str(root*2, t0+2*bl, barLen*0.6, 0.016*vol);
     }
   }
@@ -4075,7 +4083,9 @@ function update(){
   const BOOST_MAX=(state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
-  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? 0.9995 : (spd_now>BASE_MAX*1.2 ? 0.988 : 0.965));
+  const _normalFric = 0.965;
+  const _boostFric = 0.9995;
+  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
   if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&state.fuel<=0.005&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer&&!state._lastGaspFired){
@@ -4619,7 +4629,7 @@ function update(){
         _bp.phase += 0.05;
         if(_bp._cooldown > 0){ _bp._cooldown--; continue; }
         const _dx = state.x - _bp.wx, _dy = state.y - _bp.wy;
-        if(_dx * _dx + _dy * _dy < 30 * 30){
+        if(_dx * _dx + _dy * _dy < 60 * 60){
           _bp._cooldown = 180;
           // Hold velocity at 36 for 2 seconds
           state._boostPadEffect = 120;
@@ -5706,8 +5716,9 @@ function update(){
   // Wave beams
   updateWaveBeams();
   updateDebrisWall();
-  updateRace();
-  updateGateCollisions();
+  updateScoopCollectible();
+  updateMoonCapture();
+  if(_scoopFlashTimer > 0) _scoopFlashTimer--;
 
   // Grid world population — suppressed entirely in secret level
   _fpSub._tGrid0=performance.now();
@@ -7182,6 +7193,10 @@ function drawGame(){
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
 
+  // (zoom transform removed — race system deleted)
+
+  // (Speed particles removed — motion blur handles this now)
+
   // Victory zoom: scale world around Earth center
   if(state._victoryPhase==='zoom'){
     const z=state._victoryZoom;
@@ -7988,22 +8003,22 @@ function drawGame(){
         const _isReward = bp._interzoneReward;
         ctx.shadowBlur = 0;
         ctx.lineJoin = 'round';
-        // Glow layer (wider, translucent — cheap fake glow)
+        // Glow layer (2x bigger to match 60px hit zone)
         ctx.strokeStyle = _isReward ? 'rgba(0,255,204,0.25)' : 'rgba(0,255,136,0.2)';
-        ctx.lineWidth = _isReward ? 10 : 8;
+        ctx.lineWidth = _isReward ? 16 : 14;
         ctx.beginPath();
-        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
-        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
+        ctx.moveTo(-40, -32); ctx.lineTo(0, 0); ctx.lineTo(-40, 32);
+        ctx.moveTo(-8, -32); ctx.lineTo(32, 0); ctx.lineTo(-8, 32);
         ctx.stroke();
-        // Chevron core
+        // Chevron core (2x bigger)
         ctx.strokeStyle = _isReward ? '#00ffcc' : '#00ff88';
         ctx.fillStyle = _isReward ? 'rgba(0,255,204,0.35)' : 'rgba(0,255,136,0.25)';
-        ctx.lineWidth = _isReward ? 4.5 : 3.5;
+        ctx.lineWidth = _isReward ? 7 : 6;
         ctx.beginPath();
-        ctx.moveTo(-20, -16); ctx.lineTo(0, 0); ctx.lineTo(-20, 16);
+        ctx.moveTo(-40, -32); ctx.lineTo(0, 0); ctx.lineTo(-40, 32);
         ctx.stroke(); ctx.fill();
         ctx.beginPath();
-        ctx.moveTo(-4, -16); ctx.lineTo(16, 0); ctx.lineTo(-4, 16);
+        ctx.moveTo(-8, -32); ctx.lineTo(32, 0); ctx.lineTo(-8, 32);
         ctx.stroke(); ctx.fill();
         ctx.restore();
       }
@@ -8390,7 +8405,10 @@ function drawGame(){
   drawMoon(ctx, cx, cy);
   // drawMars(ctx, cx, cy);  // HIDDEN FOR NOW
   drawDebrisWall(ctx, cx, cy);
-  drawRaceCourse(ctx, cx, cy);
+  drawScoopCollectible(ctx, cx, cy);
+
+  // Debris cleanup HUD
+  drawDebrisHUD(ctx);
 
   if(state._victoryPhase==='zoom'){
     ctx.restore();
@@ -8928,6 +8946,21 @@ function drawGame(){
       ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
       ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
+    }
+    // Scoop visual on ship nose
+    if(_hasScoop){
+      ctx.save();
+      ctx.translate(0, -ps.size - 2); // nose tip
+      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 8;
+      ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
+      ctx.globalAlpha = 0.85 + Math.sin(state.frameCount * 0.08) * 0.15;
+      ctx.beginPath();
+      ctx.ellipse(0, 0, 10, 5, 0, Math.PI, 0); // half-ellipse, open toward front (up = ship nose)
+      ctx.stroke();
+      ctx.globalAlpha = 0.12;
+      ctx.fillStyle = '#00ffcc';
+      ctx.fill();
+      ctx.restore();
     }
     ctx.restore();
     }
@@ -10312,13 +10345,8 @@ function startGame(){
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = false;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
-  // Spawn race course boost pads into the game's boost pad system
-  RACE_COURSES.forEach(function(c){
-    if(!c.boostPads) return;
-    c.boostPads.forEach(function(bp){
-      state.boostPads.push({ wx:bp.wx, wy:bp.wy, visualAng:bp.angle, phase:Math.random()*Math.PI*2, _cooldown:0 });
-    });
-  });
+  // Init debris cleanup game
+  initScoopCollectible();
   state.collectedItems = [];
   // Start just outside Earth's surface, inside debris field
   state.x = EARTH_WX + 320; state.y = EARTH_WY;
@@ -10403,581 +10431,177 @@ function loop(timestamp) {
 initLeaderboard();
 
 // ══════════════════════════════════════════════════════════════
-//  RACE BEACONS — slalom courses with countdown start gate
+//  DEBRIS CLEANUP GAME — scoop debris, push it to the moon
 // ══════════════════════════════════════════════════════════════
 
-// Generate arc-based course — smooth sweeping curves
-// ── GATE RUN — physical gap barriers the ship threads through ──
-function _buildGateRun(){
-  const sx = EARTH_WX + 2800, sy = EARTH_WY;
-  // Waypoints define the flight path — gentle S-curves that suit arc-based flight
-  // Each waypoint becomes a gate location; gates are perpendicular to the path
-  const waypoints = [];
-  const count = 12;
-  const spacing = 1200; // wider spacing — gives room to arc into gates
-  const amplitude = 600; // Y swing — generous curves
-  for(let i = 0; i < count; i++){
-    const t = i / (count - 1);
-    const wx = sx + 800 + i * spacing;
-    // Gentle 2-wave S-curve with growing amplitude
-    const wy = sy + Math.sin(t * Math.PI * 2.5) * amplitude * (0.4 + t * 0.6);
-    waypoints.push({ wx, wy });
-  }
+// Scoop state
+var _hasScoop = false;
+var _debrisCaptured = 0;
+var _debrisTotal = 0; // set at game start from actual debris count
+var _scoopFlashTimer = 0;
+var _scoopCollectible = null; // world-space scoop pickup object
+var _debrisMilestones = [false, false, false, false]; // 25/50/75/100%
+var _capturedDebris = []; // debris locked to moon surface
 
-  // Build gates at each waypoint, oriented perpendicular to the path
-  const gates = [];
-  for(let i = 0; i < waypoints.length; i++){
-    const prev = i > 0 ? waypoints[i-1] : { wx: sx, wy: sy };
-    const next = i < waypoints.length - 1 ? waypoints[i+1] : waypoints[i];
-    // Path direction at this point (average of incoming and outgoing)
-    const dx = next.wx - prev.wx, dy = next.wy - prev.wy;
-    const pathAngle = Math.atan2(dy, dx);
-    // Gate is perpendicular to path
-    const gateAngle = pathAngle + Math.PI / 2;
-    // Gap size varies: wider at start/end, tighter in the middle
-    const gt = i / (count - 1);
-    const difficulty = Math.sin(gt * Math.PI) * 0.4; // 0 at ends, 0.4 in middle
-    const gapSize = 280 - difficulty * 120; // 280px easy, 160px hard at peak
-    const wallLen = 800; // total wall length (each side = (wallLen - gapSize) / 2)
-    gates.push({
-      wx: waypoints[i].wx, wy: waypoints[i].wy,
-      angle: gateAngle,
-      gapSize: gapSize,
-      wallLen: wallLen,
-      passed: false,
-      pathAngle: pathAngle // store for chevron direction
-    });
-  }
-
-  // Boost pads — placed between every 3rd gate pair, amplify current velocity
-  const boostPads = [];
-  for(let i = 2; i < gates.length - 1; i += 3){
-    const g = gates[i], gn = gates[Math.min(i+1, gates.length-1)];
-    const midX = (g.wx + gn.wx) / 2, midY = (g.wy + gn.wy) / 2;
-    boostPads.push({ wx: midX, wy: midY, angle: 0, power: 18, phase: 0, _cooldown: 0 });
-  }
-
-  return {
-    name: 'GATE RUN',
-    startWX: sx, startWY: sy,
-    finishWX: sx + 800 + count * spacing + 600, finishWY: waypoints[count-1].wy,
-    gates: gates,
-    boostPads: boostPads,
-    waypoints: waypoints
+// Scoop collectible — spawned near the moon at game start
+function initScoopCollectible(){
+  const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+  const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+  // Place scoop 200px from moon, toward Earth
+  const ang = Math.atan2(EARTH_WY - moonWY, EARTH_WX - moonWX);
+  _scoopCollectible = {
+    wx: moonWX + Math.cos(ang) * 200,
+    wy: moonWY + Math.sin(ang) * 200,
+    bobPhase: 0,
+    collected: false
   };
 }
-const RACE_COURSES = [ _buildGateRun() ];
 
-// Race state
-const _race = {
-  active: false,
-  courseIdx: 0,
-  countdown: 0,
-  countdownPhase: 0,
-  started: false,
-  timer: 0,
-  nextGate: 0,
-  score: 0,
-  bestTime: null,
-  finished: false,
-  finishTimer: 0,
-  nearStart: false,
-  showApproach: false,
-  // Track which side of each gate the ship is on (for crossing detection)
-  _gateSides: [], // +1 or -1 per gate, based on dot product with gate normal
-};
-
-function initRaceCourse(idx){
-  _race.courseIdx = idx;
-  _race.active = false;
-  _race.countdown = 0;
-  _race.started = false;
-  _race.timer = 0;
-  _race.nextGate = 0;
-  _race.score = 0;
-  _race.finished = false;
-  _race.finishTimer = 0;
-  _race.nearStart = false;
-  _race.showApproach = false;
-  // Init gate sides
-  const course = RACE_COURSES[idx];
-  if(course && course.gates){
-    _race._gateSides = course.gates.map(() => 0);
-    course.gates.forEach(g => { g.passed = false; });
-  }
-}
-initRaceCourse(0);
-
-// Gate collision: check if ship hits the solid wall parts (not the gap)
-function updateGateCollisions(){
-  if(!state.started || state.paused || state.gameOver) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course || !course.gates) return;
-
-  const shipR = 8; // ship collision radius
-  for(let i = 0; i < course.gates.length; i++){
-    const g = course.gates[i];
-    // Skip gates far from ship
-    const gdx = state.x - g.wx, gdy = state.y - g.wy;
-    if(gdx*gdx + gdy*gdy > 500*500) continue;
-
-    // Gate axis unit vector (along the wall)
-    const gax = Math.cos(g.angle), gay = Math.sin(g.angle);
-    // Gate normal (perpendicular to wall, points in path direction)
-    const gnx = -gay, gny = gax;
-
-    // Project ship position onto gate coordinate system
-    const localAlong = gdx * gax + gdy * gay; // distance along wall axis
-    const localPerp = gdx * gnx + gdy * gny;  // distance through gate plane
-
-    // Update gate side tracking
-    const side = localPerp > 0 ? 1 : -1;
-    if(_race._gateSides[i] === 0) _race._gateSides[i] = side;
-
-    // Check crossing (side changed) — only for the next gate in sequence
-    if(i === _race.nextGate && _race.started && !_race.finished){
-      const prevSide = _race._gateSides[i];
-      if(prevSide !== 0 && prevSide !== side){
-        // Ship crossed the gate plane — check if through the gap
-        const halfGap = g.gapSize / 2;
-        if(Math.abs(localAlong) < halfGap){
-          // Clean pass through the gap!
-          g.passed = true;
-          _race.nextGate++;
-          const spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-          const closeBonus = Math.max(0, Math.round((halfGap - Math.abs(localAlong)) / 2));
-          const speedBonus = Math.round(spd * 8);
-          const gateScore = 150 + closeBonus + speedBonus;
-          _race.score += gateScore;
-          state.score += gateScore;
-          document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-          state.zoneCrossFlash = { lvl:-3, timer:50, msg:'+' + gateScore, _col:'#00ffcc' };
-          if(!state._raceRings) state._raceRings = [];
-          state._raceRings.push({ wx: g.wx, wy: g.wy, r: 0, maxR: 120, age: 0 });
-          if(audioCtx && !state.sfxMuted){
-            const _t = audioCtx.currentTime;
-            playBeep(880, _t, 0.06, 'sine', 0.08);
-            playBeep(1100, _t + 0.06, 0.06, 'sine', 0.06);
-          }
-        }
-        // If crossed outside gap, they hit a wall (handled below)
-      }
-    }
-    _race._gateSides[i] = side;
-
-    // Wall collision — only if ship is near the gate plane
-    if(Math.abs(localPerp) < shipR + 4){
-      const halfGap = g.gapSize / 2;
-      const halfWall = g.wallLen / 2;
-      // Ship is in wall zone if along-axis is outside gap but inside wall
-      if(Math.abs(localAlong) > halfGap && Math.abs(localAlong) < halfWall){
-        // Bounce off gate wall
-        const pushDir = localPerp > 0 ? 1 : -1;
-        const pushDist = (shipR + 4) - Math.abs(localPerp);
-        state.x += gnx * pushDir * (pushDist + 2);
-        state.y += gny * pushDir * (pushDist + 2);
-        // Reflect velocity off gate normal
-        const vDot = state.vx * gnx * pushDir + state.vy * gny * pushDir;
-        if(vDot < 0){
-          state.vx -= 1.5 * vDot * gnx * pushDir;
-          state.vy -= 1.5 * vDot * gny * pushDir;
-          // Dampen a bit
-          state.vx *= 0.7;
-          state.vy *= 0.7;
-        }
-        state.collisionFlash = 4;
-        if(audioCtx && !state.sfxMuted){
-          playBeep(100, audioCtx.currentTime, 0.06, 'sawtooth', 0.08);
-        }
-      }
+function updateScoopCollectible(){
+  if(!_scoopCollectible || _scoopCollectible.collected || _hasScoop) return;
+  // Bob animation
+  _scoopCollectible.bobPhase += 0.04;
+  // Pickup check
+  const dx = state.x - _scoopCollectible.wx;
+  const dy = state.y - _scoopCollectible.wy;
+  if(dx*dx + dy*dy < 50*50){
+    _hasScoop = true;
+    _scoopCollectible.collected = true;
+    _scoopFlashTimer = 90;
+    state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SCOOP ACQUIRED', _col:'#00ffcc' };
+    if(audioCtx && !state.sfxMuted){
+      const t = audioCtx.currentTime;
+      playBeep(523, t, 0.08, 'sine', 0.10);
+      playBeep(659, t+0.08, 0.08, 'sine', 0.10);
+      playBeep(784, t+0.16, 0.12, 'sine', 0.12);
     }
   }
 }
 
-function updateRace(){
-  if(!state.started || state.paused || state.gameOver) return;
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-
-  const dx = state.x - course.startWX, dy = state.y - course.startWY;
-  const distToStart = Math.sqrt(dx*dx + dy*dy);
-
-  // Show instructions when approaching start area
-  if(!_race.active && !_race.finished && distToStart < 500){
-    _race.showApproach = true;
-  } else if(distToStart > 600){
-    _race.showApproach = false;
-  }
-
-  // Approach start gate — trigger countdown
-  if(!_race.active && !_race.finished && distToStart < 120){
-    if(!_race.nearStart){
-      _race.nearStart = true;
-      _race.active = true;
-      _race.countdown = 180;
-      _race.countdownPhase = 3;
-      _race.started = false;
-      _race.timer = 0;
-      _race.nextGate = 0;
-      _race.score = 0;
-      _race.showApproach = false;
-      // Reset gates
-      if(course.gates) course.gates.forEach(g => { g.passed = false; });
-      _race._gateSides = course.gates ? course.gates.map(() => 0) : [];
-    }
-  }
-  if(distToStart > 400) _race.nearStart = false;
-
-  // Countdown
-  if(_race.active && _race.countdown > 0){
-    _race.countdown--;
-    _race.countdownPhase = Math.ceil(_race.countdown / 60);
-    if(_race.countdown <= 0){
-      _race.started = true;
-      _race.countdownPhase = 0;
-    }
-    return;
-  }
-
-  // Race in progress — gate crossing handled in updateGateCollisions()
-  if(_race.started && !_race.finished){
-    _race.timer++;
-
-    // Check finish line
-    const fDx = state.x - course.finishWX, fDy = state.y - course.finishWY;
-    const fDist = Math.sqrt(fDx*fDx + fDy*fDy);
-    const allGatesPassed = course.gates ? _race.nextGate >= course.gates.length : true;
-    if(allGatesPassed && fDist < 250){
-      _race.finished = true;
-      _race.finishTimer = 300;
-      const timeMs = Math.round(_race.timer / 60 * 1000);
-      if(!_race.bestTime || timeMs < _race.bestTime) _race.bestTime = timeMs;
-      const finishBonus = 500;
-      _race.score += finishBonus;
-      state.score += finishBonus;
-      document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-      if(audioCtx && !state.sfxMuted){
-        const _t2 = audioCtx.currentTime;
-        playBeep(660, _t2, 0.1, 'sine', 0.12);
-        playBeep(880, _t2+0.12, 0.1, 'sine', 0.12);
-        playBeep(1100, _t2+0.24, 0.15, 'sine', 0.14);
-        playBeep(1320, _t2+0.38, 0.2, 'sine', 0.1);
-      }
-    }
-  }
-
-  // Finish display countdown
-  if(_race.finished){
-    _race.finishTimer--;
-    if(_race.finishTimer <= 0){
-      _race.active = false;
-      _race.finished = false;
-      _race.started = false;
-    }
-  }
-}
-
-// ── Draw a single gate (wall with gap) ──
-function drawGateWall(ctx, cx, cy, g, idx, isNext, isPassed){
-  const sx = g.wx - state.x + cx, sy = g.wy - state.y + cy;
-  if(sx < -500 || sx > canvas.width+500 || sy < -500 || sy > canvas.height+500) return;
-
-  const halfGap = g.gapSize / 2;
-  const halfWall = g.wallLen / 2;
-  const gax = Math.cos(g.angle), gay = Math.sin(g.angle);
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.05 + idx * 1.3) * 0.4;
-
-  const col = isPassed ? '#00ff88' : (isNext ? '#00ffcc' : '#3388aa');
-  const wallCol = isPassed ? 'rgba(0,255,136,0.3)' : (isNext ? 'rgba(0,255,204,0.5)' : 'rgba(50,100,150,0.25)');
-
-  ctx.save();
-
-  // Draw two wall segments (above and below the gap)
-  for(let side = -1; side <= 1; side += 2){
-    // Wall runs from halfGap to halfWall on each side of center
-    const startAlong = halfGap * side;
-    const endAlong = halfWall * side;
-    const x1 = sx + gax * startAlong, y1 = sy + gay * startAlong;
-    const x2 = sx + gax * endAlong, y2 = sy + gay * endAlong;
-
-    // Bloom
-    ctx.globalAlpha = 0.06 + pulse * 0.03;
-    ctx.lineWidth = 14;
-    ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-    // Core wall
-    ctx.globalAlpha = 0.4 + pulse * 0.25;
-    ctx.shadowColor = col; ctx.shadowBlur = 12;
-    ctx.lineWidth = 4;
-    ctx.strokeStyle = col;
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-
-    // Hot center line
-    ctx.globalAlpha = 0.6;
-    ctx.lineWidth = 1.5;
-    ctx.strokeStyle = 'rgba(255,255,255,0.4)';
-    ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke();
-    ctx.shadowBlur = 0;
-
-    // End cap orb
-    ctx.globalAlpha = 0.6 + pulse * 0.3;
-    ctx.shadowColor = col; ctx.shadowBlur = 14;
-    ctx.fillStyle = col;
-    ctx.beginPath(); ctx.arc(x2, y2, 5, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  // Gap markers — small orbs at gap edges
-  for(let side = -1; side <= 1; side += 2){
-    const gx = sx + gax * halfGap * side, gy = sy + gay * halfGap * side;
-    ctx.globalAlpha = isNext ? 0.8 + pulse * 0.2 : 0.5;
-    ctx.shadowColor = isNext ? '#ff4400' : col; ctx.shadowBlur = isNext ? 16 : 8;
-    ctx.fillStyle = isNext ? '#ff4400' : col;
-    ctx.beginPath(); ctx.arc(gx, gy, isNext ? 8 : 5, 0, Math.PI*2); ctx.fill();
-    ctx.shadowBlur = 0;
-  }
-
-  // Gate number (at center of gap)
-  if(!isPassed){
-    ctx.globalAlpha = isNext ? 0.9 : 0.3;
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = isNext ? '#ffffff' : '#556677';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(String(idx + 1), sx, sy);
-  }
-
-  ctx.restore();
-}
-
-// Draw start/finish gate (simple vertical energy beam)
-function drawStartFinishGate(ctx, cx, cy, wx, wy, label, isActive){
-  const sx = wx - state.x + cx, sy = wy - state.y + cy;
-  if(sx < -400 || sx > canvas.width+400 || sy < -400 || sy > canvas.height+400) return;
-
-  const gateH = 300;
-  const pulse = 0.5 + Math.sin(state.frameCount * 0.06) * 0.4;
-  const col = isActive ? '#00ff88' : '#ffcc00';
-
+function drawScoopCollectible(ctx, cx, cy){
+  if(!_scoopCollectible || _scoopCollectible.collected) return;
+  const sx = _scoopCollectible.wx - state.x + cx;
+  const sy = _scoopCollectible.wy - state.y + cy + Math.sin(_scoopCollectible.bobPhase) * 6;
+  if(sx < -60 || sx > ctx.canvas.width+60 || sy < -60 || sy > ctx.canvas.height+60) return;
   ctx.save();
   ctx.translate(sx, sy);
-
-  ctx.globalAlpha = 0.04 + pulse * 0.02;
-  ctx.fillStyle = col;
-  ctx.fillRect(-30, -gateH/2 - 10, 60, gateH + 20);
-
-  ctx.globalAlpha = 0.06 + pulse * 0.04;
-  ctx.lineWidth = 16; ctx.strokeStyle = col;
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-
-  ctx.globalAlpha = 0.4 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 25;
-  ctx.lineWidth = 3; ctx.strokeStyle = col;
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-
-  ctx.lineWidth = 1; ctx.strokeStyle = 'rgba(255,255,255,0.5)';
-  ctx.beginPath(); ctx.moveTo(0, -gateH/2); ctx.lineTo(0, gateH/2); ctx.stroke();
-  ctx.shadowBlur = 0;
-
-  ctx.globalAlpha = 0.7 + pulse * 0.3;
-  ctx.shadowColor = col; ctx.shadowBlur = 18;
-  ctx.fillStyle = col;
-  ctx.beginPath(); ctx.arc(0, -gateH/2, 7, 0, Math.PI*2); ctx.fill();
-  ctx.beginPath(); ctx.arc(0, gateH/2, 7, 0, Math.PI*2); ctx.fill();
-  ctx.shadowBlur = 0;
-
-  ctx.globalAlpha = 0.85;
-  ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-  ctx.fillStyle = col;
-  ctx.textAlign = 'center';
-  ctx.shadowColor = col; ctx.shadowBlur = 10;
-  ctx.fillText(label, 0, -gateH/2 - 20);
-  ctx.shadowBlur = 0;
-
+  // Pulsing cyan glow
+  const pulse = 0.6 + Math.sin(_scoopCollectible.bobPhase * 1.5) * 0.3;
+  ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16 * pulse;
+  ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2.5;
+  ctx.globalAlpha = 0.8 + pulse * 0.2;
+  // Half-ellipse shape (scoop)
+  ctx.beginPath();
+  ctx.ellipse(0, 0, 18, 10, 0, Math.PI, 0);
+  ctx.stroke();
+  // Inner glow fill
+  ctx.globalAlpha = 0.15;
+  ctx.fillStyle = '#00ffcc';
+  ctx.fill();
+  // Label
+  ctx.shadowBlur = 0; ctx.globalAlpha = 0.7;
+  ctx.font = '6px "Press Start 2P",monospace'; _curFont='';
+  ctx.fillStyle = '#00ffcc'; ctx.textAlign = 'center';
+  ctx.fillText('SCOOP', 0, 22);
   ctx.restore();
 }
 
-function drawRaceHUD(ctx){
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
+// Moon capture system — debris near moon gets captured
+function updateMoonCapture(){
+  if(!state.debrisWall || !state.debrisWall.length) return;
+  const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
+  const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
+  const CAPTURE_DIST = 100;
+  const CAPTURE_TIME = 120; // 2 seconds at 60fps
 
-  if(_race.showApproach && !_race.active && !_race.finished){
-    ctx.save();
-    ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#ffcc00'; ctx.shadowColor = '#ffcc00'; ctx.shadowBlur = 10;
-    ctx.fillText('GATE RUN', canvas.width/2, canvas.height * 0.22);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#aabb99';
-    ctx.fillText('FLY THROUGH THE START GATE', canvas.width/2, canvas.height * 0.22 + 24);
-    ctx.fillText('THREAD EACH GAP AT SPEED', canvas.width/2, canvas.height * 0.22 + 40);
-    ctx.fillText('CROSS THE FINISH LINE TO COMPLETE', canvas.width/2, canvas.height * 0.22 + 56);
-    ctx.restore();
+  for(const p of state.debrisWall){
+    if(p.exploding || p.shape === 9 || p._captured) continue;
+    const dx = p._wx - moonWX, dy = p._wy - moonWY;
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < CAPTURE_DIST){
+      if(!p._captureTimer) p._captureTimer = 0;
+      p._captureTimer++;
+      if(p._captureTimer >= CAPTURE_TIME){
+        // Captured!
+        p._captured = true;
+        _debrisCaptured++;
+        // Lock to moon surface
+        const lockAng = Math.atan2(dy, dx);
+        const lockDist = 85 + Math.random() * 10; // just outside moon radius (80)
+        _capturedDebris.push({
+          angOffset: lockAng - _moonOrbitAng, // relative to moon orbit angle
+          dist: lockDist,
+          sz: p.sz * 0.8,
+          rot: p.rot,
+          shape: p.shape
+        });
+        // Score
+        state.score += 50;
+        document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+        // Ascending chime
+        if(audioCtx && !state.sfxMuted){
+          const t = audioCtx.currentTime;
+          const pitch = 400 + (_debrisCaptured % 12) * 40;
+          playBeep(pitch, t, 0.06, 'sine', 0.08);
+          playBeep(pitch * 1.5, t+0.06, 0.08, 'sine', 0.06);
+        }
+        // Check milestones
+        checkDebrisMilestones();
+      }
+    } else {
+      p._captureTimer = 0;
+    }
   }
 
-  if(_race.active && _race.countdown > 0){
-    const num = _race.countdownPhase;
-    ctx.save();
-    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = num > 0 ? '#ff4400' : '#00ff88';
-    ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 20;
-    ctx.fillText(num > 0 ? String(num) : 'GO!', canvas.width/2, canvas.height * 0.3);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-    return;
-  }
-
-  if(_race.started && _race.timer < 40){
-    ctx.save();
-    ctx.font = '48px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.globalAlpha = 1 - _race.timer/40;
-    ctx.fillStyle = '#00ff88';
-    ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 20;
-    ctx.fillText('GO!', canvas.width/2, canvas.height * 0.3);
-    ctx.shadowBlur = 0;
-    ctx.restore();
-  }
-
-  if(_race.started && !_race.finished){
-    const gateCount = course.gates ? course.gates.length : 0;
-    const secs = (_race.timer / 60).toFixed(2);
-    ctx.save();
-    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center';
-    ctx.fillStyle = '#00ffcc'; ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6;
-    ctx.fillText(secs + 's', canvas.width/2, 30);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 0;
-    ctx.fillStyle = '#889999';
-    const allPassed = _race.nextGate >= gateCount;
-    ctx.fillText(
-      allPassed ? 'ALL GATES CLEARED — FIND THE FINISH!' :
-      'GATE ' + (_race.nextGate + 1) + ' OF ' + gateCount,
-      canvas.width/2, 48
-    );
-    ctx.fillStyle = '#ffcc00';
-    ctx.fillText('SCORE: ' + _race.score, canvas.width/2, 64);
-    ctx.restore();
-  }
-
-  if(_race.finished){
-    const secs = (_race.timer / 60).toFixed(2);
-    const bestSecs = _race.bestTime ? (_race.bestTime / 1000).toFixed(2) : secs;
-    ctx.save();
-    ctx.font = '24px "Press Start 2P",monospace'; _curFont='';
-    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#00ff88'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 16;
-    ctx.fillText('RACE COMPLETE!', canvas.width/2, canvas.height * 0.26);
-    ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
-    ctx.shadowBlur = 6;
-    ctx.fillText('TIME: ' + secs + 's', canvas.width/2, canvas.height * 0.26 + 40);
-    ctx.fillStyle = '#ffcc00';
-    ctx.fillText('SCORE: ' + _race.score, canvas.width/2, canvas.height * 0.26 + 64);
-    ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = '#889999'; ctx.shadowBlur = 0;
-    ctx.fillText('BEST: ' + bestSecs + 's', canvas.width/2, canvas.height * 0.26 + 86);
-    ctx.restore();
+  // Remove captured debris from the wall
+  for(let i = state.debrisWall.length - 1; i >= 0; i--){
+    if(state.debrisWall[i]._captured) state.debrisWall.splice(i, 1);
   }
 }
 
-function drawRaceCourse(ctx, cx, cy){
-  const course = RACE_COURSES[_race.courseIdx];
-  if(!course) return;
-
-  // Guide path through gate centers (dashed line)
-  if(course.waypoints){
-    ctx.save();
-    ctx.strokeStyle = 'rgba(100,160,200,0.10)';
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([16, 10]);
-    const pts = [
-      { wx: course.startWX, wy: course.startWY },
-      ...course.waypoints,
-      { wx: course.finishWX, wy: course.finishWY }
-    ];
-    ctx.beginPath();
-    for(let i = 0; i < pts.length; i++){
-      const px = pts[i].wx - state.x + cx, py = pts[i].wy - state.y + cy;
-      if(i === 0) ctx.moveTo(px, py);
-      else if(i < pts.length - 1){
-        const nx = pts[i+1].wx - state.x + cx, ny = pts[i+1].wy - state.y + cy;
-        ctx.quadraticCurveTo(px, py, (px + nx) / 2, (py + ny) / 2);
-      } else {
-        ctx.lineTo(px, py);
-      }
-    }
-    ctx.stroke();
-    ctx.setLineDash([]);
-    ctx.restore();
-  }
-
-  // Start and finish gates
-  drawStartFinishGate(ctx, cx, cy, course.startWX, course.startWY, 'START', _race.started);
-  const allPassed = course.gates ? _race.nextGate >= course.gates.length : true;
-  drawStartFinishGate(ctx, cx, cy, course.finishWX, course.finishWY, 'FINISH', allPassed && _race.started);
-
-  // Gates
-  if(course.gates){
-    for(let i = 0; i < course.gates.length; i++){
-      const g = course.gates[i];
-      const isPassed = g.passed;
-      const isNext = i === _race.nextGate && _race.started;
-      drawGateWall(ctx, cx, cy, g, i, isNext, isPassed);
-    }
-  }
-
-  // Shockwave rings from gate passes
-  if(state._raceRings){
-    for(let i = state._raceRings.length - 1; i >= 0; i--){
-      const ring = state._raceRings[i];
-      ring.age++;
-      ring.r = ring.age * 4;
-      if(ring.r > ring.maxR){ state._raceRings.splice(i, 1); continue; }
-      const rsx = ring.wx - state.x + cx, rsy = ring.wy - state.y + cy;
-      const alpha = 1 - ring.r / ring.maxR;
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.6;
-      ctx.strokeStyle = '#00ffcc';
-      ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 12;
-      ctx.lineWidth = 3 * alpha;
-      ctx.beginPath(); ctx.arc(rsx, rsy, ring.r, 0, Math.PI*2); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
-    }
-  }
-
-  // Chevron direction arrows toward next gate
-  if(_race.started && !_race.finished && course.gates){
-    const gi = _race.nextGate;
-    if(gi < course.gates.length){
-      const target = course.gates[gi];
-      const prev = gi > 0 ? course.gates[gi-1] : { wx: course.startWX, wy: course.startWY };
-      for(let c = 1; c <= 3; c++){
-        const t = c / 4;
-        const chx = prev.wx + (target.wx - prev.wx) * t;
-        const chy = prev.wy + (target.wy - prev.wy) * t;
-        const csx = chx - state.x + cx, csy = chy - state.y + cy;
-        if(csx < -50 || csx > canvas.width+50 || csy < -50 || csy > canvas.height+50) continue;
-        const ang = Math.atan2(target.wy - prev.wy, target.wx - prev.wx);
-        const wave = (state.frameCount * 0.04 + c * 0.8) % 1;
-        const chAlpha = 0.15 + wave * 0.15;
-        ctx.save();
-        ctx.translate(csx, csy); ctx.rotate(ang);
-        ctx.globalAlpha = chAlpha;
-        ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2;
-        ctx.beginPath();
-        ctx.moveTo(-8, -6); ctx.lineTo(4, 0); ctx.lineTo(-8, 6);
-        ctx.stroke();
-        ctx.restore();
+function checkDebrisMilestones(){
+  if(_debrisTotal <= 0) return;
+  const pct = _debrisCaptured / _debrisTotal;
+  const milestones = [0.25, 0.50, 0.75, 1.00];
+  const bonuses = [500, 1000, 2000, 5000];
+  const msgs = ['25% CLEARED!', '50% CLEARED!', '75% CLEARED!', 'DEBRIS FIELD CLEARED!'];
+  for(let i = 0; i < 4; i++){
+    if(!_debrisMilestones[i] && pct >= milestones[i]){
+      _debrisMilestones[i] = true;
+      state.score += bonuses[i];
+      document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+      state.zoneCrossFlash = { lvl:-3, timer:120, msg:msgs[i] + ' +' + bonuses[i], _col: i === 3 ? '#00ff88' : '#ffcc00' };
+      if(audioCtx && !state.sfxMuted){
+        const t = audioCtx.currentTime;
+        playBeep(660, t, 0.1, 'sine', 0.12);
+        playBeep(880, t+0.12, 0.1, 'sine', 0.12);
+        playBeep(1100, t+0.24, 0.15, 'sine', 0.14);
+        if(i === 3) playBeep(1320, t+0.38, 0.2, 'sine', 0.1);
       }
     }
   }
+}
 
-  // Race HUD
-  drawRaceHUD(ctx);
+function drawDebrisHUD(ctx){
+  if(!_hasScoop || _debrisTotal <= 0) return;
+  ctx.save();
+  ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+  ctx.textAlign = 'right';
+  const pct = _debrisCaptured / _debrisTotal;
+  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
+  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 6;
+  ctx.fillText('DEBRIS: ' + _debrisCaptured + ' / ' + _debrisTotal, ctx.canvas.width - 20, 30);
+  // Progress bar
+  ctx.shadowBlur = 0;
+  const barW = 120, barH = 4;
+  const barX = ctx.canvas.width - 20 - barW, barY = 36;
+  ctx.globalAlpha = 0.3;
+  ctx.fillStyle = '#334455';
+  ctx.fillRect(barX, barY, barW, barH);
+  ctx.globalAlpha = 0.8;
+  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
+  ctx.fillRect(barX, barY, barW * Math.min(1, pct), barH);
+  ctx.restore();
 }
 
 // Wait for Press Start 2P before starting loop — fixes canvas font on Android
@@ -11362,11 +10986,14 @@ function updateDebrisWall(){
       p.vy += (_mgdy/_mgDist) * _gForce;
     }
     p.ox += p.vx; p.oy += p.vy;
-    p.vx *= 0.94; p.vy *= 0.94;
+    // Scooped debris has reduced friction so it carries to moon gravity well
+    const _debFric = (p._scoopedTimer && p._scoopedTimer > 0) ? 0.985 : 0.94;
+    p.vx *= _debFric; p.vy *= _debFric;
     p.ox *= 0.997; p.oy *= 0.997;
     p._wx = EARTH_WX + Math.cos(p.ang)*_pr + p.ox;
     p._wy = EARTH_WY + Math.sin(p.ang)*_pr + p.oy;
     if(p._hitCooldown>0) p._hitCooldown--;
+    if(p._scoopedTimer && p._scoopedTimer > 0) p._scoopedTimer--;
   }
 
   for(let i=state.debrisWall.length-1;i>=0;i--){
@@ -11398,36 +11025,60 @@ function updateDebrisWall(){
   const shipR=isBubble ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 12;
 
   for(const p of state.debrisWall){
-    if(p.exploding||p._hitCooldown>0||p.shape===9) continue; // dots are visual only
+    if(p.exploding||p._hitCooldown>0||p.shape===9||p._captured) continue; // dots are visual only
     const dx=p._wx-state.x, dy=p._wy-state.y;
     const dist2=dx*dx+dy*dy;
     const hitR=p.sz+shipR;
     if(dist2>=hitR*hitR) continue;
 
     const dist=Math.sqrt(dist2)||0.01;
-    // nx/ny points FROM ship TO piece
-    const nx=dx/dist, ny=dy/dist;
     const impactSpd=Math.sqrt(state.vx**2+state.vy**2)+3;
 
-    // Piece flies AWAY from ship (+nx direction)
-    p.vx = nx*(impactSpd*1.2+6);
-    p.vy = ny*(impactSpd*1.2+6);
-    // Ship bounces BACK (-nx direction)
-    state.x -= nx*(hitR-dist+3);
-    state.y -= ny*(hitR-dist+3);
-    const _debBounce = isBubble ? 1.5 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.4 : 1;
-    state.vx = -nx*(impactSpd*0.5+2)*_debBounce;
-    state.vy = -ny*(impactSpd*0.5+2)*_debBounce;
+    if(_hasScoop){
+      // SCOOP: push debris in ship's facing direction, no Kessler
+      const pushAngle = state.angle; // ship's facing direction
+      const pushSpd = impactSpd * 1.5;
+      p.vx = Math.sin(pushAngle) * pushSpd;
+      p.vy = -Math.cos(pushAngle) * pushSpd;
+      p._scoopedTimer = 300; // 5 seconds of reduced friction
+      // Ship loses 15% speed
+      state.vx *= 0.85;
+      state.vy *= 0.85;
+      // Separate ship from piece
+      const nx=dx/dist, ny=dy/dist;
+      state.x -= nx*(hitR-dist+3);
+      state.y -= ny*(hitR-dist+3);
+      p._hitCooldown = 20;
+      // Sound
+      if(audioCtx && !state.sfxMuted){
+        const t = audioCtx.currentTime;
+        playBeep(300, t, 0.06, 'triangle', 0.08);
+        playBeep(450, t+0.04, 0.06, 'sine', 0.06);
+      }
+      triggerCollision(state.x, state.y);
+    } else {
+      // NO SCOOP: original Kessler behavior
+      const nx=dx/dist, ny=dy/dist;
+      // Piece flies AWAY from ship (+nx direction)
+      p.vx = nx*(impactSpd*1.2+6);
+      p.vy = ny*(impactSpd*1.2+6);
+      // Ship bounces BACK (-nx direction)
+      state.x -= nx*(hitR-dist+3);
+      state.y -= ny*(hitR-dist+3);
+      const _debBounce = isBubble ? 1.5 + ((state._bubblePopAnim) ? state._bubblePopAnim.scale - 1 : 0) * 0.4 : 1;
+      state.vx = -nx*(impactSpd*0.5+2)*_debBounce;
+      state.vy = -ny*(impactSpd*0.5+2)*_debBounce;
 
-    if(isBubble){
-      p._hitCooldown=30;
-      triggerCollision(state.x,state.y);
-    } else if(!state._debrisChain){
-      state._debrisChain=true; state._debrisChainTimer=0;
-      state._debrisKill=true;
-      p.exploding=true; p._expTimer=0;
-      triggerRockSplit(p._wx,p._wy,p.sz*2);
-      triggerHullImplosion();
+      if(isBubble){
+        p._hitCooldown=30;
+        triggerCollision(state.x,state.y);
+      } else if(!state._debrisChain){
+        state._debrisChain=true; state._debrisChainTimer=0;
+        state._debrisKill=true;
+        p.exploding=true; p._expTimer=0;
+        triggerRockSplit(p._wx,p._wy,p.sz*2);
+        triggerHullImplosion();
+      }
     }
     break;
   }
@@ -11743,6 +11394,27 @@ function drawMoon(ctx, cx, cy){
   // Draw offscreen canvas centred at screenX,screenY
   ctx.save();
   ctx.drawImage(_moonCache, screenX-CR, screenY-CR);
+
+  // Dust overlay proportional to captured debris
+  if(_capturedDebris.length > 0 && _debrisTotal > 0){
+    const dustAlpha = Math.min(0.35, (_capturedDebris.length / _debrisTotal) * 0.5);
+    ctx.globalAlpha = dustAlpha;
+    ctx.fillStyle = '#8a7e6a'; // dusty brown
+    ctx.beginPath(); ctx.arc(screenX, screenY, GR, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw captured debris locked to moon surface
+  for(const cd of _capturedDebris){
+    const cdAng = _moonOrbitAng + cd.angOffset;
+    const cdX = screenX + Math.cos(cdAng) * cd.dist;
+    const cdY = screenY + Math.sin(cdAng) * cd.dist;
+    if(cdX < -20 || cdX > ctx.canvas.width+20 || cdY < -20 || cdY > ctx.canvas.height+20) continue;
+    ctx.globalAlpha = 0.5;
+    ctx.fillStyle = '#8a7e6a';
+    ctx.beginPath(); ctx.arc(cdX, cdY, cd.sz * 0.5, 0, Math.PI*2); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
 
   // Subtle silver edge glow — clip outside the sphere
   const atmMax = GR * 1.4;
