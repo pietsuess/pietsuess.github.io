@@ -1342,12 +1342,17 @@ function setMode(m) {
         const el = document.getElementById(id);
         if (el) el.style.display = m === 'play' ? 'none' : '';
     });
-    // Canvas takes full width in play mode
-    const cw = document.getElementById('canvas-wrap');
+    // Canvas takes full width in play mode, reverts in edit
+    const cwEl = document.getElementById('canvas-wrap');
     if (m === 'play') {
-        cw.style.flexBasis = '';
-        cw.style.width = '100%';
+        cwEl.style.flexBasis = '';
+        cwEl.style.width = '100%';
+    } else {
+        cwEl.style.flexBasis = '';
+        cwEl.style.width = '';
     }
+    // Force canvas resize
+    canvasW = 0; canvasH = 0;
 
     if (m === 'play') startPlay();
     else stopPlay();
@@ -2129,6 +2134,8 @@ function stopPlay() {
     document.getElementById('video-overlay').classList.remove('open');
     document.querySelectorAll('.play-hud').forEach(el => el.classList.remove('active'));
     if (playMusic) { playMusic.pause(); }
+    // Refresh tileset pickers
+    setTimeout(() => { drawTilePicker(); }, 100);
 }
 
 function pSetState(s) {
@@ -2472,16 +2479,16 @@ function playFrame(dt) {
         // Only check if Gary overlaps vertically with group
         if (garyB <= gt || garyT >= gb) continue;
 
-        // X collision: push Gary out of the group
+        // X collision: push Gary out of the group AND set wallBlocked so push timer works
         if (garyR > gl && garyL < gr) {
-            const overlapR = garyR - gl; // Gary overlapping from left
-            const overlapL = gr - garyL; // Gary overlapping from right
+            const overlapR = garyR - gl;
+            const overlapL = gr - garyL;
             if (overlapR < overlapL && overlapR < 20) {
-                gx = gl + cb[0] * -1 - cb[2] - 0.01; // push Gary left
-                if (gvx > 0) gvx = 0;
+                gx = gl - cb[2] + cb[0] * -1 - 0.01;
+                if (gvx > 0) { gvx = 0; wallBlocked = true; }
             } else if (overlapL < 20) {
-                gx = gr - cb[0] + 0.01; // push Gary right
-                if (gvx < 0) gvx = 0;
+                gx = gr - cb[0] + 0.01;
+                if (gvx < 0) { gvx = 0; wallBlocked = true; }
             }
         }
     }
@@ -2955,7 +2962,7 @@ let canvasW = 0, canvasH = 0;
 function resizeCanvas() {
     const cw = canvas.parentElement.clientWidth;
     const ch = canvas.parentElement.clientHeight;
-    if (cw !== canvasW || ch !== canvasH) {
+    if (cw !== canvasW || ch !== canvasH || canvas.width !== cw) {
         canvasW = cw; canvasH = ch;
         canvas.width = cw; canvas.height = ch;
     }
@@ -2966,7 +2973,7 @@ function mainLoop(ts) {
     const dt = mainLast ? Math.min((ts - mainLast) / 1000, 0.05) : 0.016;
     mainLast = ts;
     resizeCanvas();
-    ctx.clearRect(0, 0, canvasW, canvasH);
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
     if (mode === 'edit') {
         drawEditor();
         updateGaryPreview(dt);
