@@ -905,37 +905,70 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Wall and platform collision — use corners for proper square physics
-  const allRects = [];
-  for (const w of lv.walls) allRects.push({x:w.x, y:w.y, w:w.w, h:w.h, rot:w.rot||0});
-  for (const p of lv.platforms) allRects.push({x:p.x, y:p.y, w:p.w, h:6, rot:p.rot||0});
-
-  for (const r of allRects) {
-    if (!r.rot) {
-      // Axis-aligned: check each corner against the rect
-      let hit = false;
-      for (const corner of corners) {
-        if (corner.x > r.x && corner.x < r.x+r.w && corner.y > r.y && corner.y < r.y+r.h) {
-          // Corner is inside — find nearest edge and push out
-          const dl = corner.x - r.x, dr = r.x+r.w - corner.x;
-          const dt2 = corner.y - r.y, db = r.y+r.h - corner.y;
-          const minD = Math.min(dl, dr, dt2, db);
-          let nx=0, ny=0;
-          if (minD === dt2) { c.y -= dt2; ny = -1; }
-          else if (minD === db) { c.y += db; ny = 1; }
-          else if (minD === dl) { c.x -= dl; nx = -1; }
-          else { c.x += dr; nx = 1; }
-          applyImpulse(c, corner.x, corner.y, nx, ny, B);
-          hit = true; break;
+  // Platform collision — surface-crossing check using corners
+  // Platforms are thin (6px) so corner-inside-rect fails for rotated cubes.
+  // Instead: check if any corner has crossed below the platform top surface.
+  for (const p of lv.platforms) {
+    if (p.rot) {
+      collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot);
+      continue;
+    }
+    // Find the deepest corner penetration below platform top
+    let deepestPen = 0, deepestCorner = null;
+    for (const corner of corners) {
+      if (corner.x > p.x && corner.x < p.x + p.w) {
+        const pen = corner.y - p.y;
+        // Corner below platform top but not too far below (within cube size = still a valid hit)
+        if (pen > 0 && pen < c.size && pen > deepestPen) {
+          deepestPen = pen;
+          deepestCorner = corner;
         }
       }
-      if (!hit) {
-        // Fallback: center-based check for when cube is fully inside
-        collideRotatedRect(c, half, B, r.x, r.y, r.w, r.h, 0);
-      }
+    }
+    if (deepestCorner) {
+      c.y -= deepestPen;
+      applyImpulse(c, deepestCorner.x, deepestCorner.y, 0, -1, B);
     } else {
-      // Rotated rect: use existing system (good enough for angled surfaces)
-      collideRotatedRect(c, half, B, r.x, r.y, r.w, r.h, r.rot);
+      // Check underside — corner hitting platform bottom (coming from below)
+      for (const corner of corners) {
+        if (corner.x > p.x && corner.x < p.x + p.w) {
+          const pen = (p.y + 6) - corner.y;
+          if (pen > 0 && pen < c.size && c.vy < 0) {
+            c.y += pen;
+            applyImpulse(c, corner.x, corner.y, 0, 1, B);
+            break;
+          }
+        }
+      }
+    }
+  }
+
+  // Wall collision — use corners for proper square physics
+  for (const w of lv.walls) {
+    if (w.rot) {
+      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot);
+      continue;
+    }
+    // Axis-aligned: check each corner against the wall rect
+    let hit = false;
+    // Recompute corners after any platform push
+    const wCorners = getCubeCorners(c);
+    for (const corner of wCorners) {
+      if (corner.x > w.x && corner.x < w.x+w.w && corner.y > w.y && corner.y < w.y+w.h) {
+        const dl = corner.x - w.x, dr = w.x+w.w - corner.x;
+        const dt2 = corner.y - w.y, db = w.y+w.h - corner.y;
+        const minD = Math.min(dl, dr, dt2, db);
+        let nx=0, ny=0;
+        if (minD === dt2) { c.y -= dt2; ny = -1; }
+        else if (minD === db) { c.y += db; ny = 1; }
+        else if (minD === dl) { c.x -= dl; nx = -1; }
+        else { c.x += dr; nx = 1; }
+        applyImpulse(c, corner.x, corner.y, nx, ny, B);
+        hit = true; break;
+      }
+    }
+    if (!hit) {
+      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, 0);
     }
   }
 
