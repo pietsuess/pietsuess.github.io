@@ -222,22 +222,23 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 
 #music-drawer {
     left: 0; width: 33.33%;
-    border: 2px solid rgba(255,105,180,0.5); border-bottom: none;
+    border: 2px solid rgba(255,105,180,0.5); border-bottom: none; border-left: none;
     border-radius: 0 14px 0 0;
     box-shadow: 0 0 24px rgba(255,105,180,0.15), 4px 0 20px rgba(0,0,0,0.6);
 }
-#sound-drawer {
-    left: 33.33%; width: 33.34%;
-    border: 2px solid rgba(0,255,204,0.5); border-bottom: none;
-    border-radius: 14px 14px 0 0;
-    box-shadow: 0 0 24px rgba(0,255,204,0.15);
+/* mute button 3-state: red X lines for muted states */
+#mute-btn { position: relative; }
+#mute-btn::before, #mute-btn::after {
+    content: ''; position: absolute; width: 130%; height: 2.5px;
+    background: #ff2222; border-radius: 2px; top: 50%; left: -15%;
+    transform-origin: center; display: none;
 }
-#menu-drawer {
-    right: 0; width: 33.33%;
-    border: 2px solid rgba(255,224,0,0.5); border-bottom: none;
-    border-radius: 14px 0 0 0;
-    box-shadow: 0 0 24px rgba(255,224,0,0.15);
-}
+#mute-btn::before { transform: translateY(-50%) rotate(-45deg); }
+#mute-btn::after { transform: translateY(-50%) rotate(45deg); }
+#mute-btn.music-muted::before { display: block; }
+#mute-btn.sfx-muted::after { display: block; }
+#mute-btn.both-muted::before { display: block; }
+#mute-btn.both-muted::after { display: block; }
 
 .drawer-tab {
     height: 40px; display: flex; align-items: center; padding: 0 14px; gap: 8px;
@@ -440,45 +441,36 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 
 <div id="play-state" class="play-hud"></div>
 
-<!-- Music Drawer -->
+<!-- Audio Drawer (left 33%) — matches Navigator layout -->
 <div id="music-drawer" class="play-hud play-drawer closed">
     <div class="drawer-tab" onclick="toggleDrawer('music')">
-        <span>&#9835;</span>
-        <span id="music-now">MUSIC</span>
-        <span style="flex:1"></span>
+        <span style="font-size:18px;text-shadow:0 0 10px #ff69b4;">&#9835;</span>
+        <span id="music-now" style="flex:1;color:#888;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">AUDIO</span>
+        <div id="mute-btn" onclick="cycleMute();event.stopPropagation()" title="Cycle: All On → Music Muted → SFX Muted → All Muted" style="cursor:pointer;font-size:18px;text-shadow:0 0 8px #ff69b4;padding:4px;position:relative;display:inline-flex;align-items:center;justify-content:center;">🔊</div>
         <span class="arrow">&#9650;</span>
     </div>
     <div class="drawer-body">
-        <label><input type="checkbox" id="music-toggle" checked onchange="toggleMusic()"> Music On</label>
-        <label>Volume<input type="range" id="music-vol" min="0" max="100" value="30" oninput="setMusicVol(this.value)"></label>
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="color:#666;font-size:7px;white-space:nowrap;">VOL</span>
+            <input id="vol-slider" type="range" min="0" max="100" value="30" oninput="setMasterVol(this.value)" style="flex:1;accent-color:#ff69b4;">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+            <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()" style="cursor:pointer;font-size:7px;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">&#9835; ON</div>
+            <div id="sfx-mute-btn" onclick="toggleSfxMute();event.stopPropagation()" style="cursor:pointer;font-size:7px;color:#00ffcc;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SFX ON</div>
+        </div>
     </div>
 </div>
 
-<!-- Sound Drawer -->
-<div id="sound-drawer" class="play-hud play-drawer closed">
-    <div class="drawer-tab" onclick="toggleDrawer('sound')">
-        <span>&#128264;</span>
-        <span>SFX</span>
-        <span style="flex:1"></span>
+<!-- Menu Drawer (center 33%) — matches Navigator layout -->
+<div id="menu-drawer" class="play-hud play-drawer closed" style="left:33.33%;width:33.34%;border-color:rgba(0,255,204,0.5);border-radius:14px 14px 0 0;box-shadow:0 0 24px rgba(0,255,204,0.15);">
+    <div class="drawer-tab" onclick="toggleDrawer('menu')" style="color:#00ffcc;">
+        <span style="font-size:16px;">&#9776;</span>
+        <span style="flex:1;font-size:9px;">MENU</span>
         <span class="arrow">&#9650;</span>
     </div>
-    <div class="drawer-body">
-        <label><input type="checkbox" id="sfx-toggle" checked onchange="toggleSfx()"> SFX On</label>
-        <label>Volume<input type="range" id="sfx-vol" min="0" max="100" value="40" oninput="setSfxVol(this.value)"></label>
-    </div>
-</div>
-
-<!-- Menu Drawer -->
-<div id="menu-drawer" class="play-hud play-drawer closed">
-    <div class="drawer-tab" onclick="toggleDrawer('menu')">
-        <span>&#9776;</span>
-        <span>MENU</span>
-        <span style="flex:1"></span>
-        <span class="arrow">&#9650;</span>
-    </div>
-    <div class="drawer-body">
-        <label onclick="setMode('edit')" style="cursor:pointer;color:#ffe000;">&#9998; EDIT LEVEL</label>
-        <label onclick="restartLevel()" style="cursor:pointer;color:#ff8c00;">&#8634; RESTART</label>
+    <div class="drawer-body" style="line-height:2.6;">
+        <div onclick="restartLevel()" style="cursor:pointer;color:#ff8c00;">&#8634; RESTART LEVEL</div>
+        <div onclick="setMode('edit')" style="cursor:pointer;color:#ffe000;">&#9998; EDIT LEVEL</div>
     </div>
 </div>
 
@@ -1343,6 +1335,20 @@ function setMode(m) {
     document.getElementById('btn-edit').classList.toggle('active', m === 'edit');
     document.getElementById('btn-play').classList.toggle('active', m === 'play');
     canvas.style.cursor = m === 'edit' ? 'crosshair' : 'default';
+
+    // Hide/show editor panels
+    const editorEls = ['shortcuts', 'panel', 'panel-resize', 'mode-bar', 'info-bar'];
+    editorEls.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = m === 'play' ? 'none' : '';
+    });
+    // Canvas takes full width in play mode
+    const cw = document.getElementById('canvas-wrap');
+    if (m === 'play') {
+        cw.style.flexBasis = '';
+        cw.style.width = '100%';
+    }
+
     if (m === 'play') startPlay();
     else stopPlay();
 }
@@ -2108,9 +2114,9 @@ function startPlay() {
     updateScoreDisplay();
 
     // Start music
-    if (document.getElementById('music-toggle').checked) {
+    if (!musicMuted) {
         if (!playMusic) { playMusic = new Audio('audio/arcadeMusic.mp3'); playMusic.loop = true; }
-        playMusic.volume = parseInt(document.getElementById('music-vol').value) / 100 * 0.3;
+        playMusic.volume = masterVol;
         playMusic.play().catch(() => {});
     }
 
@@ -2843,30 +2849,54 @@ function updateScoreDisplay() {
     if (el) el.textContent = String(gScore).padStart(6, '0');
 }
 
+let musicMuted = false;
+let sfxMuted = false;
+let masterVol = 0.3;
+
 function toggleDrawer(name) {
     const el = document.getElementById(name + '-drawer');
     el.classList.toggle('closed');
 }
 
-function toggleMusic() {
-    const on = document.getElementById('music-toggle').checked;
-    if (playMusic) { if (on) playMusic.play().catch(() => {}); else playMusic.pause(); }
+function setMasterVol(v) {
+    masterVol = (v / 100) * 0.5;
+    if (playMusic && !musicMuted) playMusic.volume = masterVol;
 }
 
-function setMusicVol(v) {
-    if (playMusic) playMusic.volume = (v / 100) * 0.3;
+function toggleMusicMute() {
+    musicMuted = !musicMuted;
+    document.getElementById('music-mute-btn').textContent = musicMuted ? '♫ OFF' : '♫ ON';
+    document.getElementById('music-mute-btn').style.color = musicMuted ? '#555' : '#ff69b4';
+    if (playMusic) { if (musicMuted) playMusic.pause(); else playMusic.play().catch(() => {}); }
+    updateMuteBtn();
 }
 
-function toggleSfx() {
-    // sfx toggle is checked in play sound functions
+function toggleSfxMute() {
+    sfxMuted = !sfxMuted;
+    document.getElementById('sfx-mute-btn').textContent = sfxMuted ? 'SFX OFF' : 'SFX ON';
+    document.getElementById('sfx-mute-btn').style.color = sfxMuted ? '#555' : '#00ffcc';
+    updateMuteBtn();
 }
 
-function setSfxVol(v) {
-    // stored as 0-100, read when playing sounds
+// 3-state cycle on the main mute icon: All On → Music Muted → SFX Muted → All Muted → All On
+function cycleMute() {
+    if (!musicMuted && !sfxMuted) { toggleMusicMute(); }
+    else if (musicMuted && !sfxMuted) { toggleMusicMute(); toggleSfxMute(); }
+    else if (!musicMuted && sfxMuted) { toggleMusicMute(); }
+    else { toggleMusicMute(); toggleSfxMute(); }
+}
+
+function updateMuteBtn() {
+    const btn = document.getElementById('mute-btn');
+    btn.className = '';
+    if (musicMuted && sfxMuted) { btn.className = 'both-muted'; btn.textContent = '🔇'; }
+    else if (musicMuted) { btn.className = 'music-muted'; btn.textContent = '🔈'; }
+    else if (sfxMuted) { btn.className = 'sfx-muted'; btn.textContent = '🔉'; }
+    else { btn.textContent = '🔊'; }
 }
 
 function getSfxVol() {
-    return document.getElementById('sfx-toggle')?.checked ? (parseInt(document.getElementById('sfx-vol')?.value || 40) / 100) * 0.5 : 0;
+    return sfxMuted ? 0 : masterVol;
 }
 
 function toggleFullscreen() {
