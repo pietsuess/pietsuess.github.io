@@ -799,16 +799,100 @@ function drawCubeAt(x, y, size, angle, color) {
   ctx.restore();
 }
 
-// ─── PHYSICS ───
+// ─── SQUARE PHYSICS ───
+// Get the 4 corners of the rotated cube in world space
+function getCubeCorners(c) {
+  const h = c.size / 2;
+  const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
+  return [
+    { x: c.x + (-h)*cos - (-h)*sin, y: c.y + (-h)*sin + (-h)*cos }, // top-left
+    { x: c.x + ( h)*cos - (-h)*sin, y: c.y + ( h)*sin + (-h)*cos }, // top-right
+    { x: c.x + ( h)*cos - ( h)*sin, y: c.y + ( h)*sin + ( h)*cos }, // bottom-right
+    { x: c.x + (-h)*cos - ( h)*sin, y: c.y + (-h)*sin + ( h)*cos }, // bottom-left
+  ];
+}
+
+// Apply rigid body impulse at a contact point
+function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
+  const half = c.size / 2;
+  const mass = 1;
+  const inertia = mass * (c.size * c.size) / 6; // moment of inertia for square
+
+  // Contact point relative to center
+  const rx = contactX - c.x, ry = contactY - c.y;
+
+  // Velocity at contact point (linear + angular)
+  const vpx = c.vx - c.angVel * ry;
+  const vpy = c.vy + c.angVel * rx;
+
+  // Relative velocity along normal
+  const vn = vpx * normalX + vpy * normalY;
+  if (vn > 0) return; // moving away
+
+  // Cross product r x n (scalar in 2D)
+  const rxn = rx * normalY - ry * normalX;
+
+  // Impulse magnitude
+  const j = -(1 + restitution) * vn / (1/mass + rxn * rxn / inertia);
+
+  // Apply impulse
+  c.vx += j * normalX / mass;
+  c.vy += j * normalY / mass;
+  c.angVel += j * rxn / inertia;
+}
+
+// Settle flat: apply torque toward nearest 90° when slow and on surface
+function settleFlat(c, dt) {
+  const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+  if (speed > 50 || Math.abs(c.angVel) > 1.5) return;
+
+  // Find nearest 90° angle
+  const nearest90 = Math.round(c.angle / (Math.PI/2)) * (Math.PI/2);
+  const diff = nearest90 - c.angle;
+
+  // Apply settling torque (stronger when slower)
+  const strength = Math.max(0, 1 - speed / 50) * 8;
+  c.angVel += diff * strength * dt;
+  c.angVel *= 0.9; // angular damping when settling
+}
+
 function collideCubeWalls(c, lv) {
   const half = c.size / 2;
-  const B = BOUNCE * (c.bounce || 1); // per-cube bounce
-  // Death zone — cube crosses the death bar
-  if (c.y - half > getDeathY() && !c._fellOff) { c._fellOff = true; }
+  const B = BOUNCE * (c.bounce || 1);
+  const corners = getCubeCorners(c);
+
+  // Death zone
+  const lowestCornerY = Math.max(corners[0].y, corners[1].y, corners[2].y, corners[3].y);
+  if (lowestCornerY > getDeathY() && !c._fellOff) { c._fellOff = true; }
+
+  // Ceiling — bounce corners off ceiling
   const ceil = getCeilingY();
-  if (c.y - half < ceil) { c.y = ceil + half; c.vy = Math.abs(c.vy) * B; }
-  if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
-  if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
+  for (const corner of corners) {
+    if (corner.y < ceil) {
+      const pen = ceil - corner.y;
+      c.y += pen;
+      applyImpulse(c, corner.x, corner.y, 0, 1, B);
+    }
+  }
+
+  // Left wall (throw line)
+  const tl = getThrowLine();
+  for (const corner of corners) {
+    if (corner.x < tl) {
+      const pen = tl - corner.x;
+      c.x += pen;
+      applyImpulse(c, corner.x, corner.y, 1, 0, B);
+    }
+  }
+
+  // Right boundary
+  const rightEdge = lv.width + 200;
+  for (const corner of corners) {
+    if (corner.x > rightEdge) {
+      c.x -= (corner.x - rightEdge);
+      applyImpulse(c, corner.x, corner.y, -1, 0, B);
+    }
+  }
 
   // Back wall — full height seal behind goal
   if (lv.backWall) {
@@ -819,13 +903,38 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  for (const w of lv.walls) {
-    collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot || 0);
-  }
+  // Wall and platform collision — use corners for proper square physics
+  const allRects = [];
+  for (const w of lv.walls) allRects.push({x:w.x, y:w.y, w:w.w, h:w.h, rot:w.rot||0});
+  for (const p of lv.platforms) allRects.push({x:p.x, y:p.y, w:p.w, h:6, rot:p.rot||0});
 
-  // Platforms as thin solid walls (6px thick, full collision both sides)
-  for (const p of lv.platforms) {
-    collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot || 0);
+  for (const r of allRects) {
+    if (!r.rot) {
+      // Axis-aligned: check each corner against the rect
+      let hit = false;
+      for (const corner of corners) {
+        if (corner.x > r.x && corner.x < r.x+r.w && corner.y > r.y && corner.y < r.y+r.h) {
+          // Corner is inside — find nearest edge and push out
+          const dl = corner.x - r.x, dr = r.x+r.w - corner.x;
+          const dt2 = corner.y - r.y, db = r.y+r.h - corner.y;
+          const minD = Math.min(dl, dr, dt2, db);
+          let nx=0, ny=0;
+          if (minD === dt2) { c.y -= dt2; ny = -1; }
+          else if (minD === db) { c.y += db; ny = 1; }
+          else if (minD === dl) { c.x -= dl; nx = -1; }
+          else { c.x += dr; nx = 1; }
+          applyImpulse(c, corner.x, corner.y, nx, ny, B);
+          hit = true; break;
+        }
+      }
+      if (!hit) {
+        // Fallback: center-based check for when cube is fully inside
+        collideRotatedRect(c, half, B, r.x, r.y, r.w, r.h, 0);
+      }
+    } else {
+      // Rotated rect: use existing system (good enough for angled surfaces)
+      collideRotatedRect(c, half, B, r.x, r.y, r.w, r.h, r.rot);
+    }
   }
 
   // Bumpers — pinball style, always kick the cube away with energy
@@ -952,6 +1061,9 @@ function updateCube(c, dt) {
 
   c.angle += c.angVel * dt;
   c.vx *= FRICTION; c.angVel *= ANG_FRICTION;
+
+  // Settle flat when slow
+  settleFlat(c, dt);
 
   // Trail
   if (c.trail.length===0 || Math.abs(c.x-c.trail[c.trail.length-1].x)>8 || Math.abs(c.y-c.trail[c.trail.length-1].y)>8) {
