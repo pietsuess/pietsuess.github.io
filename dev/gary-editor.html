@@ -564,12 +564,13 @@ const redoStack = [];
 const MAX_UNDO = 50;
 
 function captureState() {
-    const state = {
+    return {
         layers: layers.map(l => new Map(l.tiles)),
         entities: JSON.parse(JSON.stringify(entities)),
         spawnX, spawnY,
+        collisionOverrides: JSON.parse(JSON.stringify(collisionOverrides)),
+        pushable: new Set(pushableCells),
     };
-    return state;
 }
 
 function pushUndo() {
@@ -597,6 +598,13 @@ function restoreState(state) {
     entities = state.entities;
     spawnX = state.spawnX;
     spawnY = state.spawnY;
+    // Restore collision overrides
+    Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
+    Object.assign(collisionOverrides, state.collisionOverrides);
+    // Restore pushable cells
+    pushableCells.clear();
+    for (const k of state.pushable) pushableCells.add(k);
+    drawTilePicker(); drawLavaPicker();
 }
 
 // ---- OBJECT SELECTION / DRAGGING ----
@@ -720,6 +728,7 @@ function pickerClick(e, tileset) {
 
     // Ctrl+click = delete collision (make passthrough)
     if ((e.ctrlKey || e.metaKey) && tileset === 'env') {
+        pushUndo();
         deleteCollision(ax, ay);
         drawTilePicker();
         const data = getCollisionData(ax, ay);
@@ -865,6 +874,7 @@ tzBody.addEventListener('mousedown', e => {
 
         // Ctrl+click = delete collision in zoom popup
         if ((e.ctrlKey || e.metaKey) && tileZoomTileset === 'env') {
+            pushUndo();
             deleteCollision(ax, ay);
             drawTileZoom();
             drawTilePicker();
@@ -930,6 +940,7 @@ window.addEventListener('keydown', e => {
         }
         // Ctrl+V = paste collision to selected tile(s)
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV' && selectedTiles.length > 0 && tileZoomTileset === 'env') {
+            pushUndo();
             for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
             drawTileZoom(); drawTilePicker();
             document.getElementById('tile-zoom-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
@@ -937,6 +948,7 @@ window.addEventListener('keydown', e => {
         }
         // Shift+S = make selected tile(s) fully solid
         if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS' && tileZoomTileset === 'env') {
+            pushUndo();
             for (const t of selectedTiles) makeFullSolid(t.ax, t.ay);
             drawTileZoom(); drawTilePicker();
             document.getElementById('tile-zoom-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
@@ -953,11 +965,13 @@ window.addEventListener('keydown', e => {
             document.getElementById('tile-info').textContent = `Copied collision: ${data.type}`;
         }
         if ((e.ctrlKey || e.metaKey) && e.code === 'KeyV') {
+            pushUndo();
             for (const t of selectedTiles) pasteCollision(t.ax, t.ay);
             drawTilePicker(); drawLavaPicker();
             document.getElementById('tile-info').textContent = `Pasted collision to ${selectedTiles.length} tile(s)`;
         }
         if (e.shiftKey && !e.ctrlKey && !e.metaKey && e.code === 'KeyS') {
+            pushUndo();
             for (const t of selectedTiles) makeFullSolid(t.ax, t.ay);
             drawTilePicker(); drawLavaPicker();
             document.getElementById('tile-info').textContent = `Made ${selectedTiles.length} tile(s) SOLID`;
