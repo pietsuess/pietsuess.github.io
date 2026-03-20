@@ -846,16 +846,21 @@ function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
 // Settle flat: apply torque toward nearest 90° when slow and on surface
 function settleFlat(c, dt) {
   const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (speed > 50 || Math.abs(c.angVel) > 1.5) return;
+  if (speed > 80 || Math.abs(c.angVel) > 3) return;
 
-  // Find nearest 90° angle
   const nearest90 = Math.round(c.angle / (Math.PI/2)) * (Math.PI/2);
   const diff = nearest90 - c.angle;
 
-  // Apply settling torque (stronger when slower)
-  const strength = Math.max(0, 1 - speed / 50) * 8;
-  c.angVel += diff * strength * dt;
-  c.angVel *= 0.9; // angular damping when settling
+  if (speed < 15 && Math.abs(diff) < 0.05) {
+    // Very close and very slow — just snap
+    c.angle = nearest90;
+    c.angVel = 0;
+  } else {
+    // Strong torque toward flat, scales up as cube slows
+    const strength = Math.max(0, 1 - speed / 80) * 25;
+    c.angVel += diff * strength * dt;
+    c.angVel *= 0.85;
+  }
 }
 
 function collideCubeWalls(c, lv) {
