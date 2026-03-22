@@ -892,6 +892,8 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn purple" onclick="state._gapBubblePending=true;_spawnGapBubbleNearShip();state._bossInMainWorld=false;">ALIEN ESCAPED</button>
           <button class="dev-btn gold" onclick="if(typeof enterVictoryRoom==='function')enterVictoryRoom()">VICTORY ROOM</button>
           <button class="dev-btn danger" onclick="devCollectAll();state.outsideBarrier=true;state._committedInside=false;devTeleport(EARTH_WX,EARTH_WY);triggerEarthVictory();">EARTH VICTORY ★</button>
+          <button class="dev-btn gold" onclick="devClearAllDebris()">CLEAR ALL DEBRIS</button>
+          <button class="dev-btn" onclick="_hasScoop=true;_scoopCollected=true;if(_scoopCollectible)_scoopCollectible.collected=true;state.fireMode='scoop';updateFireModeUI();state.zoneCrossFlash={lvl:-3,timer:60,msg:'SCOOP GIVEN',_col:'#00ffcc'};">GIVE SCOOP</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
           <button class="dev-btn" onclick="if(typeof triggerCollision==='function')triggerCollision(state.x,state.y)">FAKE COLLISION</button>
           <button class="dev-btn purple" onclick="if(typeof spawnShowAllCircle==='function')spawnShowAllCircle()">SPAWN WORMHOLES</button>
@@ -1005,6 +1007,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
         <span id="opt-boost" class="toggle-opt active">BOOST</span>
         <span id="opt-wave" class="toggle-opt locked">WAVE</span>
         <span id="opt-boost2x" class="toggle-opt locked">BOOST X2</span>
+        <span id="opt-scoop" class="toggle-opt locked" style="display:none;">SCOOP</span>
       </div>
     </div>
     <div id="ship-toggle" class="hud-toggle-box ship-toggle" onclick="cycleShipMode();">
@@ -2262,8 +2265,27 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
     state._debrisChain = false;
+    // Rebuild debris wall but preserve cleanup progress
+    const _savedCaptured = _debrisCaptured;
+    const _savedMilestones = [..._debrisMilestones];
+    const _savedCapturedDebris = [..._capturedDebris];
+    const _savedScoopCollected = _scoopCollected;
     initBarrierObjects(); // rebuild debris wall
-    initScoopCollectible(); // respawn scoop near moon
+    _debrisCaptured = _savedCaptured;
+    _debrisMilestones = _savedMilestones;
+    _capturedDebris = _savedCapturedDebris;
+    _scoopCollected = _savedScoopCollected;
+    // Remove already-captured count from total (they won't respawn)
+    _debrisTotal = state.debrisWall.filter(p => p.shape !== 9).length;
+    if(_savedScoopCollected){
+      // Scoop already collected, no need to respawn collectible
+      _scoopCollectible = { collected: true };
+      _hasScoop = false; // need to re-equip via Z toggle
+      state.fireMode = 'boost';
+      updateFireModeUI();
+    } else {
+      initScoopCollectible();
+    }
     updateFuelBar();
     state.zoneCrossFlash={lvl:-3,timer:320,pre:'YOU TRIGGERED',msg:'THE KESSLER SYNDROME',sub:'ORBITAL DEBRIS CASCADE',_col:'#ff6600'};
     resumeMusic();
@@ -3300,14 +3322,17 @@ window.addEventListener('keyup',e=>{
 });
 
 function getAvailableModes(){
-  const m=['boost'];if(state.hasWaveBeam)m.push('wave');if(state.boostDoubled)m.push('boost2x');return m;
+  const m=['boost'];if(state.hasWaveBeam)m.push('wave');if(state.boostDoubled)m.push('boost2x');if(_scoopCollected)m.push('scoop');return m;
 }
+var _scoopCollected = false; // true once picked up (persists), _hasScoop = currently equipped
 function cycleFireMode(){
   const m=getAvailableModes();if(m.length<=1)return;
   state.fireMode=m[(m.indexOf(state.fireMode)+1)%m.length];updateFireModeUI();
   _trackAction('mode:'+state.fireMode);
   // Fire mode toggle flash text
-  const _fmMsg = state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
+  // Toggle scoop based on fire mode
+  if(state.fireMode==='scoop'){ _hasScoop = true; } else { _hasScoop = false; }
+  const _fmMsg = state.fireMode==='scoop' ? 'SCOOP ENGAGED' : state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
   state.zoneCrossFlash = { lvl:-3, timer:80, msg:_fmMsg, _col:'#00ffcc' };
   // Handle wave popup toggle interaction
   const _wp = document.getElementById('wave-popup-overlay');
@@ -3329,6 +3354,8 @@ function updateFireModeUI(){
   if(b)b.classList.toggle('active',state.fireMode==='boost');
   if(b2)b2.classList.toggle('active',state.fireMode==='boost2x');
   if(wEl)wEl.classList.toggle('active',state.fireMode==='wave');
+  const scEl=document.getElementById('opt-scoop');
+  if(scEl){ scEl.style.display=_scoopCollected?'':'none'; scEl.classList.toggle('locked',!_scoopCollected); scEl.classList.toggle('active',state.fireMode==='scoop'); }
   // Always show both toggle columns once game has started
   const hudToggles=document.getElementById('hud-toggles');
   if(hudToggles && state.started) hudToggles.classList.add('visible');
@@ -7132,6 +7159,31 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
+  // ── Mars dot — orange/red, only after debris cleared ──
+  if(_debrisMilestones[3]){
+    const _maRx = mapX + (MARS_WX - state._radarCX) * scale;
+    const _maRy = mapY + (MARS_WY - state._radarCY) * scale;
+    const _maDx = _maRx - mapX, _maDy = _maRy - mapY;
+    const _maDist = Math.sqrt(_maDx*_maDx + _maDy*_maDy);
+    const _maPulse = 0.6 + Math.sin(state.frameCount * 0.05) * 0.3;
+    if(_maDist <= mapR - 2){
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.arc(_maRx, _maRy, 4, 0, PI2);
+      ctx.fillStyle = '#ff6633'; ctx.fill();
+      ctx.shadowColor = '#ff6633'; ctx.shadowBlur = 6 * SB;
+      ctx.beginPath(); ctx.arc(_maRx, _maRy, 4, 0, PI2); ctx.fill();
+      ctx.shadowBlur = 0;
+    } else {
+      // Edge-clamped pulsing indicator
+      const _maClX = mapX + (_maDx / _maDist) * (mapR - 4);
+      const _maClY = mapY + (_maDy / _maDist) * (mapR - 4);
+      ctx.globalAlpha = _maPulse;
+      ctx.beginPath(); ctx.arc(_maClX, _maClY, 3, 0, PI2);
+      ctx.fillStyle = '#ff6633'; ctx.fill();
+    }
+    ctx.globalAlpha = 0.85;
+  }
+
   // Player blip — offset by radar centre, zoom-aware clamping
   var px = mapX + (state.x - state._radarCX) * scale;
   var py = mapY + (state.y - state._radarCY) * scale;
@@ -8418,8 +8470,6 @@ function drawGame(){
 
   // Debris cleanup HUD (DOM element, not canvas)
   updateDebrisHUD();
-  // Mars arrow after debris cleared
-  drawMarsArrow(ctx, cx, cy);
 
   if(state._victoryPhase==='zoom'){
     ctx.restore();
@@ -10482,9 +10532,12 @@ function updateScoopCollectible(){
   const dy = state.y - _scoopCollectible.wy;
   if(dx*dx + dy*dy < 50*50){
     _hasScoop = true;
+    _scoopCollected = true;
     _scoopCollectible.collected = true;
     _scoopFlashTimer = 90;
-    state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SCOOP ACQUIRED', _col:'#00ffcc' };
+    state.fireMode = 'scoop';
+    updateFireModeUI();
+    state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SCOOP ACQUIRED', sub:'PRESS Z TO TOGGLE', _col:'#00ffcc' };
     if(audioCtx && !state.sfxMuted){
       const t = audioCtx.currentTime;
       playBeep(523, t, 0.08, 'sine', 0.10);
@@ -10589,6 +10642,11 @@ function checkDebrisMilestones(){
         playBeep(1100, t+0.24, 0.15, 'sine', 0.14);
         if(i === 3) playBeep(1320, t+0.38, 0.2, 'sine', 0.1);
       }
+      // 100% cleared: spawn fuel trail to Mars + refuel
+      if(i === 3){
+        state.fuel = 1.0; updateFuelBar();
+        spawnMarsRoute();
+      }
     }
   }
 }
@@ -10611,36 +10669,33 @@ function updateDebrisHUD(){
   }
 }
 
-// Mars arrow — shown after 100% debris cleared
-function drawMarsArrow(ctx, cx, cy){
-  if(!_debrisMilestones[3]) return; // only after 100%
-  const dx = MARS_WX - state.x, dy = MARS_WY - state.y;
+// Mars fuel route — spawn fuel canisters along the path to Mars
+function spawnMarsRoute(){
+  const sx = EARTH_WX, sy = EARTH_WY;
+  const ex = MARS_WX, ey = MARS_WY;
+  const dx = ex - sx, dy = ey - sy;
   const dist = Math.sqrt(dx*dx + dy*dy);
-  if(dist < MARS_R + 200) return; // close enough, hide arrow
-  const ang = Math.atan2(dy, dx);
-  const edgeR = Math.min(ctx.canvas.width, ctx.canvas.height) * 0.38;
-  const ax = ctx.canvas.width/2 + Math.cos(ang) * edgeR;
-  const ay = ctx.canvas.height/2 + Math.sin(ang) * edgeR;
-  const pulse = 0.6 + Math.sin(state.frameCount * 0.05) * 0.3;
-  ctx.save();
-  ctx.translate(ax, ay);
-  ctx.rotate(ang);
-  ctx.globalAlpha = pulse;
-  ctx.strokeStyle = '#ff8844'; ctx.lineWidth = 2.5;
-  ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 10;
-  // Arrow chevron
-  ctx.beginPath();
-  ctx.moveTo(-10, -7); ctx.lineTo(4, 0); ctx.lineTo(-10, 7);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.moveTo(-16, -7); ctx.lineTo(-2, 0); ctx.lineTo(-16, 7);
-  ctx.stroke();
-  // Distance label
-  ctx.shadowBlur = 0;
-  ctx.font = '6px "Press Start 2P",monospace'; _curFont='';
-  ctx.fillStyle = '#ff8844'; ctx.textAlign = 'center';
-  ctx.fillText('MARS', 0, 18);
-  ctx.restore();
+  const count = 8; // fuel stops along the way
+  for(let i = 1; i <= count; i++){
+    const t = i / (count + 1);
+    const fx = sx + dx * t + (Math.random() - 0.5) * 400;
+    const fy = sy + dy * t + (Math.random() - 0.5) * 400;
+    state.fuelObjects.push({
+      wx: fx, wy: fy,
+      size: 16, rotation: 0, liquidPhase: 0,
+      collected: false, _permanent: true
+    });
+  }
+}
+
+function devClearAllDebris(){
+  if(!state.debrisWall) return;
+  const removed = state.debrisWall.filter(p => p.shape !== 9 && !p._captured);
+  _debrisCaptured += removed.length;
+  state.debrisWall = state.debrisWall.filter(p => p.shape === 9);
+  checkDebrisMilestones();
+  updateDebrisHUD();
+  state.zoneCrossFlash = { lvl:-3, timer:60, msg:'ALL DEBRIS CLEARED (DEV)', _col:'#00ff88' };
 }
 
 // Mars landing trigger
