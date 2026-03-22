@@ -9,12 +9,25 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #1a0e2e; overflow: hidden; font-family: 'Urbanist', sans-serif; }
     canvas { display: block; cursor: default; }
+    #rotate-msg {
+      display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%;
+      background: #1a0e2e; z-index: 9999;
+      justify-content: center; align-items: center; flex-direction: column;
+      color: #fef9f0; font-family: 'Urbanist', sans-serif; text-align: center;
+    }
+    #rotate-msg .icon { font-size: 60px; margin-bottom: 20px; }
+    #rotate-msg .text { font-size: 20px; font-weight: 600; opacity: 0.7; }
+    @media (orientation: portrait) and (max-width: 900px) {
+      #rotate-msg { display: flex !important; }
+      canvas { display: none !important; }
+    }
   </style>
 </head>
 <body>
+<div id="rotate-msg"><div class="icon">&#x1F4F1;</div><div class="text">Rotate your device to landscape</div></div>
 <canvas id="c"></canvas>
 <script>
-const DEV_MODE = true; // false for public release — hides editor
+const DEV_MODE = false; // false for public release — hides editor
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
 
@@ -24,24 +37,24 @@ const DESIGN_W = 1440;
 const DESIGN_H = 900;
 let W = DESIGN_W, H = DESIGN_H; // game logic always uses these
 let realW, realH, gameScale = 1, gameOffX = 0, gameOffY = 0;
-let levelsLoaded = false; // don't change H until levels are parsed
-const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 function resize() {
   realW = canvas.width = window.innerWidth;
   realH = canvas.height = window.innerHeight;
-  const scaleByW = realW / DESIGN_W;
-  const scaleByH = realH / DESIGN_H;
-  // Desktop: fit everything (Math.min), Mobile: fill screen (Math.max)
-  gameScale = isMobile ? Math.max(scaleByW, scaleByH) : Math.min(scaleByW, scaleByH);
-  gameOffX = 0;
-  gameOffY = 0;
-  W = realW / gameScale;
-  if (levelsLoaded) H = realH / gameScale;
+  // Uniform scale to fit, letterbox if needed
+  gameScale = Math.min(realW / DESIGN_W, realH / DESIGN_H);
+  // Center the game area
+  gameOffX = (realW - DESIGN_W * gameScale) / 2;
+  gameOffY = (realH - DESIGN_H * gameScale) / 2;
+  // W and H stay as virtual resolution for all game logic
+  W = DESIGN_W;
+  H = DESIGN_H;
 }
 resize();
 window.addEventListener('resize', resize);
 
+// Try to lock landscape on mobile
+try { screen.orientation.lock('landscape').catch(()=>{}); } catch(e) {}
 
 // Prevent pull-to-refresh and overscroll on mobile
 document.body.style.overscrollBehavior = 'none';
@@ -73,11 +86,10 @@ const FRICTION = 0.985;
 const ANG_FRICTION = 0.96;
 const CUBE_SIZE = 36;
 const DEFAULT_THROW_LINE = 420;
-const DEFAULT_RELEASE_LINE = 50;
+const DEFAULT_RELEASE_LINE = 190;
 const WALK_LINE_X = 60;
-function getWalkLineX() { return WALK_LINE_X; }
-const WALK_LINE_Y_START = 200;
-const WALK_LINE_LEN = 300;
+const WALK_LINE_Y_START = 170;
+const WALK_LINE_LEN = 360;
 
 // ─── CAMERA ───
 let camX = 0;
@@ -91,8 +103,6 @@ let level = 0;
 let attempts = 0;
 let showMessage = '';
 let messageTimer = 0;
-let peekPanning = false;
-let peekStart = null; // {mx, my, camX, camY}
 
 // ─── SCORECARD ───
 let scorecard = []; // [{throws, par, name}] per completed level
@@ -599,9 +609,7 @@ function getCamFlags() {
   return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
 }
 
-function resetCube() { cube = null; state = 'ready'; camX = 0; camY = 0; camTargetX = isMobile ? Math.max(0, getWalkLineX() - 20) : 0; hintCache = {}; stopAirborne(); }
-// Only reset camera when changing levels
-function resetLevel() { camX = 0; camY = 0; resetCube(); }
+function resetCube() { cube = null; state = 'ready'; camTargetX = 0; hintCache = {}; stopAirborne(); }
 
 // ─── TRAJECTORY SIMULATOR — finds a real path using actual physics ───
 let hintCache = {}; // level index → {path:[], vx, vy, startY}
@@ -801,239 +809,51 @@ function drawCubeAt(x, y, size, angle, color) {
   ctx.restore();
 }
 
-// ─── SQUARE PHYSICS ───
-// Get the 4 corners of the rotated cube in world space
-function getCubeCorners(c) {
-  const h = c.size / 2;
-  const cos = Math.cos(c.angle), sin = Math.sin(c.angle);
-  return [
-    { x: c.x + (-h)*cos - (-h)*sin, y: c.y + (-h)*sin + (-h)*cos }, // top-left
-    { x: c.x + ( h)*cos - (-h)*sin, y: c.y + ( h)*sin + (-h)*cos }, // top-right
-    { x: c.x + ( h)*cos - ( h)*sin, y: c.y + ( h)*sin + ( h)*cos }, // bottom-right
-    { x: c.x + (-h)*cos - ( h)*sin, y: c.y + (-h)*sin + ( h)*cos }, // bottom-left
-  ];
-}
-
-// Apply rigid body impulse at a contact point (normal bounce + surface friction)
-function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
-  const mass = 1;
-  const inertia = mass * (c.size * c.size) / 6;
-
-  // Contact point relative to center
-  const rx = contactX - c.x, ry = contactY - c.y;
-
-  // Velocity at contact point (linear + angular)
-  const vpx = c.vx - c.angVel * ry;
-  const vpy = c.vy + c.angVel * rx;
-
-  // --- Normal impulse (bounce) ---
-  const vn = vpx * normalX + vpy * normalY;
-  if (vn > 0) return; // moving away
-
-  const rxn = rx * normalY - ry * normalX;
-  const j = -(1 + restitution) * vn / (1/mass + rxn * rxn / inertia);
-
-  c.vx += j * normalX / mass;
-  c.vy += j * normalY / mass;
-  c.angVel += j * rxn / inertia;
-
-  // --- Tangential friction (makes cube roll with travel direction) ---
-  const tx = -normalY, ty = normalX; // tangent vector
-  const vt = vpx * tx + vpy * ty; // sliding velocity along surface
-  const rxt = rx * ty - ry * tx;
-  const frictionCoeff = 0.4;
-  let jt = -vt * frictionCoeff / (1/mass + rxt * rxt / inertia);
-  // Clamp friction to not exceed normal impulse (Coulomb friction)
-  const maxFriction = Math.abs(j) * frictionCoeff;
-  jt = Math.max(-maxFriction, Math.min(maxFriction, jt));
-
-  c.vx += jt * tx / mass;
-  c.vy += jt * ty / mass;
-  c.angVel += jt * rxt / inertia;
-}
-
-// Settle flat: align to the surface the cube is resting on
-function settleFlat(c, dt) {
-  const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (speed > 60) return;
-
-  const half = c.size / 2;
-  const lv = getCurrentLevel();
-
-  // Find the surface angle the cube is resting on
-  let surfaceAngle = 0;
-  const checkY = c.y + half + 5;
-
-  // Check platforms
-  for (const p of lv.platforms) {
-    const rot = p.rot || 0;
-    if (rot) {
-      // Rotated platform: transform cube into platform's local space
-      const cx = p.x + p.w/2, cy = p.y + 3;
-      const cos = Math.cos(-rot), sin = Math.sin(-rot);
-      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
-      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
-      if (Math.abs(lx) < p.w/2 + half && Math.abs(ly) < half + 10) {
-        surfaceAngle = rot;
-      }
-    } else {
-      if (c.x + half > p.x && c.x - half < p.x + p.w && Math.abs(checkY - p.y) < 10) {
-        surfaceAngle = 0;
-      }
-    }
-  }
-  // Check walls (cube can rest on top of a wall)
-  for (const w of lv.walls) {
-    const rot = w.rot || 0;
-    if (rot) {
-      const cx = w.x + w.w/2, cy = w.y + w.h/2;
-      const cos = Math.cos(-rot), sin = Math.sin(-rot);
-      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
-      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
-      if (Math.abs(lx) < w.w/2 + half && ly > 0 && ly < w.h/2 + half + 10) {
-        surfaceAngle = rot;
-      }
-    } else {
-      if (c.x + half > w.x && c.x - half < w.x + w.w && Math.abs(checkY - w.y) < 10) {
-        surfaceAngle = 0;
-      }
-    }
-  }
-
-  // Target angle: nearest 90° increment offset by surface angle
-  const relAngle = c.angle - surfaceAngle;
-  const nearest90 = Math.round(relAngle / (Math.PI/2)) * (Math.PI/2);
-  const targetAngle = surfaceAngle + nearest90;
-  const diff = targetAngle - c.angle;
-
-  if (speed < 40 && Math.abs(diff) > 0.01) {
-    c.angle += diff * 0.15;
-    c.angVel *= 0.5;
-  }
-  if (speed < 15 && Math.abs(diff) < 0.08) {
-    c.angle = targetAngle;
-    c.angVel = 0;
-  }
-}
-
+// ─── PHYSICS ───
 function collideCubeWalls(c, lv) {
   const half = c.size / 2;
-  const B = BOUNCE * (c.bounce || 1);
-  const corners = getCubeCorners(c);
-
-  // Death zone
-  const lowestCornerY = Math.max(corners[0].y, corners[1].y, corners[2].y, corners[3].y);
-  if (lowestCornerY > getDeathY() && !c._fellOff) { c._fellOff = true; }
-
-  // Ceiling — bounce corners off ceiling
+  const B = BOUNCE * (c.bounce || 1); // per-cube bounce
+  // Death zone — cube crosses the death bar
+  if (c.y - half > getDeathY() && !c._fellOff) { c._fellOff = true; }
   const ceil = getCeilingY();
-  for (const corner of corners) {
-    if (corner.y < ceil) {
-      const pen = ceil - corner.y;
-      c.y += pen;
-      applyImpulse(c, corner.x, corner.y, 0, 1, B);
-    }
-  }
-
-  // Left wall (throw line) — only acts as wall once cube has passed it
-  const tl = getThrowLine();
-  if (!c._thrownEarly || c.x > tl) {
-    if (c._thrownEarly) c._thrownEarly = false; // passed it, now it's a wall
-    for (const corner of corners) {
-      if (corner.x < tl) {
-        const pen = tl - corner.x;
-        c.x += pen;
-        applyImpulse(c, corner.x, corner.y, 1, 0, B);
-      }
-    }
-  }
-
-  // Right boundary
-  const rightEdge = lv.width + 200;
-  for (const corner of corners) {
-    if (corner.x > rightEdge) {
-      c.x -= (corner.x - rightEdge);
-      applyImpulse(c, corner.x, corner.y, -1, 0, B);
-    }
-  }
+  if (c.y - half < ceil) { c.y = ceil + half; c.vy = Math.abs(c.vy) * B; }
+  if (c.x - half < getThrowLine()) { c.x = getThrowLine() + half; c.vx = Math.abs(c.vx) * B; }
+  if (c.x + half > lv.width + 200) { c.x = lv.width + 200 - half; c.vx *= -B; }
 
   // Back wall — full height seal behind goal
   if (lv.backWall) {
     const bw = lv.backWall;
     if (rectOverlap(c.x - half, c.y - half, c.size, c.size, bw.x, bw.y, bw.w, bw.h)) {
-      if (c.vx > 0) { c.x = bw.x - half; applyImpulse(c, bw.x, c.y, -1, 0, B); }
-      else { c.x = bw.x + bw.w + half; applyImpulse(c, bw.x + bw.w, c.y, 1, 0, B); }
+      if (c.vx > 0) { c.x = bw.x - half; c.vx *= -B; c.angVel -= c.vy * 0.005; }
+      else { c.x = bw.x + bw.w + half; c.vx *= -B; c.angVel += c.vy * 0.005; }
     }
   }
 
-  // Platform collision — thick solid collision, same as walls
-  const PLAT_H = 20; // collision AND visual height
-  for (const p of lv.platforms) {
-    if (p.rot) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, p.rot);
-      continue;
-    }
-    const pCorners = getCubeCorners(c);
-    let hit = false;
-    for (const corner of pCorners) {
-      if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y && corner.y < p.y + PLAT_H) {
-        const dl = corner.x - p.x, dr = p.x + p.w - corner.x;
-        const dt2 = corner.y - p.y, db = p.y + PLAT_H - corner.y;
-        const minD = Math.min(dl, dr, dt2, db);
-        let nx = 0, ny = 0;
-        if (minD === dt2) { c.y -= dt2; ny = -1; }
-        else if (minD === db) { c.y += db; ny = 1; }
-        else if (minD === dl) { c.x -= dl; nx = -1; }
-        else { c.x += dr; nx = 1; }
-        applyImpulse(c, corner.x, corner.y, nx, ny, B);
-        hit = true; break;
-      }
-    }
-    if (!hit) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, 0);
-    }
-  }
-
-  // Wall collision — use corners for proper square physics
   for (const w of lv.walls) {
-    if (w.rot) {
-      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot);
-      continue;
-    }
-    // Axis-aligned: check each corner against the wall rect
-    let hit = false;
-    // Recompute corners after any platform push
-    const wCorners = getCubeCorners(c);
-    for (const corner of wCorners) {
-      if (corner.x > w.x && corner.x < w.x+w.w && corner.y > w.y && corner.y < w.y+w.h) {
-        const dl = corner.x - w.x, dr = w.x+w.w - corner.x;
-        const dt2 = corner.y - w.y, db = w.y+w.h - corner.y;
-        const minD = Math.min(dl, dr, dt2, db);
-        let nx=0, ny=0;
-        if (minD === dt2) { c.y -= dt2; ny = -1; }
-        else if (minD === db) { c.y += db; ny = 1; }
-        else if (minD === dl) { c.x -= dl; nx = -1; }
-        else { c.x += dr; nx = 1; }
-        applyImpulse(c, corner.x, corner.y, nx, ny, B);
-        hit = true; break;
-      }
-    }
-    if (!hit) {
-      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, 0);
-    }
+    collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot || 0);
   }
 
-  // Bumpers — bouncy but lose energy each hit
+  // Platforms as thin solid walls (6px thick, full collision both sides)
+  for (const p of lv.platforms) {
+    collideRotatedRect(c, half, B, p.x, p.y, p.w, 6, p.rot || 0);
+  }
+
+  // Bumpers — pinball style, always kick the cube away with energy
   for (const b of lv.bumpers) {
     const dx=c.x-b.x, dy=c.y-b.y, dist=Math.sqrt(dx*dx+dy*dy), md=half+b.r;
     if (dist<md && dist>0) {
       const nx=dx/dist, ny=dy/dist;
       c.x=b.x+nx*md; c.y=b.y+ny*md;
+      // Full reflection (no energy loss)
       const dot=c.vx*nx+c.vy*ny;
       c.vx-=2*dot*nx; c.vy-=2*dot*ny;
-      // Lose 15% energy each bounce
-      c.vx *= 0.85; c.vy *= 0.85;
-      c.angVel+=(nx*c.vy-ny*c.vx)*0.01;
+      // Minimum kick speed — bumpers always punch you away
+      const spd=Math.sqrt(c.vx*c.vx+c.vy*c.vy);
+      const minKick = 350;
+      if(spd<minKick){
+        c.vx=nx*minKick; c.vy=ny*minKick;
+      }
+      c.angVel+=(nx*c.vy-ny*c.vx)*0.03;
     }
   }
 }
@@ -1047,15 +867,14 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
   if (!rot) {
     // No rotation — use fast AABB
     if (!rectOverlap(c.x-half, c.y-half, half*2, half*2, rx, ry, rw, rh)) return;
+    const spd=Math.sqrt(c.vx*c.vx+c.vy*c.vy);
     const ol=(c.x+half)-rx, or2=(rx+rw)-(c.x-half);
     const ot=(c.y+half)-ry, ob=(ry+rh)-(c.y-half);
     const m=Math.min(ol,or2,ot,ob);
-    let nx=0, ny=0;
-    if(m===ol){c.x=rx-half;nx=-1;}
-    else if(m===or2){c.x=rx+rw+half;nx=1;}
-    else if(m===ot){c.y=ry-half;ny=-1;}
-    else{c.y=ry+rh+half;ny=1;}
-    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
+    if(m===ol&&c.vx>0){c.x=rx-half;c.vx*=-B;c.angVel-=c.vy*0.005;}
+    else if(m===or2&&c.vx<0){c.x=rx+rw+half;c.vx*=-B;c.angVel+=c.vy*0.005;}
+    else if(m===ot&&c.vy>0){c.y=ry-half;c.vy*=-B;c.angVel+=c.vx*0.008;}
+    else if(m===ob&&c.vy<0){c.y=ry+rh+half;c.vy*=-B;}
     return;
   }
 
@@ -1090,18 +909,24 @@ function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
   c.x += pushWX;
   c.y += pushWY;
 
-  // Apply impulse along push direction
+  // Reflect velocity along the push direction
   const pushLen = Math.sqrt(pushWX*pushWX + pushWY*pushWY);
   if (pushLen > 0) {
     const nx = pushWX/pushLen, ny = pushWY/pushLen;
-    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
+    const dot = c.vx*nx + c.vy*ny;
+    if (dot < 0) { // only if moving into the wall
+      c.vx -= 2 * dot * nx;
+      c.vy -= 2 * dot * ny;
+      c.vx *= B; c.vy *= B;
+      c.angVel += (c.vx * ny - c.vy * nx) * 0.005;
+    }
   }
 }
 
 function updateCube(c, dt) {
-  // Substep physics — max 2px movement per step so nothing tunnels through
+  // Substep physics — max 4px movement per step so nothing tunnels through
   const speed = Math.sqrt(c.vx * c.vx + c.vy * c.vy);
-  const maxStep = 2;
+  const maxStep = 4;
   const steps = Math.max(1, Math.ceil(speed * dt / maxStep));
   const subDt = dt / steps;
 
@@ -1137,19 +962,6 @@ function updateCube(c, dt) {
 
   c.angle += c.angVel * dt;
   c.vx *= FRICTION; c.angVel *= ANG_FRICTION;
-
-  // Settle friction — only kicks in when cube is nearly done bouncing
-  const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (spd < 40) {
-    c.vx *= 0.92;
-    c.angVel *= 0.92;
-  }
-  if (spd < 10) {
-    c.vx = 0; c.vy = 0; c.angVel = 0;
-  }
-
-  // Settle flat when slow
-  settleFlat(c, dt);
 
   // Trail
   if (c.trail.length===0 || Math.abs(c.x-c.trail[c.trail.length-1].x)>8 || Math.abs(c.y-c.trail[c.trail.length-1].y)>8) {
@@ -1192,9 +1004,9 @@ function updateCube(c, dt) {
   }
 
   // Settle check — only if actually supported on a surface
-  if(finalSpeed<15&&Math.abs(c.angVel)<0.5&&state==='thrown'&&supported){
+  if(finalSpeed<12&&Math.abs(c.angVel)<0.3&&state==='thrown'&&supported){
     c._settleTime=(c._settleTime||0)+dt;
-    if(c._settleTime>0.3){state='lost';showMsg('MISSED! TAP TO RETRY',3);stopAirborne();setTimeout(function(){if(state==='lost')resetCube();},3500);}
+    if(c._settleTime>0.5){state='lost';showMsg('MISSED! TAP TO RETRY',3);stopAirborne();setTimeout(function(){if(state==='lost')resetCube();},3500);}
   }else{c._settleTime=0;}
 }
 
@@ -1217,11 +1029,12 @@ canvas.addEventListener('touchmove',(e)=>{e.preventDefault();onMove(e);},{passiv
 canvas.addEventListener('touchend',(e)=>{onUp(e);});
 
 // Button bounds
-// Side buttons — stacked vertically under the walk line on the left
-const SIDE_BTN_W = 100, SIDE_BTN_H = 32, SIDE_BTN_GAP = 8;
+// Stacked buttons just right of throw line
+const SIDE_BTN_W = 110, SIDE_BTN_H = 34, SIDE_BTN_GAP = 6;
 function sideBtnBounds(index) {
-  const startY = WALK_LINE_Y_START + WALK_LINE_LEN + 20;
-  return { x: 10, y: startY + index * (SIDE_BTN_H + SIDE_BTN_GAP), w: SIDE_BTN_W, h: SIDE_BTN_H };
+  const x = WALK_LINE_X - camX - SIDE_BTN_W/2;
+  const startY = WALK_LINE_Y_START + WALK_LINE_LEN + 30;
+  return { x: Math.max(5, x), y: startY + index * (SIDE_BTN_H + SIDE_BTN_GAP), w: SIDE_BTN_W, h: SIDE_BTN_H };
 }
 function resetBtnBounds(){ return sideBtnBounds(0); }
 function nextBtnBounds(){
@@ -1254,7 +1067,7 @@ function onDown(e){
           backWall: { x: 780, y: 0, w: 25, h: H, rot: 0 },
         };
         LEVELS.push(newLv);
-        level = LEVELS.length - 1; attempts = 0; resetLevel();
+        level = LEVELS.length - 1; attempts = 0; resetCube();
         levelMenuOpen = false; edSaveLocal();        return;
       }
       // Reorder arrows (editor mode, right side of row)
@@ -1276,7 +1089,7 @@ function onDown(e){
       }
       // Select level
       if (idx >= 0 && idx < LEVELS.length) {
-        level = idx; attempts = 0; resetLevel(); levelMenuOpen = false;      }
+        level = idx; attempts = 0; resetCube(); levelMenuOpen = false;      }
       return;
     }
     // Click toggle button = close
@@ -1310,10 +1123,17 @@ function onDown(e){
 
   // Side buttons — check all positions, determine which button by label
   {
+    const gV = getCurrentLevel().goal;
+    const goalVis2 = !goalPreview && (gV.x + gV.w - camX > 0 && gV.x - camX < W && gV.y + (gV.h||0) - camY > 0 && gV.y - camY < H);
     let bi = 0;
     // RESET at 0
     if (hitSideBtn(bi) && (state==='thrown'||state==='lost'||state==='won'||state==='aiming')) { resetCube(); return; }
     bi++;
+    // GOAL HINT
+    if (!goalVis2 || goalPreview) {
+      if (hitSideBtn(bi)) { goalPreview = !goalPreview; return; }
+      bi++;
+    }
     // HINTS
     if (hitSideBtn(bi)) { showHints = !showHints; return; }
     bi++;
@@ -1519,7 +1339,7 @@ function onDown(e){
   if(state==='finalScore'){
     const pab={x:(W-180)/2,y:H*0.88,w:180,h:50};
     if(p.x>=pab.x&&p.x<=pab.x+pab.w&&p.y>=pab.y&&p.y<=pab.y+pab.h){
-      level=0;attempts=0;totalThrows=0;scorecard=[];resetLevel();return;
+      level=0;attempts=0;totalThrows=0;scorecard=[];resetCube();return;
     }
     return;
   }
@@ -1527,7 +1347,7 @@ function onDown(e){
     const nb=nextBtnBounds();
     if(p.x>=nb.x&&p.x<=nb.x+nb.w&&p.y>=nb.y&&p.y<=nb.y+nb.h){
       if(level>=LEVELS.length-1){state='finalScore';return;}
-      level++;attempts=0;resetLevel();return;
+      level++;attempts=0;resetCube();return;
     }
     const rpb=replayBtnBounds();
     if(p.x>=rpb.x&&p.x<=rpb.x+rpb.w&&p.y>=rpb.y&&p.y<=rpb.y+rpb.h){attempts=0;resetCube();return;}
@@ -1548,31 +1368,17 @@ function onDown(e){
       const pivotLocalX=((stepIdx+1)*wk.size)%WALK_LINE_LEN;
       const cosT=Math.cos(tipAngle),sinT=Math.sin(tipAngle);
       const lcx=-wk.size/2,lcy=-wk.size/2;
-      // After PI/2 rotation: screenX = getWalkLineX() - (lcx*sinT+lcy*cosT), screenY = WALK_LINE_Y_START + pivotLocalX + lcx*cosT - lcy*sinT
+      // After PI/2 rotation: screenX = WALK_LINE_X - (lcx*sinT+lcy*cosT), screenY = WALK_LINE_Y_START + pivotLocalX + lcx*cosT - lcy*sinT
       const cubeScreenY = WALK_LINE_Y_START + pivotLocalX + lcx*cosT - lcy*sinT;
-      const cubeScreenX = getWalkLineX();
+      const cubeScreenX = WALK_LINE_X;
       const d = Math.abs(p.y - cubeScreenY) + Math.abs(p.x - (cubeScreenX - camX));
       if(d<bestDist){bestDist=d;bestWk=wk;}
     }
     // Only grab if click is close to an actual walking cube
-    if (bestDist > 80) {
-      // Not near a cube — start peek panning (mobile only)
-      if (isMobile) {
-        peekPanning = true;
-        peekStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
-      }
-      return;
-    }
-    camX=0;camY=0;camTargetX=0; // reset camera so worldX works correctly
+    if (bestDist > 80) return;
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
-    cube=spawnCube(p.x,p.y,bestWk); // use screen pos since camX is now 0
+    cube=spawnCube(wx,p.y,bestWk);
     state='aiming';canvas.style.cursor='grabbing';
-  } else {
-    // Clicked past throw zone — peek pan (mobile only)
-    if (isMobile) {
-      peekPanning = true;
-      peekStart = { mx: p.x, my: p.y, camX: camX, camY: camY };
-    }
   }
 }
 
@@ -1607,34 +1413,27 @@ function onMove(e){
     return;
   }
 
-  // Peek panning (no cube in hand)
-  if(peekPanning && peekStart){
-    camX = Math.max(0, peekStart.camX - (p.x - peekStart.mx));
-    camY = peekStart.camY - (p.y - peekStart.my);
-    return;
-  }
-
   if(state==='aiming'&&cube&&grabbing){
-    cube.x=mouseX;cube.y=mouseY; // screen coords (camX is 0 during aiming)
+    cube.x=worldX(mouseX);cube.y=mouseY;
     if(moveDt>0&&moveDt<0.2){
       velSamples.push({vx:(mouseX-prevMX)/moveDt,vy:(mouseY-prevMY)/moveDt});
       if(velSamples.length>5)velSamples.shift();
     }
-    if(mouseX>getThrowLine())doThrow();
+    if(cube.x>getThrowLine())doThrow();
   }
-  if(state==='ready'&&!grabbing&&!peekPanning){
+  if(state==='ready'&&!grabbing){
     canvas.style.cursor=worldX(p.x)<getThrowLine()+100?'grab':'default';
   }
 }
 
 function onUp(e){
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
-  if(peekPanning){ peekPanning=false; peekStart=null; return; }
   if(state==='aiming'&&cube&&grabbing){
+    // Throw if in the right half of throw zone or past it. Cancel only if near the walk line.
     if(cube.x >= getReleaseLine()){
       doThrow();
     } else {
-      // Cancel — put cube back
+      // Cancel -- put cube back
       cube=null; state='ready'; canvas.style.cursor='default';
     }
   }
@@ -1645,8 +1444,6 @@ let velSamples=[];
 function doThrow(){
   if(state!=='aiming')return;
   grabbing=false;state='thrown';attempts++;
-  // Remember if thrown from before the throw line (don't use it as a wall)
-  cube._thrownEarly = cube.x < getThrowLine();
   let ax=0,ay=0;
   if(velSamples.length>0){for(const s of velSamples){ax+=s.vx;ay+=s.vy;}ax/=velSamples.length;ay/=velSamples.length;}
   else{ax=(mouseX-prevMX)*60;ay=(mouseY-prevMY)*60;}
@@ -2040,14 +1837,14 @@ function serializeLevel(lv) {
     name: lv.name, par: lv.par, width: lv.width,
     throwLineX: lv.throwLineX || null,
     releaseLineX: lv.releaseLineX || null,
-    deathYR: lv.deathY ? lv.deathY / DESIGN_H : null,
-    ceilingYR: lv.ceilingY != null ? lv.ceilingY / DESIGN_H : null,
+    deathYR: lv.deathY ? lv.deathY / H : null,
+    ceilingYR: lv.ceilingY != null ? lv.ceilingY / H : null,
     panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false,
-    walls: lv.walls.map(w => ({ x: w.x, yR: w.y/DESIGN_H, w: w.w, hR: w.h/DESIGN_H, rot: w.rot||0 })),
-    platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/DESIGN_H, w: p.w, rot: p.rot||0 })),
-    bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/DESIGN_H, r: b.r })),
-    hintMarkers: (lv.hintMarkers||[]).map(h => ({ x: h.x, yR: h.y/DESIGN_H, r: h.r||18, rot: h.rot||0 })),
-    goal: { x: lv.goal.x, yR: lv.goal.y/DESIGN_H, w: lv.goal.w, hR: lv.goal.h/DESIGN_H, rot: lv.goal.rot||0 },
+    walls: lv.walls.map(w => ({ x: w.x, yR: w.y/H, w: w.w, hR: w.h/H, rot: w.rot||0 })),
+    platforms: lv.platforms.map(p => ({ x: p.x, yR: p.y/H, w: p.w, rot: p.rot||0 })),
+    bumpers: lv.bumpers.map(b => ({ x: b.x, yR: b.y/H, r: b.r })),
+    hintMarkers: (lv.hintMarkers||[]).map(h => ({ x: h.x, yR: h.y/H, r: h.r||18, rot: h.rot||0 })),
+    goal: { x: lv.goal.x, yR: lv.goal.y/H, w: lv.goal.w, hR: lv.goal.h/H, rot: lv.goal.rot||0 },
     backWall: lv.backWall ? { x: lv.backWall.x, w: lv.backWall.w, rot: lv.backWall.rot||0 } : null,
   };
 }
@@ -2058,14 +1855,14 @@ function deserializeLevel(d) {
     name: d.name, par: d.par, width: d.width,
     throwLineX: d.throwLineX || null,
     releaseLineX: d.releaseLineX || null,
-    deathY: d.deathYR ? d.deathYR * DESIGN_H : null,
-    ceilingY: d.ceilingYR != null ? d.ceilingYR * DESIGN_H : null,
+    deathY: d.deathYR ? d.deathYR * H : null,
+    ceilingY: d.ceilingYR != null ? d.ceilingYR * H : null,
     panUp: !!d.panUp, panDown: !!d.panDown, panRight: d.panRight !== false,
-    walls: d.walls.map(w => ({ x: w.x, y: w.yR * DESIGN_H, w: w.w, h: w.hR * DESIGN_H, rot: w.rot||0 })),
-    platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * DESIGN_H, w: p.w, rot: p.rot||0 })),
-    bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * DESIGN_H, r: b.r })),
-    hintMarkers: (d.hintMarkers||[]).map(h => ({ x: h.x, y: h.yR * DESIGN_H, r: h.r||18, rot: h.rot||0 })),
-    goal: { x: d.goal.x, y: d.goal.yR * DESIGN_H, w: d.goal.w, h: d.goal.hR * DESIGN_H, rot: d.goal.rot||0 },
+    walls: d.walls.map(w => ({ x: w.x, y: w.yR * H, w: w.w, h: w.hR * H, rot: w.rot||0 })),
+    platforms: d.platforms.map(p => ({ x: p.x, y: p.yR * H, w: p.w, rot: p.rot||0 })),
+    bumpers: d.bumpers.map(b => ({ x: b.x, y: b.yR * H, r: b.r })),
+    hintMarkers: (d.hintMarkers||[]).map(h => ({ x: h.x, y: h.yR * H, r: h.r||18, rot: h.rot||0 })),
+    goal: { x: d.goal.x, y: d.goal.yR * H, w: d.goal.w, h: d.goal.hR * H, rot: d.goal.rot||0 },
     backWall: d.backWall ? { x: d.backWall.x, y: 0, w: d.backWall.w, h: H, rot: d.backWall.rot||0 } : null,
   };
 }
@@ -2123,7 +1920,7 @@ function edImport() {
         if (!Array.isArray(data)) throw 'not array';
         LEVELS.length = 0;
         for (const d of data) LEVELS.push(deserializeLevel(d));
-        level = 0; resetLevel(); edSaveLocal();
+        level = 0; resetCube(); edSaveLocal();
         showMsg(`LOADED ${LEVELS.length} LEVELS`, 1.5);
       } catch(err) { showMsg('IMPORT FAILED', 1.5); }
     };
@@ -2174,8 +1971,6 @@ edPushUndo = function() { _origPushUndo(); edSaveLocal(); };
     }
     console.log(`Loaded ${LEVELS.length} levels from JSON + localStorage`);
   }
-  levelsLoaded = true;
-  resize(); // now H can adapt
 })();
 
 // Keyboard shortcuts
@@ -2216,62 +2011,30 @@ function animate(time){
   lastTime=time; elapsed+=dt; gradPhase+=dt*0.05;
 
   if (!editorMode) {
-    const cf = getCamFlags();
-    const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
-
-    if (isMobile) {
-      // ── MOBILE CAMERA: staged behavior, goal framing ──
-      if (state === 'ready' || state === 'aiming') {
-        if (cf.panRight) {
-          const walkCam = Math.max(0, getWalkLineX() - 20);
-          camTargetX = Math.min(maxCam, walkCam);
-        }
-      } else if (state === 'thrown' && cube) {
-        if (cf.panRight) {
-          camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.2));
-        }
-      } else if (state === 'won' || state === 'lost') {
-        const g = getCurrentLevel().goal;
-        if (g && cf.panRight) {
-          const goalCenterX = g.x + g.w / 2;
-          camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
-        }
+    if (goalPreview) {
+      // Pan to center goal on screen
+      const g = getCurrentLevel().goal;
+      const goalCamX = Math.max(0, g.x + g.w/2 - W * 0.5);
+      const goalCamY = g.y + g.h/2 - H * 0.5;
+      camX += (goalCamX - camX) * 0.12;
+      camY += (goalCamY - camY) * 0.12;
+    } else if(state==='thrown'&&cube){
+      const cf = getCamFlags();
+      if (cf.panRight) {
+        const maxCam = Math.max(0, getCurrentLevel().width - W + 50);
+        camTargetX=Math.min(maxCam, Math.max(0,cube.x-W*0.35));
       }
-      // Vertical follow
-      if (cube && (state === 'thrown' || state === 'aiming')) {
-        const targetY = cube.y - H * 0.4;
-        if (cf.panDown && cube.y > H * 0.75 + camY) {
-          camY += (targetY - camY) * 0.04;
-        } else if (cf.panUp && cube.y < camY + H * 0.25) {
-          camY += (targetY - camY) * 0.04;
-        } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
-          camY += (0 - camY) * 0.03;
-        }
-      } else if ((state === 'won' || state === 'lost' || state === 'ready') && camY !== 0) {
-        camY += (0 - camY) * 0.03;
+      // Vertical follow only if flags enabled
+      const targetY = cube.y - H * 0.4;
+      if (cf.panDown && cube.y > H * 0.75 + camY) {
+        camY += (targetY - camY) * 0.08;
+      } else if (cf.panUp && cube.y < camY + H * 0.25) {
+        camY += (targetY - camY) * 0.08;
+      } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
+        camY += (0 - camY) * 0.05;
       }
-      // Smooth horizontal follow
-      if (!peekPanning) {
-        const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
-        camX += (camTargetX - camX) * lerpRate;
-      }
-    } else {
-      // ── DESKTOP CAMERA: only follow during thrown, not aiming ──
-      if (state === 'thrown' && cube) {
-        if (cf.panRight) {
-          camTargetX = Math.min(maxCam, Math.max(0, cube.x - W * 0.35));
-        }
-        const targetY = cube.y - H * 0.4;
-        if (cf.panDown && cube.y > H * 0.75 + camY) {
-          camY += (targetY - camY) * 0.08;
-        } else if (cf.panUp && cube.y < camY + H * 0.25) {
-          camY += (targetY - camY) * 0.08;
-        } else if (camY !== 0 && !cf.panDown && !cf.panUp) {
-          camY += (0 - camY) * 0.05;
-        }
-        if (!peekPanning) camX += (camTargetX - camX) * 0.08;
-      }
-    }
+    } else if(state!=='won'&&state!=='lost'){camTargetX=0; camY+=(0-camY)*0.08;}
+    if (!goalPreview) camX+=(camTargetX-camX)*0.08;
   }
 
   if(state==='thrown'&&cube){
@@ -2370,7 +2133,7 @@ function animate(time){
   // ─── WALK ZONE ───
   if(camX<W){
     ctx.strokeStyle='rgba(254,249,240,0.12)';ctx.lineWidth=1;
-    const wlX=getWalkLineX()-camX;
+    const wlX=WALK_LINE_X-camX;
     ctx.beginPath();ctx.moveTo(wlX,WALK_LINE_Y_START);ctx.lineTo(wlX,WALK_LINE_Y_START+WALK_LINE_LEN);ctx.stroke();
 
     if(state==='ready'){
@@ -2382,7 +2145,7 @@ function animate(time){
         const tipAngle=eased*(Math.PI/2);
         const pivotLocalX=((stepIdx+1)*wk.size)%WALK_LINE_LEN;
         ctx.save();
-        ctx.translate(getWalkLineX()-camX,WALK_LINE_Y_START);
+        ctx.translate(WALK_LINE_X-camX,WALK_LINE_Y_START);
         ctx.rotate(Math.PI/2);ctx.translate(pivotLocalX,0);ctx.rotate(tipAngle);
         // Draw metallic walking cube
         const s=wk.size,r=s*0.15;
@@ -2419,8 +2182,8 @@ function animate(time){
 
     if(state==='ready'){
       ctx.fillStyle='rgba(254,249,240,0.3)';ctx.font='500 14px Urbanist';ctx.textAlign='center';
-      ctx.fillText('GRAB A CUBE',getWalkLineX()-camX,WALK_LINE_Y_START-20);
-      ctx.fillText('DRAG & THROW',getWalkLineX()-camX,WALK_LINE_Y_START-4);
+      ctx.fillText('GRAB A CUBE',WALK_LINE_X-camX,WALK_LINE_Y_START-20);
+      ctx.fillText('DRAG & THROW',WALK_LINE_X-camX,WALK_LINE_Y_START-4);
     }
   }
 
@@ -2447,25 +2210,20 @@ function animate(time){
     ctx.restore();
   }
 
-  // ─── PLATFORMS — solid 20px ledge (supports rotation) ───
+  // ─── PLATFORMS — cyan/blue glow ledge (supports rotation) ───
   for(const p of lv.platforms){
     ctx.save();
-    const pcx=p.x+p.w/2-camX, pcy=p.y+10;
+    const pcx=p.x+p.w/2-camX, pcy=p.y+3;
     ctx.translate(pcx,pcy);
     if(p.rot)ctx.rotate(p.rot);
-    // Solid body
-    const pG=ctx.createLinearGradient(0,-10,0,10);
-    pG.addColorStop(0,'rgba(100,200,240,0.35)');pG.addColorStop(1,'rgba(60,140,200,0.15)');
-    ctx.fillStyle=pG;ctx.fillRect(-p.w/2,-10,p.w,20);
-    // Top edge highlight
-    ctx.fillStyle='rgba(180,230,255,0.5)';ctx.fillRect(-p.w/2,-10,p.w,2);
-    // Border
-    ctx.strokeStyle='rgba(100,200,240,0.4)';ctx.lineWidth=1;
-    ctx.strokeRect(-p.w/2,-10,p.w,20);
-    // End caps
+    const pG=ctx.createLinearGradient(0,0,0,18);
+    pG.addColorStop(0,'rgba(100,200,240,0.2)');pG.addColorStop(1,'rgba(100,200,240,0)');
+    ctx.fillStyle=pG;ctx.fillRect(-p.w/2,-3,p.w,18);
+    ctx.fillStyle='rgba(100,200,240,0.45)';ctx.fillRect(-p.w/2,-3,p.w,3);
+    ctx.fillStyle='rgba(180,230,255,0.5)';ctx.fillRect(-p.w/2,-3,p.w,1);
     ctx.fillStyle='rgba(100,200,240,0.5)';
-    ctx.beginPath();ctx.arc(-p.w/2,-0,4,0,Math.PI*2);ctx.fill();
-    ctx.beginPath();ctx.arc(p.w/2,-0,4,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(-p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
+    ctx.beginPath();ctx.arc(p.w/2,-1.5,3,0,Math.PI*2);ctx.fill();
     ctx.restore();
   }
 
@@ -2788,12 +2546,22 @@ function animate(time){
     ctx.fillText(label, b.x + b.w/2, b.y + b.h/2 + 4);
   }
 
+  // Check if goal is visible on screen (ignore when goalPreview is active)
+  const gVis = lv.goal;
+  const goalOnScreen = !goalPreview && (gVis.x + gVis.w - camX > 0 && gVis.x - camX < W &&
+    gVis.y + (gVis.h||0) - camY > 0 && gVis.y - camY < H);
+
   let btnIdx = 0;
   // RESET (only when active)
   if (state==='thrown'||state==='lost'||state==='won'||state==='aiming') {
     drawSideBtn(btnIdx, 'RESET', false);
   }
   btnIdx++;
+  // GOAL HINT (show when goal not visible OR when preview is active)
+  if (!goalOnScreen || goalPreview) {
+    drawSideBtn(btnIdx, 'GOAL HINT', goalPreview);
+    btnIdx++;
+  }
   // HINTS
   drawSideBtn(btnIdx, 'HINTS', showHints);
   btnIdx++;
