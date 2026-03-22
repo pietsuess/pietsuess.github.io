@@ -2260,10 +2260,13 @@ function finishHullImplosion(){
   const _fromDebris = state._debrisKill;
   state._debrisKill = false;
   if(_fromDebris){
-    // Destroyed by debris — respawn in Earth orbit, inside debris field
-    state.x=EARTH_WX+320; state.y=EARTH_WY; state.vx=0; state.vy=0;
+    // Respawn at space station if past debris field, otherwise near Earth
+    const _respawnAtStation = _debrisMilestones[0]; // any milestone = past the debris
+    const _rspX = _respawnAtStation ? OUTER_TARGET_WX - 200 : EARTH_WX + 320;
+    const _rspY = _respawnAtStation ? OUTER_TARGET_WY : EARTH_WY;
+    state.x=_rspX; state.y=_rspY; state.vx=0; state.vy=0;
     state.fuel=1.0; state.outsideBarrier=true; state._committedInside=false;
-    state._prevX=EARTH_WX+320; state._prevY=EARTH_WY;
+    state._prevX=_rspX; state._prevY=_rspY;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false; state._driftTimer=0;
     state._implosionCountdown=0; state._shipDestroyed=false; state._implosionRing=false;
     state.refuelRequested=false; state.refuelShip=null;
@@ -2272,35 +2275,20 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
     state._debrisChain = false;
-    // Rebuild debris wall but preserve cleanup progress
-    const _savedCaptured = _debrisCaptured;
-    const _savedMilestones = [..._debrisMilestones];
-    const _savedCapturedDebris = [..._capturedDebris];
-    const _savedScoopCollected = _scoopCollected;
-    initBarrierObjects(); // rebuild debris wall
-    _debrisCaptured = _savedCaptured;
-    _debrisMilestones = _savedMilestones;
-    _capturedDebris = _savedCapturedDebris;
-    _scoopCollected = _savedScoopCollected;
-    // Remove already-captured count from total (they won't respawn)
-    _debrisTotal = state.debrisWall.filter(p => p.shape !== 9).length;
-    if(_savedScoopCollected){
-      // Scoop already collected, no need to respawn collectible
-      _scoopCollectible = { collected: true };
-      _hasScoop = false; // need to re-equip via Z toggle
-      state.fireMode = 'boost';
-      updateFireModeUI();
-    } else {
-      initScoopCollectible();
+    // Stop the chain reaction but don't rebuild debris wall — preserve progress
+    if(state.debrisWall){
+      state.debrisWall.forEach(p => { p.exploding = false; p._expTimer = 0; });
     }
     updateFuelBar();
     state.zoneCrossFlash={lvl:-3,timer:320,pre:'YOU TRIGGERED',msg:'THE KESSLER SYNDROME',sub:'ORBITAL DEBRIS CASCADE',_col:'#ff6600'};
     resumeMusic();
   } else {
-    // Respawn just outside Earth, inside debris field
-    state.x=EARTH_WX+320; state.y=EARTH_WY; state.vx=0; state.vy=0;
+    // Respawn at space station if past debris field, otherwise near Earth
+    const _rspX2 = _debrisMilestones[0] ? OUTER_TARGET_WX - 200 : EARTH_WX + 320;
+    const _rspY2 = _debrisMilestones[0] ? OUTER_TARGET_WY : EARTH_WY;
+    state.x=_rspX2; state.y=_rspY2; state.vx=0; state.vy=0;
     state.fuel=1.0; state.outsideBarrier=true; state._committedInside=false;
-    state._prevX=EARTH_WX+320; state._prevY=EARTH_WY;
+    state._prevX=_rspX2; state._prevY=_rspY2;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -8758,7 +8746,7 @@ function drawGame(){
     }
   }
 
-  // "FLY TO MARS" hint — after debris cleared, persistent arrow toward Mars
+  // Mars arrow hint — after debris cleared, persistent arrow toward Mars
   if(_debrisMilestones[3] && !_marsLanding){
     const _marsAng = Math.atan2(MARS_WY - state.y, MARS_WX - state.x);
     const _marsDist = Math.sqrt((MARS_WX-state.x)**2 + (MARS_WY-state.y)**2);
@@ -8766,20 +8754,11 @@ function drawGame(){
       const _mBounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
       const _mArrowR = 150;
       ctx.save();
-      // Arrow
       ctx.translate(cx + Math.cos(_marsAng) * (_mArrowR + _mBounce), cy + Math.sin(_marsAng) * (_mArrowR + _mBounce));
       ctx.rotate(_marsAng);
       ctx.fillStyle = '#ff8844'; ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 16 * SB;
       ctx.globalAlpha = 0.7 + Math.sin(state.frameCount * 0.05) * 0.2;
       ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-16, -16); ctx.lineTo(-16, 16); ctx.closePath(); ctx.fill();
-      ctx.shadowBlur = 0; ctx.restore();
-      // Text
-      ctx.save();
-      ctx.globalAlpha = 0.6 + Math.sin(state.frameCount * 0.04) * 0.2;
-      ctx.fillStyle = '#ff8844'; ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 10;
-      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
-      ctx.textAlign = 'center';
-      ctx.fillText('MARS', cx + Math.cos(_marsAng) * (_mArrowR + 50), cy + Math.sin(_marsAng) * (_mArrowR + 50) - 28);
       ctx.shadowBlur = 0; ctx.restore();
     }
   }
@@ -10704,19 +10683,37 @@ function updateDebrisHUD(){
   }
 }
 
-// Mars fuel route — spawn fuel canisters along the path to Mars
+// Mars fuel route — arc around the outside of the barrier, then out to Mars
 function spawnMarsRoute(){
-  const sx = EARTH_WX, sy = EARTH_WY;
-  const ex = MARS_WX, ey = MARS_WY;
-  const dx = ex - sx, dy = ey - sy;
-  const dist = Math.sqrt(dx*dx + dy*dy);
-  const count = 8; // fuel stops along the way
+  const arcR = BELT_OUTER + 800; // just outside the barrier
+  // Earth is at angle ~0 from center (far east). Mars is far west.
+  // Arc from Earth's angle around to Mars's side
+  const earthAng = Math.atan2(EARTH_WY, EARTH_WX);
+  const marsAng = Math.atan2(MARS_WY, MARS_WX);
+  // Go the short way around (counter-clockwise from east to west = through north)
+  const count = 6;
   for(let i = 1; i <= count; i++){
     const t = i / (count + 1);
-    const fx = sx + dx * t + (Math.random() - 0.5) * 400;
-    const fy = sy + dy * t + (Math.random() - 0.5) * 400;
+    // Interpolate angle from earth toward mars (going CCW through north)
+    let ang = earthAng + t * (marsAng - earthAng + Math.PI * 2);
+    // Normalize
+    while(ang > Math.PI) ang -= Math.PI * 2;
+    const fx = Math.cos(ang) * arcR + (Math.random() - 0.5) * 200;
+    const fy = Math.sin(ang) * arcR + (Math.random() - 0.5) * 200;
     state.fuelObjects.push({
       wx: fx, wy: fy,
+      size: 16, rotation: 0, liquidPhase: 0,
+      collected: false, _permanent: true
+    });
+  }
+  // Two more between the barrier arc exit and Mars itself
+  const exitWX = Math.cos(marsAng) * arcR;
+  const exitWY = Math.sin(marsAng) * arcR;
+  for(let i = 1; i <= 2; i++){
+    const t = i / 3;
+    state.fuelObjects.push({
+      wx: exitWX + (MARS_WX - exitWX) * t + (Math.random() - 0.5) * 300,
+      wy: exitWY + (MARS_WY - exitWY) * t + (Math.random() - 0.5) * 300,
       size: 16, rotation: 0, liquidPhase: 0,
       collected: false, _permanent: true
     });
