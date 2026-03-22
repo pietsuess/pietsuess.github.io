@@ -7179,6 +7179,29 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
+  // ── Fuel dots — green, uncollected only ──
+  if(state.fuelObjects){
+    for(const fo of state.fuelObjects){
+      if(fo.collected) continue;
+      const _fRx = mapX + (fo.wx - state._radarCX) * scale;
+      const _fRy = mapY + (fo.wy - state._radarCY) * scale;
+      const _fDx = _fRx - mapX, _fDy = _fRy - mapY;
+      const _fDist = Math.sqrt(_fDx*_fDx + _fDy*_fDy);
+      if(_fDist <= mapR - 2){
+        ctx.globalAlpha = 0.6;
+        ctx.beginPath(); ctx.arc(_fRx, _fRy, 2, 0, PI2);
+        ctx.fillStyle = '#00ff88'; ctx.fill();
+      } else {
+        const _fClX = mapX + (_fDx / _fDist) * (mapR - 4);
+        const _fClY = mapY + (_fDy / _fDist) * (mapR - 4);
+        ctx.globalAlpha = 0.3;
+        ctx.beginPath(); ctx.arc(_fClX, _fClY, 1.5, 0, PI2);
+        ctx.fillStyle = '#00ff88'; ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 0.85;
+  }
+
   // Player blip — offset by radar centre, zoom-aware clamping
   var px = mapX + (state.x - state._radarCX) * scale;
   var py = mapY + (state.y - state._radarCY) * scale;
@@ -8743,6 +8766,29 @@ function drawGame(){
       }
     } else {
       state._zoneCompleteHintDelay = undefined;  // reset when not in completed zone
+    }
+  }
+
+  // Nearest fuel arrow — green, only when fuel < 40%
+  if(state.fuel < 0.4 && state.fuelObjects){
+    let _nearFuel = null, _nearDist = Infinity;
+    for(const fo of state.fuelObjects){
+      if(fo.collected) continue;
+      const fdx = fo.wx - state.x, fdy = fo.wy - state.y;
+      const fd = fdx*fdx + fdy*fdy;
+      if(fd < _nearDist){ _nearDist = fd; _nearFuel = fo; }
+    }
+    if(_nearFuel && _nearDist > 200*200){
+      const _fAng = Math.atan2(_nearFuel.wy - state.y, _nearFuel.wx - state.x);
+      const _fBounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
+      const _fArrowR = 120;
+      ctx.save();
+      ctx.translate(cx + Math.cos(_fAng) * (_fArrowR + _fBounce), cy + Math.sin(_fAng) * (_fArrowR + _fBounce));
+      ctx.rotate(_fAng);
+      ctx.fillStyle = '#00ff88'; ctx.shadowColor = '#00ff88'; ctx.shadowBlur = 16 * SB;
+      ctx.globalAlpha = 0.5 + Math.sin(state.frameCount * 0.08) * 0.3;
+      ctx.beginPath(); ctx.moveTo(16, 0); ctx.lineTo(-12, -12); ctx.lineTo(-12, 12); ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0; ctx.restore();
     }
   }
 
