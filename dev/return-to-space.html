@@ -899,14 +899,6 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn purple" onclick="if(typeof spawnShowAllCircle==='function')spawnShowAllCircle()">SPAWN WORMHOLES</button>
           <button class="dev-btn" onclick="if(typeof initObjects==='function')initObjects()">REINIT OBJECTS</button>
           <button class="dev-btn" onclick="if(typeof checkAllLevelsCollected==='function')checkAllLevelsCollected()">CHECK ALL COLLECTED</button>
-          <button class="dev-btn" onclick="if(state.penBarrier){state.penBarrier.opening=true;state.penBarrier.openTimer=0;state.editMissionComplete=true;}">OPEN PEN</button>
-        </div>
-        <div class="dev-row" style="margin-top:4px">
-          <button class="dev-btn" onclick="state.x=INTERZONE_RINGS[1];state.y=0;state.vx=0;state.vy=0;state._izRingMax=0;state.editMissionComplete=true;if(state.penBarrier)state.penBarrier.closed=false;">RING 2</button>
-          <button class="dev-btn" onclick="state.x=INTERZONE_RINGS[3];state.y=0;state.vx=0;state.vy=0;state._izRingMax=2;state.editMissionComplete=true;if(state.penBarrier)state.penBarrier.closed=false;">RING 4</button>
-          <button class="dev-btn" onclick="state.x=INTERZONE_RINGS[5];state.y=0;state.vx=0;state.vy=0;state._izRingMax=4;state.editMissionComplete=true;if(state.penBarrier)state.penBarrier.closed=false;">RING 6</button>
-          <button class="dev-btn" onclick="state.x=INTERZONE_RINGS[8];state.y=0;state.vx=0;state.vy=0;state._izRingMax=7;state.editMissionComplete=true;if(state.penBarrier)state.penBarrier.closed=false;">RING 9</button>
-          <button class="dev-btn" onclick="state.x=0;state.y=INTERZONE_RINGS[9]-50;state.vx=0;state.vy=2;state._izRingMax=8;state.editMissionComplete=true;if(state.penBarrier)state.penBarrier.closed=false;">PRE-RING10</button>
         </div>
       </div>
       <div class="dev-section">
@@ -1238,7 +1230,22 @@ function enterVictoryRoom(){}
 function updateMissionBriefing(){
   var mb = document.getElementById('mission-briefing');
   if(!mb) return;
-  mb.innerHTML = '<div style="color:#00ffcc;font-size:22px;letter-spacing:3px;margin-bottom:28px;text-shadow:0 0 18px #00ffcc;">MISSION LOG</div><div style="margin-top:28px;font-size:14px;color:#aaa;letter-spacing:2px;">[ PRESS ANY KEY TO CONTINUE ]</div>';
+  const scoopStatus = _scoopCollected ? '✓' : (_hasScoop ? '...' : '—');
+  const debrisPct = _debrisTotal > 0 ? Math.round((_debrisCaptured / _debrisTotal) * 100) : 0;
+  const debrisStatus = debrisPct >= 100 ? '✓' : (_hasScoop ? debrisPct + '%' : '—');
+  const marsStatus = (_marsSurface && _marsSurface.active) ? '✓' : (_debrisMilestones[3] ? '...' : '—');
+  const flagStatus = (_marsSurface && _marsSurface.flagPlanted) ? '✓' : '—';
+  const mStyle = 'font-size:10px;letter-spacing:2px;line-height:2.4;text-align:left;max-width:400px;margin:0 auto;';
+  const done = 'color:#00ff88;'; const active = 'color:#ffcc00;'; const locked = 'color:#556677;';
+  const s = (status) => status === '✓' ? done : status === '...' ? active : locked;
+  mb.innerHTML = '<div style="color:#00ffcc;font-size:18px;letter-spacing:3px;margin-bottom:24px;text-shadow:0 0 18px #00ffcc;">MISSION LOG</div>' +
+    '<div style="' + mStyle + '">' +
+    '<div style="' + s(scoopStatus) + '"><span style="opacity:0.5">[' + scoopStatus + ']</span> ACQUIRE DEBRIS SCOOP</div>' +
+    '<div style="' + s(debrisStatus) + '"><span style="opacity:0.5">[' + debrisStatus + ']</span> CLEAR ORBITAL DEBRIS FIELD</div>' +
+    '<div style="' + s(marsStatus) + '"><span style="opacity:0.5">[' + marsStatus + ']</span> FLY TO MARS</div>' +
+    '<div style="' + s(flagStatus) + '"><span style="opacity:0.5">[' + flagStatus + ']</span> PLANT FLAG ON MARS</div>' +
+    '</div>' +
+    '<div style="margin-top:28px;font-size:10px;color:#556677;letter-spacing:2px;">[ PRESS ANY KEY TO CONTINUE ]</div>';
 }
 function closeMissionBriefing(){
   var mb = document.getElementById('mission-briefing');
@@ -10690,12 +10697,12 @@ function spawnMarsRoute(){
 
 function devClearAllDebris(){
   if(!state.debrisWall) return;
-  const removed = state.debrisWall.filter(p => p.shape !== 9 && !p._captured);
-  _debrisCaptured += removed.length;
+  // Set captured to total so milestones trigger
+  _debrisCaptured = _debrisTotal;
+  // Remove all non-dot debris
   state.debrisWall = state.debrisWall.filter(p => p.shape === 9);
   checkDebrisMilestones();
   updateDebrisHUD();
-  state.zoneCrossFlash = { lvl:-3, timer:60, msg:'ALL DEBRIS CLEARED (DEV)', _col:'#00ff88' };
 }
 
 // Mars landing trigger
