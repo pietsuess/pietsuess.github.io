@@ -966,32 +966,12 @@ function collideCubeWalls(c, lv) {
     }
   }
 
-  // Platform collision — thick solid collision, same as walls
-  const PLAT_H = 20; // collision AND visual height
+  // Platform collision — use rotated rect for all platforms (more robust)
+  const PLAT_H = 20; // visual height
+  const PLAT_COL_H = Math.max(PLAT_H, half + 4); // collision height scales with cube size
   for (const p of lv.platforms) {
-    if (p.rot) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, p.rot);
-      continue;
-    }
-    const pCorners = getCubeCorners(c);
-    let hit = false;
-    for (const corner of pCorners) {
-      if (corner.x > p.x && corner.x < p.x + p.w && corner.y > p.y && corner.y < p.y + PLAT_H) {
-        const dl = corner.x - p.x, dr = p.x + p.w - corner.x;
-        const dt2 = corner.y - p.y, db = p.y + PLAT_H - corner.y;
-        const minD = Math.min(dl, dr, dt2, db);
-        let nx = 0, ny = 0;
-        if (minD === dt2) { c.y -= dt2; ny = -1; }
-        else if (minD === db) { c.y += db; ny = 1; }
-        else if (minD === dl) { c.x -= dl; nx = -1; }
-        else { c.x += dr; nx = 1; }
-        applyImpulse(c, corner.x, corner.y, nx, ny, B);
-        hit = true; break;
-      }
-    }
-    if (!hit) {
-      collideRotatedRect(c, half, B, p.x, p.y, p.w, PLAT_H, 0);
-    }
+    const colY = p.y - (PLAT_COL_H - PLAT_H) / 2; // center the taller collision box
+    collideRotatedRect(c, half, B, p.x, colY, p.w, PLAT_COL_H, p.rot || 0);
   }
 
   // Wall collision — use corners for proper square physics
