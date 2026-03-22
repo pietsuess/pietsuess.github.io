@@ -8758,6 +8758,32 @@ function drawGame(){
     }
   }
 
+  // "FLY TO MARS" hint — after debris cleared, persistent arrow toward Mars
+  if(_debrisMilestones[3] && !_marsLanding){
+    const _marsAng = Math.atan2(MARS_WY - state.y, MARS_WX - state.x);
+    const _marsDist = Math.sqrt((MARS_WX-state.x)**2 + (MARS_WY-state.y)**2);
+    if(_marsDist > MARS_R + 300){
+      const _mBounce = (Math.floor(state.frameCount / 21) % 2 === 0) ? 0 : 8;
+      const _mArrowR = 150;
+      ctx.save();
+      // Arrow
+      ctx.translate(cx + Math.cos(_marsAng) * (_mArrowR + _mBounce), cy + Math.sin(_marsAng) * (_mArrowR + _mBounce));
+      ctx.rotate(_marsAng);
+      ctx.fillStyle = '#ff8844'; ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 16 * SB;
+      ctx.globalAlpha = 0.7 + Math.sin(state.frameCount * 0.05) * 0.2;
+      ctx.beginPath(); ctx.moveTo(20, 0); ctx.lineTo(-16, -16); ctx.lineTo(-16, 16); ctx.closePath(); ctx.fill();
+      ctx.shadowBlur = 0; ctx.restore();
+      // Text
+      ctx.save();
+      ctx.globalAlpha = 0.6 + Math.sin(state.frameCount * 0.04) * 0.2;
+      ctx.fillStyle = '#ff8844'; ctx.shadowColor = '#ff8844'; ctx.shadowBlur = 10;
+      ctx.font = '12px "Press Start 2P",monospace'; _curFont='';
+      ctx.textAlign = 'center';
+      ctx.fillText('MARS', cx + Math.cos(_marsAng) * (_mArrowR + 50), cy + Math.sin(_marsAng) * (_mArrowR + 50) - 28);
+      ctx.shadowBlur = 0; ctx.restore();
+    }
+  }
+
   // Late-draw: Wave orb + Boost gem drawn on top of rocks (always visible)
   {
     // Wave orbs (late pass — draws over rocks, also visible in secret level)
@@ -10641,7 +10667,9 @@ function checkDebrisMilestones(){
       _debrisMilestones[i] = true;
       state.score += bonuses[i];
       document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-      state.zoneCrossFlash = { lvl:-3, timer:120, msg:msgs[i] + ' +' + bonuses[i], _col: i === 3 ? '#00ff88' : '#ffcc00' };
+      state.zoneCrossFlash = i === 3
+        ? { lvl:-3, timer:240, msg:'ORBIT CLEARED', sub:'MARS DETECTED ON RADAR', _col:'#ff8844' }
+        : { lvl:-3, timer:120, msg:msgs[i] + ' +' + bonuses[i], _col:'#ffcc00' };
       if(audioCtx && !state.sfxMuted){
         const t = audioCtx.currentTime;
         playBeep(660, t, 0.1, 'sine', 0.12);
