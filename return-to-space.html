@@ -1017,7 +1017,14 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     <span class="toggle-key-label" id="key-label-x">X</span>
   </div>
   <div id="hud-row2">
-    <div id="score-display">SCORE:<br><span id="score">000000</span></div>
+    <div id="score-display">SCORE:<br><span id="score">000000</span>
+      <div id="debris-hud" style="display:none; margin-top:6px; font-size:10px; color:#00ffcc; text-shadow:0 0 6px rgba(0,255,204,0.6); letter-spacing:1px;">
+        DEBRIS: <span id="debris-count">0</span> / <span id="debris-total">0</span>
+        <div style="margin-top:3px; height:4px; background:rgba(0,255,204,0.15); border:1px solid rgba(0,255,204,0.3); overflow:hidden;">
+          <div id="debris-bar" style="height:100%; background:#00ffcc; width:0%; transition:width 0.3s; box-shadow:0 0 6px #00ffcc;"></div>
+        </div>
+      </div>
+    </div>
     <div id="right-hud">
       <div id="hamburger" onclick="toggleMenu()"><span></span><span></span><span></span></div>
       <!-- Fullscreen toggle in HUD top-right (desktop) -->
@@ -8409,8 +8416,8 @@ function drawGame(){
   drawDebrisWall(ctx, cx, cy);
   drawScoopCollectible(ctx, cx, cy);
 
-  // Debris cleanup HUD
-  drawDebrisHUD(ctx);
+  // Debris cleanup HUD (DOM element, not canvas)
+  updateDebrisHUD();
   // Mars arrow after debris cleared
   drawMarsArrow(ctx, cx, cy);
 
@@ -10586,26 +10593,22 @@ function checkDebrisMilestones(){
   }
 }
 
-function drawDebrisHUD(ctx){
-  if(!_hasScoop || _debrisTotal <= 0) return;
-  ctx.save();
-  ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-  ctx.textAlign = 'right';
+function updateDebrisHUD(){
+  const el = document.getElementById('debris-hud');
+  if(!el) return;
+  if(!_hasScoop || _debrisTotal <= 0){
+    el.style.display = 'none';
+    return;
+  }
+  el.style.display = 'block';
   const pct = _debrisCaptured / _debrisTotal;
-  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
-  ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 6;
-  ctx.fillText('DEBRIS: ' + _debrisCaptured + ' / ' + _debrisTotal, ctx.canvas.width - 20, 30);
-  // Progress bar
-  ctx.shadowBlur = 0;
-  const barW = 120, barH = 4;
-  const barX = ctx.canvas.width - 20 - barW, barY = 36;
-  ctx.globalAlpha = 0.3;
-  ctx.fillStyle = '#334455';
-  ctx.fillRect(barX, barY, barW, barH);
-  ctx.globalAlpha = 0.8;
-  ctx.fillStyle = pct >= 1 ? '#00ff88' : '#00ffcc';
-  ctx.fillRect(barX, barY, barW * Math.min(1, pct), barH);
-  ctx.restore();
+  document.getElementById('debris-count').textContent = _debrisCaptured;
+  document.getElementById('debris-total').textContent = _debrisTotal;
+  document.getElementById('debris-bar').style.width = (Math.min(1, pct) * 100) + '%';
+  if(pct >= 1){
+    el.style.color = '#00ff88';
+    el.style.textShadow = '0 0 6px rgba(0,255,136,0.6)';
+  }
 }
 
 // Mars arrow — shown after 100% debris cleared
