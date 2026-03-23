@@ -10846,14 +10846,12 @@ function updateMarsLanding(){
 
 // ── MARS SURFACE SCENE ──────────────────────────────────────────
 var _marsSurface = null;
-
-// ── Mars surface — matches victory walk system exactly ──
+// ── Mars surface — HyperDrive Crystal hunt ──
 const _marsSprite = new Image();
 _marsSprite.src = 'https://arcade.pietsuess.com/pilot-game/spritesheet.png';
 const _marsShipImg = new Image();
 _marsShipImg.src = 'https://arcade.pietsuess.com/pilot-game/Victory-Background_DeltaWing.png';
 
-// Sprite constants — identical to victory walk
 const MS_FRAME_W = 300, MS_FRAME_H = 360;
 const MS_PILOT_H = 120, MS_PILOT_W = MS_PILOT_H * (300/360);
 const MS_ANIMS = {
@@ -10862,37 +10860,63 @@ const MS_ANIMS = {
   kneel: { row:1, start:0, count:8,  fps:12, loop:false },
   jump:  { row:2, frames:[0, 5,6,7,8,9,10,11,12,13], fps:20, loop:false },
 };
-// World — large flat Mars terrain
 const MS_WORLD_W = 8000;
 const MS_WORLD_H = 1200;
-const MS_VISIBLE_H = 300; // matches victory walk
-const MS_WALK_SPEED = 6; // matches victory
-const MS_JUMP_HEIGHT = 130; // Mars 0.38g = ~2.6x Earth jump
-const MS_JUMP_DURATION = 0.7; // slower arc for low gravity feel
-const MS_GROUND_TOP = 880; // walkable ground top (like TARMAC_TOP)
-const MS_GROUND_BOTTOM = 1050; // walkable ground bottom
+const MS_VISIBLE_H = 300;
+const MS_WALK_SPEED = 6;
+const MS_JUMP_HEIGHT = 130;
+const MS_JUMP_DURATION = 0.7;
+const MS_GROUND_TOP = 880;
+const MS_GROUND_BOTTOM = 1050;
 const MS_GROUND_LEFT = 40;
 const MS_GROUND_RIGHT = MS_WORLD_W - 40;
-const MS_SAMPLES_NEEDED = 25;
-const MS_SHIP_WX = 300; // ship world position
+const MS_CRYSTAL_COUNT = 25;
+const MS_SHIP_WX = 300;
 const MS_SHIP_WY = 940;
+const MS_SHIP_W = 660, MS_SHIP_H = 204;
+// Ship depth — pilot behind ship when pilot.y < ship depthY, in front when >=
+const MS_SHIP_DEPTH_Y = MS_SHIP_WY + 10;
+
+var _msPopupOpen = false;
+var _msFirstCrystal = true;
+var _msHasLightSpeed = false;
 
 function startMarsSurface(){
   state.paused = true;
+  const crystals = [];
+  for(let i = 0; i < MS_CRYSTAL_COUNT; i++){
+    const cx = 600 + Math.random() * (MS_WORLD_W - 1200);
+    const cy = MS_GROUND_TOP + 10 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 30);
+    crystals.push({
+      x: cx, y: cy,
+      vx: (Math.random() - 0.5) * 3,
+      vy: (Math.random() - 0.5) * 2,
+      rot: Math.random() * Math.PI * 2,
+      rotSpd: (Math.random() - 0.5) * 0.08,
+      sz: 10 + Math.random() * 6,
+      points: 8 + Math.floor(Math.random() * 5), // 8-12 points
+      spikePhase: Math.random() * Math.PI * 2,
+      collected: false,
+    });
+  }
+  const rocks = [];
+  for(let i = 0; i < 120; i++){
+    const rx = 60 + Math.random() * (MS_WORLD_W - 120);
+    const ry = MS_GROUND_TOP + 2 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 5);
+    rocks.push({ x: rx, y: ry, sz: 2 + Math.random() * 7, shape: Math.floor(Math.random() * 3), shade: 0.55 + Math.random() * 0.45 });
+  }
   _marsSurface = {
     active: true,
-    pilot: { x: MS_SHIP_WX + 200, y: MS_GROUND_TOP + 40, facing: 1, walking: false, jumpOffY: 0, jumpTime: 0, nearObj: null },
+    pilot: { x: MS_SHIP_WX + 350, y: MS_GROUND_TOP + 40, facing: 1, walking: false, jumpOffY: 0, jumpTime: 0, nearObj: null },
     anim: 'idle', frame: 0, animTimer: 0,
     camX: 0, camY: 0,
     timer: 0,
-    samplesCollected: 0,
-    _kneelPending: null,
+    crystalsCollected: 0,
+    crystals: crystals,
+    rocks: rocks,
     _jumpPressed: false,
-    platforms: generateMarsPlatforms(),
-    samples: null, // set below after platforms
-    rocks: generateMarsDecor(),
   };
-  _marsSurface.samples = generateMarsSamples(_marsSurface.platforms);
+  _msPopupOpen = false;
   canvas.style.cursor = 'none';
 }
 
@@ -10906,100 +10930,62 @@ function msTickAnim(dt){
   const a = MS_ANIMS[ms.anim]; if(!a) return;
   const count = a.frames ? a.frames.length : a.count;
   ms.animTimer += dt;
-  if(ms.animTimer >= 1/a.fps){ ms.animTimer = 0; ms.frame++; if(ms.frame >= count){ if(a.loop) ms.frame = 0; else ms.frame = count-1; } }
-}
-
-function generateMarsPlatforms(){
-  const plats = [];
-  const platX = [700,1200,1700,2200,2700,3300,3800,4400,5000,5600,6200,6800,7400];
-  for(const x of platX){
-    const w = 140 + Math.random()*100;
-    const y = MS_GROUND_TOP - 45 - Math.random()*25;
-    plats.push({ x, y, w, h: 12 });
-  }
-  return plats;
-}
-
-function generateMarsSamples(platforms){
-  const samples = [];
-  // Ground-level samples (easy)
-  const groundX = [600,1000,1500,2000,2600,3100,3700,4200,4800,5400,6000,6600];
-  for(const x of groundX){
-    const y = MS_GROUND_TOP + 10 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 30);
-    samples.push({ x, y, collected: false, sz: 7 + Math.random()*4, elevated: false });
-  }
-  // Elevated samples — placed ON platforms so they're reachable via jump
-  for(const plat of platforms){
-    const sx = plat.x + 30 + Math.random() * (plat.w - 60);
-    samples.push({ x: sx, y: plat.y - 4, collected: false, sz: 6+Math.random()*3, elevated: true });
-  }
-  return samples;
-}
-
-function generateMarsDecor(){
-  const rocks = [];
-  for(let i=0; i<100; i++){
-    const x = 60 + Math.random() * (MS_WORLD_W - 120);
-    const y = MS_GROUND_TOP + 5 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 10);
-    rocks.push({ x, y, sz: 2+Math.random()*5, shape: Math.floor(Math.random()*3), shade: 0.65+Math.random()*0.35 });
-  }
-  return rocks;
+  if(ms.animTimer >= 1/a.fps){ ms.animTimer = 0; ms.frame++; if(ms.frame >= count){ if(a.loop) ms.frame = 0; else ms.frame = count - 1; } }
 }
 
 function updateMarsSurface(){
   if(!_marsSurface || !_marsSurface.active) return;
+  if(_msPopupOpen) return; // freeze while popup open
   const ms = _marsSurface;
   const p = ms.pilot;
   const dt = 1/60;
   ms.timer++;
 
-  // Kneel completion
-  if(ms.anim === 'kneel'){
-    msTickAnim(dt);
-    if(ms.frame >= MS_ANIMS.kneel.count - 1){
-      if(ms._kneelPending !== null){
-        if(ms._kneelPending === 'ship'){
-          _marsSurface.active = false;
-          _marsLanding = false; _marsLandingTimer = 0;
-          state.paused = false;
-          state.x = MARS_WX + MARS_R + 200; state.y = MARS_WY;
-          state.vx = 0; state.vy = 0;
-          state.fuel = 1.0; updateFuelBar();
-          state.zoneCrossFlash = { lvl:-3, timer:120, msg:'RETURNED TO ORBIT', _col:'#00ffcc' };
-          ms._kneelPending = null;
-          return;
-        }
-        const sample = ms.samples[ms._kneelPending];
-        if(sample && !sample.collected){
-          sample.collected = true;
-          ms.samplesCollected++;
-          state.score += 2000;
-          document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-          state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SAMPLE ' + ms.samplesCollected + ' / ' + MS_SAMPLES_NEEDED, _col:'#ff8844' };
-          if(audioCtx && !state.sfxMuted){
-            const t = audioCtx.currentTime;
-            playBeep(400+ms.samplesCollected*30, t, 0.08, 'sine', 0.10);
-            playBeep(600+ms.samplesCollected*30, t+0.06, 0.1, 'sine', 0.08);
-          }
-          if(ms.samplesCollected >= MS_SAMPLES_NEEDED){
-            state.score += 10000;
-            document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-            state.zoneCrossFlash = { lvl:-3, timer:240, msg:'ALL SAMPLES COLLECTED', sub:'MARS MISSION COMPLETE', _col:'#00ff88' };
-            if(audioCtx && !state.sfxMuted){
-              const t2 = audioCtx.currentTime;
-              playBeep(660, t2, 0.1, 'sine', 0.12); playBeep(880, t2+0.12, 0.1, 'sine', 0.12);
-              playBeep(1100, t2+0.24, 0.15, 'sine', 0.14); playBeep(1320, t2+0.38, 0.2, 'sine', 0.1);
-            }
-          }
-        }
-        ms._kneelPending = null;
+  // Crystal physics — bounce around surface
+  for(const c of ms.crystals){
+    if(c.collected) continue;
+    c.x += c.vx; c.y += c.vy;
+    c.rot += c.rotSpd;
+    c.spikePhase += 0.05;
+    // Bounce off ground boundaries
+    if(c.x < MS_GROUND_LEFT + 20){ c.x = MS_GROUND_LEFT + 20; c.vx = Math.abs(c.vx) * 0.9; }
+    if(c.x > MS_GROUND_RIGHT - 20){ c.x = MS_GROUND_RIGHT - 20; c.vx = -Math.abs(c.vx) * 0.9; }
+    if(c.y < MS_GROUND_TOP + 5){ c.y = MS_GROUND_TOP + 5; c.vy = Math.abs(c.vy) * 0.9; }
+    if(c.y > MS_GROUND_BOTTOM - 5){ c.y = MS_GROUND_BOTTOM - 5; c.vy = -Math.abs(c.vy) * 0.9; }
+    // Random direction changes
+    if(Math.random() < 0.01){ c.vx += (Math.random() - 0.5) * 1.5; c.vy += (Math.random() - 0.5) * 1.0; }
+    // Speed clamp
+    const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+    if(spd > 3){ c.vx *= 3/spd; c.vy *= 3/spd; }
+    if(spd < 0.5){ c.vx += (Math.random()-0.5)*0.8; c.vy += (Math.random()-0.5)*0.5; }
+
+    // Collision with pilot
+    const dx = p.x - c.x, dy = (p.y - 40) - c.y; // pilot center approx
+    const dist = Math.sqrt(dx*dx + dy*dy);
+    if(dist < c.sz + 25){
+      c.collected = true;
+      ms.crystalsCollected++;
+      state.score += 2000;
+      document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+      if(audioCtx && !state.sfxMuted){
+        const t = audioCtx.currentTime;
+        playBeep(600 + ms.crystalsCollected * 20, t, 0.06, 'sine', 0.10);
+        playBeep(900 + ms.crystalsCollected * 20, t + 0.05, 0.08, 'sine', 0.08);
       }
-      msSetAnim('idle');
+      // First crystal popup
+      if(_msFirstCrystal && ms.crystalsCollected === 1){
+        _msFirstCrystal = false;
+        msShowPopup('HYPERDRIVE ENERGY CRYSTAL',
+          '<div style="color:#ff69b4;font-size:10px;line-height:2.2;letter-spacing:1px;margin:16px 0;">' +
+          'You found a HyperDrive Energy Crystal!<br><br>' +
+          'Collect them all to power the ship\'s<br>HyperDrive for Light Speed travel.<br><br>' +
+          '<span style="color:#888;font-size:8px;">They move fast. Stay sharp.</span></div>',
+          '#ff69b4');
+      }
     }
-    return;
   }
 
-  // Jump arc (Mars 0.38g)
+  // Jump arc
   if(ms.anim === 'jump'){
     p.jumpTime += dt;
     const jt = Math.min(p.jumpTime / MS_JUMP_DURATION, 1);
@@ -11007,7 +10993,7 @@ function updateMarsSurface(){
     if(jt >= 1){ p.jumpOffY = 0; p.jumpTime = 0; msSetAnim('idle'); }
   }
 
-  // Movement — matches victory walk: all 4 directions, block during kneel
+  // Movement
   p.walking = false;
   const isJumping = ms._jumpPressed;
   ms._jumpPressed = false;
@@ -11018,26 +11004,19 @@ function updateMarsSurface(){
     if(state.keys['ArrowUp']){ p.y -= MS_WALK_SPEED; p.walking = true; }
     if(state.keys['ArrowDown']){ p.y += MS_WALK_SPEED; p.walking = true; }
   }
-
-  // Clamp to walkable ground area
   p.x = Math.max(MS_GROUND_LEFT, Math.min(MS_GROUND_RIGHT, p.x));
   p.y = Math.max(MS_GROUND_TOP, Math.min(MS_GROUND_BOTTOM, p.y));
 
-  // Nearest interactable
+  // Near ship check
   p.nearObj = null;
-  const shipDx = p.x - (MS_SHIP_WX + 110), shipDy = p.y - (MS_SHIP_WY + 20);
-  if(Math.sqrt(shipDx*shipDx + shipDy*shipDy) < 80) p.nearObj = 'ship';
-  if(!p.nearObj){
-    for(let i=0; i<ms.samples.length; i++){
-      const s = ms.samples[i]; if(s.collected) continue;
-      const dx = p.x-s.x, dy = p.y-s.y;
-      if(Math.sqrt(dx*dx+dy*dy) < 50){ p.nearObj = i; break; }
-    }
-  }
+  const shipCx = MS_SHIP_WX + MS_SHIP_W/2, shipCy = MS_SHIP_WY;
+  const sdx = p.x - shipCx, sdy = p.y - shipCy;
+  if(Math.abs(sdx) < MS_SHIP_W/2 + 30 && Math.abs(sdy) < 60) p.nearObj = 'ship';
 
-  // Animation state machine — matches victory exactly
+  // Animation state machine
   if(ms.anim === 'kneel'){
-    // handled above
+    msTickAnim(dt);
+    if(ms.frame >= MS_ANIMS.kneel.count - 1) msSetAnim('idle');
   } else if(isJumping && ms.anim !== 'jump'){
     msSetAnim('jump'); p.jumpTime = 0;
   } else if(ms.anim === 'jump'){
@@ -11049,7 +11028,7 @@ function updateMarsSurface(){
   }
   msTickAnim(dt);
 
-  // Camera — matches victory exactly
+  // Camera
   const mainScale = canvas.height / MS_VISIBLE_H;
   const vww = canvas.width / mainScale;
   ms.camX = p.x - vww/2;
@@ -11060,16 +11039,90 @@ function updateMarsSurface(){
   if(ms.camY > MS_WORLD_H - MS_VISIBLE_H) ms.camY = MS_WORLD_H - MS_VISIBLE_H;
 }
 
-// Space key for Mars surface — kneel near object or jump (matches victory pattern)
 function marsHandleSpace(){
   if(!_marsSurface || !_marsSurface.active) return;
+  if(_msPopupOpen){ msClosePopup(); return; }
   const ms = _marsSurface;
-  if(ms.anim === 'kneel') return;
-  if(ms.pilot.nearObj !== null){
-    ms._kneelPending = ms.pilot.nearObj;
-    msSetAnim('kneel');
+  if(ms.pilot.nearObj === 'ship'){
+    // Ship interaction — show crystal meter popup
+    const pct = ms.crystalsCollected / MS_CRYSTAL_COUNT;
+    const full = pct >= 1;
+    const barColor = full ? '#00ff88' : '#ff69b4';
+    const meterHTML =
+      '<div style="margin:16px 0 12px;">' +
+        '<div style="color:#aaa;font-size:8px;letter-spacing:2px;margin-bottom:8px;">HYPERDRIVE CRYSTAL METER</div>' +
+        '<div style="border:2px solid ' + barColor + ';height:18px;background:rgba(0,0,0,0.6);overflow:hidden;box-shadow:0 0 10px ' + barColor + '40;">' +
+          '<div style="height:100%;width:' + (pct*100) + '%;background:' + barColor + ';box-shadow:0 0 12px ' + barColor + ';transition:width 0.3s;"></div>' +
+        '</div>' +
+        '<div style="color:' + barColor + ';font-size:9px;margin-top:8px;letter-spacing:1px;">' + ms.crystalsCollected + ' / ' + MS_CRYSTAL_COUNT + ' CRYSTALS</div>' +
+      '</div>';
+    if(full){
+      msShowPopup('DELTA WING',
+        meterHTML +
+        '<div style="color:#00ff88;font-size:10px;letter-spacing:2px;margin:12px 0;">HYPERDRIVE READY</div>' +
+        '<button id="ms-launch-btn" onclick="msLaunchFromMars()" style="' +
+          'background:none;border:2px solid #00ffcc;color:#00ffcc;' +
+          'font-family:\'Press Start 2P\',monospace;font-size:9px;' +
+          'padding:16px 32px;cursor:pointer;letter-spacing:2px;' +
+          'text-shadow:0 0 10px #00ffcc;margin-top:8px;' +
+        '">[ RETURN TO SPACE ]</button>',
+        '#00ffcc');
+    } else {
+      msShowPopup('DELTA WING',
+        meterHTML +
+        '<div style="color:#ff6644;font-size:9px;letter-spacing:2px;margin:8px 0;">CRYSTALS INSUFFICIENT</div>' +
+        '<div style="color:#666;font-size:8px;margin-top:4px;">Collect more crystals to power the HyperDrive.</div>',
+        '#ff69b4');
+    }
   } else {
     ms._jumpPressed = true;
+  }
+}
+
+function msShowPopup(title, bodyHTML, color){
+  _msPopupOpen = true;
+  let popup = document.getElementById('ms-popup');
+  if(!popup){
+    popup = document.createElement('div');
+    popup.id = 'ms-popup';
+    popup.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;z-index:500;display:flex;align-items:center;justify-content:center;background:rgba(0,0,0,0.7);';
+    popup.addEventListener('click', function(e){ if(e.target === popup) msClosePopup(); });
+    document.body.appendChild(popup);
+  }
+  popup.style.display = 'flex';
+  popup.innerHTML =
+    '<div style="' +
+      'background:rgba(10,10,20,0.95);border:2px solid ' + color + ';' +
+      'box-shadow:0 0 40px ' + color + ',inset 0 0 20px rgba(0,0,0,0.5);' +
+      'padding:28px 36px;max-width:420px;text-align:center;' +
+      'font-family:\'Press Start 2P\',monospace;border-radius:4px;' +
+    '">' +
+      '<div style="color:' + color + ';font-size:12px;letter-spacing:3px;margin-bottom:8px;text-shadow:0 0 12px ' + color + ';">' + title + '</div>' +
+      bodyHTML +
+      '<div style="color:#555;font-size:7px;margin-top:16px;letter-spacing:1px;">[ PRESS SPACE TO CLOSE ]</div>' +
+    '</div>';
+}
+
+function msClosePopup(){
+  _msPopupOpen = false;
+  const popup = document.getElementById('ms-popup');
+  if(popup) popup.style.display = 'none';
+}
+
+function msLaunchFromMars(){
+  msClosePopup();
+  _marsSurface.active = false;
+  _marsLanding = false; _marsLandingTimer = 0;
+  state.paused = false;
+  state.x = MARS_WX + MARS_R + 200; state.y = MARS_WY;
+  state.vx = 0; state.vy = 0;
+  state.fuel = 1.0; updateFuelBar();
+  _msHasLightSpeed = true;
+  state.zoneCrossFlash = { lvl:-3, timer:180, msg:'HYPERDRIVE ONLINE', sub:'LIGHT SPEED AVAILABLE', _col:'#ff69b4' };
+  if(audioCtx && !state.sfxMuted){
+    const t = audioCtx.currentTime;
+    playBeep(440, t, 0.1, 'sine', 0.12); playBeep(660, t+0.15, 0.1, 'sine', 0.12);
+    playBeep(880, t+0.3, 0.15, 'sine', 0.14); playBeep(1320, t+0.5, 0.25, 'sine', 0.1);
   }
 }
 
@@ -11080,7 +11133,7 @@ function drawMarsSurface(ctx){
   const mainScale = H / MS_VISIBLE_H;
   const p = ms.pilot;
 
-  // Sky gradient
+  // Sky
   const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
   skyGrad.addColorStop(0, '#2a1008');
   skyGrad.addColorStop(0.25, '#5a2818');
@@ -11090,164 +11143,98 @@ function drawMarsSurface(ctx){
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, W, H);
 
-  // World transform — matches victory: scale then translate
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.scale(mainScale, mainScale);
   ctx.translate(-ms.camX, -ms.camY);
 
-  // Distant mountains (parallax 0.15x)
+  // Mountains (parallax)
   {
     const mOfs = -ms.camX * 0.85;
     const mBase = MS_GROUND_TOP - 80;
     ctx.fillStyle = '#4a2018';
     ctx.beginPath();
     ctx.moveTo(ms.camX + mOfs - 100, mBase);
-    for(let x = 0; x < W/mainScale + 400; x += 60){
-      const mh = 20 + Math.sin(x*0.006+1)*40 + Math.sin(x*0.002)*25;
+    for(let x = 0; x < W/mainScale + 400; x += 50){
+      const mh = 15 + Math.sin(x*0.005+1)*35 + Math.sin(x*0.002)*20 + Math.sin(x*0.013)*10;
       ctx.lineTo(ms.camX + mOfs + x, mBase - mh);
     }
     ctx.lineTo(ms.camX + mOfs + W/mainScale + 400, mBase);
     ctx.closePath(); ctx.fill();
-    // Olympus Mons silhouette
-    const omSx = 4000 + mOfs;
-    ctx.fillStyle = '#5a2a18';
-    ctx.beginPath();
-    ctx.moveTo(ms.camX + omSx - 300, mBase);
-    ctx.quadraticCurveTo(ms.camX + omSx, mBase - 120, ms.camX + omSx + 300, mBase);
-    ctx.closePath(); ctx.fill();
-    // Nuclear reactor in distance (parallax with mountains)
-    const nrX = ms.camX + 6000 + mOfs;
-    // Cooling tower
-    ctx.fillStyle = '#556060';
-    ctx.beginPath();
-    ctx.moveTo(nrX - 20, mBase); ctx.lineTo(nrX - 14, mBase - 55);
-    ctx.lineTo(nrX + 14, mBase - 55); ctx.lineTo(nrX + 20, mBase);
-    ctx.closePath(); ctx.fill();
-    // Reactor dome
-    ctx.fillStyle = '#667070';
-    ctx.beginPath(); ctx.arc(nrX, mBase - 55, 16, Math.PI, 0); ctx.fill();
-    // Steam/heat shimmer
-    ctx.globalAlpha = 0.3 + Math.sin(ms.timer * 0.04) * 0.15;
-    ctx.fillStyle = '#aabbbb';
-    ctx.beginPath(); ctx.arc(nrX, mBase - 78, 8 + Math.sin(ms.timer*0.06)*3, 0, Math.PI*2); ctx.fill();
-    ctx.globalAlpha = 1;
-    // Warning light
-    ctx.fillStyle = (Math.floor(ms.timer/30) % 2) ? '#ff4444' : '#661111';
-    ctx.beginPath(); ctx.arc(nrX, mBase - 72, 2, 0, Math.PI*2); ctx.fill();
   }
 
-  // Ground plane — flat like victory tarmac
+  // Ground — craggy flat surface
   const gndGrad = ctx.createLinearGradient(0, MS_GROUND_TOP, 0, MS_WORLD_H);
-  gndGrad.addColorStop(0, '#a05030');
-  gndGrad.addColorStop(0.15, '#8a4028');
-  gndGrad.addColorStop(0.5, '#7a3520');
-  gndGrad.addColorStop(1, '#5a2818');
+  gndGrad.addColorStop(0, '#8a4530');
+  gndGrad.addColorStop(0.08, '#7a3a28');
+  gndGrad.addColorStop(0.4, '#6a3020');
+  gndGrad.addColorStop(1, '#4a2015');
   ctx.fillStyle = gndGrad;
   ctx.fillRect(0, MS_GROUND_TOP, MS_WORLD_W, MS_WORLD_H - MS_GROUND_TOP);
 
-  // Platforms (elevated ledges for jump-access samples)
-  for(const plat of ms.platforms){
-    ctx.fillStyle = '#8a5038';
-    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
-    ctx.fillStyle = '#6a3828';
-    ctx.fillRect(plat.x, plat.y + plat.h, plat.w, MS_GROUND_TOP - plat.y - plat.h);
-    ctx.fillStyle = '#b06848';
-    ctx.fillRect(plat.x, plat.y, plat.w, 3);
+  // Craggy surface texture lines
+  ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 1;
+  for(let i = 0; i < 60; i++){
+    const lx = i * 140 + 20;
+    const ly = MS_GROUND_TOP + 3;
+    ctx.beginPath();
+    ctx.moveTo(lx, ly);
+    for(let s = 0; s < 120; s += 8){
+      ctx.lineTo(lx + s + (Math.sin(s*0.3+i)*4), ly + Math.sin(s*0.15+i*2)*3);
+    }
+    ctx.stroke();
   }
 
   // Decorative rocks
   for(const rock of ms.rocks){
-    ctx.fillStyle = `rgb(${Math.round(110*rock.shade)},${Math.round(55*rock.shade)},${Math.round(35*rock.shade)})`;
+    ctx.fillStyle = `rgb(${Math.round(100*rock.shade)},${Math.round(50*rock.shade)},${Math.round(32*rock.shade)})`;
     ctx.beginPath();
     if(rock.shape === 0) ctx.arc(rock.x, rock.y, rock.sz, 0, Math.PI*2);
-    else if(rock.shape === 1){ ctx.moveTo(rock.x-rock.sz, rock.y); ctx.lineTo(rock.x, rock.y-rock.sz*1.3); ctx.lineTo(rock.x+rock.sz, rock.y); }
-    else ctx.rect(rock.x-rock.sz*0.7, rock.y-rock.sz*0.5, rock.sz*1.4, rock.sz*0.5);
+    else if(rock.shape === 1){ ctx.moveTo(rock.x-rock.sz, rock.y); ctx.lineTo(rock.x, rock.y-rock.sz*1.4); ctx.lineTo(rock.x+rock.sz, rock.y); }
+    else ctx.rect(rock.x-rock.sz*0.8, rock.y-rock.sz*0.4, rock.sz*1.6, rock.sz*0.4);
     ctx.fill();
   }
 
-  // Samples — glowing collectible rocks
-  for(const s of ms.samples){
-    if(s.collected) continue;
-    const pulse = 0.6 + Math.sin(ms.timer*0.06 + s.x*0.01)*0.3;
+  // Depth sorting: determine if pilot is behind or in front of ship
+  const pilotBehindShip = p.y < MS_SHIP_DEPTH_Y;
+
+  // Draw ship BEHIND pilot if pilot is in front
+  if(!pilotBehindShip && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
+    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY - MS_SHIP_H + 60, MS_SHIP_W, MS_SHIP_H);
+  }
+
+  // Crystals — bright pink multi-pointed stars with spike animation
+  for(const c of ms.crystals){
+    if(c.collected) continue;
+    const pulse = 0.7 + Math.sin(ms.timer * 0.08 + c.x * 0.01) * 0.3;
     ctx.save();
-    ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 10*pulse;
-    ctx.fillStyle = '#c4964a';
-    ctx.beginPath(); ctx.arc(s.x, s.y, s.sz, 0, Math.PI*2); ctx.fill();
-    ctx.fillStyle = '#dab06a';
-    ctx.beginPath(); ctx.arc(s.x-s.sz*0.2, s.y-s.sz*0.4, s.sz*0.4, 0, Math.PI*2); ctx.fill();
+    ctx.translate(c.x, c.y);
+    ctx.rotate(c.rot);
+    ctx.shadowColor = '#ff69b4'; ctx.shadowBlur = 18 * pulse;
+    ctx.fillStyle = '#ff69b4';
+    ctx.globalAlpha = 0.85 + pulse * 0.15;
+    // Multi-pointed star with animated spikes
+    ctx.beginPath();
+    const pts = c.points;
+    for(let i = 0; i < pts * 2; i++){
+      const ang = (i / (pts * 2)) * Math.PI * 2;
+      const isOuter = i % 2 === 0;
+      const spikeAnim = isOuter ? 1 + Math.sin(c.spikePhase + i * 0.7) * 0.25 : 1;
+      const r = isOuter ? c.sz * spikeAnim : c.sz * 0.4;
+      const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
+      if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+    ctx.fill();
+    // Inner bright core
+    ctx.globalAlpha = 0.6;
+    ctx.fillStyle = '#ffaacc';
+    ctx.beginPath(); ctx.arc(0, 0, c.sz * 0.3, 0, Math.PI * 2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.restore();
   }
 
-  // Mars outpost structures — greenhouses and hab modules
-  {
-    const outposts = [
-      { x: 1600, type: 'greenhouse' },
-      { x: 3500, type: 'greenhouse' },
-      { x: 5800, type: 'greenhouse' },
-      { x: 2400, type: 'hab' },
-      { x: 4800, type: 'hab' },
-      { x: 7000, type: 'hab' },
-      { x: 3000, type: 'solar' },
-      { x: 6400, type: 'solar' },
-    ];
-    for(const op of outposts){
-      const oy = MS_GROUND_TOP;
-      if(op.type === 'greenhouse'){
-        // White dome greenhouse
-        ctx.fillStyle = 'rgba(240,245,240,0.85)';
-        ctx.beginPath(); ctx.ellipse(op.x, oy, 50, 28, 0, Math.PI, 0); ctx.fill();
-        // Frame lines
-        ctx.strokeStyle = 'rgba(200,210,200,0.6)'; ctx.lineWidth = 1;
-        for(let i = -40; i <= 40; i += 16){
-          ctx.beginPath(); ctx.moveTo(op.x + i, oy);
-          const h = 28 * Math.sqrt(1 - (i/50)*(i/50));
-          ctx.lineTo(op.x + i, oy - h); ctx.stroke();
-        }
-        // Green inside glow
-        ctx.fillStyle = 'rgba(80,180,80,0.2)';
-        ctx.beginPath(); ctx.ellipse(op.x, oy - 2, 40, 20, 0, Math.PI, 0); ctx.fill();
-      } else if(op.type === 'hab'){
-        // Cylindrical hab module
-        ctx.fillStyle = '#d0d0d0';
-        ctx.fillRect(op.x - 30, oy - 30, 60, 30);
-        // Rounded top
-        ctx.beginPath(); ctx.ellipse(op.x, oy - 30, 30, 8, 0, Math.PI, 0); ctx.fill();
-        // Window
-        ctx.fillStyle = '#4488aa';
-        ctx.fillRect(op.x - 8, oy - 22, 16, 10);
-        // Door
-        ctx.fillStyle = '#888888';
-        ctx.fillRect(op.x - 6, oy - 16, 12, 16);
-      } else if(op.type === 'solar'){
-        // Solar panel array
-        ctx.fillStyle = '#334466';
-        ctx.save();
-        ctx.translate(op.x, oy);
-        // Pole
-        ctx.fillStyle = '#888888';
-        ctx.fillRect(-2, -35, 4, 35);
-        // Panel
-        ctx.fillStyle = '#223355';
-        ctx.fillRect(-25, -40, 50, 12);
-        // Grid lines
-        ctx.strokeStyle = '#445577'; ctx.lineWidth = 0.5;
-        for(let i = -20; i <= 20; i += 8){
-          ctx.beginPath(); ctx.moveTo(i, -40); ctx.lineTo(i, -28); ctx.stroke();
-        }
-        ctx.restore();
-      }
-    }
-  }
-
-  // Landed Delta Wing ship
-  if(_marsShipImg.complete && _marsShipImg.naturalWidth > 0){
-    const sw = 660, sh = 204;
-    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY - sh + 60, sw, sh);
-  }
-
-  // Pilot — drawn at feet anchor, matches victory exactly
+  // Pilot sprite
   if(_marsSprite.complete && _marsSprite.naturalWidth > 0){
     const a = MS_ANIMS[ms.anim];
     const col = a.frames ? a.frames[ms.frame] : (a.start + ms.frame);
@@ -11262,26 +11249,31 @@ function drawMarsSurface(ctx){
     ctx.restore();
   }
 
+  // Draw ship IN FRONT of pilot if pilot is behind
+  if(pilotBehindShip && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
+    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY - MS_SHIP_H + 60, MS_SHIP_W, MS_SHIP_H);
+  }
+
   ctx.restore(); // end world transform
 
-  // Interaction prompt
-  if(p.nearObj !== null && ms.anim !== 'kneel'){
+  // Atmospheric haze — murky overlay at top of screen
+  const hazeGrad = ctx.createLinearGradient(0, 0, 0, H);
+  hazeGrad.addColorStop(0, 'rgba(160,80,50,0.35)');
+  hazeGrad.addColorStop(0.3, 'rgba(140,70,40,0.15)');
+  hazeGrad.addColorStop(0.5, 'rgba(120,60,35,0.05)');
+  hazeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = hazeGrad;
+  ctx.fillRect(0, 0, W, H);
+
+  // Ship interaction prompt
+  if(p.nearObj === 'ship' && !_msPopupOpen){
     ctx.save();
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center';
     ctx.fillStyle = '#ffcc44'; ctx.globalAlpha = 0.7 + Math.sin(ms.timer*0.06)*0.2;
-    const label = p.nearObj === 'ship' ? 'PRESS SPACE - RETURN TO SHIP' : 'PRESS SPACE - COLLECT SAMPLE';
-    ctx.fillText(label, W/2, H - 30);
+    ctx.fillText('PRESS SPACE', W/2, H - 30);
     ctx.restore();
   }
-
-  // HUD — sample count
-  ctx.save();
-  ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#ff8844'; ctx.globalAlpha = 0.7;
-  ctx.fillText('SAMPLES: ' + ms.samplesCollected + ' / ' + MS_SAMPLES_NEEDED, 16, 24);
-  ctx.restore();
 
   // Zone cross flash
   if(state.zoneCrossFlash && state.zoneCrossFlash.timer > 0){
