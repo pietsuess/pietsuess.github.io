@@ -164,13 +164,12 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     font-size: 11px; color: #888; font-family: monospace;
 }
 
-/* Play mode: hide editor, canvas full width */
-body.play-mode #shortcuts,
-body.play-mode #panel,
-body.play-mode #panel-resize,
-body.play-mode #mode-bar,
+/* Play mode: hide editor panels with visibility so they stay in DOM and layout */
+body.play-mode #shortcuts { visibility: hidden; width: 0 !important; padding: 0 !important; border: none !important; overflow: hidden; }
+body.play-mode #panel { visibility: hidden; width: 0 !important; overflow: hidden; }
+body.play-mode #panel-resize { visibility: hidden; width: 0 !important; }
+body.play-mode #mode-bar { display: none !important; }
 body.play-mode #info-bar { display: none !important; }
-body.play-mode #canvas-wrap { width: 100% !important; flex-basis: auto !important; }
 
 /* ====== PLAY MODE HUD (Navigator style) ====== */
 .play-hud { display: none; }
@@ -1347,10 +1346,8 @@ function setMode(m) {
     // Hide/show editor panels using a class on body
     document.body.classList.toggle('play-mode', m === 'play');
     if (m === 'edit') {
-        // Clear ALL inline styles on canvas-wrap and panel to restore CSS defaults
-        document.getElementById('canvas-wrap').removeAttribute('style');
-        document.getElementById('panel').removeAttribute('style');
-        document.getElementById('panel-resize').removeAttribute('style');
+        // Redraw tileset after panel is visible again
+        setTimeout(() => { drawTilePicker(); canvasW = 0; canvasH = 0; }, 50);
     }
     // Force canvas resize
     canvasW = 0; canvasH = 0;
@@ -2566,44 +2563,45 @@ function playFrame(dt) {
 
     // Pushable group gravity -- groups fall when unsupported
     for (const g of pushGroups) {
-        // Find bottom edge cells and check if ANY has solid ground directly below
+        // Check ALL bottom-edge cells for solid ground below
         let onGround = false;
-        for (const c of g.cells) {
-            const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
-            if (hasBelow) continue;
-            // Check 2px below the bottom of this cell
+        const bottomCells = g.cells.filter(c =>
+            !g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1)
+        );
+        for (const c of bottomCells) {
             const wx = c.tx * T + g.offsetX;
-            const botY = c.ty * T + g.offsetY + T + 1;
-            const checkTy = Math.floor(botY / T);
-            const txC = Math.floor((wx + T / 2) / T);
-            const txL = Math.floor(wx / T);
-            const txR = Math.floor((wx + T - 1) / T);
-            if (isSolid(txC, checkTy) || isSolid(txL, checkTy) || isSolid(txR, checkTy)) {
-                // Snap: align bottom of group cell to top of solid tile
-                const snapY = checkTy * T - (c.ty + 1) * T;
-                if (Math.abs(g.offsetY - snapY) < 8) {
-                    g.offsetY = snapY;
+            const botY = c.ty * T + g.offsetY + T;
+            // Check the tile row right at the bottom edge
+            const checkTy = Math.floor((botY + 0.5) / T);
+            // Check multiple x positions across the cell
+            for (let dx = 0; dx < T; dx += 4) {
+                const checkTx = Math.floor((wx + dx) / T);
+                if (isSolid(checkTx, checkTy)) {
                     onGround = true;
+                    // Snap to grid
+                    const snapY = checkTy * T - (c.ty + 1) * T;
+                    g.offsetY = snapY;
                     break;
                 }
             }
+            if (onGround) break;
         }
         if (!onGround) {
-            g.offsetY += GRAV * dt * 0.5;
-            // Check for landing
-            for (const c of g.cells) {
-                const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
-                if (hasBelow) continue;
+            g.offsetY += GRAV * dt;
+            // Land check
+            for (const c of bottomCells) {
                 const wx = c.tx * T + g.offsetX;
                 const botY = c.ty * T + g.offsetY + T;
                 const checkTy = Math.floor(botY / T);
-                const txC = Math.floor((wx + T / 2) / T);
-                const txL = Math.floor(wx / T);
-                const txR = Math.floor((wx + T - 1) / T);
-                if (isSolid(txC, checkTy) || isSolid(txL, checkTy) || isSolid(txR, checkTy)) {
-                    g.offsetY = checkTy * T - (c.ty + 1) * T;
-                    break;
+                for (let dx = 0; dx < T; dx += 4) {
+                    const checkTx = Math.floor((wx + dx) / T);
+                    if (isSolid(checkTx, checkTy)) {
+                        g.offsetY = checkTy * T - (c.ty + 1) * T;
+                        onGround = true;
+                        break;
+                    }
                 }
+                if (onGround) break;
             }
         }
     }
