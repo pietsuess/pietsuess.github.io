@@ -3270,6 +3270,8 @@ window.addEventListener('keydown',e=>{
     // Don't intercept space if user is typing in a text field
     const activeTag=(document.activeElement||{}).tagName;
     if(!['INPUT','TEXTAREA','SELECT'].includes(activeTag)) e.preventDefault();
+    // Mars surface space handler
+    if(_marsSurface && _marsSurface.active){ marsHandleSpace(); return; }
     if(!state.paused&&!state.gameOver&&state.fuel>0&&!['INPUT','TEXTAREA','SELECT'].includes(activeTag)){
       if(state.cheat==='bubbles'){
         // Boost while in bubble mode — inflate while held, pop at threshold
@@ -10831,124 +10833,102 @@ function updateMarsLanding(){
 // ── MARS SURFACE SCENE ──────────────────────────────────────────
 var _marsSurface = null;
 
-// ── Mars surface sprite system (uses victory walk spritesheet) ──
+// ── Mars surface — matches victory walk system exactly ──
 const _marsSprite = new Image();
 _marsSprite.src = 'https://arcade.pietsuess.com/pilot-game/spritesheet.png';
 const _marsShipImg = new Image();
 _marsShipImg.src = 'https://arcade.pietsuess.com/pilot-game/Victory-Background_DeltaWing.png';
 
-const MARS_FRAME_W = 300, MARS_FRAME_H = 360;
-const MARS_PILOT_H = 120, MARS_PILOT_W = 100;
-const MARS_ANIMS = {
+// Sprite constants — identical to victory walk
+const MS_FRAME_W = 300, MS_FRAME_H = 360;
+const MS_PILOT_H = 120, MS_PILOT_W = MS_PILOT_H * (300/360);
+const MS_ANIMS = {
   idle:  { row:0, start:0, count:1,  fps:1,  loop:false },
   walk:  { row:0, start:0, count:10, fps:16, loop:true },
   kneel: { row:1, start:0, count:8,  fps:12, loop:false },
   jump:  { row:2, frames:[0, 5,6,7,8,9,10,11,12,13], fps:20, loop:false },
 };
-const MARS_VISIBLE_H = 400; // vertical space similar to victory walk
-const MARS_WALK_SPEED = 4;
-const MARS_JUMP_HEIGHT = 120; // higher jump on Mars (0.38g)
-const MARS_JUMP_DURATION = 0.7; // slower arc
-const MARS_SAMPLES_NEEDED = 5;
+// World — large flat Mars terrain
+const MS_WORLD_W = 8000;
+const MS_WORLD_H = 1200;
+const MS_VISIBLE_H = 300; // matches victory walk
+const MS_WALK_SPEED = 6; // matches victory
+const MS_JUMP_HEIGHT = 130; // Mars 0.38g = ~2.6x Earth jump
+const MS_JUMP_DURATION = 0.7; // slower arc for low gravity feel
+const MS_GROUND_TOP = 880; // walkable ground top (like TARMAC_TOP)
+const MS_GROUND_BOTTOM = 1050; // walkable ground bottom
+const MS_GROUND_LEFT = 40;
+const MS_GROUND_RIGHT = MS_WORLD_W - 40;
+const MS_SAMPLES_NEEDED = 25;
+const MS_SHIP_WX = 300; // ship world position
+const MS_SHIP_WY = 940;
 
 function startMarsSurface(){
   state.paused = true;
   _marsSurface = {
     active: true,
-    pilot: {
-      x: 300, y: 0, facing: 1, walking: false,
-      jumpOffY: 0, jumpTime: 0, nearSample: null,
-    },
-    anim: 'idle', animFrame: 0, animTimer: 0,
-    camera: { x: 0, y: 0 },
-    terrain: generateMarsTerrain(),
+    pilot: { x: MS_SHIP_WX + 200, y: MS_GROUND_TOP + 40, facing: 1, walking: false, jumpOffY: 0, jumpTime: 0, nearObj: null },
+    anim: 'idle', frame: 0, animTimer: 0,
+    camX: 0, camY: 0,
     timer: 0,
     samplesCollected: 0,
     _kneelPending: null,
-    _kneelDone: false,
-    shipX: 200, // landed ship position
+    _jumpPressed: false,
+    samples: generateMarsSamples(),
+    platforms: generateMarsPlatforms(),
+    rocks: generateMarsDecor(),
   };
-  const ms = _marsSurface;
-  ms.pilot.y = getTerrainY(ms.terrain, ms.pilot.x);
-  ms.shipX = ms.pilot.x - 80;
   canvas.style.cursor = 'none';
 }
 
-function marsSetAnim(name){
-  if(_marsSurface.anim === name) return;
-  _marsSurface.anim = name;
-  _marsSurface.animFrame = 0;
-  _marsSurface.animTimer = 0;
-}
-
-function marsTickAnim(dt){
+function msSetAnim(name){
   const ms = _marsSurface;
-  const a = MARS_ANIMS[ms.anim];
-  if(!a) return;
-  const frameCount = a.frames ? a.frames.length : a.count;
+  if(ms.anim === name) return;
+  ms.anim = name; ms.frame = 0; ms.animTimer = 0;
+}
+function msTickAnim(dt){
+  const ms = _marsSurface;
+  const a = MS_ANIMS[ms.anim]; if(!a) return;
+  const count = a.frames ? a.frames.length : a.count;
   ms.animTimer += dt;
-  if(ms.animTimer >= 1/a.fps){
-    ms.animTimer = 0;
-    ms.animFrame++;
-    if(ms.animFrame >= frameCount){
-      if(a.loop) ms.animFrame = 0;
-      else ms.animFrame = frameCount - 1;
-    }
-  }
+  if(ms.animTimer >= 1/a.fps){ ms.animTimer = 0; ms.frame++; if(ms.frame >= count){ if(a.loop) ms.frame = 0; else ms.frame = count-1; } }
 }
 
-function generateMarsTerrain(){
-  const points = [];
-  const W = 5000;
-  const BASE_Y = 1200; // world coords, camera will show ~400px visible height
-  for(let x = 0; x <= W; x += 4){
-    let y = BASE_Y;
-    y += Math.sin(x * 0.002) * 50;
-    y += Math.sin(x * 0.0006 + 2) * 80;
-    y += Math.sin(x * 0.012 + 5) * 10;
-    const craters = [1200, 2400, 3800];
-    const craterR = [150, 100, 180];
-    for(let ci = 0; ci < craters.length; ci++){
-      const cdx = x - craters[ci];
-      const cr = craterR[ci];
-      if(Math.abs(cdx) < cr){
-        y += 40 * (1 - (cdx/cr)*(cdx/cr));
-        if(Math.abs(cdx) > cr * 0.7) y -= 15 * (1 - Math.abs(Math.abs(cdx) - cr*0.85) / (cr*0.15));
-      }
-    }
-    points.push({ x, y });
-  }
-  // Sample locations (collectible rocks) — spread across terrain
+function generateMarsSamples(){
   const samples = [];
-  const samplePositions = [600, 1400, 2200, 3000, 4200];
-  for(const sx of samplePositions){
-    samples.push({
-      x: sx, y: getTerrainY({ points }, sx),
-      collected: false, sz: 8 + Math.random() * 6,
-    });
+  // Ground-level samples (easy) — spread across 8000px world
+  const groundX = [600,1000,1500,2000,2600,3100,3700,4200,4800,5400,6000,6600];
+  for(const x of groundX){
+    const y = MS_GROUND_TOP + 10 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 30);
+    samples.push({ x, y, collected: false, sz: 7 + Math.random()*4, elevated: false });
   }
-  // Decorative rocks
-  const rocks = [];
-  for(let i = 0; i < 50; i++){
-    const rx = 80 + Math.random() * (W - 160);
-    rocks.push({
-      x: rx, y: getTerrainY({ points }, rx),
-      sz: 2 + Math.random() * 6,
-      shape: Math.floor(Math.random() * 3),
-      shade: 0.7 + Math.random() * 0.3
-    });
+  // Elevated samples (need jump to reach platform first)
+  const elevX = [800,1300,1800,2300,2800,3400,3900,4500,5100,5700,6300,6900,7500];
+  for(const x of elevX){
+    samples.push({ x, y: MS_GROUND_TOP - 55 - Math.random()*30, collected: false, sz: 6+Math.random()*3, elevated: true });
   }
-  return { points, width: W, rocks, samples, worldH: BASE_Y + 200 };
+  return samples;
 }
 
-function getTerrainY(terrain, wx){
-  const pts = terrain.points || terrain;
-  const idx = Math.floor(wx / 4);
-  if(idx < 0) return pts[0].y;
-  if(idx >= pts.length - 1) return pts[pts.length - 1].y;
-  const a = pts[idx], b = pts[idx + 1];
-  const t = (wx - a.x) / (b.x - a.x);
-  return a.y + (b.y - a.y) * t;
+function generateMarsPlatforms(){
+  const plats = [];
+  const platX = [700,1200,1700,2200,2700,3300,3800,4400,5000,5600,6200,6800,7400];
+  for(const x of platX){
+    const w = 140 + Math.random()*100;
+    const y = MS_GROUND_TOP - 45 - Math.random()*25;
+    plats.push({ x, y, w, h: 12 });
+  }
+  return plats;
+}
+
+function generateMarsDecor(){
+  const rocks = [];
+  for(let i=0; i<100; i++){
+    const x = 60 + Math.random() * (MS_WORLD_W - 120);
+    const y = MS_GROUND_TOP + 5 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 10);
+    rocks.push({ x, y, sz: 2+Math.random()*5, shape: Math.floor(Math.random()*3), shade: 0.65+Math.random()*0.35 });
+  }
+  return rocks;
 }
 
 function updateMarsSurface(){
@@ -10958,261 +10938,269 @@ function updateMarsSurface(){
   const dt = 1/60;
   ms.timer++;
 
-  // Kneel animation completion
+  // Kneel completion
   if(ms.anim === 'kneel'){
-    marsTickAnim(dt);
-    if(ms.animFrame >= MARS_ANIMS.kneel.count - 1){
+    msTickAnim(dt);
+    if(ms.frame >= MS_ANIMS.kneel.count - 1){
       if(ms._kneelPending !== null){
-        // Collect the sample
-        const sample = ms.terrain.samples[ms._kneelPending];
+        if(ms._kneelPending === 'ship'){
+          _marsSurface.active = false;
+          _marsLanding = false; _marsLandingTimer = 0;
+          state.paused = false;
+          state.x = MARS_WX + MARS_R + 200; state.y = MARS_WY;
+          state.vx = 0; state.vy = 0;
+          state.fuel = 1.0; updateFuelBar();
+          state.zoneCrossFlash = { lvl:-3, timer:120, msg:'RETURNED TO ORBIT', _col:'#00ffcc' };
+          ms._kneelPending = null;
+          return;
+        }
+        const sample = ms.samples[ms._kneelPending];
         if(sample && !sample.collected){
           sample.collected = true;
           ms.samplesCollected++;
           state.score += 2000;
           document.getElementById('score').textContent = String(state.score).padStart(6,'0');
-          state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SAMPLE ' + ms.samplesCollected + ' / ' + MARS_SAMPLES_NEEDED, _col:'#ff8844' };
+          state.zoneCrossFlash = { lvl:-3, timer:90, msg:'SAMPLE ' + ms.samplesCollected + ' / ' + MS_SAMPLES_NEEDED, _col:'#ff8844' };
           if(audioCtx && !state.sfxMuted){
             const t = audioCtx.currentTime;
-            playBeep(400 + ms.samplesCollected * 60, t, 0.08, 'sine', 0.10);
-            playBeep(600 + ms.samplesCollected * 60, t+0.06, 0.1, 'sine', 0.08);
+            playBeep(400+ms.samplesCollected*30, t, 0.08, 'sine', 0.10);
+            playBeep(600+ms.samplesCollected*30, t+0.06, 0.1, 'sine', 0.08);
           }
-          if(ms.samplesCollected >= MARS_SAMPLES_NEEDED){
+          if(ms.samplesCollected >= MS_SAMPLES_NEEDED){
             state.score += 10000;
             document.getElementById('score').textContent = String(state.score).padStart(6,'0');
             state.zoneCrossFlash = { lvl:-3, timer:240, msg:'ALL SAMPLES COLLECTED', sub:'MARS MISSION COMPLETE', _col:'#00ff88' };
             if(audioCtx && !state.sfxMuted){
               const t2 = audioCtx.currentTime;
-              playBeep(660, t2, 0.1, 'sine', 0.12);
-              playBeep(880, t2+0.12, 0.1, 'sine', 0.12);
-              playBeep(1100, t2+0.24, 0.15, 'sine', 0.14);
-              playBeep(1320, t2+0.38, 0.2, 'sine', 0.1);
+              playBeep(660, t2, 0.1, 'sine', 0.12); playBeep(880, t2+0.12, 0.1, 'sine', 0.12);
+              playBeep(1100, t2+0.24, 0.15, 'sine', 0.14); playBeep(1320, t2+0.38, 0.2, 'sine', 0.1);
             }
           }
         }
         ms._kneelPending = null;
       }
-      ms._kneelDone = true;
-      // Hold kneel frame briefly, then return to idle
-      if(!state.keys['ArrowDown'] && !state.keys[' ']) marsSetAnim('idle');
+      msSetAnim('idle');
     }
-    return; // block other input during kneel
-  }
-
-  // Jump physics
-  if(ms.anim === 'jump'){
-    marsTickAnim(dt);
-    p.jumpTime += dt;
-    const jt = Math.min(p.jumpTime / MARS_JUMP_DURATION, 1);
-    p.jumpOffY = -MARS_JUMP_HEIGHT * Math.sin(Math.PI * jt);
-    if(jt >= 1){
-      p.jumpOffY = 0;
-      p.jumpTime = 0;
-      marsSetAnim('idle');
-    }
-    // Allow horizontal movement during jump
-    if(state.keys['ArrowLeft']){ p.x -= MARS_WALK_SPEED; p.facing = -1; }
-    if(state.keys['ArrowRight']){ p.x += MARS_WALK_SPEED; p.facing = 1; }
-    p.x = Math.max(40, Math.min(ms.terrain.width - 40, p.x));
-    p.y = getTerrainY(ms.terrain, p.x);
     return;
   }
 
-  // Normal controls
+  // Jump arc (Mars 0.38g)
+  if(ms.anim === 'jump'){
+    p.jumpTime += dt;
+    const jt = Math.min(p.jumpTime / MS_JUMP_DURATION, 1);
+    p.jumpOffY = -MS_JUMP_HEIGHT * Math.sin(Math.PI * jt);
+    if(jt >= 1){ p.jumpOffY = 0; p.jumpTime = 0; msSetAnim('idle'); }
+  }
+
+  // Movement — matches victory walk: all 4 directions, block during kneel
   p.walking = false;
-  if(state.keys['ArrowLeft']){
-    p.x -= MARS_WALK_SPEED;
-    p.facing = -1;
-    p.walking = true;
-  } else if(state.keys['ArrowRight']){
-    p.x += MARS_WALK_SPEED;
-    p.facing = 1;
-    p.walking = true;
-  }
-  p.x = Math.max(40, Math.min(ms.terrain.width - 40, p.x));
-  p.y = getTerrainY(ms.terrain, p.x);
+  const isJumping = ms._jumpPressed;
+  ms._jumpPressed = false;
 
-  // Check proximity to samples
-  p.nearSample = null;
-  for(let si = 0; si < ms.terrain.samples.length; si++){
-    const s = ms.terrain.samples[si];
-    if(s.collected) continue;
-    if(Math.abs(p.x - s.x) < 40) { p.nearSample = si; break; }
+  if(ms.anim !== 'kneel'){
+    if(state.keys['ArrowRight']){ p.x += MS_WALK_SPEED; p.facing = 1; p.walking = true; }
+    if(state.keys['ArrowLeft']){ p.x -= MS_WALK_SPEED; p.facing = -1; p.walking = true; }
+    if(state.keys['ArrowUp']){ p.y -= MS_WALK_SPEED; p.walking = true; }
+    if(state.keys['ArrowDown']){ p.y += MS_WALK_SPEED; p.walking = true; }
   }
 
-  // Jump (ArrowUp)
-  if(state.keys['ArrowUp'] && ms.anim !== 'jump'){
-    marsSetAnim('jump');
-    p.jumpTime = 0;
+  // Clamp to walkable ground area
+  p.x = Math.max(MS_GROUND_LEFT, Math.min(MS_GROUND_RIGHT, p.x));
+  p.y = Math.max(MS_GROUND_TOP, Math.min(MS_GROUND_BOTTOM, p.y));
+
+  // Nearest interactable
+  p.nearObj = null;
+  const shipDx = p.x - (MS_SHIP_WX + 110), shipDy = p.y - (MS_SHIP_WY + 20);
+  if(Math.sqrt(shipDx*shipDx + shipDy*shipDy) < 80) p.nearObj = 'ship';
+  if(!p.nearObj){
+    for(let i=0; i<ms.samples.length; i++){
+      const s = ms.samples[i]; if(s.collected) continue;
+      const dx = p.x-s.x, dy = p.y-s.y;
+      if(Math.sqrt(dx*dx+dy*dy) < 50){ p.nearObj = i; break; }
+    }
   }
-  // Kneel to collect sample (ArrowDown or Space near a sample)
-  else if((state.keys['ArrowDown'] || state.keys[' ']) && p.nearSample !== null && ms.anim !== 'kneel'){
-    ms._kneelPending = p.nearSample;
-    ms._kneelDone = false;
-    marsSetAnim('kneel');
-  }
-  // Walk or idle animation
-  else if(p.walking){
-    marsSetAnim('walk');
-    marsTickAnim(dt);
+
+  // Animation state machine — matches victory exactly
+  if(ms.anim === 'kneel'){
+    // handled above
+  } else if(isJumping && ms.anim !== 'jump'){
+    msSetAnim('jump'); p.jumpTime = 0;
+  } else if(ms.anim === 'jump'){
+    if(p.jumpTime >= MS_JUMP_DURATION) msSetAnim('idle');
+  } else if(p.walking){
+    msSetAnim('walk');
   } else {
-    marsSetAnim('idle');
+    msSetAnim('idle');
   }
+  msTickAnim(dt);
 
-  // Camera — follows pilot with visible height matching victory walk
-  const scale = canvas.height / MARS_VISIBLE_H;
-  const vww = canvas.width / scale;
-  ms.camera.x = p.x - vww / 2;
-  ms.camera.y = (p.y - MARS_PILOT_H / 2) - MARS_VISIBLE_H / 2;
-  if(ms.camera.x < 0) ms.camera.x = 0;
-  if(ms.camera.x > ms.terrain.width - vww) ms.camera.x = ms.terrain.width - vww;
+  // Camera — matches victory exactly
+  const mainScale = canvas.height / MS_VISIBLE_H;
+  const vww = canvas.width / mainScale;
+  ms.camX = p.x - vww/2;
+  ms.camY = (p.y - MS_PILOT_H/2) - MS_VISIBLE_H/2;
+  if(ms.camX < 0) ms.camX = 0;
+  if(ms.camX > MS_WORLD_W - vww) ms.camX = MS_WORLD_W - vww;
+  if(ms.camY < 0) ms.camY = 0;
+  if(ms.camY > MS_WORLD_H - MS_VISIBLE_H) ms.camY = MS_WORLD_H - MS_VISIBLE_H;
+}
+
+// Space key for Mars surface — kneel near object or jump (matches victory pattern)
+function marsHandleSpace(){
+  if(!_marsSurface || !_marsSurface.active) return;
+  const ms = _marsSurface;
+  if(ms.anim === 'kneel') return;
+  if(ms.pilot.nearObj !== null){
+    ms._kneelPending = ms.pilot.nearObj;
+    msSetAnim('kneel');
+  } else {
+    ms._jumpPressed = true;
+  }
 }
 
 function drawMarsSurface(ctx){
   if(!_marsSurface || !_marsSurface.active) return;
   const ms = _marsSurface;
   const W = ctx.canvas.width, H = ctx.canvas.height;
-  const scale = H / MARS_VISIBLE_H;
-  const cam = ms.camera;
+  const mainScale = H / MS_VISIBLE_H;
   const p = ms.pilot;
 
-  // Sky
+  // Sky gradient
   const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
   skyGrad.addColorStop(0, '#2a1008');
-  skyGrad.addColorStop(0.3, '#6b3020');
-  skyGrad.addColorStop(0.6, '#c47040');
-  skyGrad.addColorStop(0.85, '#d4956a');
+  skyGrad.addColorStop(0.25, '#5a2818');
+  skyGrad.addColorStop(0.55, '#a06040');
+  skyGrad.addColorStop(0.8, '#c48060');
   skyGrad.addColorStop(1, '#a06840');
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, W, H);
 
+  // World transform — matches victory: scale then translate
   ctx.save();
-  ctx.scale(scale, scale);
-  ctx.translate(-cam.x, -cam.y);
+  ctx.imageSmoothingEnabled = false;
+  ctx.scale(mainScale, mainScale);
+  ctx.translate(-ms.camX, -ms.camY);
 
-  // Distant mountains (parallax at 0.15x)
+  // Distant mountains (parallax 0.15x)
   {
-    const mtnOfs = -cam.x * 0.15;
-    const mtnY = ms.terrain.points[0].y - 180;
+    const mOfs = -ms.camX * 0.85;
+    const mBase = MS_GROUND_TOP - 80;
     ctx.fillStyle = '#4a2018';
     ctx.beginPath();
-    ctx.moveTo(cam.x + mtnOfs, mtnY + 100);
-    for(let x = 0; x < W/scale + 300; x += 80){
-      const mh = 30 + Math.sin(x * 0.008 + 1) * 50 + Math.sin(x * 0.003) * 30;
-      ctx.lineTo(cam.x + mtnOfs + x, mtnY + 100 - mh);
+    ctx.moveTo(ms.camX + mOfs - 100, mBase);
+    for(let x = 0; x < W/mainScale + 400; x += 60){
+      const mh = 20 + Math.sin(x*0.006+1)*40 + Math.sin(x*0.002)*25;
+      ctx.lineTo(ms.camX + mOfs + x, mBase - mh);
     }
-    ctx.lineTo(cam.x + mtnOfs + W/scale + 300, mtnY + 100);
+    ctx.lineTo(ms.camX + mOfs + W/mainScale + 400, mBase);
     ctx.closePath(); ctx.fill();
-    // Olympus Mons
-    const omX = 2600;
+    // Olympus Mons silhouette
+    const omSx = 4000 + mOfs;
     ctx.fillStyle = '#5a2a18';
     ctx.beginPath();
-    ctx.moveTo(omX - 400, mtnY + 100);
-    ctx.quadraticCurveTo(omX, mtnY + 100 - 160, omX + 400, mtnY + 100);
-    ctx.closePath(); ctx.fill();
-    ctx.fillStyle = 'rgba(230,220,210,0.3)';
-    ctx.beginPath();
-    ctx.moveTo(omX - 80, mtnY + 100 - 140);
-    ctx.quadraticCurveTo(omX, mtnY + 100 - 168, omX + 80, mtnY + 100 - 140);
+    ctx.moveTo(ms.camX + omSx - 300, mBase);
+    ctx.quadraticCurveTo(ms.camX + omSx, mBase - 120, ms.camX + omSx + 300, mBase);
     ctx.closePath(); ctx.fill();
   }
 
-  // Terrain fill
-  const pts = ms.terrain.points;
-  ctx.beginPath();
-  ctx.moveTo(pts[0].x, ms.terrain.worldH);
-  for(const pt of pts) ctx.lineTo(pt.x, pt.y);
-  ctx.lineTo(pts[pts.length-1].x, ms.terrain.worldH);
-  ctx.closePath();
-  const gndGrad = ctx.createLinearGradient(0, pts[0].y - 40, 0, ms.terrain.worldH);
+  // Ground plane — flat like victory tarmac
+  const gndGrad = ctx.createLinearGradient(0, MS_GROUND_TOP, 0, MS_WORLD_H);
   gndGrad.addColorStop(0, '#a05030');
-  gndGrad.addColorStop(0.4, '#8a4028');
+  gndGrad.addColorStop(0.15, '#8a4028');
+  gndGrad.addColorStop(0.5, '#7a3520');
   gndGrad.addColorStop(1, '#5a2818');
   ctx.fillStyle = gndGrad;
-  ctx.fill();
+  ctx.fillRect(0, MS_GROUND_TOP, MS_WORLD_W, MS_WORLD_H - MS_GROUND_TOP);
+
+  // Platforms (elevated ledges for jump-access samples)
+  for(const plat of ms.platforms){
+    ctx.fillStyle = '#8a5038';
+    ctx.fillRect(plat.x, plat.y, plat.w, plat.h);
+    ctx.fillStyle = '#6a3828';
+    ctx.fillRect(plat.x, plat.y + plat.h, plat.w, MS_GROUND_TOP - plat.y - plat.h);
+    ctx.fillStyle = '#b06848';
+    ctx.fillRect(plat.x, plat.y, plat.w, 3);
+  }
 
   // Decorative rocks
-  for(const rock of ms.terrain.rocks){
-    ctx.fillStyle = `rgb(${Math.round(120*rock.shade)},${Math.round(60*rock.shade)},${Math.round(40*rock.shade)})`;
+  for(const rock of ms.rocks){
+    ctx.fillStyle = `rgb(${Math.round(110*rock.shade)},${Math.round(55*rock.shade)},${Math.round(35*rock.shade)})`;
     ctx.beginPath();
-    if(rock.shape === 0) ctx.arc(rock.x, rock.y, rock.sz, 0, Math.PI * 2);
+    if(rock.shape === 0) ctx.arc(rock.x, rock.y, rock.sz, 0, Math.PI*2);
     else if(rock.shape === 1){ ctx.moveTo(rock.x-rock.sz, rock.y); ctx.lineTo(rock.x, rock.y-rock.sz*1.3); ctx.lineTo(rock.x+rock.sz, rock.y); }
     else ctx.rect(rock.x-rock.sz*0.7, rock.y-rock.sz*0.5, rock.sz*1.4, rock.sz*0.5);
     ctx.fill();
   }
 
-  // Sample rocks (collectible) — glowing
-  for(const s of ms.terrain.samples){
+  // Samples — glowing collectible rocks
+  for(const s of ms.samples){
     if(s.collected) continue;
-    const pulse = 0.6 + Math.sin(ms.timer * 0.06 + s.x * 0.01) * 0.3;
+    const pulse = 0.6 + Math.sin(ms.timer*0.06 + s.x*0.01)*0.3;
     ctx.save();
-    ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 12 * pulse;
+    ctx.shadowColor = '#ffcc44'; ctx.shadowBlur = 10*pulse;
     ctx.fillStyle = '#c4964a';
-    ctx.beginPath(); ctx.arc(s.x, s.y - s.sz * 0.3, s.sz, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x, s.y, s.sz, 0, Math.PI*2); ctx.fill();
     ctx.fillStyle = '#dab06a';
-    ctx.beginPath(); ctx.arc(s.x - s.sz*0.2, s.y - s.sz * 0.5, s.sz * 0.4, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(s.x-s.sz*0.2, s.y-s.sz*0.4, s.sz*0.4, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.restore();
   }
 
-  // Landed ship (Delta Wing)
+  // Landed Delta Wing ship
   if(_marsShipImg.complete && _marsShipImg.naturalWidth > 0){
-    const shipW = 160, shipH = 50;
-    const shipGroundY = getTerrainY(ms.terrain, ms.shipX + shipW/2);
-    ctx.drawImage(_marsShipImg, ms.shipX, shipGroundY - shipH, shipW, shipH);
+    const sw = 220, sh = 68;
+    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY - sh + 20, sw, sh);
   }
 
-  // Pilot sprite
+  // Pilot — drawn at feet anchor, matches victory exactly
   if(_marsSprite.complete && _marsSprite.naturalWidth > 0){
-    const a = MARS_ANIMS[ms.anim];
-    const col = a.frames ? a.frames[ms.animFrame] : (a.start + ms.animFrame);
-    const srcX = col * MARS_FRAME_W;
-    const srcY = a.row * MARS_FRAME_H;
+    const a = MS_ANIMS[ms.anim];
+    const col = a.frames ? a.frames[ms.frame] : (a.start + ms.frame);
+    const srcX = col * MS_FRAME_W;
+    const srcY = a.row * MS_FRAME_H;
     const jumpOfs = p.jumpOffY || 0;
-    const pilotSX = p.x;
-    const pilotSY = p.y - MARS_PILOT_H + jumpOfs;
     ctx.save();
-    ctx.translate(pilotSX, pilotSY + MARS_PILOT_H);
+    ctx.translate(p.x, p.y + jumpOfs);
     if(p.facing < 0) ctx.scale(-1, 1);
-    ctx.drawImage(_marsSprite, srcX, srcY, MARS_FRAME_W, MARS_FRAME_H,
-      -MARS_PILOT_W/2, -MARS_PILOT_H, MARS_PILOT_W, MARS_PILOT_H);
+    ctx.drawImage(_marsSprite, srcX, srcY, MS_FRAME_W, MS_FRAME_H,
+      -MS_PILOT_W/2, -MS_PILOT_H, MS_PILOT_W, MS_PILOT_H);
     ctx.restore();
   }
 
   ctx.restore(); // end world transform
 
-  // HUD
-  if(ms.samplesCollected < MARS_SAMPLES_NEEDED){
+  // Interaction prompt
+  if(p.nearObj !== null && ms.anim !== 'kneel'){
     ctx.save();
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center';
-    ctx.fillStyle = '#ff8844';
-    ctx.globalAlpha = 0.6;
-    const hintText = p.nearSample !== null ? 'PRESS DOWN TO COLLECT SAMPLE' : 'FIND GLOWING ROCKS TO COLLECT SAMPLES';
-    ctx.fillText(hintText, W/2, 24);
-    ctx.fillText('SAMPLES: ' + ms.samplesCollected + ' / ' + MARS_SAMPLES_NEEDED, W/2, 40);
+    ctx.fillStyle = '#ffcc44'; ctx.globalAlpha = 0.7 + Math.sin(ms.timer*0.06)*0.2;
+    const label = p.nearObj === 'ship' ? 'PRESS SPACE - RETURN TO SHIP' : 'PRESS SPACE - COLLECT SAMPLE';
+    ctx.fillText(label, W/2, H - 30);
     ctx.restore();
   }
+
+  // HUD — sample count
+  ctx.save();
+  ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
+  ctx.textAlign = 'left';
+  ctx.fillStyle = '#ff8844'; ctx.globalAlpha = 0.7;
+  ctx.fillText('SAMPLES: ' + ms.samplesCollected + ' / ' + MS_SAMPLES_NEEDED, 16, 24);
+  ctx.restore();
 
   // Zone cross flash
   if(state.zoneCrossFlash && state.zoneCrossFlash.timer > 0){
-    const f = state.zoneCrossFlash;
-    f.timer--;
+    const f = state.zoneCrossFlash; f.timer--;
     ctx.save();
-    ctx.globalAlpha = Math.min(1, f.timer / 30);
+    ctx.globalAlpha = Math.min(1, f.timer/30);
     ctx.font = '14px "Press Start 2P",monospace'; _curFont='';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillStyle = f._col || '#ffffff';
-    ctx.shadowColor = f._col || '#ffffff'; ctx.shadowBlur = 12;
-    ctx.fillText(f.msg || '', W/2, H * 0.30);
-    if(f.sub){
-      ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
-      ctx.fillText(f.sub, W/2, H * 0.30 + 28);
-    }
-    ctx.shadowBlur = 0;
-    ctx.restore();
+    ctx.fillStyle = f._col || '#fff'; ctx.shadowColor = f._col || '#fff'; ctx.shadowBlur = 12;
+    ctx.fillText(f.msg || '', W/2, H*0.30);
+    if(f.sub){ ctx.font = '8px "Press Start 2P",monospace'; _curFont=''; ctx.fillText(f.sub, W/2, H*0.30+28); }
+    ctx.shadowBlur = 0; ctx.restore();
   }
 }
-
 // Wait for Press Start 2P before starting loop — fixes canvas font on Android
 (function startWhenReady(){
   const WOFF2 = 'https://fonts.gstatic.com/s/pressstart2p/v15/e3t4euO8T-267oIAQAu6jDQyK3nVivM.woff2';
