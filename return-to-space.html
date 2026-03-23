@@ -1045,6 +1045,11 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   <div id="fuel-label">FUEL</div>
   <div id="fuel-bar-outer"><div id="fuel-bar-inner"></div></div>
 </div>
+<div id="crystal-hud" style="display:none;position:fixed;bottom:0;z-index:100;left:66.67%;right:0;height:68px;display:none;flex-direction:column;align-items:stretch;justify-content:center;gap:3px;padding:0 12px;background:rgba(0,0,0,0.6);border:2px solid rgba(255,105,180,0.4);border-bottom:none;border-right:none;border-radius:14px 0 0 0;">
+  <div style="color:#ff69b4;font-size:10px;text-shadow:0 0 8px #ff69b4;white-space:nowrap;text-align:left;">CRYSTALS</div>
+  <div id="crystal-bar-outer" style="flex:1;max-height:20px;border:2px solid #ff69b4;background:rgba(0,0,0,0.6);overflow:hidden;box-shadow:0 0 8px rgba(255,105,180,0.4),inset 0 0 4px rgba(0,0,0,0.5);display:flex;">
+  </div>
+</div>
 
 <!-- Sound controls + Music drawer — unified at bottom-left -->
 <div id="music-drawer">
@@ -10879,7 +10884,7 @@ const MS_VISIBLE_H = 300;
 const MS_WALK_SPEED = 6;
 const MS_JUMP_HEIGHT = 130;
 const MS_JUMP_DURATION = 0.7;
-const MS_GROUND_TOP = 880;
+const MS_GROUND_TOP = 830;
 const MS_GROUND_BOTTOM = 1050;
 const MS_GROUND_LEFT = 40;
 const MS_GROUND_RIGHT = MS_WORLD_W - 40;
@@ -10887,7 +10892,7 @@ const MS_CRYSTAL_COUNT = 30;
 const MS_RED_CRYSTAL_COUNT = 100;
 const MS_PINK_CRYSTAL_COUNT = 130; // more pink than red so it's winnable
 const MS_SHIP_WX = 300;
-const MS_SHIP_WY = 940;
+const MS_SHIP_WY = 890;
 const MS_SHIP_W = 660, MS_SHIP_H = 204;
 // Ship depth + hitPoly from victory walk Delta Wing (scaled to Mars ship size)
 const MS_SHIP_DEPTH_Y = MS_SHIP_WY + 10;
@@ -10912,6 +10917,20 @@ function _distToPolyEdge(poly, px, py){
     if(d < minD) minD = d;
   }
   return minD;
+}
+
+function updateCrystalHUD(count){
+  const bar = document.getElementById('crystal-bar-outer');
+  if(!bar) return;
+  let html = '';
+  const blockW = 100 / MS_CRYSTAL_COUNT;
+  for(let i = 0; i < MS_CRYSTAL_COUNT; i++){
+    const filled = i < count;
+    html += '<div style="flex:1;height:100%;margin:0 0.5px;' +
+      (filled ? 'background:#ff69b4;box-shadow:0 0 6px #ff69b4;' : 'background:rgba(255,105,180,0.1);') +
+      '"></div>';
+  }
+  bar.innerHTML = html;
 }
 
 var _msPopupOpen = false;
@@ -10957,9 +10976,10 @@ function startMarsSurface(){
   };
   _msPopupOpen = false;
   canvas.style.cursor = 'none';
-  // Hide space game HUD
+  // Hide space game HUD, show crystal HUD
   const _fh = document.getElementById('fuel-hud'); if(_fh) _fh.style.display = 'none';
   const _hud = document.getElementById('hud'); if(_hud) _hud.style.display = 'none';
+  const _ch = document.getElementById('crystal-hud'); if(_ch) _ch.style.display = 'flex';
 }
 
 function msSetAnim(name){
@@ -10990,16 +11010,23 @@ function updateMarsSurface(){
     c.rot += c.rotSpd;
     c.spikePhase += 0.05;
     // Bounce off ground boundaries
-    if(c.x < MS_GROUND_LEFT + 20){ c.x = MS_GROUND_LEFT + 20; c.vx = Math.abs(c.vx) * 0.9; }
-    if(c.x > MS_GROUND_RIGHT - 20){ c.x = MS_GROUND_RIGHT - 20; c.vx = -Math.abs(c.vx) * 0.9; }
-    if(c.y < MS_GROUND_TOP + 5){ c.y = MS_GROUND_TOP + 5; c.vy = Math.abs(c.vy) * 0.9; }
-    if(c.y > MS_GROUND_BOTTOM - 5){ c.y = MS_GROUND_BOTTOM - 5; c.vy = -Math.abs(c.vy) * 0.9; }
-    // Random direction changes
-    if(Math.random() < 0.01){ c.vx += (Math.random() - 0.5) * 1.5; c.vy += (Math.random() - 0.5) * 1.0; }
-    // Speed clamp
-    const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-    if(spd > 3){ c.vx *= 3/spd; c.vy *= 3/spd; }
-    if(spd < 0.5){ c.vx += (Math.random()-0.5)*0.8; c.vy += (Math.random()-0.5)*0.5; }
+    if(c.x < MS_GROUND_LEFT + 20){ c.x = MS_GROUND_LEFT + 20; c.vx = Math.abs(c.vx) * (c.red ? 0.7 : 1.1); }
+    if(c.x > MS_GROUND_RIGHT - 20){ c.x = MS_GROUND_RIGHT - 20; c.vx = -Math.abs(c.vx) * (c.red ? 0.7 : 1.1); }
+    if(c.y < MS_GROUND_TOP + 5){ c.y = MS_GROUND_TOP + 5; c.vy = Math.abs(c.vy) * (c.red ? 0.7 : 1.2); }
+    if(c.y > MS_GROUND_BOTTOM - 5){ c.y = MS_GROUND_BOTTOM - 5; c.vy = -Math.abs(c.vy) * (c.red ? 0.7 : 1.2); }
+    if(c.red){
+      // Red — floaty, gentle drift
+      if(Math.random() < 0.005){ c.vx += (Math.random()-0.5)*0.8; c.vy += (Math.random()-0.5)*0.5; }
+      const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+      if(spd > 2){ c.vx *= 2/spd; c.vy *= 2/spd; }
+      c.vx *= 0.995; c.vy *= 0.995;
+    } else {
+      // Pink — heavier, bouncier, more energetic
+      if(Math.random() < 0.02){ c.vx += (Math.random()-0.5)*2.5; c.vy += (Math.random()-0.5)*2.0; }
+      const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+      if(spd > 5){ c.vx *= 5/spd; c.vy *= 5/spd; }
+      if(spd < 1){ c.vx += (Math.random()-0.5)*1.5; c.vy += (Math.random()-0.5)*1.2; }
+    }
 
     // Collision with pilot
     const dx = p.x - c.x, dy = (p.y - 40) - c.y; // pilot center approx
@@ -11203,9 +11230,10 @@ function msLaunchFromMars(){
   state.vx = 0; state.vy = 0;
   state.fuel = 1.0; updateFuelBar();
   _msHasLightSpeed = true;
-  // Restore space game HUD
+  // Restore space game HUD, hide crystal HUD
   const _fh = document.getElementById('fuel-hud'); if(_fh) _fh.style.display = '';
   const _hud = document.getElementById('hud'); if(_hud) _hud.style.display = '';
+  const _ch = document.getElementById('crystal-hud'); if(_ch) _ch.style.display = 'none';
   state.zoneCrossFlash = { lvl:-3, timer:180, msg:'HYPERDRIVE ONLINE', sub:'LIGHT SPEED AVAILABLE', _col:'#ff69b4' };
   if(audioCtx && !state.sfxMuted){
     const t = audioCtx.currentTime;
@@ -11398,36 +11426,8 @@ function drawMarsSurface(ctx){
   ctx.fillRect(0, 0, W, H);
   ctx.restore();
 
-  // Crystal meter — block bar, bottom right (like fuel bar but pink)
-  {
-    const barW = 160, barH = 14, barX = W - barW - 16, barY = H - barH - 16;
-    const pct = ms.crystalsCollected / MS_CRYSTAL_COUNT;
-    const blocks = MS_CRYSTAL_COUNT;
-    const blockW = barW / blocks;
-    ctx.save();
-    ctx.globalAlpha = 0.7;
-    // Border
-    ctx.strokeStyle = '#ff69b4'; ctx.lineWidth = 2;
-    ctx.shadowColor = '#ff69b4'; ctx.shadowBlur = 8;
-    ctx.strokeRect(barX, barY, barW, barH);
-    ctx.shadowBlur = 0;
-    // Filled blocks
-    for(let b = 0; b < ms.crystalsCollected; b++){
-      ctx.fillStyle = '#ff69b4';
-      ctx.fillRect(barX + b * blockW + 1, barY + 1, blockW - 2, barH - 2);
-    }
-    // Empty block outlines
-    ctx.globalAlpha = 0.2;
-    for(let b = ms.crystalsCollected; b < blocks; b++){
-      ctx.strokeStyle = '#ff69b4'; ctx.lineWidth = 0.5;
-      ctx.strokeRect(barX + b * blockW + 1, barY + 1, blockW - 2, barH - 2);
-    }
-    ctx.globalAlpha = 0.6;
-    ctx.font = '6px "Press Start 2P",monospace'; _curFont='';
-    ctx.fillStyle = '#ff69b4'; ctx.textAlign = 'right';
-    ctx.fillText('CRYSTALS', barX + barW, barY - 4);
-    ctx.restore();
-  }
+  // Update DOM crystal meter bar
+  updateCrystalHUD(ms.crystalsCollected);
 
   // Ship interaction prompt
   if(p.nearObj === 'ship' && !_msPopupOpen){
