@@ -164,7 +164,13 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     font-size: 11px; color: #888; font-family: monospace;
 }
 
-/* Play mode hiding is done in JS, not CSS */
+/* Play mode: overlay canvas full-screen on top of everything */
+#play-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    z-index: 100; background: #000;
+}
+#play-overlay.active { display: block; }
+#play-overlay canvas { width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
 
 /* ====== PLAY MODE HUD (Navigator style) ====== */
 .play-hud { display: none; }
@@ -412,6 +418,11 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     </div>
 </div>
 
+<!-- Play mode overlay: separate canvas on top of everything -->
+<div id="play-overlay">
+    <canvas id="play-canvas"></canvas>
+</div>
+
 <!-- PLAY MODE HUD (Navigator style) -->
 <div id="play-score" class="play-hud">
     SCORE<br><span class="score-val" id="play-score-val">000000</span>
@@ -511,7 +522,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
 
 const T = 16; // tile size in pixels
 const canvas = document.getElementById('game');
-const ctx = canvas.getContext('2d');
+let ctx = canvas.getContext('2d');
 
 // ---- SOLID TILE ATLAS POSITIONS ----
 // 155 solid cells extracted from Godot TileSetAtlasSource_xpv3r physics_layer_0/polygon data.
@@ -1333,38 +1344,10 @@ function showTab(name) {
 }
 
 // ---- MODE ----
-function showEditorPanels() {
-    const p = document.getElementById('panel');
-    const r = document.getElementById('panel-resize');
-    const s = document.getElementById('shortcuts');
-    const m = document.getElementById('mode-bar');
-    const i = document.getElementById('info-bar');
-    p.style.display = 'flex';
-    p.style.flexDirection = 'column';
-    p.style.width = savedPanelWidth || '320px';
-    p.style.overflow = 'hidden';
-    p.style.flexShrink = '0';
-    p.style.background = '#1a1a1a';
-    r.style.display = '';
-    s.style.display = '';
-    m.style.display = '';
-    i.style.display = '';
-    canvasW = 0; canvasH = 0;
-    setTimeout(() => drawTilePicker(), 50);
+function forceShowPanel() {
+    // Just in case - force panel visible
+    document.getElementById('panel').style.display = 'flex';
 }
-
-function hideEditorPanels() {
-    document.getElementById('panel').style.display = 'none';
-    document.getElementById('panel-resize').style.display = 'none';
-    document.getElementById('shortcuts').style.display = 'none';
-    document.getElementById('mode-bar').style.display = 'none';
-    document.getElementById('info-bar').style.display = 'none';
-}
-
-function forceShowPanel() { showEditorPanels(); }
-
-// Store panel widths before play so we can restore them
-let savedPanelWidth = '';
 
 function setMode(m) {
     mode = m;
@@ -1372,22 +1355,14 @@ function setMode(m) {
     document.getElementById('btn-play').classList.toggle('active', m === 'play');
     canvas.style.cursor = m === 'edit' ? 'crosshair' : 'default';
 
-    const panelEl = document.getElementById('panel');
-    const shortcutsEl2 = document.getElementById('shortcuts');
-    const resizeEl = document.getElementById('panel-resize');
-    const modeBarEl = document.getElementById('mode-bar');
-    const infoBarEl = document.getElementById('info-bar');
-
+    // Play mode uses a separate full-screen overlay - editor DOM is never touched
+    const overlay = document.getElementById('play-overlay');
     if (m === 'play') {
-        savedPanelWidth = panelEl.style.width || '';
-        hideEditorPanels();
+        overlay.classList.add('active');
         startPlay();
     } else {
-        console.log('setMode edit called');
+        overlay.classList.remove('active');
         stopPlay();
-        showEditorPanels();
-        console.log('panel display after show:', panelEl.style.display, 'computed:', window.getComputedStyle(panelEl).display);
-        console.log('panel in DOM:', document.body.contains(panelEl));
     }
     canvasW = 0; canvasH = 0;
 }
@@ -2731,8 +2706,17 @@ function playFrame(dt) {
     if (pJumpBuf > 0) pJumpBuf--;
 
     // ---- DRAW ----
-    const cw = canvasW;
-    const ch = canvasH;
+    // Use the play overlay canvas, not the editor canvas
+    const playCanvas = document.getElementById('play-canvas');
+    const pctx = playCanvas.getContext('2d');
+    const cw = playCanvas.parentElement.clientWidth;
+    const ch = playCanvas.parentElement.clientHeight;
+    if (playCanvas.width !== cw || playCanvas.height !== ch) {
+        playCanvas.width = cw; playCanvas.height = ch;
+    }
+    // Alias ctx to play canvas context for the draw section
+    const _editCtx = ctx;
+    ctx = pctx;
 
     const playW = cw / zoom;
     const playH = ch / zoom;
@@ -2899,6 +2883,9 @@ function playFrame(dt) {
     }
 
     ctx.restore();
+
+    // Restore editor ctx
+    ctx = _editCtx;
 
     // Update overlay HUD
     updatePowerups(dt);
