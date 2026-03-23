@@ -896,6 +896,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn" onclick="_hasScoop=true;_scoopCollected=true;if(_scoopCollectible)_scoopCollectible.collected=true;state.fireMode='scoop';updateFireModeUI();state.zoneCrossFlash={lvl:-3,timer:60,msg:'DOZERBAR GIVEN',_col:'#00ffcc'};">GIVE SCOOP</button>
           <button class="dev-btn gold" onclick="devClearAllDebris();devTeleport(MARS_WX+MARS_R+200,MARS_WY);state.fuel=1;updateFuelBar();">GO TO MARS</button>
           <button class="dev-btn" onclick="startMarsSurface();">MARS SURFACE</button>
+          <button class="dev-btn purple" onclick="_msHasLightSpeed=true;state.fireMode='lightspeed';updateFireModeUI();state.zoneCrossFlash={lvl:-3,timer:60,msg:'LIGHTSPEED GIVEN',_col:'#ff69b4'};">GIVE LIGHTSPEED</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
           <button class="dev-btn" onclick="if(typeof triggerCollision==='function')triggerCollision(state.x,state.y)">FAKE COLLISION</button>
           <button class="dev-btn purple" onclick="if(typeof spawnShowAllCircle==='function')spawnShowAllCircle()">SPAWN WORMHOLES</button>
@@ -1002,6 +1003,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
         <span id="opt-wave" class="toggle-opt locked">WAVE</span>
         <span id="opt-boost2x" class="toggle-opt locked">BOOST X2</span>
         <span id="opt-scoop" class="toggle-opt locked" style="display:none;">DOZER</span>
+        <span id="opt-lightspeed" class="toggle-opt locked" style="display:none;">LIGHTSPEED</span>
       </div>
     </div>
     <div id="ship-toggle" class="hud-toggle-box ship-toggle" onclick="cycleShipMode();">
@@ -3332,7 +3334,7 @@ window.addEventListener('keyup',e=>{
 });
 
 function getAvailableModes(){
-  const m=['boost'];if(state.hasWaveBeam)m.push('wave');if(state.boostDoubled)m.push('boost2x');if(_scoopCollected)m.push('dozer');return m;
+  const m=['boost'];if(state.hasWaveBeam)m.push('wave');if(state.boostDoubled)m.push('boost2x');if(_scoopCollected)m.push('dozer');if(_msHasLightSpeed)m.push('lightspeed');return m;
 }
 var _scoopCollected = false; // true once picked up (persists), _hasScoop = currently equipped
 function cycleFireMode(){
@@ -3342,7 +3344,7 @@ function cycleFireMode(){
   // Fire mode toggle flash text
   // Toggle scoop based on fire mode
   if(state.fireMode==='dozer'){ _hasScoop = true; } else { _hasScoop = false; }
-  const _fmMsg = state.fireMode==='dozer' ? 'DOZERBAR ENGAGED' : state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
+  const _fmMsg = state.fireMode==='lightspeed' ? 'LIGHT SPEED' : state.fireMode==='dozer' ? 'DOZERBAR ENGAGED' : state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
   state.zoneCrossFlash = { lvl:-3, timer:80, msg:_fmMsg, _col:'#00ffcc' };
   // Handle wave popup toggle interaction
   const _wp = document.getElementById('wave-popup-overlay');
@@ -3366,6 +3368,8 @@ function updateFireModeUI(){
   if(wEl)wEl.classList.toggle('active',state.fireMode==='wave');
   const scEl=document.getElementById('opt-scoop');
   if(scEl){ scEl.style.display=_scoopCollected?'':'none'; scEl.classList.toggle('locked',!_scoopCollected); scEl.classList.toggle('active',state.fireMode==='dozer'); }
+  const lsEl=document.getElementById('opt-lightspeed');
+  if(lsEl){ lsEl.style.display=_msHasLightSpeed?'':'none'; lsEl.classList.toggle('locked',!_msHasLightSpeed); lsEl.classList.toggle('active',state.fireMode==='lightspeed'); }
   // Always show both toggle columns once game has started
   const hudToggles=document.getElementById('hud-toggles');
   if(hudToggles && state.started) hudToggles.classList.add('visible');
@@ -4124,7 +4128,8 @@ function update(){
   const ps=getPlayerStyle();
   const BASE_ACCEL=0.15*ps.speedMult;
   const BASE_MAX=4*ps.speedMult;
-  const BOOST_MAX=(state.fireMode==='boost2x'?36:18)*ps.speedMult;
+  _isLightSpeed = state.fireMode==='lightspeed' && _msHasLightSpeed;
+  const BOOST_MAX=_isLightSpeed ? 120 : (state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _normalFric = 0.965;
@@ -4148,8 +4153,8 @@ function update(){
   }
 
   // Boost: strong fixed acceleration while space held, hard speed cap
-  if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
-    const _bm=state.fireMode==='boost2x'?2.0:1.0;
+  if(state.hyperspace&&state.fireMode!=='wave'&&(state.fuel>0||_isLightSpeed)&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
+    const _bm=_isLightSpeed ? 6.0 : (state.fireMode==='boost2x'?2.0:1.0);
     state.vx+=Math.sin(state.angle)*0.9*_bm;
     state.vy-=Math.cos(state.angle)*0.9*_bm;
     let _fuelRate;
@@ -4166,8 +4171,8 @@ function update(){
     } else {
       _fuelRate = state.fireMode==='boost2x' ? 0.000297*0.25 : 0.000297;
     }
-    // Skip fuel drain during boost pad effect — the pad is a free ride
-    if(!state.inSecretLevel && state._boostPadEffect <= 0) state.fuel=Math.max(0,state.fuel-_fuelRate);
+    // Skip fuel drain during boost pad effect or light speed — crystal energy is free
+    if(!state.inSecretLevel && state._boostPadEffect <= 0 && !_isLightSpeed) state.fuel=Math.max(0,state.fuel-_fuelRate);
     if(!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){ state.hsTail.push({vx:state.vx,vy:state.vy,age:0}); }
     state.hsTail.forEach(t=>t.age++);
     state.hsTail=state.hsTail.filter(t=>t.age<28);
@@ -7335,7 +7340,9 @@ function drawGame(){
       const lx=cx-t.vx*(t.age*0.5), ly=cy-t.vy*(t.age*0.5);
       const _dotR = _tb ? Math.max(0.2, 5 - t.age*0.18) : Math.max(0.1, 3 - t.age*0.12);
       ctx.beginPath(); ctx.arc(lx,ly,_dotR,0,Math.PI*2);
-      if(_tb){
+      if(state.fireMode==='lightspeed' && _msHasLightSpeed){
+        ctx.fillStyle=`rgba(255,105,180,${alpha})`; ctx.shadowColor='#ff69b4'; ctx.shadowBlur=10;
+      } else if(_tb){
         ctx.fillStyle=`rgba(0,255,204,${alpha})`; ctx.shadowColor='#00ffcc'; ctx.shadowBlur=8;
       } else {
         ctx.fillStyle=`rgba(255,220,0,${alpha})`; ctx.shadowBlur=0;
@@ -7351,7 +7358,11 @@ function drawGame(){
         const x0=cx-t0.vx*(t0.age*0.5), y0=cy-t0.vy*(t0.age*0.5);
         const x1=cx-t1.vx*(t1.age*0.5), y1=cy-t1.vy*(t1.age*0.5);
         const alpha=(1-t0.age/28)*0.5;
-        if(_tb){
+        if(state.fireMode==='lightspeed' && _msHasLightSpeed){
+          ctx.strokeStyle=`rgba(255,105,180,${alpha})`;
+          ctx.lineWidth=Math.max(2, 8*(1-t0.age/28));
+          ctx.shadowColor='#ff69b4'; ctx.shadowBlur=10;
+        } else if(_tb){
           ctx.strokeStyle=`rgba(0,255,204,${alpha})`;
           ctx.lineWidth=Math.max(1, 5*(1-t0.age/28));
           ctx.shadowColor='#00ffcc'; ctx.shadowBlur=6;
@@ -7590,6 +7601,59 @@ function drawGame(){
 
   // Wormhole transition overlay (dramatic)
   drawWormholeTransition();
+
+  // Light speed visual overlay
+  if(_isLightSpeed && state.hyperspace){
+    const _lsSpd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
+    const _lsIntensity = Math.min(1, _lsSpd / 80); // ramps up as speed builds
+    if(_lsIntensity > 0.05){
+      ctx.save();
+      const W = canvas.width, H = canvas.height;
+
+      // Motion blur overlay — semi-transparent black that doesn't fully clear
+      ctx.fillStyle = `rgba(0,0,8,${0.15 * _lsIntensity})`;
+      ctx.fillRect(0, 0, W, H);
+
+      // Star streaks — long lines radiating from center in travel direction
+      const _lsAng = state.angle;
+      const streakCount = 40 + Math.floor(_lsIntensity * 60);
+      for(let k = 0; k < streakCount; k++){
+        const ang = (k / streakCount) * Math.PI * 2;
+        const baseR = 40 + Math.random() * Math.max(W, H) * 0.6;
+        const streakLen = 30 + _lsIntensity * 200 * (0.5 + Math.random() * 0.5);
+        const sx = W/2 + Math.cos(ang) * baseR;
+        const sy = H/2 + Math.sin(ang) * baseR;
+        const ex = sx + Math.cos(ang) * streakLen;
+        const ey = sy + Math.sin(ang) * streakLen;
+        ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
+        const hue = 300 + Math.random() * 30; // pink-purple range
+        ctx.strokeStyle = `hsla(${hue},100%,${70 + Math.random()*20}%,${0.3 + _lsIntensity * 0.5})`;
+        ctx.lineWidth = 0.5 + _lsIntensity * 2 * Math.random();
+        ctx.stroke();
+      }
+
+      // Pink/purple vignette tunnel
+      const vigR = Math.max(W, H) * (0.8 - _lsIntensity * 0.3);
+      const vigGrad = ctx.createRadialGradient(W/2, H/2, vigR * 0.3, W/2, H/2, vigR);
+      vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
+      vigGrad.addColorStop(0.5, 'rgba(0,0,0,0)');
+      vigGrad.addColorStop(0.8, `rgba(80,0,60,${0.3 * _lsIntensity})`);
+      vigGrad.addColorStop(1, `rgba(40,0,30,${0.6 * _lsIntensity})`);
+      ctx.fillStyle = vigGrad;
+      ctx.fillRect(0, 0, W, H);
+
+      // Ship glow — pink aura around center
+      const glowR = 60 + _lsIntensity * 40;
+      const glowGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
+      glowGrad.addColorStop(0, `rgba(255,105,180,${0.15 * _lsIntensity})`);
+      glowGrad.addColorStop(0.5, `rgba(255,105,180,${0.05 * _lsIntensity})`);
+      glowGrad.addColorStop(1, 'rgba(255,105,180,0)');
+      ctx.fillStyle = glowGrad;
+      ctx.fillRect(W/2 - glowR, H/2 - glowR, glowR*2, glowR*2);
+
+      ctx.restore();
+    }
+  }
 
   // Wave orbs drawn in LATE pass (after rocks) — skipped here to ensure z-order
 
@@ -10945,6 +11009,7 @@ function updateCrystalHUD(count){
 var _msPopupOpen = false;
 var _msFirstCrystal = true;
 var _msHasLightSpeed = false;
+var _isLightSpeed = false;
 
 function startMarsSurface(){
   state.paused = true;
