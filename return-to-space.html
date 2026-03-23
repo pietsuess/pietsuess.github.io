@@ -1232,20 +1232,23 @@ function enterVictoryRoom(){}
 function updateMissionBriefing(){
   var mb = document.getElementById('mission-briefing');
   if(!mb) return;
-  const scoopStatus = _scoopCollected ? '✓' : (_hasScoop ? '...' : '—');
+  const scoopStatus = _scoopCollected ? '✓' : '—';
   const debrisPct = _debrisTotal > 0 ? Math.round((_debrisCaptured / _debrisTotal) * 100) : 0;
   const debrisStatus = debrisPct >= 100 ? '✓' : (_hasScoop ? debrisPct + '%' : '—');
-  const marsStatus = (_marsSurface && _marsSurface.active) ? '✓' : (_debrisMilestones[3] ? '...' : '—');
-  const flagStatus = (_marsSurface && _marsSurface.samplesCollected >= MARS_SAMPLES_NEEDED) ? '✓' : (_marsSurface && _marsSurface.active ? _marsSurface.samplesCollected + '/' + MARS_SAMPLES_NEEDED : '—');
+  const marsStatus = (_marsSurface && _marsSurface.active) || _marsLanding ? '✓' : (_debrisMilestones[3] ? '...' : '—');
+  const crystalPct = _marsSurface ? _marsSurface.crystalsCollected + '/' + MS_CRYSTAL_COUNT : '—';
+  const crystalStatus = (_marsSurface && _marsSurface.crystalsCollected >= MS_CRYSTAL_COUNT) ? '✓' : (_marsSurface && _marsSurface.active ? crystalPct : '—');
+  const lightStatus = _msHasLightSpeed ? '✓' : '—';
   const mStyle = 'font-size:10px;letter-spacing:2px;line-height:2.4;text-align:left;max-width:400px;margin:0 auto;';
   const done = 'color:#00ff88;'; const active = 'color:#ffcc00;'; const locked = 'color:#556677;';
-  const s = (status) => status === '✓' ? done : status === '...' ? active : locked;
+  const s = (status) => status === '✓' ? done : (status !== '—' ? active : locked);
   mb.innerHTML = '<div style="color:#00ffcc;font-size:18px;letter-spacing:3px;margin-bottom:24px;text-shadow:0 0 18px #00ffcc;">MISSION LOG</div>' +
     '<div style="' + mStyle + '">' +
     '<div style="' + s(scoopStatus) + '"><span style="opacity:0.5">[' + scoopStatus + ']</span> ACQUIRE DEBRIS SCOOP</div>' +
-    '<div style="' + s(debrisStatus) + '"><span style="opacity:0.5">[' + debrisStatus + ']</span> CLEAR ORBITAL DEBRIS FIELD</div>' +
+    '<div style="' + s(debrisStatus) + '"><span style="opacity:0.5">[' + debrisStatus + ']</span> CLEAR ORBITAL DEBRIS</div>' +
     '<div style="' + s(marsStatus) + '"><span style="opacity:0.5">[' + marsStatus + ']</span> FLY TO MARS</div>' +
-    '<div style="' + s(flagStatus) + '"><span style="opacity:0.5">[' + flagStatus + ']</span> GATHER MARS SAMPLES</div>' +
+    '<div style="' + s(crystalStatus) + '"><span style="opacity:0.5">[' + crystalStatus + ']</span> COLLECT ENERGY CRYSTALS</div>' +
+    '<div style="' + s(lightStatus) + '"><span style="opacity:0.5">[' + lightStatus + ']</span> ACTIVATE HYPERDRIVE</div>' +
     '</div>' +
     '<div style="margin-top:28px;font-size:10px;color:#556677;letter-spacing:2px;">[ PRESS ANY KEY TO CONTINUE ]</div>';
 }
@@ -10620,22 +10623,31 @@ function drawScoopCollectible(ctx, cx, cy){
   if(!_scoopCollectible || _scoopCollectible.collected) return;
   const sx = _scoopCollectible.wx - state.x + cx;
   const sy = _scoopCollectible.wy - state.y + cy + Math.sin(_scoopCollectible.bobPhase) * 6;
-  if(sx < -60 || sx > ctx.canvas.width+60 || sy < -60 || sy > ctx.canvas.height+60) return;
+  if(sx < -120 || sx > ctx.canvas.width+120 || sy < -120 || sy > ctx.canvas.height+120) return;
+  const pulse = Math.sin(state.frameCount * 0.07 + _scoopCollectible.bobPhase) * 0.3 + 0.7;
+  const hue = (state.frameCount * 1.5) % 360;
+  const col = `hsl(${170},100%,70%)`; // cyan-ish, matching game palette
+  const sz = 16;
   ctx.save();
   ctx.translate(sx, sy);
-  // Pulsing cyan glow
-  const pulse = 0.6 + Math.sin(_scoopCollectible.bobPhase * 1.5) * 0.3;
-  ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 16 * pulse;
-  ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 2.5;
-  ctx.globalAlpha = 0.8 + pulse * 0.2;
-  // Half-ellipse shape (scoop)
-  ctx.beginPath();
-  ctx.ellipse(0, 0, 18, 10, 0, Math.PI, 0);
+  ctx.rotate(state.frameCount * 0.02);
+  ctx.globalAlpha = pulse;
+  // Outer ring
+  ctx.beginPath(); ctx.arc(0, 0, sz, 0, Math.PI * 2);
+  ctx.strokeStyle = col; ctx.lineWidth = 2.5;
+  ctx.shadowBlur = 28 * SB; ctx.shadowColor = col;
   ctx.stroke();
-  // Inner glow fill
-  ctx.globalAlpha = 0.15;
-  ctx.fillStyle = '#00ffcc';
-  ctx.fill();
+  // Inner glow ring
+  ctx.beginPath(); ctx.arc(0, 0, sz * 0.65, 0, Math.PI * 2);
+  ctx.strokeStyle = '#aaffee'; ctx.lineWidth = 1; ctx.globalAlpha = pulse * 0.5;
+  ctx.stroke();
+  // Central scoop icon — small half-ellipse
+  ctx.globalAlpha = pulse;
+  ctx.beginPath(); ctx.ellipse(0, 0, sz * 0.4, sz * 0.22, 0, Math.PI, 0);
+  ctx.fillStyle = '#aaffee'; ctx.shadowBlur = 16 * SB; ctx.fill();
+  // Central dot
+  ctx.beginPath(); ctx.arc(0, 0, sz * 0.15, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffffff'; ctx.fill();
   ctx.restore();
 }
 
