@@ -546,10 +546,10 @@ function pSetState(s) {
 // ---- COLLISION ----
 function colBox() {
     switch (gState) {
-        case 'roll': case 'into_roll': return [-8, -15, 16, 15];
-        case 'roll_out': case 'kneel': case 'crouch': return [-10, -22, 20, 22];
-        case 'push': return [-12, -43, 24, 43];
-        default: return [-12, -43, 24, 43]; // wider to match sprite visual
+        case 'roll': case 'into_roll': return [-7, -15, 14, 15];
+        case 'roll_out': case 'kneel': case 'crouch': return [-6, -22, 12, 22];
+        case 'push': return [-6, -43, 12, 43];
+        default: return [-6, -43, 12, 43]; // narrow for tight gameplay
     }
 }
 
@@ -557,7 +557,7 @@ function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[
 
 function canStandUp() {
     const standTop = gy - 43;
-    const standLeft = gx - 12, standWidth = 24;
+    const standLeft = gx - 6, standWidth = 12;
     const l = Math.floor(standLeft / T), r = Math.floor((standLeft + standWidth) / T);
     const t = Math.floor(standTop / T);
     const currentTop = Math.floor((gy - 22) / T);
@@ -1148,17 +1148,47 @@ function playFrame(dt) {
         }
     }
 
-    // 4. Gary (z=5)
+    // 4. Gary (z=5) with visual wall nudge
     if (img.gary && img.gary.complete) {
         const fr = ANIMS[gState].fr[gaFrame];
-        const px = Math.round(gx), py = Math.round(gy);
+        let drawX = Math.round(gx);
+        const py = Math.round(gy);
+
+        // Visual nudge: prevent sprite from overlapping walls
+        // Sprite extends ~20px past hitbox. Check for walls and pull back.
+        const SPRITE_HALF = 18; // how far sprite body extends from center
+        const checkY1 = Math.floor((gy - 30) / T);
+        const checkY2 = Math.floor((gy - 5) / T);
+        // Check right
+        for (let cy = checkY1; cy <= checkY2; cy++) {
+            const wallTx = Math.floor((gx + SPRITE_HALF) / T);
+            if (isSolid(wallTx, cy)) {
+                const wallLeft = wallTx * T;
+                if (gx + SPRITE_HALF > wallLeft) {
+                    drawX = Math.min(drawX, wallLeft - SPRITE_HALF);
+                }
+                break;
+            }
+        }
+        // Check left
+        for (let cy = checkY1; cy <= checkY2; cy++) {
+            const wallTx = Math.floor((gx - SPRITE_HALF) / T);
+            if (isSolid(wallTx, cy)) {
+                const wallRight = (wallTx + 1) * T;
+                if (gx - SPRITE_HALF < wallRight) {
+                    drawX = Math.max(drawX, wallRight + SPRITE_HALF);
+                }
+                break;
+            }
+        }
+
         ctx.save();
         if (gDir === -1) {
-            ctx.translate(px, py - 61);
+            ctx.translate(drawX, py - 61);
             ctx.scale(-1, 1);
             ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, -30, 0, 61, 61);
         } else {
-            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, px - 30, py - 61, 61, 61);
+            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, drawX - 30, py - 61, 61, 61);
         }
         ctx.restore();
     }
