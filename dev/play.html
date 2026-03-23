@@ -1,0 +1,1375 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Gary Game</title>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { background: #000; overflow: hidden; width: 100vw; height: 100vh; }
+canvas#play-canvas { display: block; width: 100%; height: 100%; image-rendering: pixelated; image-rendering: crisp-edges; }
+
+/* ====== PLAY MODE HUD (Navigator style) ====== */
+#play-score {
+    position: fixed; top: 12px; left: 16px; z-index: 200;
+    font-family: 'Press Start 2P', monospace; color: #00ffcc;
+    text-shadow: 0 0 6px rgba(0,255,204,0.6);
+    font-size: 10px; letter-spacing: 1px; line-height: 1.9;
+}
+#play-score .score-val { font-size: 14px; font-weight: bold; }
+
+#play-title {
+    position: fixed; top: 10px; left: 50%; transform: translateX(-50%); z-index: 200;
+    font-family: 'Press Start 2P', monospace; font-size: 11px;
+    color: #ff69b4; text-shadow: 0 0 8px rgba(255,105,180,0.7);
+    letter-spacing: 3px; display: flex; align-items: center; gap: 10px;
+    white-space: nowrap;
+}
+#play-title .social-icons {
+    display: flex; align-items: center; gap: 6px; opacity: 0.5; margin-left: 10px;
+}
+#play-title .social-icons:hover { opacity: 0.8; }
+#play-title .social-icons a { opacity: 0.7; transition: opacity 0.2s; }
+#play-title .social-icons a:hover { opacity: 1; }
+
+#play-fullscreen {
+    position: fixed; top: 8px; right: 10px; z-index: 200;
+    cursor: pointer; font-size: 24px; color: #555; padding: 3px 5px;
+    user-select: none; line-height: 1; font-weight: bold;
+    transition: color 0.2s;
+}
+#play-fullscreen:hover { color: #00ffcc; }
+
+/* Power-up indicator */
+#play-powerup {
+    position: fixed; top: 50px; left: 16px; z-index: 200;
+    font-family: 'Press Start 2P', monospace; font-size: 8px;
+    letter-spacing: 1px;
+}
+.powerup-badge {
+    display: inline-block; padding: 2px 6px; margin-bottom: 3px;
+    border-radius: 3px; font-size: 7px;
+}
+.powerup-speed { background: rgba(255,140,0,0.3); color: #ff8c00; border: 1px solid rgba(255,140,0,0.5); }
+.powerup-jump { background: rgba(0,255,136,0.3); color: #00ff88; border: 1px solid rgba(0,255,136,0.5); }
+
+/* Drawers */
+.play-drawer {
+    position: fixed; bottom: 0; z-index: 300;
+    background: rgba(0,0,0,0.96);
+    transition: transform 0.22s cubic-bezier(.4,0,.2,1);
+    pointer-events: all;
+}
+.play-drawer.closed { transform: translateY(calc(100% - 40px)); }
+
+#music-drawer {
+    left: 0; width: 33.33%;
+    border: 2px solid rgba(255,105,180,0.5); border-bottom: none; border-left: none;
+    border-radius: 0 14px 0 0;
+    box-shadow: 0 0 24px rgba(255,105,180,0.15), 4px 0 20px rgba(0,0,0,0.6);
+}
+/* mute button 3-state: red X lines for muted states */
+#mute-btn { position: relative; }
+#mute-btn::before, #mute-btn::after {
+    content: ''; position: absolute; width: 130%; height: 2.5px;
+    background: #ff2222; border-radius: 2px; top: 50%; left: -15%;
+    transform-origin: center; display: none;
+}
+#mute-btn::before { transform: translateY(-50%) rotate(-45deg); }
+#mute-btn::after { transform: translateY(-50%) rotate(45deg); }
+#mute-btn.music-muted::before { display: block; }
+#mute-btn.sfx-muted::after { display: block; }
+#mute-btn.both-muted::before { display: block; }
+#mute-btn.both-muted::after { display: block; }
+
+.drawer-tab {
+    height: 40px; display: flex; align-items: center; padding: 0 14px; gap: 8px;
+    cursor: pointer; font-family: 'Press Start 2P', monospace; font-size: 8px;
+    user-select: none;
+}
+#music-drawer .drawer-tab { color: #ff69b4; }
+#menu-drawer .drawer-tab { color: #ffe000; }
+
+.drawer-tab .arrow { transition: transform 0.22s; display: inline-block; }
+.play-drawer:not(.closed) .drawer-tab .arrow { transform: rotate(180deg); }
+.drawer-body { padding: 12px 14px; font-family: 'Press Start 2P', monospace; font-size: 8px; color: #aaa; line-height: 2.2; }
+
+.drawer-body label { display: block; cursor: pointer; }
+.drawer-body label:hover { color: #fff; }
+.drawer-body input[type=range] { width: 100%; accent-color: #00ffcc; margin-top: 4px; }
+
+/* Play mode state bar */
+#play-state {
+    position: fixed; bottom: 44px; left: 10px; z-index: 200;
+    font-family: monospace; font-size: 10px; color: rgba(255,255,255,0.3);
+}
+
+/* Video overlay */
+#video-overlay {
+    display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.92); z-index: 9500;
+    justify-content: center; align-items: center; padding: 20px;
+}
+#video-overlay.open { display: flex; }
+#video-box {
+    position: relative; max-width: 960px; width: 100%; max-height: 90vh;
+    background: #000; border: 3px solid #ffcc00;
+    box-shadow: 0 0 30px #ffcc00, 0 0 60px rgba(255,204,0,0.3);
+}
+#video-header {
+    background: #ffcc00; padding: 8px 14px;
+    display: flex; justify-content: space-between; align-items: center;
+}
+#video-title { color: #000; font-size: 12px; font-family: monospace; letter-spacing: 1px; }
+#close-video {
+    cursor: pointer; color: #000; font-size: 14px; font-family: monospace;
+    background: none; border: none; padding: 0 4px;
+}
+#close-video:hover { color: #f00; }
+#video-body { width: 100%; aspect-ratio: 16/9; background: #111; position: relative; }
+#video-body iframe { position: absolute; top: 0; left: 0; width: 100%; height: 100%; border: none; }
+</style>
+</head>
+<body>
+
+<canvas id="play-canvas"></canvas>
+
+<!-- PLAY MODE HUD (Navigator style) -->
+<div id="play-score">
+    SCORE<br><span class="score-val" id="play-score-val">000000</span>
+</div>
+
+<div id="play-title">
+    PIET&nbsp;SUESS
+    <span class="social-icons">
+        <a href="https://www.instagram.com/pietsuess/" target="_blank" title="Instagram">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#E1306C"><path d="M12 2.163c3.204 0 3.584.012 4.85.07 3.252.148 4.771 1.691 4.919 4.919.058 1.265.069 1.645.069 4.849 0 3.205-.012 3.584-.069 4.849-.149 3.225-1.664 4.771-4.919 4.919-1.266.058-1.644.07-4.85.07-3.204 0-3.584-.012-4.849-.07-3.26-.149-4.771-1.699-4.919-4.92-.058-1.265-.07-1.644-.07-4.849 0-3.204.013-3.583.07-4.849.149-3.227 1.664-4.771 4.919-4.919 1.266-.057 1.645-.069 4.849-.069zM12 0C8.741 0 8.333.014 7.053.072 2.695.272.273 2.69.073 7.052.014 8.333 0 8.741 0 12c0 3.259.014 3.668.072 4.948.2 4.358 2.618 6.78 6.98 6.98C8.333 23.986 8.741 24 12 24c3.259 0 3.668-.014 4.948-.072 4.354-.2 6.782-2.618 6.979-6.98.059-1.28.073-1.689.073-4.948 0-3.259-.014-3.667-.072-4.947-.196-4.354-2.617-6.78-6.979-6.98C15.668.014 15.259 0 12 0zm0 5.838a6.162 6.162 0 100 12.324 6.162 6.162 0 000-12.324zM12 16a4 4 0 110-8 4 4 0 010 8zm6.406-11.845a1.44 1.44 0 100 2.881 1.44 1.44 0 000-2.881z"/></svg>
+        </a>
+        <a href="https://vimeo.com/pietsuess" target="_blank" title="Vimeo">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#1AB7EA"><path d="M23.977 6.416c-.105 2.338-1.739 5.543-4.894 9.609-3.268 4.247-6.026 6.37-8.29 6.37-1.409 0-2.578-1.294-3.553-3.881L5.322 11.4C4.603 8.816 3.834 7.522 3.01 7.522c-.179 0-.806.378-1.881 1.132L0 7.197c1.185-1.044 2.351-2.084 3.501-3.128C5.08 2.701 6.266 1.984 7.055 1.91c1.867-.18 3.016 1.1 3.447 3.838.465 2.953.789 4.789.971 5.507.539 2.45 1.131 3.674 1.776 3.674.502 0 1.256-.796 2.263-2.385 1.004-1.589 1.54-2.797 1.612-3.628.144-1.371-.395-2.061-1.614-2.061-.574 0-1.167.121-1.777.391 1.186-3.868 3.434-5.757 6.762-5.637 2.473.06 3.628 1.664 3.493 4.797l-.011.01z"/></svg>
+        </a>
+        <a href="https://www.youtube.com/@pietsuess" target="_blank" title="YouTube">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#FF0000"><path d="M23.498 6.186a3.016 3.016 0 00-2.122-2.136C19.505 3.545 12 3.545 12 3.545s-7.505 0-9.377.505A3.017 3.017 0 00.502 6.186C0 8.07 0 12 0 12s0 3.93.502 5.814a3.016 3.016 0 002.122 2.136c1.871.505 9.376.505 9.376.505s7.505 0 9.377-.505a3.015 3.015 0 002.122-2.136C24 15.93 24 12 24 12s0-3.93-.502-5.814zM9.545 15.568V8.432L15.818 12l-6.273 3.568z"/></svg>
+        </a>
+        <a href="https://www.linkedin.com/in/pietsuess/" target="_blank" title="LinkedIn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="#0A66C2"><path d="M20.447 20.452h-3.554v-5.569c0-1.328-.027-3.037-1.852-3.037-1.853 0-2.136 1.445-2.136 2.939v5.667H9.351V9h3.414v1.561h.046c.477-.9 1.637-1.85 3.37-1.85 3.601 0 4.267 2.37 4.267 5.455v6.286zM5.337 7.433a2.062 2.062 0 01-2.063-2.065 2.064 2.064 0 112.063 2.065zm1.782 13.019H3.555V9h3.564v11.452zM22.225 0H1.771C.792 0 0 .774 0 1.729v20.542C0 23.227.792 24 1.771 24h20.451C23.2 24 24 23.227 24 22.271V1.729C24 .774 23.2 0 22.222 0h.003z"/></svg>
+        </a>
+        <a href="https://pietsuess.com" target="_blank" title="Portfolio">
+            <svg width="22" height="18" viewBox="0 0 22 18" fill="#aaa"><rect x="1" y="1" width="20" height="14" rx="2" stroke="#aaa" stroke-width="1.5" fill="none"/><path d="M4 17h14" stroke="#aaa" stroke-width="1.5"/><path d="M8 14v3M14 14v3" stroke="#aaa" stroke-width="1.2"/></svg>
+        </a>
+    </span>
+</div>
+
+<div id="play-fullscreen" onclick="toggleFullscreen()" title="Toggle Fullscreen">&#x26F6;</div>
+
+<div id="play-powerup"></div>
+
+<div id="play-state"></div>
+
+<!-- Audio Drawer (left 33%) -->
+<div id="music-drawer" class="play-drawer closed">
+    <div class="drawer-tab" onclick="toggleDrawer('music')">
+        <span style="font-size:18px;text-shadow:0 0 10px #ff69b4;">&#9835;</span>
+        <span id="music-now" style="flex:1;color:#888;font-size:9px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;">AUDIO</span>
+        <div id="mute-btn" onclick="cycleMute();event.stopPropagation()" title="Cycle: All On -> Music Muted -> SFX Muted -> All Muted" style="cursor:pointer;font-size:18px;text-shadow:0 0 8px #ff69b4;padding:4px;position:relative;display:inline-flex;align-items:center;justify-content:center;">&#x1F50A;</div>
+        <span class="arrow">&#9650;</span>
+    </div>
+    <div class="drawer-body">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:6px;">
+            <span style="color:#666;font-size:7px;white-space:nowrap;">VOL</span>
+            <input id="vol-slider" type="range" min="0" max="100" value="30" oninput="setMasterVol(this.value)" style="flex:1;accent-color:#ff69b4;">
+        </div>
+        <div style="display:flex;gap:8px;justify-content:center;">
+            <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()" style="cursor:pointer;font-size:7px;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">&#9835; ON</div>
+            <div id="sfx-mute-btn" onclick="toggleSfxMute();event.stopPropagation()" style="cursor:pointer;font-size:7px;color:#00ffcc;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SFX ON</div>
+        </div>
+    </div>
+</div>
+
+<!-- Menu Drawer (center 33%) -->
+<div id="menu-drawer" class="play-drawer closed" style="left:33.33%;width:33.34%;border:2px solid rgba(0,255,204,0.5);border-bottom:none;border-radius:14px 14px 0 0;box-shadow:0 0 24px rgba(0,255,204,0.15);">
+    <div class="drawer-tab" onclick="toggleDrawer('menu')" style="color:#00ffcc;">
+        <span style="font-size:16px;">&#9776;</span>
+        <span style="flex:1;font-size:9px;">MENU</span>
+        <span class="arrow">&#9650;</span>
+    </div>
+    <div class="drawer-body" style="line-height:2.6;">
+        <div onclick="restartLevel()" style="cursor:pointer;color:#ff8c00;">&#8634; RESTART LEVEL</div>
+        <div onclick="closeWindow()" style="cursor:pointer;color:#ff4444;">&#10006; CLOSE</div>
+    </div>
+</div>
+
+<!-- Video overlay -->
+<div id="video-overlay" onclick="closeVideo()">
+    <div id="video-box" onclick="event.stopPropagation()">
+        <div id="video-header">
+            <div id="video-title">NOW PLAYING</div>
+            <button id="close-video" onclick="closeVideo()">X</button>
+        </div>
+        <div id="video-body"></div>
+    </div>
+</div>
+
+<script>
+// ============================================================
+// GARY GAME — STANDALONE PLAY ENGINE
+// Reads level data from localStorage key 'gary-play-level'
+// ============================================================
+
+const T = 16; // tile size in pixels
+
+// ---- SOLID TILE ATLAS POSITIONS ----
+const SOLID_ATLAS = new Set([
+    '0,0','1,0','2,0','3,0','4,0','5,0','6,0','7,0','8,0','9,0','10,0','11,0','12,0','13,0','14,0','15,0','16,0','17,0','18,0','19,0','22,0','23,0',
+    '0,3','1,3','2,3','3,3','4,3','5,3','6,3','7,3','8,3','9,3','10,3','11,3','12,3','13,3','14,3','15,3','16,3','17,3','18,3','19,3','20,3','21,3','22,3','23,3',
+    '0,4','1,4','2,4','3,4','4,4','5,4','6,4','7,4','8,4','9,4','10,4','11,4','12,4','13,4','14,4','15,4','16,4','17,4','18,4','19,4','20,4','21,4','22,4','23,4',
+    '2,6','3,6','4,6','5,6','6,6',
+    '0,10','1,10','2,10','3,10','4,10','5,10',
+    '0,11','1,11','2,11','3,11','4,11','5,11','6,11','9,11','10,11','11,11','12,11','13,11','14,11','15,11','16,11','17,11',
+    '21,12','22,12','23,12',
+    '6,13','7,13','8,13','12,13','13,13','14,13','15,13','16,13','17,13','21,13','22,13','23,13',
+    '6,14','7,14','8,14','12,14','13,14','14,14','15,14','16,14','17,14',
+    '18,16','19,16','20,16','21,16','22,16','23,16',
+    '18,17','19,17','20,17','21,17','22,17','23,17',
+    '13,18','14,18','18,18','19,18','20,18','21,18','22,18','23,18',
+    '12,19','13,19','14,19','18,19','19,19','20,19','21,19','22,19','23,19',
+    '10,20','11,20','12,20','13,20','14,20',
+]);
+
+const PARTIAL_CELLS = {
+    '0,4':[[0,6.3]],'1,4':[[0,6.3]],'2,4':[[0,6.3]],'3,4':[[0,6.3]],'4,4':[[0,6.3]],'5,4':[[0,6.3]],
+    '6,4':[[0,6.3]],'7,4':[[0,6.3]],'8,4':[[0,6.3]],'9,4':[[0,6.3]],'10,4':[[0,6.3]],'11,4':[[0,6.3]],
+    '12,4':[[0,6.3]],'13,4':[[0,6.3]],'14,4':[[0,6.3]],'15,4':[[0,6.3]],'16,4':[[0,6.3]],'17,4':[[0,6.3]],
+    '18,4':[[0,6]],'19,4':[[0,6]],'20,4':[[0,6]],'21,4':[[0,6.5]],'22,4':[[0,6.5]],'23,4':[[0,6.5]],
+    '2,6':[[0,9.1]],'3,6':[[0,9.1]],'4,6':[[0,9.1]],'5,6':[[0,9.1]],'6,6':[[0,9.2]],
+    '0,10':[[5,16]],'1,10':[[5,16]],'2,10':[[5,16]],'3,10':[[5,16]],'4,10':[[5,16]],'5,10':[[5,16]],
+    '15,11':[[0,9]],'16,11':[[0,9]],'17,11':[[0,9]],
+    '6,13':[[0,6.2]],'7,13':[[0,6.2]],'8,13':[[0,6.2]],
+    '12,13':[[0,6.5]],'13,13':[[0,6.5]],'14,13':[[0,6.5]],
+    '15,13':[[0,6.6]],'16,13':[[0,6.6]],'17,13':[[0,6.6]],
+    '21,13':[[0,6]],'22,13':[[0,6]],'23,13':[[0,6]],
+    '6,14':[[13.2,15.8]],'7,14':[[13.2,15.8]],'8,14':[[13.2,15.8]],
+    '12,14':[[12.7,16]],'13,14':[[12.7,16]],'14,14':[[12.7,16]],
+    '15,14':[[12.7,16]],'16,14':[[12.7,16]],'17,14':[[12.7,16]],
+    '18,16':[[12.6,16]],'19,16':[[12.6,16]],'20,16':[[12.6,16]],
+    '21,16':[[8,16]],'22,16':[[8,16]],'23,16':[[8,16]],
+    '18,19':[[0,6]],'19,19':[[0,6]],'20,19':[[0,6]],'21,19':[[0,6]],'22,19':[[0,6]],'23,19':[[0,6]],
+};
+
+// Custom collision overrides — loaded from level data
+const collisionOverrides = {};
+
+function isSolidAtlas(ax, ay) {
+    const key = ax + ',' + ay;
+    if (key in collisionOverrides) return collisionOverrides[key] !== null;
+    return SOLID_ATLAS.has(key);
+}
+
+function getCollisionData(ax, ay) {
+    const key = ax + ',' + ay;
+    if (key in collisionOverrides) {
+        const ov = collisionOverrides[key];
+        if (ov === null) return { type: 'none' };
+        if (ov === 'solid') return { type: 'solid' };
+        return { type: 'partial', ranges: ov };
+    }
+    if (!SOLID_ATLAS.has(key)) return { type: 'none' };
+    if (PARTIAL_CELLS[key]) return { type: 'partial', ranges: PARTIAL_CELLS[key] };
+    return { type: 'solid' };
+}
+
+// ---- IMAGES ----
+const img = {};
+function loadImg(name, src) {
+    const i = new Image();
+    i.src = src;
+    img[name] = i;
+    return new Promise(r => { i.onload = () => r(); i.onerror = () => { console.error('Failed to load:', src); r(); }; });
+}
+
+const imgLoads = [
+    loadImg('env', 'EnvironmentTileSet.png'),
+    loadImg('lava', 'LavaTileset.png'),
+    loadImg('gary', 'ManSprite_SHEET2.png'),
+    loadImg('coin', 'TreasureAnim.png'),
+    loadImg('rod', 'Rod.png'),
+    loadImg('chest', 'TreasureChest_Sheet.png'),
+    loadImg('arcade', 'Arcade.png'),
+    loadImg('platform', 'Platforms.png'),
+];
+
+// ---- LEVEL DATA ----
+let LVL_W = 60;
+let LVL_H = 30;
+let bgColor = '#16213e';
+
+const layers = [
+    { name: 'Background', tiles: new Map(), visible: true, z: 0 },
+    { name: 'Midground', tiles: new Map(), visible: true, z: 1 },
+    { name: 'Foreground', tiles: new Map(), visible: true, z: 7 },
+];
+
+let entities = [];
+let spawnX = 4, spawnY = 25;
+
+// Pushable cells
+const pushableCells = new Set();
+
+// ---- PLAY ENGINE ----
+const canvas = document.getElementById('play-canvas');
+let ctx = canvas.getContext('2d');
+
+let playActive = false;
+let videoOpen = false;
+
+const GRAV = 720, SPD = 265, JUMP = -400, ROLL_SPD = 265, AIR_SPD = 205;
+function getSpd() { return hyperSpeed ? SPD * 1.6 : SPD; }
+function getJump() { return highJump ? JUMP * 1.5 : JUMP; }
+function getRoll() { return hyperSpeed ? ROLL_SPD * 1.6 : ROLL_SPD; }
+function getAir() { return hyperSpeed ? AIR_SPD * 1.5 : AIR_SPD; }
+
+let gx, gy, gvx, gvy, gDir, gFloor, gState, gaFrame, gaTimer, gaDone, gScore;
+let showHitboxes = false;
+
+const pKeys = {};
+let pJumpBuf = 0;
+
+function f(x, y) { return [x, y]; }
+const ANIMS = {
+    idle:      { fr: [f(0,0),f(0,0),f(0,0),f(0,0),f(61,0),f(61,0),f(61,0),f(61,0)], fps: 8, loop: true },
+    start:     { fr: [f(488,0),f(549,0),f(0,61)], fps: 8, loop: false },
+    run:       { fr: [f(61,61),f(122,61),f(183,61),f(244,61),f(305,61)], fps: 8, loop: true },
+    hop:       { fr: [f(183,183),f(488,183),f(488,183),f(549,183),f(549,183),f(0,244),f(0,0)], fps: 8, loop: false },
+    crouch:    { fr: [f(0,0),f(183,183),f(122,183),f(61,183)], fps: 8, loop: false },
+    kneel:     { fr: [f(305,183),f(61,183),f(305,183),f(61,244),f(61,244),f(61,244)], fps: 8, loop: true },
+    crouch_up: { fr: [f(305,183),f(244,183),f(183,183),f(0,0)], fps: 8, loop: false },
+    take_off:  { fr: [f(366,61),f(427,61),f(488,61),f(549,61)], fps: 8, loop: false },
+    air:       { fr: [f(549,61),f(366,183),f(427,183)], fps: 8, loop: true },
+    land:      { fr: [f(0,122),f(61,122),f(122,122)], fps: 10, loop: false },
+    into_roll: { fr: [f(183,122),f(244,122)], fps: 8, loop: false },
+    roll:      { fr: [f(305,122),f(366,122),f(427,122)], fps: 8, loop: true },
+    roll_out:  { fr: [f(488,122),f(549,122),f(0,183)], fps: 8, loop: false },
+    press:     { fr: [f(122,0),f(244,0),f(305,0),f(366,0),f(366,0),f(366,0),f(305,0),f(244,0),f(122,0)], fps: 8, loop: false },
+    fall:      { fr: [f(183,244),f(183,244),f(244,244),f(244,244)], fps: 8, loop: true },
+    push:      { fr: [f(305,244),f(366,244),f(427,244),f(488,244),f(549,244)], fps: 4, loop: true },
+};
+
+let pCoins, pRods, pChests, pArcades, pPlatforms;
+
+// Pushable groups
+let pushGroups = [];
+let pushingGroup = null;
+let pushSolidKeys = [];
+let wallPushTimer = 0;
+let wallBlocked = false;
+const WALL_PUSH_DELAY = 0.35;
+let solidSet;
+let cellCol = {};
+
+function buildSolidSet() {
+    solidSet = new Set();
+    cellCol = {};
+    for (const layer of layers) {
+        if (!layer.visible) continue;
+        for (const [key, tile] of layer.tiles) {
+            if (tile.tileset === 'lava') {
+                solidSet.add(key);
+            } else {
+                const data = getCollisionData(tile.ax, tile.ay);
+                if (data.type === 'solid') {
+                    solidSet.add(key);
+                } else if (data.type === 'partial') {
+                    solidSet.add(key);
+                    cellCol[key] = data.ranges;
+                }
+            }
+        }
+    }
+}
+
+function isSolid(tx, ty) { return solidSet.has(tx + ',' + ty); }
+
+function cellOverlap(tx, ty, worldTop, worldBot) {
+    const k = tx + ',' + ty;
+    const ranges = cellCol[k];
+    if (!ranges) return true;
+    const cellY = ty * T;
+    for (const r of ranges) {
+        const barTop = cellY + r[0];
+        const barBot = cellY + r[1];
+        if (worldBot > barTop && worldTop < barBot) return true;
+    }
+    return false;
+}
+
+// ---- SOUNDS ----
+let audioCtx = null;
+function getAC() { if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)(); return audioCtx; }
+
+function makeClick(ac, time, freq) {
+    const bufLen = ac.sampleRate * 0.015;
+    const noiseBuf = ac.createBuffer(1, bufLen, ac.sampleRate);
+    const data = noiseBuf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) data[i] = Math.random() * 2 - 1;
+    const src = ac.createBufferSource(); src.buffer = noiseBuf;
+    const bp = ac.createBiquadFilter(); bp.type = 'bandpass'; bp.frequency.setValueAtTime(freq, time); bp.Q.setValueAtTime(30, time);
+    const gain = ac.createGain(); gain.gain.setValueAtTime(0.35, time); gain.gain.exponentialRampToValueAtTime(0.001, time + 0.03);
+    src.connect(bp); bp.connect(gain); gain.connect(ac.destination);
+    src.start(time); src.stop(time + 0.04);
+}
+
+function playChestOpen() {
+    const ac = getAC(); const now = ac.currentTime;
+    makeClick(ac, now, 1800);
+    const t = now + 0.07;
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+    const g1 = ac.createGain(), g2 = ac.createGain();
+    const fl = ac.createBiquadFilter();
+    o1.type = 'sawtooth'; o1.frequency.setValueAtTime(80, t); o1.frequency.linearRampToValueAtTime(220, t+0.12); o1.frequency.linearRampToValueAtTime(100, t+0.25);
+    g1.gain.setValueAtTime(0.06, t); g1.gain.linearRampToValueAtTime(0, t+0.35);
+    o2.type = 'square'; o2.frequency.setValueAtTime(180, t); o2.frequency.linearRampToValueAtTime(400, t+0.1); o2.frequency.linearRampToValueAtTime(200, t+0.2);
+    g2.gain.setValueAtTime(0.015, t); g2.gain.linearRampToValueAtTime(0, t+0.3);
+    fl.type = 'bandpass'; fl.frequency.setValueAtTime(400, t); fl.Q.setValueAtTime(2, t);
+    o1.connect(g1); o2.connect(g2); g1.connect(fl); g2.connect(fl); fl.connect(ac.destination);
+    o1.start(t); o2.start(t); o1.stop(t+0.5); o2.stop(t+0.5);
+}
+
+function playChestClose() {
+    const ac = getAC(); const now = ac.currentTime;
+    const o1 = ac.createOscillator(), o2 = ac.createOscillator();
+    const g1 = ac.createGain(), g2 = ac.createGain(), fl = ac.createBiquadFilter();
+    o1.type = 'sawtooth'; o1.frequency.setValueAtTime(200, now); o1.frequency.linearRampToValueAtTime(60, now+0.22);
+    g1.gain.setValueAtTime(0.05, now); g1.gain.linearRampToValueAtTime(0, now+0.28);
+    o2.type = 'square'; o2.frequency.setValueAtTime(350, now); o2.frequency.linearRampToValueAtTime(150, now+0.15);
+    g2.gain.setValueAtTime(0.012, now); g2.gain.linearRampToValueAtTime(0, now+0.22);
+    fl.type = 'bandpass'; fl.frequency.setValueAtTime(350, now); fl.Q.setValueAtTime(2, now);
+    o1.connect(g1); o2.connect(g2); g1.connect(fl); g2.connect(fl); fl.connect(ac.destination);
+    o1.start(now); o2.start(now); o1.stop(now+0.4); o2.stop(now+0.4);
+    makeClick(ac, now + 0.28, 1400);
+}
+
+const coinSfx = new Audio('audio/kalimba-mallets-accept-sound-SBA-300463068.wav');
+coinSfx.volume = 0.4;
+const rodSfx = new Audio('audio/xylo-mallet-complete-sound-3-percussion-multimedia-success-SBA-300463154.wav');
+rodSfx.volume = 0.4;
+
+// ---- VIDEO ----
+function openVideo(vimeoId) {
+    document.getElementById('video-body').innerHTML = `<iframe src="https://player.vimeo.com/video/${vimeoId}?autoplay=1&title=0&byline=0&portrait=0" allow="autoplay; fullscreen; picture-in-picture" allowfullscreen></iframe>`;
+    document.getElementById('video-overlay').classList.add('open');
+    videoOpen = true;
+}
+
+function closeVideo() {
+    document.getElementById('video-overlay').classList.remove('open');
+    document.getElementById('video-body').innerHTML = '';
+    videoOpen = false;
+}
+
+// ---- START PLAY ----
+function startPlay() {
+    buildSolidSet();
+    gx = spawnX * T + T / 2;
+    gy = (spawnY + 1) * T;
+    gvx = 0; gvy = 0; gDir = 1; gFloor = false;
+    gState = 'idle'; gaFrame = 0; gaTimer = 0; gaDone = false;
+    gScore = 0;
+
+    pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
+    pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
+    pChests = entities.filter(e => e.type === 'chest').map(e => ({ x: e.x, y: e.y, open: false, t: 0, acted: false, label: e.label, props: e.props }));
+    pArcades = entities.filter(e => e.type === 'arcade').map(e => ({ x: e.x, y: e.y, t: Math.random() * 5, acted: false, label: e.label, props: e.props }));
+    pPlatforms = entities.filter(e => e.type === 'platform').map(e => ({ x: e.x, y: e.y, t: 0, label: e.label, props: e.props }));
+
+    // Build pushable groups by flood-filling connected pushable cells
+    pushGroups = [];
+    pushingGroup = null;
+    const visited = new Set();
+    for (const key of pushableCells) {
+        if (visited.has(key)) continue;
+        const group = { cells: [], offsetX: 0, offsetY: 0 };
+        const queue = [key];
+        while (queue.length > 0) {
+            const k = queue.pop();
+            if (visited.has(k)) continue;
+            if (!pushableCells.has(k)) continue;
+            visited.add(k);
+            const [tx, ty] = k.split(',').map(Number);
+            group.cells.push({ tx, ty });
+            queue.push((tx+1)+','+ty, (tx-1)+','+ty, tx+','+(ty+1), tx+','+(ty-1));
+        }
+        if (group.cells.length > 0) pushGroups.push(group);
+    }
+    // Remove pushable cells from solidSet
+    for (const key of pushableCells) {
+        solidSet.delete(key);
+    }
+
+    Object.keys(pKeys).forEach(k => delete pKeys[k]);
+    pJumpBuf = 0;
+    hyperSpeed = false; hyperTimer = 0;
+    highJump = false; highJumpTimer = 0;
+
+    updateScoreDisplay();
+
+    // Start music
+    if (!playMusic) { playMusic = new Audio('audio/arcadeMusic.mp3'); playMusic.loop = true; }
+    playMusic.volume = masterVol;
+    if (!musicMuted) playMusic.play().catch(() => {});
+    updateMuteBtn();
+
+    playActive = true;
+}
+
+// ---- STATE MACHINE ----
+function pSetState(s) {
+    if (gState === s) return;
+    gState = s; gaFrame = 0; gaTimer = 0; gaDone = false;
+}
+
+// ---- COLLISION ----
+function colBox() {
+    switch (gState) {
+        case 'roll': case 'into_roll': return [-7, -15, 14, 15];
+        case 'roll_out': case 'kneel': case 'crouch': return [-6, -22, 12, 22];
+        case 'push': return [-8, -43, 16, 43];
+        default: return [-6, -43, 12, 43];
+    }
+}
+
+function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[3]]; }
+
+function canStandUp() {
+    const standTop = gy - 43;
+    const standLeft = gx - 6, standWidth = 12;
+    const l = Math.floor(standLeft / T), r = Math.floor((standLeft + standWidth) / T);
+    const t = Math.floor(standTop / T);
+    const currentTop = Math.floor((gy - 22) / T);
+    for (let ty = t; ty < currentTop; ty++) {
+        for (let tx = l; tx <= r; tx++) {
+            if (!isSolid(tx, ty)) continue;
+            if (cellOverlap(tx, ty, standTop, gy - 22)) return false;
+        }
+    }
+    for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, currentTop)) continue;
+        if (cellOverlap(tx, currentTop, standTop, gy - 22)) return false;
+    }
+    return true;
+}
+
+function rectHit(x, y, w, h) {
+    const l = Math.floor(x / T), r = Math.floor((x + w) / T);
+    const t = Math.floor(y / T), b = Math.floor((y + h - 1) / T);
+    for (let ty = t; ty <= b; ty++) for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        if (cellOverlap(tx, ty, y, y + h)) return true;
+    }
+    return false;
+}
+
+const STEP_UP = 4;
+
+function resolveX() {
+    const [bx, by, bw, bh] = worldBox();
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    const t = Math.floor(by / T), bt = Math.floor((by + bh - 1) / T);
+    for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        if (!cellOverlap(tx, ty, by, by + bh)) continue;
+        const rx = tx * T;
+        if (bx < rx + T && bx + bw > rx) {
+            const k = tx + ',' + ty;
+            const isPushCell = false;
+            const ranges = cellCol[k];
+            if (ranges && gFloor && !isPushCell) {
+                let maxBarTop = -Infinity;
+                for (const r2 of ranges) {
+                    const barTop = ty * T + r2[0];
+                    const barBot = ty * T + r2[1];
+                    if (by + bh > barTop && by + bh < barBot + STEP_UP) {
+                        maxBarTop = Math.max(maxBarTop, barTop);
+                    }
+                }
+                if (maxBarTop > -Infinity) {
+                    const stepAmount = (by + bh) - maxBarTop;
+                    if (stepAmount > 0 && stepAmount <= STEP_UP) {
+                        gy -= stepAmount;
+                        return;
+                    }
+                }
+            }
+            if (!ranges && gFloor && !isPushCell) {
+                const cellTop = ty * T;
+                const feetOverlap = (by + bh) - cellTop;
+                if (feetOverlap > 0 && feetOverlap <= STEP_UP) {
+                    gy -= feetOverlap;
+                    return;
+                }
+            }
+            const c = colBox();
+            if (gvx > 0) gx = rx - c[2] - c[0] - 0.01;
+            else if (gvx < 0) gx = rx + T - c[0] + 0.01;
+            wallBlocked = true;
+            gvx = 0; return;
+        }
+    }
+}
+
+function resolveY() {
+    const [bx, by, bw, bh] = worldBox();
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    const t = Math.floor(by / T), bt = Math.floor((by + bh - 1) / T);
+    for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        if (!(bx < tx * T + T && bx + bw > tx * T)) continue;
+        const ry = ty * T;
+        const k = tx + ',' + ty;
+        const ranges = cellCol[k];
+        if (ranges) {
+            for (const r2 of ranges) {
+                const barTop = ry + r2[0];
+                const barBot = ry + r2[1];
+                if (by + bh > barTop && by < barBot) {
+                    if (gvy > 0) { gy = gy - (by + bh - barTop); gvy = 0; gFloor = true; return; }
+                    else if (gvy < 0) { const c = colBox(); gy = barBot - c[1] + 0.01; gvy = 0; return; }
+                }
+            }
+        } else {
+            if (by < ry + T && by + bh > ry) {
+                if (gvy > 0) { gy = ry; gvy = 0; gFloor = true; }
+                else if (gvy < 0) { const c = colBox(); gy = ry + T - c[1] + 0.01; gvy = 0; }
+                return;
+            }
+        }
+    }
+}
+
+function nearGround(dist) {
+    const c = colBox();
+    const bx = gx + c[0], bw = c[2];
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    for (let d = 1; d <= dist; d++) {
+        const ty = Math.floor((gy + d) / T);
+        for (let tx = l; tx <= r; tx++) {
+            if (isSolid(tx, ty) && cellOverlap(tx, ty, gy + d - 1, gy + d + 1)) return true;
+        }
+    }
+    return false;
+}
+
+function checkFloor() {
+    const c = colBox();
+    const bx = gx + c[0], bw = c[2];
+    const feetY = gy + 1;
+    const ty = Math.floor(feetY / T);
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+    for (let tx = l; tx <= r; tx++) {
+        if (!isSolid(tx, ty)) continue;
+        if (cellOverlap(tx, ty, gy, gy + 2)) return true;
+    }
+    return false;
+}
+
+// ---- INPUT ----
+window.addEventListener('keydown', e => {
+    if (!pKeys[e.code]) {
+        if (e.code === 'ArrowUp' || e.code === 'KeyW') pJumpBuf = 8;
+        if (e.code === 'KeyH') showHitboxes = !showHitboxes;
+    }
+    if (e.code === 'Escape') {
+        if (videoOpen) closeVideo();
+        else closeWindow();
+        return;
+    }
+    pKeys[e.code] = true;
+    e.preventDefault();
+});
+window.addEventListener('keyup', e => {
+    pKeys[e.code] = false;
+});
+
+const pkL = () => pKeys['ArrowLeft'] || pKeys['KeyA'];
+const pkR = () => pKeys['ArrowRight'] || pKeys['KeyD'];
+const pkD = () => pKeys['ArrowDown'] || pKeys['KeyS'];
+const pkSp = () => pKeys['Space'];
+function pUseJump() { if (pJumpBuf > 0) { pJumpBuf = 0; return true; } return false; }
+
+function nearPressable() {
+    for (const c of pChests) { if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) return true; }
+    for (const a of pArcades) { if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) return true; }
+    return false;
+}
+
+// ---- PLAY FRAME ----
+function playFrame(dt) {
+    if (!playActive || videoOpen) return;
+
+    // STATE MACHINE
+    switch (gState) {
+        case 'idle':
+            gvx = 0;
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (pkR()) { gDir = 1; pSetState('start'); }
+            else if (pkL()) { gDir = -1; pSetState('start'); }
+            else if (pUseJump()) { gvy = getJump(); gFloor = false; pSetState('hop'); }
+            else if (pkD()) pSetState('crouch');
+            else if (pkSp() && nearPressable()) pSetState('press');
+            break;
+        case 'start':
+            gvx = gDir * getSpd();
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (!(pkR() || pkL())) pSetState('idle');
+            else if (pUseJump()) { gvy = getJump(); gFloor = false; pSetState('air'); }
+            else pSetState('run');
+            break;
+        case 'run':
+            if (pkR()) gDir = 1; else if (pkL()) gDir = -1;
+            gvx = gDir * getSpd();
+            if (!gFloor && gvy > 0) pSetState('fall');
+            else if (pUseJump()) { gvy = getJump(); gFloor = false; pSetState('air'); }
+            else if (pkD()) pSetState('into_roll');
+            else if (!(pkR() || pkL())) pSetState('idle');
+            break;
+        case 'hop':
+            if (pkR()) { gDir = 1; gvx = getAir(); pSetState('air'); }
+            else if (pkL()) { gDir = -1; gvx = -getAir(); pSetState('air'); }
+            else gvx = 0;
+            if (gFloor && gvy >= 0) pSetState('land');
+            break;
+        case 'crouch':
+            gvx = 0;
+            if (!pkD()) pSetState('crouch_up'); else pSetState('kneel');
+            break;
+        case 'kneel':
+            gvx = 0;
+            if (pkR()) { gDir = 1; pSetState('roll'); }
+            else if (pkL()) { gDir = -1; pSetState('roll'); }
+            else if (!pkD()) {
+                if (canStandUp()) pSetState('crouch_up');
+            }
+            break;
+        case 'crouch_up':
+            gvx = 0;
+            if (canStandUp()) pSetState('idle');
+            else pSetState('kneel');
+            break;
+        case 'into_roll':
+            gvx = gDir * getRoll();
+            if (!pkD()) {
+                if (canStandUp()) pSetState('run');
+                else pSetState('roll');
+            } else pSetState('roll');
+            break;
+        case 'roll':
+            if (pkR()) { gDir = 1; gvx = getRoll(); }
+            else if (pkL()) { gDir = -1; gvx = -getRoll(); }
+            else gvx = 0;
+            if (!pkD()) {
+                if (canStandUp()) pSetState('run');
+            }
+            else if (!(pkR() || pkL())) { gvx = 0; pSetState('roll_out'); }
+            break;
+        case 'roll_out':
+            gvx = gDir * ROLL_SPD * 0.4;
+            if (gaDone) { gvx = 0; pSetState('kneel'); }
+            break;
+        case 'air':
+            if (pkR()) { gDir = 1; gvx = getAir(); }
+            else if (pkL()) { gDir = -1; gvx = -getAir(); }
+            else gvx = 0;
+            if (gFloor) pSetState('land');
+            else if (gvy > 0 && nearGround(6)) pSetState('land');
+            else if (gvy > 0 && gvx === 0) pSetState('fall');
+            break;
+        case 'fall':
+            if (pkR()) { gDir = 1; gvx = getAir(); }
+            else if (pkL()) { gDir = -1; gvx = -getAir(); }
+            else gvx = 0;
+            if (gFloor) pSetState('land');
+            else if (gvy > 0 && nearGround(6)) pSetState('land');
+            break;
+        case 'land':
+            gvx *= 0.95;
+            if (pkR()) gvx = Math.max(gvx, getSpd() * 0.4);
+            else if (pkL()) gvx = Math.min(gvx, -getSpd() * 0.4);
+            if (!canStandUp()) { pSetState('kneel'); break; }
+            if (gaDone) {
+                if (pkR() || pkL()) pSetState('run');
+                else pSetState('idle');
+            }
+            break;
+        case 'press':
+            gvx = 0;
+            if (gaDone) pSetState('idle');
+            break;
+        case 'push':
+            if ((gDir === 1 && pkR()) || (gDir === -1 && pkL())) {
+                gvx = pushingGroup ? gDir * SPD * 0.5 : 0;
+            } else {
+                pushingGroup = null;
+                pSetState('idle');
+            }
+            break;
+    }
+
+    // Physics
+    if (!gFloor) gvy += GRAV * dt;
+    gx += gvx * dt;
+    gy += gvy * dt;
+
+    pushSolidKeys = [];
+    resolveX();
+    resolveY();
+
+    if (gvy === 0 && gFloor) {
+        gFloor = checkFloor();
+    }
+
+    // ---- PUSHABLE GROUP SYSTEM ----
+    if (gState !== 'push') pushingGroup = null;
+    const PUSH_SPD = SPD * 0.5;
+    const PUSH_DIST = 16;
+
+    for (const g of pushGroups) {
+        let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
+        for (const c of g.cells) {
+            gl = Math.min(gl, c.tx * T + g.offsetX);
+            gr = Math.max(gr, c.tx * T + g.offsetX + T);
+            gt = Math.min(gt, c.ty * T + g.offsetY);
+            gb = Math.max(gb, c.ty * T + g.offsetY + T);
+        }
+
+        if (gvy >= 0 && g !== pushingGroup) {
+            if (gx >= gl - 4 && gx <= gr + 4 && gy >= gt - 3 && gy <= gt + 4) {
+                gy = gt; gvy = 0; gFloor = true;
+            }
+        }
+
+        if (gy <= gt || gy > gb + 8) continue;
+
+        const touching = (gx + 30 > gl && gx - 30 < gr);
+        if (!touching) continue;
+
+        const garyIsLeft = gx < (gl + gr) / 2;
+
+        if (g === pushingGroup) {
+            let canMove = true;
+            const pushDir = gDir;
+            for (const c of g.cells) {
+                if (pushDir === 1) {
+                    const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
+                    if (!hasRight) {
+                        if (isSolid(Math.floor((c.tx * T + g.offsetX + T + 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                            { canMove = false; break; }
+                    }
+                } else {
+                    const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                    if (!hasLeft) {
+                        if (isSolid(Math.floor((c.tx * T + g.offsetX - 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                            { canMove = false; break; }
+                    }
+                }
+            }
+            if (canMove) {
+                const amt = PUSH_SPD * dt;
+                g.offsetX += pushDir * amt;
+                gx = pushDir === 1 ? gl - PUSH_DIST + pushDir * amt : gr + PUSH_DIST + pushDir * amt;
+            }
+            continue;
+        }
+
+        if (garyIsLeft) {
+            gx = gl - PUSH_DIST;
+            if (gvx > 0) gvx = 0;
+            if ((gState === 'run' || gState === 'start') && pkR()) {
+                gDir = 1; pSetState('push'); pushingGroup = g;
+            }
+        } else {
+            gx = gr + PUSH_DIST;
+            if (gvx < 0) gvx = 0;
+            if ((gState === 'run' || gState === 'start') && pkL()) {
+                gDir = -1; pSetState('push'); pushingGroup = g;
+            }
+        }
+    }
+
+    // Wall push timer
+    if (wallBlocked && gFloor && !pushingGroup && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
+        wallPushTimer += dt;
+        if (wallPushTimer >= WALL_PUSH_DELAY) { pSetState('push'); }
+    } else if (!pushingGroup) {
+        wallPushTimer = 0;
+    }
+    wallBlocked = false;
+
+    // Pushable group gravity
+    for (const g of pushGroups) {
+        let onGround = false;
+        const bottomCells = g.cells.filter(c =>
+            !g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1)
+        );
+        for (const c of bottomCells) {
+            const wx = c.tx * T + g.offsetX;
+            const botY = c.ty * T + g.offsetY + T;
+            const checkTy = Math.floor((botY + 0.5) / T);
+            for (let dx = 0; dx < T; dx += 4) {
+                const checkTx = Math.floor((wx + dx) / T);
+                if (isSolid(checkTx, checkTy)) {
+                    onGround = true;
+                    const snapY = checkTy * T - (c.ty + 1) * T;
+                    g.offsetY = snapY;
+                    break;
+                }
+            }
+            if (onGround) break;
+        }
+        if (!onGround) {
+            g.offsetY += GRAV * dt * 0.35;
+            for (const c of bottomCells) {
+                const wx = c.tx * T + g.offsetX;
+                const botY = c.ty * T + g.offsetY + T;
+                const checkTy = Math.floor(botY / T);
+                for (let dx = 0; dx < T; dx += 4) {
+                    const checkTx = Math.floor((wx + dx) / T);
+                    if (isSolid(checkTx, checkTy)) {
+                        g.offsetY = checkTy * T - (c.ty + 1) * T;
+                        onGround = true;
+                        break;
+                    }
+                }
+                if (onGround) break;
+            }
+        }
+    }
+
+    // Fall death
+    if (gy > LVL_H * T + 100) {
+        gx = spawnX * T + T / 2;
+        gy = (spawnY + 1) * T;
+        gvx = 0; gvy = 0; gFloor = false;
+        pSetState('fall');
+    }
+
+    // Level bounds
+    if (gx < 6) gx = 6;
+    if (gx > LVL_W * T - 6) gx = LVL_W * T - 6;
+
+    // Entity interactions
+    for (const c of pCoins) {
+        if (c.gone) continue;
+        c.t += dt;
+        const gL = gx - 6, gR = gx + 6, gT = gy - 43, gB = gy;
+        const cL = c.x - 6, cR = c.x + 6, cT = c.y - 18, cB = c.y;
+        if (gR > cL && gL < cR && gB > cT && gT < cB) {
+            c.gone = true; gScore++;
+            updateScoreDisplay();
+            if (gScore % 25 === 0) {
+                if (gScore % 50 === 0) activateHighJump();
+                else activateHyperSpeed();
+            }
+            const sv = getSfxVol();
+            const s = coinSfx.cloneNode(); s.volume = sv; s.play().catch(() => {});
+        }
+    }
+    for (const r of pRods) {
+        if (r.gone) continue;
+        r.t += dt;
+        if (Math.abs(gx - r.x) < 20 && Math.abs((gy - 15) - (r.y - 15)) < 25) {
+            r.gone = true; gScore++;
+            updateScoreDisplay();
+            const sv = getSfxVol();
+            const s = rodSfx.cloneNode(); s.volume = sv; s.play().catch(() => {});
+        }
+    }
+    const atPressPeak = gState === 'press' && gaFrame === 3;
+    for (const c of pChests) {
+        c.t += dt;
+        if (atPressPeak && !c.acted) {
+            if (Math.abs(gx - c.x) < 40 && Math.abs(gy - c.y) < 30) {
+                c.open = !c.open; c.t = 0; c.acted = true;
+                if (c.open) {
+                    playChestOpen();
+                    if (!c.powerupGiven) {
+                        c.powerupGiven = true;
+                        if (Math.random() > 0.5) activateHyperSpeed();
+                        else activateHighJump();
+                    }
+                } else { playChestClose(); }
+            }
+        }
+        if (gState !== 'press') c.acted = false;
+    }
+    for (const a of pArcades) {
+        a.t += dt;
+        if (atPressPeak && !a.acted) {
+            if (Math.abs(gx - a.x) < 35 && Math.abs(gy - a.y) < 40) {
+                a.acted = true;
+                const vid = a.props && a.props.video ? a.props.video : '305429654';
+                openVideo(vid);
+            }
+        }
+        if (gState !== 'press') a.acted = false;
+    }
+
+    // Animate
+    const anim = ANIMS[gState];
+    if (anim) {
+        gaTimer += dt;
+        const spf = 1 / anim.fps;
+        while (gaTimer >= spf) {
+            gaTimer -= spf;
+            gaFrame++;
+            if (gaFrame >= anim.fr.length) {
+                if (anim.loop) gaFrame = 0;
+                else { gaFrame = anim.fr.length - 1; gaDone = true; }
+            }
+        }
+    }
+    if (pJumpBuf > 0) pJumpBuf--;
+
+    // ---- DRAW ----
+    const cw = window.innerWidth;
+    const ch = window.innerHeight;
+    if (canvas.width !== cw || canvas.height !== ch) {
+        canvas.width = cw; canvas.height = ch;
+    }
+
+    const playZoom = Math.max(1, Math.floor(Math.min(cw / 480, ch / 270)));
+    const playW = cw / playZoom;
+    const playH = ch / playZoom;
+    const pcamX = gx - playW / 2;
+    const pcamY = gy - 50 - playH / 2;
+
+    ctx.imageSmoothingEnabled = false;
+    ctx.fillStyle = bgColor;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+    ctx.save();
+    ctx.scale(playZoom, playZoom);
+    ctx.translate(-pcamX, -pcamY);
+
+    const startTX = Math.max(0, Math.floor(pcamX / T) - 1);
+    const endTX = Math.min(LVL_W, Math.ceil((pcamX + playW) / T) + 1);
+    const startTY = Math.max(0, Math.floor(pcamY / T) - 1);
+    const endTY = Math.min(LVL_H, Math.ceil((pcamY + playH) / T) + 1);
+
+    function drawLayerTiles(layerIdx) {
+        const layer = layers[layerIdx];
+        if (!layer.visible) return;
+        for (let ty = startTY; ty < endTY; ty++) {
+            for (let tx = startTX; tx < endTX; tx++) {
+                if (pushableCells.has(tx + ',' + ty)) continue;
+                const tile = layer.tiles.get(tx + ',' + ty);
+                if (!tile) continue;
+                const tileset = tile.tileset === 'lava' ? img.lava : img.env;
+                if (tileset && tileset.complete) {
+                    ctx.drawImage(tileset, tile.ax * T, tile.ay * T, T, T, tx * T, ty * T, T, T);
+                }
+            }
+        }
+    }
+
+    // 1. Background layer (z=0)
+    drawLayerTiles(0);
+
+    // 2. Midground layer (z=1)
+    drawLayerTiles(1);
+
+    // 3. Entities
+    for (const c of pCoins) {
+        if (c.gone) continue;
+        const fr = Math.floor(c.t * 6) % 7;
+        ctx.drawImage(img.coin, 192 + fr * 16, 0, 8, 48, Math.round(c.x) - 4, Math.round(c.y) - 48, 8, 48);
+    }
+    for (const r of pRods) {
+        if (r.gone) continue;
+        const fr = Math.floor(r.t * 8) % 9;
+        ctx.drawImage(img.rod, fr * 14, 0, 14, 30, Math.round(r.x) - 8, Math.round(r.y) - 30, 14, 30);
+    }
+    for (const c of pChests) {
+        let fr;
+        if (c.open) fr = Math.min(5, 3 + Math.floor(c.t * 6));
+        else if (c.t < 0.5) fr = Math.max(0, 5 - Math.floor(c.t * 6));
+        else fr = Math.floor(c.t * 3) % 3;
+        ctx.drawImage(img.chest, fr * 48, 24, 48, 24, Math.round(c.x) - 24, Math.round(c.y) - 24, 48, 24);
+    }
+    for (const a of pArcades) {
+        const pat = [0,0,1,2,2,3,4,5,5];
+        const afr = pat[Math.floor(a.t * 8) % 9];
+        ctx.drawImage(img.arcade, afr * 48, 0, 48, 47, Math.round(a.x) - 23, Math.round(a.y) - 47, 48, 47);
+    }
+    for (const p of pPlatforms) {
+        ctx.drawImage(img.platform, 37, 26, 76, 9, Math.round(p.x) - 38, Math.round(p.y) - 4, 76, 9);
+    }
+    // Pushable groups
+    for (const g of pushGroups) {
+        for (const c of g.cells) {
+            const wx = Math.round(c.tx * T + g.offsetX);
+            const wy = Math.round(c.ty * T + g.offsetY);
+            for (const layer of layers) {
+                if (!layer.visible) continue;
+                const tile = layer.tiles.get(c.tx + ',' + c.ty);
+                if (!tile) continue;
+                const tileset = tile.tileset === 'lava' ? img.lava : img.env;
+                if (tileset && tileset.complete) {
+                    ctx.drawImage(tileset, tile.ax * T, tile.ay * T, T, T, wx, wy, T, T);
+                }
+            }
+        }
+    }
+
+    // 4. Gary (z=5)
+    if (img.gary && img.gary.complete) {
+        const fr = ANIMS[gState].fr[gaFrame];
+        const px = Math.round(gx), py = Math.round(gy);
+        ctx.save();
+        if (gDir === -1) {
+            ctx.translate(px, py - 61);
+            ctx.scale(-1, 1);
+            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, -30, 0, 61, 61);
+        } else {
+            ctx.drawImage(img.gary, fr[0], fr[1], 61, 61, px - 30, py - 61, 61, 61);
+        }
+        ctx.restore();
+    }
+
+    // 5. Foreground layer (z=7)
+    drawLayerTiles(2);
+
+    // Hitboxes
+    if (showHitboxes) {
+        ctx.globalAlpha = 0.5;
+        const c = colBox();
+        ctx.strokeStyle = '#0f0';
+        ctx.strokeRect(Math.round(gx) + c[0], Math.round(gy) + c[1], c[2], c[3]);
+
+        for (let ty = startTY; ty < endTY; ty++) {
+            for (let tx = startTX; tx < endTX; tx++) {
+                if (!isSolid(tx, ty)) continue;
+                const k = tx + ',' + ty;
+                const ranges = cellCol[k];
+                if (ranges) {
+                    ctx.fillStyle = 'rgba(255,160,0,0.4)';
+                    for (const r of ranges) {
+                        ctx.fillRect(tx * T, ty * T + r[0], T, r[1] - r[0]);
+                    }
+                    ctx.strokeStyle = 'rgba(255,160,0,0.6)';
+                    ctx.strokeRect(tx * T, ty * T, T, T);
+                } else {
+                    ctx.fillStyle = 'rgba(255,0,0,0.15)';
+                    ctx.fillRect(tx * T, ty * T, T, T);
+                    ctx.strokeStyle = 'rgba(255,0,0,0.3)';
+                    ctx.strokeRect(tx * T, ty * T, T, T);
+                }
+            }
+        }
+
+        for (const c2 of pCoins) {
+            if (c2.gone) continue;
+            ctx.strokeStyle = '#ff0';
+            ctx.strokeRect(Math.round(c2.x) - 6, Math.round(c2.y) - 18, 12, 18);
+        }
+        for (const r of pRods) {
+            if (r.gone) continue;
+            ctx.strokeStyle = '#0ff';
+            ctx.strokeRect(Math.round(r.x) - 20, Math.round(r.y) - 25, 40, 25);
+        }
+        ctx.globalAlpha = 1;
+        ctx.font = '5px monospace';
+        for (const a of pArcades) {
+            ctx.fillStyle = '#fa0';
+            ctx.fillText(a.label || '', Math.round(a.x) - 23, Math.round(a.y) - 49);
+        }
+        for (const c of pChests) {
+            ctx.fillStyle = '#f0f';
+            ctx.fillText(c.label || '', Math.round(c.x) - 24, Math.round(c.y) - 26);
+        }
+        for (const p of pPlatforms) {
+            ctx.fillStyle = '#fff';
+            ctx.fillText(p.label || '', Math.round(p.x) - 38, Math.round(p.y) - 6);
+        }
+    }
+
+    ctx.restore();
+
+    // Update overlay HUD
+    updatePowerups(dt);
+    updatePlayState();
+}
+
+// ---- HUD: DRAWERS, MUSIC, POWER-UPS ----
+let playMusic = null;
+let hyperSpeed = false, hyperTimer = 0;
+let highJump = false, highJumpTimer = 0;
+const POWERUP_DURATION = 8;
+
+function updateScoreDisplay() {
+    const el = document.getElementById('play-score-val');
+    if (el) el.textContent = String(gScore).padStart(6, '0');
+}
+
+let musicMuted = true;
+let sfxMuted = false;
+let masterVol = 0.3;
+
+function toggleDrawer(name) {
+    const el = document.getElementById(name + '-drawer');
+    el.classList.toggle('closed');
+}
+
+function setMasterVol(v) {
+    masterVol = (v / 100) * 0.5;
+    if (playMusic && !musicMuted) playMusic.volume = masterVol;
+}
+
+function toggleMusicMute() {
+    musicMuted = !musicMuted;
+    document.getElementById('music-mute-btn').textContent = musicMuted ? '\u266B OFF' : '\u266B ON';
+    document.getElementById('music-mute-btn').style.color = musicMuted ? '#555' : '#ff69b4';
+    if (playMusic) { if (musicMuted) playMusic.pause(); else playMusic.play().catch(() => {}); }
+    updateMuteBtn();
+}
+
+function toggleSfxMute() {
+    sfxMuted = !sfxMuted;
+    document.getElementById('sfx-mute-btn').textContent = sfxMuted ? 'SFX OFF' : 'SFX ON';
+    document.getElementById('sfx-mute-btn').style.color = sfxMuted ? '#555' : '#00ffcc';
+    updateMuteBtn();
+}
+
+function cycleMute() {
+    if (!musicMuted && !sfxMuted) { toggleMusicMute(); }
+    else if (musicMuted && !sfxMuted) { toggleMusicMute(); toggleSfxMute(); }
+    else if (!musicMuted && sfxMuted) { toggleMusicMute(); }
+    else { toggleMusicMute(); toggleSfxMute(); }
+}
+
+function updateMuteBtn() {
+    const btn = document.getElementById('mute-btn');
+    btn.className = '';
+    if (musicMuted && sfxMuted) { btn.className = 'both-muted'; btn.textContent = '\u{1F507}'; }
+    else if (musicMuted) { btn.className = 'music-muted'; btn.textContent = '\u{1F508}'; }
+    else if (sfxMuted) { btn.className = 'sfx-muted'; btn.textContent = '\u{1F509}'; }
+    else { btn.textContent = '\u{1F50A}'; }
+}
+
+function getSfxVol() {
+    return sfxMuted ? 0 : masterVol;
+}
+
+function toggleFullscreen() {
+    if (!document.fullscreenElement) document.documentElement.requestFullscreen().catch(() => {});
+    else document.exitFullscreen();
+}
+
+function restartLevel() {
+    startPlay();
+    document.querySelectorAll('.play-drawer').forEach(el => el.classList.add('closed'));
+}
+
+function closeWindow() {
+    if (playMusic) playMusic.pause();
+    window.close();
+}
+
+// Power-up activation
+function activateHyperSpeed() {
+    hyperSpeed = true;
+    hyperTimer = POWERUP_DURATION;
+}
+function activateHighJump() {
+    highJump = true;
+    highJumpTimer = POWERUP_DURATION;
+}
+
+function updatePowerups(dt) {
+    if (hyperSpeed) {
+        hyperTimer -= dt;
+        if (hyperTimer <= 0) { hyperSpeed = false; hyperTimer = 0; }
+    }
+    if (highJump) {
+        highJumpTimer -= dt;
+        if (highJumpTimer <= 0) { highJump = false; highJumpTimer = 0; }
+    }
+    const el = document.getElementById('play-powerup');
+    if (!el) return;
+    let html = '';
+    if (hyperSpeed) html += `<div class="powerup-badge powerup-speed">HYPER SPEED ${Math.ceil(hyperTimer)}s</div>`;
+    if (highJump) html += `<div class="powerup-badge powerup-jump">HIGH JUMP ${Math.ceil(highJumpTimer)}s</div>`;
+    el.innerHTML = html;
+}
+
+function updatePlayState() {
+    const el = document.getElementById('play-state');
+    if (el && showHitboxes) {
+        const cb = colBox();
+        el.textContent = 'State: ' + gState + '  Box: ' + cb[2] + 'x' + cb[3] + 'px  [Esc] close  [H] hitboxes';
+    } else if (el) {
+        el.textContent = '';
+    }
+}
+
+// ---- LOAD LEVEL DATA FROM LOCALSTORAGE ----
+function applyLevelData(data) {
+    LVL_W = data.width || 60;
+    LVL_H = data.height || 30;
+    bgColor = data.bgColor || '#16213e';
+    spawnX = data.spawn?.x ?? 4;
+    spawnY = data.spawn?.y ?? LVL_H - 5;
+    layers.forEach((l, i) => {
+        l.tiles.clear();
+        if (data.layers[i]?.tiles) {
+            for (const [k, v] of Object.entries(data.layers[i].tiles)) {
+                l.tiles.set(k, v);
+            }
+        }
+    });
+    entities = (data.entities || []).map(e => {
+        if (!e.props) e.props = {};
+        return e;
+    });
+    Object.keys(collisionOverrides).forEach(k => delete collisionOverrides[k]);
+    if (data.collisionOverrides) Object.assign(collisionOverrides, data.collisionOverrides);
+    pushableCells.clear();
+    if (data.pushable) data.pushable.forEach(k => pushableCells.add(k));
+}
+
+// ---- MAIN LOOP ----
+let mainLast = 0;
+
+function mainLoop(ts) {
+    const dt = mainLast ? Math.min((ts - mainLast) / 1000, 0.05) : 0.016;
+    mainLast = ts;
+    if (playActive) playFrame(dt);
+    requestAnimationFrame(mainLoop);
+}
+
+// ---- INIT ----
+Promise.all(imgLoads).then(() => {
+    // Load level from localStorage
+    const raw = localStorage.getItem('gary-play-level');
+    if (!raw) {
+        document.body.style.display = 'flex';
+        document.body.style.alignItems = 'center';
+        document.body.style.justifyContent = 'center';
+        document.body.style.color = '#ff4444';
+        document.body.style.fontFamily = "'Press Start 2P', monospace";
+        document.body.style.fontSize = '12px';
+        document.body.innerHTML = '<div style="text-align:center;">No level data found.<br><br>Open the editor and press PLAY.</div>';
+        return;
+    }
+    try {
+        const data = JSON.parse(raw);
+        applyLevelData(data);
+    } catch (err) {
+        alert('Failed to parse level data: ' + err.message);
+        return;
+    }
+
+    startPlay();
+    requestAnimationFrame(mainLoop);
+});
+</script>
+</body>
+</html>
