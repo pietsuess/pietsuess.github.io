@@ -10886,10 +10886,11 @@ function startMarsSurface(){
     samplesCollected: 0,
     _kneelPending: null,
     _jumpPressed: false,
-    samples: generateMarsSamples(),
     platforms: generateMarsPlatforms(),
+    samples: null, // set below after platforms
     rocks: generateMarsDecor(),
   };
+  _marsSurface.samples = generateMarsSamples(_marsSurface.platforms);
   canvas.style.cursor = 'none';
 }
 
@@ -10906,22 +10907,6 @@ function msTickAnim(dt){
   if(ms.animTimer >= 1/a.fps){ ms.animTimer = 0; ms.frame++; if(ms.frame >= count){ if(a.loop) ms.frame = 0; else ms.frame = count-1; } }
 }
 
-function generateMarsSamples(){
-  const samples = [];
-  // Ground-level samples (easy) — spread across 8000px world
-  const groundX = [600,1000,1500,2000,2600,3100,3700,4200,4800,5400,6000,6600];
-  for(const x of groundX){
-    const y = MS_GROUND_TOP + 10 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 30);
-    samples.push({ x, y, collected: false, sz: 7 + Math.random()*4, elevated: false });
-  }
-  // Elevated samples (need jump to reach platform first)
-  const elevX = [800,1300,1800,2300,2800,3400,3900,4500,5100,5700,6300,6900,7500];
-  for(const x of elevX){
-    samples.push({ x, y: MS_GROUND_TOP - 55 - Math.random()*30, collected: false, sz: 6+Math.random()*3, elevated: true });
-  }
-  return samples;
-}
-
 function generateMarsPlatforms(){
   const plats = [];
   const platX = [700,1200,1700,2200,2700,3300,3800,4400,5000,5600,6200,6800,7400];
@@ -10931,6 +10916,22 @@ function generateMarsPlatforms(){
     plats.push({ x, y, w, h: 12 });
   }
   return plats;
+}
+
+function generateMarsSamples(platforms){
+  const samples = [];
+  // Ground-level samples (easy)
+  const groundX = [600,1000,1500,2000,2600,3100,3700,4200,4800,5400,6000,6600];
+  for(const x of groundX){
+    const y = MS_GROUND_TOP + 10 + Math.random() * (MS_GROUND_BOTTOM - MS_GROUND_TOP - 30);
+    samples.push({ x, y, collected: false, sz: 7 + Math.random()*4, elevated: false });
+  }
+  // Elevated samples — placed ON platforms so they're reachable via jump
+  for(const plat of platforms){
+    const sx = plat.x + 30 + Math.random() * (plat.w - 60);
+    samples.push({ x: sx, y: plat.y - 4, collected: false, sz: 6+Math.random()*3, elevated: true });
+  }
+  return samples;
 }
 
 function generateMarsDecor(){
@@ -11113,6 +11114,25 @@ function drawMarsSurface(ctx){
     ctx.moveTo(ms.camX + omSx - 300, mBase);
     ctx.quadraticCurveTo(ms.camX + omSx, mBase - 120, ms.camX + omSx + 300, mBase);
     ctx.closePath(); ctx.fill();
+    // Nuclear reactor in distance (parallax with mountains)
+    const nrX = ms.camX + 6000 + mOfs;
+    // Cooling tower
+    ctx.fillStyle = '#556060';
+    ctx.beginPath();
+    ctx.moveTo(nrX - 20, mBase); ctx.lineTo(nrX - 14, mBase - 55);
+    ctx.lineTo(nrX + 14, mBase - 55); ctx.lineTo(nrX + 20, mBase);
+    ctx.closePath(); ctx.fill();
+    // Reactor dome
+    ctx.fillStyle = '#667070';
+    ctx.beginPath(); ctx.arc(nrX, mBase - 55, 16, Math.PI, 0); ctx.fill();
+    // Steam/heat shimmer
+    ctx.globalAlpha = 0.3 + Math.sin(ms.timer * 0.04) * 0.15;
+    ctx.fillStyle = '#aabbbb';
+    ctx.beginPath(); ctx.arc(nrX, mBase - 78, 8 + Math.sin(ms.timer*0.06)*3, 0, Math.PI*2); ctx.fill();
+    ctx.globalAlpha = 1;
+    // Warning light
+    ctx.fillStyle = (Math.floor(ms.timer/30) % 2) ? '#ff4444' : '#661111';
+    ctx.beginPath(); ctx.arc(nrX, mBase - 72, 2, 0, Math.PI*2); ctx.fill();
   }
 
   // Ground plane — flat like victory tarmac
@@ -11156,6 +11176,67 @@ function drawMarsSurface(ctx){
     ctx.beginPath(); ctx.arc(s.x-s.sz*0.2, s.y-s.sz*0.4, s.sz*0.4, 0, Math.PI*2); ctx.fill();
     ctx.shadowBlur = 0;
     ctx.restore();
+  }
+
+  // Mars outpost structures — greenhouses and hab modules
+  {
+    const outposts = [
+      { x: 1600, type: 'greenhouse' },
+      { x: 3500, type: 'greenhouse' },
+      { x: 5800, type: 'greenhouse' },
+      { x: 2400, type: 'hab' },
+      { x: 4800, type: 'hab' },
+      { x: 7000, type: 'hab' },
+      { x: 3000, type: 'solar' },
+      { x: 6400, type: 'solar' },
+    ];
+    for(const op of outposts){
+      const oy = MS_GROUND_TOP;
+      if(op.type === 'greenhouse'){
+        // White dome greenhouse
+        ctx.fillStyle = 'rgba(240,245,240,0.85)';
+        ctx.beginPath(); ctx.ellipse(op.x, oy, 50, 28, 0, Math.PI, 0); ctx.fill();
+        // Frame lines
+        ctx.strokeStyle = 'rgba(200,210,200,0.6)'; ctx.lineWidth = 1;
+        for(let i = -40; i <= 40; i += 16){
+          ctx.beginPath(); ctx.moveTo(op.x + i, oy);
+          const h = 28 * Math.sqrt(1 - (i/50)*(i/50));
+          ctx.lineTo(op.x + i, oy - h); ctx.stroke();
+        }
+        // Green inside glow
+        ctx.fillStyle = 'rgba(80,180,80,0.2)';
+        ctx.beginPath(); ctx.ellipse(op.x, oy - 2, 40, 20, 0, Math.PI, 0); ctx.fill();
+      } else if(op.type === 'hab'){
+        // Cylindrical hab module
+        ctx.fillStyle = '#d0d0d0';
+        ctx.fillRect(op.x - 30, oy - 30, 60, 30);
+        // Rounded top
+        ctx.beginPath(); ctx.ellipse(op.x, oy - 30, 30, 8, 0, Math.PI, 0); ctx.fill();
+        // Window
+        ctx.fillStyle = '#4488aa';
+        ctx.fillRect(op.x - 8, oy - 22, 16, 10);
+        // Door
+        ctx.fillStyle = '#888888';
+        ctx.fillRect(op.x - 6, oy - 16, 12, 16);
+      } else if(op.type === 'solar'){
+        // Solar panel array
+        ctx.fillStyle = '#334466';
+        ctx.save();
+        ctx.translate(op.x, oy);
+        // Pole
+        ctx.fillStyle = '#888888';
+        ctx.fillRect(-2, -35, 4, 35);
+        // Panel
+        ctx.fillStyle = '#223355';
+        ctx.fillRect(-25, -40, 50, 12);
+        // Grid lines
+        ctx.strokeStyle = '#445577'; ctx.lineWidth = 0.5;
+        for(let i = -20; i <= 20; i += 8){
+          ctx.beginPath(); ctx.moveTo(i, -40); ctx.lineTo(i, -28); ctx.stroke();
+        }
+        ctx.restore();
+      }
+    }
   }
 
   // Landed Delta Wing ship
