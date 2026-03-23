@@ -3305,6 +3305,7 @@ window.addEventListener('keydown',e=>{
     if(cs&&cs.style.display==='block'&&txS3&&txS3.style.display!=='none'){closeContactSuccess();return;}
   }
   if(e.code==='Escape'){
+    if(_msPopupOpen){ msClosePopup(); return; }
     const fsEl=document.getElementById('photo-fullscreen');
     if(fsEl&&fsEl.style.display==='flex'){closePhotoFullscreen();return;}
     if(document.getElementById('social-popup').classList.contains('open')){closeSocialPopup();return;}
@@ -10918,6 +10919,9 @@ function startMarsSurface(){
   };
   _msPopupOpen = false;
   canvas.style.cursor = 'none';
+  // Hide space game HUD
+  const _fh = document.getElementById('fuel-hud'); if(_fh) _fh.style.display = 'none';
+  const _hud = document.getElementById('hud'); if(_hud) _hud.style.display = 'none';
 }
 
 function msSetAnim(name){
@@ -10967,30 +10971,43 @@ function updateMarsSurface(){
       ms.crystalsCollected++;
       state.score += 2000;
       document.getElementById('score').textContent = String(state.score).padStart(6,'0');
+      // Pink flash ring around pilot
+      if(!ms._collectFlashes) ms._collectFlashes = [];
+      ms._collectFlashes.push({ x: p.x, y: p.y - 40, age: 0 });
+      // Score float text
+      if(!ms._scoreFloats) ms._scoreFloats = [];
+      ms._scoreFloats.push({ x: c.x, y: c.y, age: 0, text: '+2000' });
+      // Sound — ascending sparkle
       if(audioCtx && !state.sfxMuted){
         const t = audioCtx.currentTime;
-        playBeep(600 + ms.crystalsCollected * 20, t, 0.06, 'sine', 0.10);
-        playBeep(900 + ms.crystalsCollected * 20, t + 0.05, 0.08, 'sine', 0.08);
+        playBeep(800, t, 0.04, 'sine', 0.10);
+        playBeep(1200, t + 0.04, 0.04, 'sine', 0.08);
+        playBeep(1600, t + 0.08, 0.06, 'sine', 0.06);
       }
       // First crystal popup
       if(_msFirstCrystal && ms.crystalsCollected === 1){
         _msFirstCrystal = false;
-        msShowPopup('HYPERDRIVE ENERGY CRYSTAL',
-          '<div style="color:#ff69b4;font-size:10px;line-height:2.2;letter-spacing:1px;margin:16px 0;">' +
-          'You found a HyperDrive Energy Crystal!<br><br>' +
-          'Collect them all to power the ship\'s<br>HyperDrive for Light Speed travel.<br><br>' +
-          '<span style="color:#888;font-size:8px;">They move fast. Stay sharp.</span></div>',
+        msShowPopup('ENERGY CRYSTAL',
+          '<div style="color:#ff69b4;font-size:10px;line-height:2.4;letter-spacing:1px;margin:16px 0;text-align:justify;text-align-last:justify;">' +
+          'HyperDrive Energy Crystals. Scattered across the Martian surface. Collect them all to fuel the ship for Light Speed.</div>',
           '#ff69b4');
       }
     }
   }
 
-  // Jump arc
+  // Jump arc — physics drives position, animation just plays through
   if(ms.anim === 'jump'){
-    p.jumpTime += dt;
+    p.jumpTime = (p.jumpTime || 0) + dt;
     const jt = Math.min(p.jumpTime / MS_JUMP_DURATION, 1);
     p.jumpOffY = -MS_JUMP_HEIGHT * Math.sin(Math.PI * jt);
-    if(jt >= 1){ p.jumpOffY = 0; p.jumpTime = 0; msSetAnim('idle'); }
+    if(jt >= 1){
+      p.jumpOffY = 0;
+      p.jumpTime = 0;
+      msSetAnim('idle');
+    }
+  } else {
+    p.jumpTime = 0;
+    p.jumpOffY = 0;
   }
 
   // Movement
@@ -11020,7 +11037,7 @@ function updateMarsSurface(){
   } else if(isJumping && ms.anim !== 'jump'){
     msSetAnim('jump'); p.jumpTime = 0;
   } else if(ms.anim === 'jump'){
-    if(p.jumpTime >= MS_JUMP_DURATION) msSetAnim('idle');
+    // jump arc handles its own completion — don't override
   } else if(p.walking){
     msSetAnim('walk');
   } else {
@@ -11118,6 +11135,9 @@ function msLaunchFromMars(){
   state.vx = 0; state.vy = 0;
   state.fuel = 1.0; updateFuelBar();
   _msHasLightSpeed = true;
+  // Restore space game HUD
+  const _fh = document.getElementById('fuel-hud'); if(_fh) _fh.style.display = '';
+  const _hud = document.getElementById('hud'); if(_hud) _hud.style.display = '';
   state.zoneCrossFlash = { lvl:-3, timer:180, msg:'HYPERDRIVE ONLINE', sub:'LIGHT SPEED AVAILABLE', _col:'#ff69b4' };
   if(audioCtx && !state.sfxMuted){
     const t = audioCtx.currentTime;
@@ -11254,14 +11274,49 @@ function drawMarsSurface(ctx){
     ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY - MS_SHIP_H + 60, MS_SHIP_W, MS_SHIP_H);
   }
 
+  // Pink flash rings on crystal collect
+  if(ms._collectFlashes){
+    for(let fi = ms._collectFlashes.length - 1; fi >= 0; fi--){
+      const fl = ms._collectFlashes[fi];
+      fl.age++;
+      const r = fl.age * 3;
+      const alpha = 1 - fl.age / 20;
+      if(alpha <= 0){ ms._collectFlashes.splice(fi, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = alpha * 0.7;
+      ctx.strokeStyle = '#ff69b4'; ctx.shadowColor = '#ff69b4'; ctx.shadowBlur = 12;
+      ctx.lineWidth = 3 * alpha;
+      ctx.beginPath(); ctx.arc(fl.x, fl.y, r, 0, Math.PI * 2); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+  // Score float text
+  if(ms._scoreFloats){
+    for(let si = ms._scoreFloats.length - 1; si >= 0; si--){
+      const sf = ms._scoreFloats[si];
+      sf.age++;
+      const alpha = 1 - sf.age / 50;
+      if(alpha <= 0){ ms._scoreFloats.splice(si, 1); continue; }
+      ctx.save();
+      ctx.globalAlpha = alpha;
+      ctx.fillStyle = '#ff69b4'; ctx.shadowColor = '#ff69b4'; ctx.shadowBlur = 8;
+      ctx.font = '8px "Press Start 2P",monospace';
+      ctx.textAlign = 'center';
+      ctx.fillText(sf.text, sf.x, sf.y - sf.age * 0.8);
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
+  }
+
   ctx.restore(); // end world transform
 
-  // Atmospheric haze — murky overlay at top of screen
+  // Atmospheric haze — thick dusty Mars atmosphere
   const hazeGrad = ctx.createLinearGradient(0, 0, 0, H);
-  hazeGrad.addColorStop(0, 'rgba(160,80,50,0.35)');
-  hazeGrad.addColorStop(0.3, 'rgba(140,70,40,0.15)');
-  hazeGrad.addColorStop(0.5, 'rgba(120,60,35,0.05)');
-  hazeGrad.addColorStop(1, 'rgba(0,0,0,0)');
+  hazeGrad.addColorStop(0, 'rgba(180,90,50,0.45)');
+  hazeGrad.addColorStop(0.2, 'rgba(160,80,45,0.25)');
+  hazeGrad.addColorStop(0.5, 'rgba(120,60,35,0.08)');
+  hazeGrad.addColorStop(1, 'rgba(100,50,30,0.03)');
   ctx.fillStyle = hazeGrad;
   ctx.fillRect(0, 0, W, H);
 
