@@ -11265,9 +11265,11 @@ function drawMarsSurface(ctx){
   const ms = _marsSurface;
   const W = ctx.canvas.width, H = ctx.canvas.height;
   const mainScale = H / MS_VISIBLE_H;
+  const vww = W / mainScale;
+  const visH = MS_VISIBLE_H;
   const p = ms.pilot;
 
-  // Sky
+  // Sky (screen space)
   const skyGrad = ctx.createLinearGradient(0, 0, 0, H);
   skyGrad.addColorStop(0, '#2a1008');
   skyGrad.addColorStop(0.25, '#5a2818');
@@ -11277,6 +11279,18 @@ function drawMarsSurface(ctx){
   ctx.fillStyle = skyGrad;
   ctx.fillRect(0, 0, W, H);
 
+  // === DEPTH SORT (copied from victory) ===
+  // Ship as an object with depthY
+  const _msShipObj = {
+    key: '_ship', wx: MS_SHIP_WX, wy: MS_SHIP_WY, ww: MS_SHIP_W, wh: MS_SHIP_H,
+    depthY: MS_SHIP_DEPTH_Y, _effectiveDepthY: MS_SHIP_DEPTH_Y
+  };
+  const pilotDepthY = p.y;
+  // Simple depth: ship draws behind pilot if pilot.y >= depthY, in front if pilot.y < depthY
+  const pilotBehind = p.y < MS_SHIP_DEPTH_Y;
+  _msShipObj._effectiveDepthY = pilotBehind ? pilotDepthY + 1 : pilotDepthY - 1;
+
+  // === PASS 1: World space — background + behind-pilot objects ===
   ctx.save();
   ctx.imageSmoothingEnabled = false;
   ctx.scale(mainScale, mainScale);
@@ -11289,15 +11303,15 @@ function drawMarsSurface(ctx){
     ctx.fillStyle = '#4a2018';
     ctx.beginPath();
     ctx.moveTo(ms.camX + mOfs - 100, mBase);
-    for(let x = 0; x < W/mainScale + 400; x += 50){
+    for(let x = 0; x < vww + 400; x += 50){
       const mh = 15 + Math.sin(x*0.005+1)*35 + Math.sin(x*0.002)*20 + Math.sin(x*0.013)*10;
       ctx.lineTo(ms.camX + mOfs + x, mBase - mh);
     }
-    ctx.lineTo(ms.camX + mOfs + W/mainScale + 400, mBase);
+    ctx.lineTo(ms.camX + mOfs + vww + 400, mBase);
     ctx.closePath(); ctx.fill();
   }
 
-  // Ground — craggy flat surface
+  // Ground
   const gndGrad = ctx.createLinearGradient(0, MS_GROUND_TOP, 0, MS_WORLD_H);
   gndGrad.addColorStop(0, '#8a4530');
   gndGrad.addColorStop(0.08, '#7a3a28');
@@ -11306,16 +11320,12 @@ function drawMarsSurface(ctx){
   ctx.fillStyle = gndGrad;
   ctx.fillRect(0, MS_GROUND_TOP, MS_WORLD_W, MS_WORLD_H - MS_GROUND_TOP);
 
-  // Craggy surface texture lines
+  // Craggy texture
   ctx.strokeStyle = 'rgba(0,0,0,0.08)'; ctx.lineWidth = 1;
   for(let i = 0; i < 60; i++){
-    const lx = i * 140 + 20;
-    const ly = MS_GROUND_TOP + 3;
-    ctx.beginPath();
-    ctx.moveTo(lx, ly);
-    for(let s = 0; s < 120; s += 8){
-      ctx.lineTo(lx + s + (Math.sin(s*0.3+i)*4), ly + Math.sin(s*0.15+i*2)*3);
-    }
+    const lx = i * 140 + 20, ly = MS_GROUND_TOP + 3;
+    ctx.beginPath(); ctx.moveTo(lx, ly);
+    for(let s = 0; s < 120; s += 8) ctx.lineTo(lx + s + Math.sin(s*0.3+i)*4, ly + Math.sin(s*0.15+i*2)*3);
     ctx.stroke();
   }
 
@@ -11329,104 +11339,102 @@ function drawMarsSurface(ctx){
     ctx.fill();
   }
 
-  // Depth sorting: determine if pilot is behind or in front of ship
-  const pilotBehindShip = p.y < MS_SHIP_DEPTH_Y;
-
-  // Draw ship BEHIND pilot if pilot is in front
-  if(!pilotBehindShip && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
+  // Ship BEHIND pilot (if pilot is in front of ship)
+  if(!pilotBehind && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
     ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY, MS_SHIP_W, MS_SHIP_H);
   }
 
-  // Crystals — bright pink multi-pointed stars with spike animation
+  // Crystals (world space, always behind pilot for simplicity)
   for(const c of ms.crystals){
     if(c.collected) continue;
     const pulse = 0.7 + Math.sin(ms.timer * 0.08 + c.x * 0.01) * 0.3;
     ctx.save();
-    ctx.translate(c.x, c.y);
-    ctx.rotate(c.rot);
+    ctx.translate(c.x, c.y); ctx.rotate(c.rot);
     const cCol = c.red ? '#ff2222' : '#ff69b4';
-    ctx.shadowColor = cCol; ctx.shadowBlur = 18 * pulse;
-    ctx.fillStyle = cCol;
+    ctx.shadowColor = cCol; ctx.shadowBlur = 18 * pulse; ctx.fillStyle = cCol;
     ctx.globalAlpha = 0.85 + pulse * 0.15;
-    // Multi-pointed star with animated spikes
     ctx.beginPath();
-    const pts = c.points;
-    for(let i = 0; i < pts * 2; i++){
-      const ang = (i / (pts * 2)) * Math.PI * 2;
+    for(let i = 0; i < c.points * 2; i++){
+      const ang = (i / (c.points * 2)) * Math.PI * 2;
       const isOuter = i % 2 === 0;
       const spikeAnim = isOuter ? 1 + Math.sin(c.spikePhase + i * 0.7) * 0.25 : 1;
       const r = isOuter ? c.sz * spikeAnim : c.sz * 0.4;
-      const px = Math.cos(ang) * r, py = Math.sin(ang) * r;
-      if(i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      if(i === 0) ctx.moveTo(Math.cos(ang)*r, Math.sin(ang)*r);
+      else ctx.lineTo(Math.cos(ang)*r, Math.sin(ang)*r);
     }
-    ctx.closePath();
-    ctx.fill();
-    // Inner bright core
-    ctx.globalAlpha = 0.6;
-    ctx.fillStyle = c.red ? '#440000' : '#ffaacc';
+    ctx.closePath(); ctx.fill();
+    ctx.globalAlpha = 0.6; ctx.fillStyle = c.red ? '#440000' : '#ffaacc';
     ctx.beginPath(); ctx.arc(0, 0, c.sz * 0.3, 0, Math.PI * 2); ctx.fill();
-    ctx.shadowBlur = 0;
-    ctx.restore();
+    ctx.shadowBlur = 0; ctx.restore();
   }
 
-  // Pilot sprite
-  if(_marsSprite.complete && _marsSprite.naturalWidth > 0){
-    const a = MS_ANIMS[ms.anim];
-    const col = a.frames ? a.frames[ms.frame] : (a.start + ms.frame);
-    const srcX = col * MS_FRAME_W;
-    const srcY = a.row * MS_FRAME_H;
-    const jumpOfs = p.jumpOffY || 0;
-    ctx.save();
-    ctx.translate(p.x, p.y + jumpOfs);
-    if(p.facing < 0) ctx.scale(-1, 1);
-    ctx.drawImage(_marsSprite, srcX, srcY, MS_FRAME_W, MS_FRAME_H,
-      -MS_PILOT_W/2, -MS_PILOT_H, MS_PILOT_W, MS_PILOT_H);
-    ctx.restore();
-  }
-
-  // Draw ship IN FRONT of pilot if pilot is behind
-  if(pilotBehindShip && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
-    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY, MS_SHIP_W, MS_SHIP_H);
-  }
-
-  // Pink flash rings on crystal collect
+  // Pink flash rings (world space)
   if(ms._collectFlashes){
     for(let fi = ms._collectFlashes.length - 1; fi >= 0; fi--){
-      const fl = ms._collectFlashes[fi];
-      fl.age++;
-      const r = fl.age * 3;
-      const alpha = 1 - fl.age / 20;
+      const fl = ms._collectFlashes[fi]; fl.age++;
+      const r = fl.age * 3, alpha = 1 - fl.age / 20;
       if(alpha <= 0){ ms._collectFlashes.splice(fi, 1); continue; }
-      ctx.save();
-      ctx.globalAlpha = alpha * 0.7;
+      ctx.save(); ctx.globalAlpha = alpha * 0.7;
       const flCol = fl.red ? '#ff2222' : '#ff69b4';
       ctx.strokeStyle = flCol; ctx.shadowColor = flCol; ctx.shadowBlur = 12;
       ctx.lineWidth = 3 * alpha;
       ctx.beginPath(); ctx.arc(fl.x, fl.y, r, 0, Math.PI * 2); ctx.stroke();
-      ctx.shadowBlur = 0;
-      ctx.restore();
+      ctx.shadowBlur = 0; ctx.restore();
     }
   }
-  // Score float text
+  // Score floats (world space)
   if(ms._scoreFloats){
     for(let si = ms._scoreFloats.length - 1; si >= 0; si--){
-      const sf = ms._scoreFloats[si];
-      sf.age++;
+      const sf = ms._scoreFloats[si]; sf.age++;
       const alpha = 1 - sf.age / 50;
       if(alpha <= 0){ ms._scoreFloats.splice(si, 1); continue; }
-      ctx.save();
-      ctx.globalAlpha = alpha;
+      ctx.save(); ctx.globalAlpha = alpha;
       const sfCol = sf.red ? '#ff2222' : '#ff69b4';
       ctx.fillStyle = sfCol; ctx.shadowColor = sfCol; ctx.shadowBlur = 8;
       ctx.font = '8px "Press Start 2P",monospace';
       ctx.textAlign = 'center';
       ctx.fillText(sf.text, sf.x, sf.y - sf.age * 0.8);
-      ctx.shadowBlur = 0;
-      ctx.restore();
+      ctx.shadowBlur = 0; ctx.restore();
     }
   }
 
-  // Debug hitboxes (press D to toggle)
+  ctx.restore(); // END PASS 1
+
+  // === PASS 2: Pilot in SCREEN SPACE (exactly like victory) ===
+  if(_marsSprite.complete && _marsSprite.naturalWidth > 0){
+    const pilotScreenX = (p.x - ms.camX) * mainScale;
+    const pilotFeetScreenY = (p.y - ms.camY) * mainScale;
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    const a = MS_ANIMS[ms.anim];
+    const col = a.frames ? a.frames[ms.frame] : (a.start + ms.frame);
+    const srcX = col * MS_FRAME_W, srcY = a.row * MS_FRAME_H;
+    const pilotDrawW = MS_PILOT_W * mainScale;
+    const pilotDrawH = MS_PILOT_H * mainScale;
+    const jumpOffset = (p.jumpOffY || 0) * mainScale;
+    ctx.translate(pilotScreenX, pilotFeetScreenY - pilotDrawH + jumpOffset);
+    if(p.facing < 0) ctx.scale(-1, 1);
+    ctx.drawImage(_marsSprite, srcX, srcY, MS_FRAME_W, MS_FRAME_H, -pilotDrawW/2, 0, pilotDrawW, pilotDrawH);
+    ctx.restore();
+  }
+
+  // === PASS 3: World space — in-front-of-pilot objects ===
+  if(pilotBehind && _marsShipImg.complete && _marsShipImg.naturalWidth > 0){
+    ctx.save();
+    ctx.imageSmoothingEnabled = false;
+    ctx.scale(mainScale, mainScale);
+    ctx.translate(-ms.camX, -ms.camY);
+    ctx.drawImage(_marsShipImg, MS_SHIP_WX, MS_SHIP_WY, MS_SHIP_W, MS_SHIP_H);
+    ctx.restore();
+  }
+
+  // === PASS 4: World space overlays (debug, haze) ===
+  ctx.save();
+  ctx.imageSmoothingEnabled = false;
+  ctx.scale(mainScale, mainScale);
+  ctx.translate(-ms.camX, -ms.camY);
+
+  // Debug hitboxes
   if(_msDebugHitboxes){
     const _dHL = MS_SHIP_WX + MS_SHIP_W * 0.08, _dHR = MS_SHIP_WX + MS_SHIP_W * 0.92;
     const _dHT = MS_SHIP_WY + MS_SHIP_H * 0.5, _dHB = MS_SHIP_DEPTH_Y + 40;
@@ -11446,28 +11454,25 @@ function drawMarsSurface(ctx){
     ctx.restore();
   }
 
-  // Atmospheric haze — world-space, thickest in middle third (hidden in debug mode)
+  // Haze (world space, hidden in debug)
   if(!_msDebugHitboxes){
-    const hazeTop = MS_GROUND_TOP - 200; // sky zone top
-    const hazeBot = MS_GROUND_BOTTOM + 50;
-    const hazeH = hazeBot - hazeTop;
+    const hazeTop = MS_GROUND_TOP - 200, hazeBot = MS_GROUND_BOTTOM + 50;
     const hazeGrad = ctx.createLinearGradient(0, hazeTop, 0, hazeBot);
-    hazeGrad.addColorStop(0, 'rgba(160,70,40,0.33)');     // top third — 33%
-    hazeGrad.addColorStop(0.28, 'rgba(150,65,38,0.50)');   // ramp into middle
-    hazeGrad.addColorStop(0.38, 'rgba(140,60,35,0.75)');   // middle third — 75%
-    hazeGrad.addColorStop(0.62, 'rgba(140,60,35,0.75)');   // middle third — 75%
-    hazeGrad.addColorStop(0.72, 'rgba(150,65,38,0.50)');   // ramp out
-    hazeGrad.addColorStop(1, 'rgba(160,70,40,0.33)');      // bottom third — 33%
+    hazeGrad.addColorStop(0, 'rgba(160,70,40,0.33)');
+    hazeGrad.addColorStop(0.28, 'rgba(150,65,38,0.50)');
+    hazeGrad.addColorStop(0.38, 'rgba(140,60,35,0.75)');
+    hazeGrad.addColorStop(0.62, 'rgba(140,60,35,0.75)');
+    hazeGrad.addColorStop(0.72, 'rgba(150,65,38,0.50)');
+    hazeGrad.addColorStop(1, 'rgba(160,70,40,0.33)');
     ctx.fillStyle = hazeGrad;
-    ctx.fillRect(0, hazeTop, MS_WORLD_W, hazeH);
+    ctx.fillRect(0, hazeTop, MS_WORLD_W, hazeBot - hazeTop);
   }
 
-  ctx.restore(); // end world transform
+  ctx.restore(); // END PASS 4
 
-  // Update DOM crystal meter bar
+  // === SCREEN SPACE HUD ===
   updateCrystalHUD(ms.crystalsCollected);
 
-  // Ship interaction prompt
   if(p.nearObj === 'ship' && !_msPopupOpen){
     ctx.save();
     ctx.font = '8px "Press Start 2P",monospace'; _curFont='';
@@ -11477,7 +11482,6 @@ function drawMarsSurface(ctx){
     ctx.restore();
   }
 
-  // Zone cross flash
   if(state.zoneCrossFlash && state.zoneCrossFlash.timer > 0){
     const f = state.zoneCrossFlash; f.timer--;
     ctx.save();
