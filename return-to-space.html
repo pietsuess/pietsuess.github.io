@@ -10893,11 +10893,18 @@ const MS_GROUND_RIGHT = MS_WORLD_W - 40;
 const MS_CRYSTAL_COUNT = 30;
 const MS_RED_CRYSTAL_COUNT = 100;
 const MS_PINK_CRYSTAL_COUNT = 130; // more pink than red so it's winnable
-// Ship — same pattern as victory: wx,wy = image top-left, depthY near bottom
-const MS_SHIP_W = 660, MS_SHIP_H = 204;
+// Ship — victory's exact size and hitPoly
+const MS_SHIP_W = 648, MS_SHIP_H = 201;
 const MS_SHIP_WX = 200;
-const MS_SHIP_WY = MS_GROUND_TOP - Math.round(MS_SHIP_H * 0.65); // gear touches ground
+const MS_SHIP_WY = MS_GROUND_TOP - Math.round(MS_SHIP_H * 0.65);
 const MS_SHIP_DEPTH_Y = MS_SHIP_WY + MS_SHIP_H - 4;
+// hitPoly from victory, offset to Mars ship position (victory wx=786.06, wy=1307.74)
+const MS_SHIP_HITPOLY = [
+  {x:1070,y:1469},{x:1105,y:1472},{x:1145,y:1474},{x:1247,y:1469},
+  {x:1284,y:1456},{x:1318,y:1452},{x:1341,y:1474},{x:1357,y:1486},
+  {x:1369,y:1502},{x:1275,y:1510},{x:1237,y:1497},{x:1123,y:1502},
+  {x:1049,y:1504},{x:1048,y:1488}
+].map(p => ({ x: p.x - 786.06 + MS_SHIP_WX, y: p.y - 1307.74 + MS_SHIP_WY }));
 
 // Polygon helpers for ship collision
 function _pointInPoly(poly, px, py){
@@ -11127,20 +11134,55 @@ function updateMarsSurface(){
   p.x = Math.max(MS_GROUND_LEFT, Math.min(MS_GROUND_RIGHT, p.x));
   p.y = Math.max(MS_GROUND_TOP + 30, Math.min(MS_GROUND_BOTTOM, p.y));
 
-  // Ship collision — hitbox from image position (wx,wy = top-left, like victory)
-  const _shipHitL = MS_SHIP_WX + MS_SHIP_W * 0.08;
-  const _shipHitR = MS_SHIP_WX + MS_SHIP_W * 0.92;
-  const _shipHitT = MS_SHIP_WY + MS_SHIP_H * 0.5;
-  const _shipHitB = MS_SHIP_DEPTH_Y + 40; // extend past landing gear into walkable area
-  const _inShip = p.x > _shipHitL && p.x < _shipHitR && p.y > _shipHitT && p.y < _shipHitB;
-  if(_inShip){
-    p.x = _preMovX; p.y = _preMovY;
+  // Ship collision — victory's exact hitPoly circle-vs-polygon with edge sliding
+  if((p.jumpOffY||0) > -20){
+    const poly = MS_SHIP_HITPOLY;
+    const feetOff = (p.jumpOffY || 0) - 18;
+    const feetY = p.y + feetOff;
+    const prX = 20, prY = 10;
+    const polyTopY = Math.min(...poly.map(pt => pt.y));
+    if(p.y >= polyTopY - prY){
+      const yScale = prX / prY;
+      const sFeetY = feetY * yScale;
+      const sPoly = poly.map(pt => ({x: pt.x, y: pt.y * yScale}));
+      let bestDist = Infinity, bestSCX = 0, bestSCY = 0, bestEi = 0, bestEj = 0;
+      for(let i=0,j=sPoly.length-1; i<sPoly.length; j=i++){
+        const ex = sPoly[i].x-sPoly[j].x, ey = sPoly[i].y-sPoly[j].y;
+        const len2 = ex*ex+ey*ey;
+        if(len2 < 0.001) continue;
+        const t = Math.max(0, Math.min(1, ((p.x-sPoly[j].x)*ex + (sFeetY-sPoly[j].y)*ey) / len2));
+        const cx = sPoly[j].x + t*ex, cy = sPoly[j].y + t*ey;
+        const ddx = p.x-cx, ddy = sFeetY-cy;
+        const d = ddx*ddx+ddy*ddy;
+        if(d < bestDist){ bestDist = d; bestSCX = cx; bestSCY = cy; bestEi = i; bestEj = j; }
+      }
+      bestDist = Math.sqrt(bestDist);
+      const inside = _pointInPoly(poly, p.x, feetY);
+      if(inside || bestDist < prX){
+        if(inside && bestDist < 0.001){
+          p.x = _preMovX; p.y = _preMovY;
+        } else if(inside){
+          const exx = sPoly[bestEi].x-sPoly[bestEj].x, eyy = sPoly[bestEi].y-sPoly[bestEj].y;
+          const len = Math.sqrt(exx*exx+eyy*eyy);
+          const n1x = -eyy/len, n1y = exx/len;
+          const pcx = sPoly.reduce((s,pt)=>s+pt.x,0)/sPoly.length;
+          const pcy = sPoly.reduce((s,pt)=>s+pt.y,0)/sPoly.length;
+          const dot = (bestSCX+n1x-pcx)*n1x + (bestSCY+n1y-pcy)*n1y;
+          const nx = dot > 0 ? n1x : -n1x, ny = dot > 0 ? n1y : -n1y;
+          p.x = bestSCX + nx * (prX + 1);
+          p.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+        } else {
+          const nx = (p.x-bestSCX)/bestDist, ny = (sFeetY-bestSCY)/bestDist;
+          p.x = bestSCX + nx * (prX + 1);
+          p.y = (bestSCY + ny * (prX + 1)) / yScale - feetOff;
+        }
+      }
+    }
   }
-  // Near ship for interaction
+  // Near ship — distance to hitPoly edge
   p.nearObj = null;
-  const _nearShipX = p.x > _shipHitL - 40 && p.x < _shipHitR + 40;
-  const _nearShipY = p.y > _shipHitT - 30 && p.y < _shipHitB + 30;
-  if(_nearShipX && _nearShipY && !_inShip) p.nearObj = 'ship';
+  const _shipEdgeDist = _distToPolyEdge(MS_SHIP_HITPOLY, p.x, p.y);
+  if(_shipEdgeDist < 60) p.nearObj = 'ship';
 
   // Animation state machine
   if(ms.anim === 'kneel'){
@@ -11434,11 +11476,15 @@ function drawMarsSurface(ctx){
 
   // Debug hitboxes
   if(_msDebugHitboxes){
-    const _dHL = MS_SHIP_WX + MS_SHIP_W * 0.08, _dHR = MS_SHIP_WX + MS_SHIP_W * 0.92;
-    const _dHT = MS_SHIP_WY + MS_SHIP_H * 0.5, _dHB = MS_SHIP_DEPTH_Y + 40;
     ctx.save();
+    // Ship hitPoly
     ctx.strokeStyle='#ff0000'; ctx.lineWidth=2; ctx.globalAlpha=0.7;
-    ctx.strokeRect(_dHL, _dHT, _dHR-_dHL, _dHB-_dHT);
+    ctx.beginPath();
+    for(let i=0; i<MS_SHIP_HITPOLY.length; i++){
+      const pt = MS_SHIP_HITPOLY[i];
+      if(i===0) ctx.moveTo(pt.x, pt.y); else ctx.lineTo(pt.x, pt.y);
+    }
+    ctx.closePath(); ctx.stroke();
     ctx.strokeStyle='#00ff00'; ctx.lineWidth=1;
     ctx.beginPath(); ctx.moveTo(MS_SHIP_WX-50, MS_SHIP_DEPTH_Y); ctx.lineTo(MS_SHIP_WX+MS_SHIP_W+50, MS_SHIP_DEPTH_Y); ctx.stroke();
     ctx.strokeStyle='#ffff00'; ctx.lineWidth=1; ctx.setLineDash([4,4]);
