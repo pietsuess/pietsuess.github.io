@@ -164,12 +164,7 @@ canvas#game { image-rendering: pixelated; image-rendering: crisp-edges; cursor: 
     font-size: 11px; color: #888; font-family: monospace;
 }
 
-/* Play mode: hide editor panels with visibility so they stay in DOM and layout */
-body.play-mode #shortcuts { visibility: hidden; width: 0 !important; padding: 0 !important; border: none !important; overflow: hidden; }
-body.play-mode #panel { visibility: hidden; width: 0 !important; overflow: hidden; }
-body.play-mode #panel-resize { visibility: hidden; width: 0 !important; }
-body.play-mode #mode-bar { display: none !important; }
-body.play-mode #info-bar { display: none !important; }
+/* Play mode hiding is done in JS, not CSS */
 
 /* ====== PLAY MODE HUD (Navigator style) ====== */
 .play-hud { display: none; }
@@ -1337,23 +1332,48 @@ function showTab(name) {
 }
 
 // ---- MODE ----
+// Store panel widths before play so we can restore them
+let savedPanelWidth = '';
+let savedShortcutsWidth = '';
+
 function setMode(m) {
     mode = m;
     document.getElementById('btn-edit').classList.toggle('active', m === 'edit');
     document.getElementById('btn-play').classList.toggle('active', m === 'play');
     canvas.style.cursor = m === 'edit' ? 'crosshair' : 'default';
 
-    // Hide/show editor panels using a class on body
-    document.body.classList.toggle('play-mode', m === 'play');
-    if (m === 'edit') {
-        // Redraw tileset after panel is visible again
-        setTimeout(() => { drawTilePicker(); canvasW = 0; canvasH = 0; }, 50);
-    }
-    // Force canvas resize
-    canvasW = 0; canvasH = 0;
+    const panelEl = document.getElementById('panel');
+    const shortcutsEl2 = document.getElementById('shortcuts');
+    const resizeEl = document.getElementById('panel-resize');
+    const modeBarEl = document.getElementById('mode-bar');
+    const infoBarEl = document.getElementById('info-bar');
 
-    if (m === 'play') startPlay();
-    else stopPlay();
+    if (m === 'play') {
+        // Save current widths
+        savedPanelWidth = panelEl.style.width || '';
+        savedShortcutsWidth = shortcutsEl2.style.width || '';
+        // Hide panels
+        panelEl.style.cssText = 'display:none !important';
+        shortcutsEl2.style.cssText = 'display:none !important';
+        resizeEl.style.cssText = 'display:none !important';
+        modeBarEl.style.cssText = 'display:none !important';
+        infoBarEl.style.cssText = 'display:none !important';
+        startPlay();
+    } else {
+        // Restore panels
+        panelEl.style.cssText = '';
+        panelEl.style.display = 'flex';
+        panelEl.style.flexDirection = 'column';
+        if (savedPanelWidth) panelEl.style.width = savedPanelWidth;
+        shortcutsEl2.style.cssText = '';
+        resizeEl.style.cssText = '';
+        modeBarEl.style.cssText = '';
+        infoBarEl.style.cssText = '';
+        stopPlay();
+        // Redraw tileset after panel is visible
+        setTimeout(() => { drawTilePicker(); canvasW = 0; canvasH = 0; }, 100);
+    }
+    canvasW = 0; canvasH = 0;
 }
 
 function toggleGrid() {
@@ -2587,7 +2607,7 @@ function playFrame(dt) {
             if (onGround) break;
         }
         if (!onGround) {
-            g.offsetY += GRAV * dt;
+            g.offsetY += GRAV * dt * 0.35;
             // Land check
             for (const c of bottomCells) {
                 const wx = c.tx * T + g.offsetX;
