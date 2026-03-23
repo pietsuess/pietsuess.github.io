@@ -329,6 +329,7 @@ function getRoll() { return hyperSpeed ? ROLL_SPD * 1.6 : ROLL_SPD; }
 function getAir() { return hyperSpeed ? AIR_SPD * 1.5 : AIR_SPD; }
 
 let gx, gy, gvx, gvy, gDir, gFloor, gState, gaFrame, gaTimer, gaDone, gScore;
+let smoothCamX = 0, smoothCamY = 0; // smoothed camera position
 let showHitboxes = false;
 
 const pKeys = {};
@@ -474,6 +475,8 @@ function startPlay() {
     gvx = 0; gvy = 0; gDir = 1; gFloor = false;
     gState = 'idle'; gaFrame = 0; gaTimer = 0; gaDone = false;
     gScore = 0;
+    smoothCamX = gx;
+    smoothCamY = gy - 50;
 
     pCoins = entities.filter(e => e.type === 'coin').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
     pRods = entities.filter(e => e.type === 'rod').map(e => ({ x: e.x, y: e.y, gone: false, t: Math.random() * 5, label: e.label, props: e.props }));
@@ -530,10 +533,10 @@ function pSetState(s) {
 // ---- COLLISION ----
 function colBox() {
     switch (gState) {
-        case 'roll': case 'into_roll': return [-7, -15, 14, 15];
-        case 'roll_out': case 'kneel': case 'crouch': return [-6, -22, 12, 22];
-        case 'push': return [-8, -43, 16, 43];
-        default: return [-6, -43, 12, 43];
+        case 'roll': case 'into_roll': return [-8, -15, 16, 15];
+        case 'roll_out': case 'kneel': case 'crouch': return [-10, -22, 20, 22];
+        case 'push': return [-12, -43, 24, 43];
+        default: return [-12, -43, 24, 43]; // wider to match sprite visual
     }
 }
 
@@ -541,7 +544,7 @@ function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[
 
 function canStandUp() {
     const standTop = gy - 43;
-    const standLeft = gx - 6, standWidth = 12;
+    const standLeft = gx - 12, standWidth = 24;
     const l = Math.floor(standLeft / T), r = Math.floor((standLeft + standWidth) / T);
     const t = Math.floor(standTop / T);
     const currentTop = Math.floor((gy - 22) / T);
@@ -1038,9 +1041,21 @@ function playFrame(dt) {
     const playZoom = Math.max(1, Math.floor(Math.min(cw / 360, ch / 200)));
     const playW = cw / playZoom;
     const playH = ch / playZoom;
-    // Round camera to whole pixels at zoom level to prevent tile seams
-    const pcamX = Math.round(gx - playW / 2);
-    const pcamY = Math.round(gy - 50 - playH / 2);
+
+    // Smooth camera: lerp toward Gary's position
+    const targetCamX = gx;
+    const targetCamY = gy - 50;
+    const lerpSpeed = 1 - Math.pow(0.001, dt); // ~0.93 at 60fps, smooth exponential
+    smoothCamX += (targetCamX - smoothCamX) * lerpSpeed;
+    smoothCamY += (targetCamY - smoothCamY) * lerpSpeed;
+
+    // Clamp to level bounds
+    const clampedX = Math.max(playW / 2, Math.min(LVL_W * T - playW / 2, smoothCamX));
+    const clampedY = Math.min(LVL_H * T - playH / 2, smoothCamY);
+
+    // Round to whole pixels to prevent tile seams
+    const pcamX = Math.round(clampedX - playW / 2);
+    const pcamY = Math.round(clampedY - playH / 2);
 
     ctx.imageSmoothingEnabled = false;
     ctx.fillStyle = bgColor;
