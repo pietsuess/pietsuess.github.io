@@ -2133,9 +2133,15 @@ function stopPlay() {
     videoOpen = false;
     document.getElementById('video-overlay').classList.remove('open');
     document.querySelectorAll('.play-hud').forEach(el => el.classList.remove('active'));
+    document.querySelectorAll('.play-drawer').forEach(el => el.classList.add('closed'));
     if (playMusic) { playMusic.pause(); }
-    // Refresh tileset pickers
-    setTimeout(() => { drawTilePicker(); }, 100);
+    // Ensure play-mode class is removed (belt and suspenders)
+    document.body.classList.remove('play-mode');
+    // Refresh tileset pickers after panel is visible
+    setTimeout(() => {
+        drawTilePicker();
+        canvasW = 0; canvasH = 0; // force canvas resize
+    }, 200);
 }
 
 function pSetState(s) {
@@ -2558,37 +2564,44 @@ function playFrame(dt) {
     }
     wallBlocked = false;
 
-    // Pushable group gravity — groups fall when unsupported
+    // Pushable group gravity -- groups fall when unsupported
     for (const g of pushGroups) {
-        // Find bottom edge cells of the group
+        // Find bottom edge cells and check if ANY has solid ground directly below
         let onGround = false;
         for (const c of g.cells) {
             const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
-            if (hasBelow) continue; // not a bottom cell
+            if (hasBelow) continue;
+            // Check 2px below the bottom of this cell
             const wx = c.tx * T + g.offsetX;
-            const wy = c.ty * T + g.offsetY + T; // bottom of this cell
-            // Check if there's solid ground below
-            const checkTx = Math.floor((wx + T / 2) / T);
-            const checkTy = Math.floor(wy / T);
-            if (isSolid(checkTx, checkTy)) { onGround = true; break; }
-            // Check ground at left and right edges
-            const checkTxL = Math.floor(wx / T);
-            const checkTxR = Math.floor((wx + T - 1) / T);
-            if (isSolid(checkTxL, checkTy) || isSolid(checkTxR, checkTy)) { onGround = true; break; }
+            const botY = c.ty * T + g.offsetY + T + 1;
+            const checkTy = Math.floor(botY / T);
+            const txC = Math.floor((wx + T / 2) / T);
+            const txL = Math.floor(wx / T);
+            const txR = Math.floor((wx + T - 1) / T);
+            if (isSolid(txC, checkTy) || isSolid(txL, checkTy) || isSolid(txR, checkTy)) {
+                // Snap: align bottom of group cell to top of solid tile
+                const snapY = checkTy * T - (c.ty + 1) * T;
+                if (Math.abs(g.offsetY - snapY) < 8) {
+                    g.offsetY = snapY;
+                    onGround = true;
+                    break;
+                }
+            }
         }
         if (!onGround) {
-            g.offsetY += GRAV * dt * 0.4; // fall slower than Gary
-            // Snap to ground
+            g.offsetY += GRAV * dt * 0.5;
+            // Check for landing
             for (const c of g.cells) {
                 const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
                 if (hasBelow) continue;
-                const wy = c.ty * T + g.offsetY + T;
-                const checkTy = Math.floor(wy / T);
                 const wx = c.tx * T + g.offsetX;
-                const checkTxL = Math.floor(wx / T);
-                const checkTxR = Math.floor((wx + T - 1) / T);
-                if (isSolid(checkTxL, checkTy) || isSolid(checkTxR, checkTy) || isSolid(Math.floor((wx + T/2) / T), checkTy)) {
-                    g.offsetY = checkTy * T - (c.ty * T + T); // snap
+                const botY = c.ty * T + g.offsetY + T;
+                const checkTy = Math.floor(botY / T);
+                const txC = Math.floor((wx + T / 2) / T);
+                const txL = Math.floor(wx / T);
+                const txR = Math.floor((wx + T - 1) / T);
+                if (isSolid(txC, checkTy) || isSolid(txL, checkTy) || isSolid(txR, checkTy)) {
+                    g.offsetY = checkTy * T - (c.ty + 1) * T;
                     break;
                 }
             }
