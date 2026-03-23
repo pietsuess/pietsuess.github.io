@@ -10885,7 +10885,7 @@ const MS_WALK_SPEED = 6;
 const MS_JUMP_HEIGHT = 130;
 const MS_JUMP_DURATION = 0.7;
 const MS_GROUND_TOP = 780;
-const MS_GROUND_BOTTOM = 1050;
+const MS_GROUND_BOTTOM = 1100; // walkable area extends well below horizon
 const MS_GROUND_LEFT = 40;
 const MS_GROUND_RIGHT = MS_WORLD_W - 40;
 const MS_CRYSTAL_COUNT = 30;
@@ -10895,7 +10895,8 @@ const MS_SHIP_WX = 300;
 const MS_SHIP_WY = 840;
 const MS_SHIP_W = 660, MS_SHIP_H = 204;
 // Ship depth + hitPoly from victory walk Delta Wing (scaled to Mars ship size)
-const MS_SHIP_DEPTH_Y = MS_SHIP_WY - 20;
+// depthY = where the ship body meets the ground visually (bottom of fuselage, above landing gear)
+const MS_SHIP_DEPTH_Y = MS_SHIP_WY - MS_SHIP_H + 60 + MS_SHIP_H * 0.82; // ~870
 
 // Polygon helpers for ship collision
 function _pointInPoly(poly, px, py){
@@ -11102,28 +11103,23 @@ function updateMarsSurface(){
   p.x = Math.max(MS_GROUND_LEFT, Math.min(MS_GROUND_RIGHT, p.x));
   p.y = Math.max(MS_GROUND_TOP, Math.min(MS_GROUND_BOTTOM, p.y));
 
-  // Ship collision hitPoly (adapted from victory Delta Wing, scaled to Mars ship)
-  // Victory poly offset: wx=786 → our MS_SHIP_WX=300, scale ww 648→660
-  const _shipScale = MS_SHIP_W / 648;
-  const _shipOfsX = MS_SHIP_WX - 786 * _shipScale;
-  const _shipOfsY = (MS_SHIP_WY - MS_SHIP_H + 60) - 1308 * _shipScale;
-  const _shipHitPoly = [
-    {x:1070,y:1469},{x:1105,y:1472},{x:1145,y:1474},{x:1247,y:1469},
-    {x:1284,y:1456},{x:1318,y:1452},{x:1341,y:1474},{x:1357,y:1486},
-    {x:1369,y:1502},{x:1275,y:1510},{x:1237,y:1497},{x:1123,y:1502},
-    {x:1049,y:1504},{x:1048,y:1488}
-  ].map(pt => ({ x: pt.x * _shipScale + _shipOfsX, y: pt.y * _shipScale + _shipOfsY }));
-  // Ship collision — push pilot out of hitPoly
-  const _pilotFeetY = p.y;
-  const _inShip = _pointInPoly(_shipHitPoly, p.x, _pilotFeetY);
+  // Ship collision — direct hitbox from actual ship image position
+  // Ship image draws at (MS_SHIP_WX, MS_SHIP_WY-MS_SHIP_H+60) size (MS_SHIP_W x MS_SHIP_H)
+  // The hull body (excluding nose tip and landing gear) is roughly the middle 70% of the image
+  const _shipImgY = MS_SHIP_WY - MS_SHIP_H + 60;
+  const _shipHitL = MS_SHIP_WX + MS_SHIP_W * 0.05; // slight inset from nose
+  const _shipHitR = MS_SHIP_WX + MS_SHIP_W * 0.95;
+  const _shipHitT = _shipImgY + MS_SHIP_H * 0.25; // below cockpit canopy
+  const _shipHitB = _shipImgY + MS_SHIP_H * 0.92; // above landing gear feet
+  const _inShip = p.x > _shipHitL && p.x < _shipHitR && p.y > _shipHitT && p.y < _shipHitB;
   if(_inShip){
-    // Push pilot back out
     p.x = _preMovX; p.y = _preMovY;
   }
   // Near ship for interaction
   p.nearObj = null;
-  const _shipNearDist = _distToPolyEdge(_shipHitPoly, p.x, _pilotFeetY);
-  if(_shipNearDist < 40) p.nearObj = 'ship';
+  const _nearShipX = p.x > _shipHitL - 40 && p.x < _shipHitR + 40;
+  const _nearShipY = p.y > _shipHitT - 30 && p.y < _shipHitB + 30;
+  if(_nearShipX && _nearShipY && !_inShip) p.nearObj = 'ship';
 
   // Animation state machine
   if(ms.anim === 'kneel'){
