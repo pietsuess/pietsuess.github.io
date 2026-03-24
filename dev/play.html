@@ -564,6 +564,21 @@ function colBox() {
 
 function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[3]]; }
 
+// Check if Gary has room to transition to kneel height (22px) from roll (15px)
+function canKneel() {
+    const kneelTop = gy - 22;
+    const left = gx - 6, width = 12;
+    const l = Math.floor(left / T), r = Math.floor((left + width) / T);
+    const t = Math.floor(kneelTop / T);
+    const rollTop = Math.floor((gy - 15) / T);
+    for (let ty = t; ty < rollTop; ty++) {
+        for (let tx = l; tx <= r; tx++) {
+            if (isSolid(tx, ty)) return false;
+        }
+    }
+    return true;
+}
+
 function canStandUp() {
     const standTop = gy - 43;
     const standLeft = gx - 6, standWidth = 12;
@@ -790,7 +805,8 @@ function playFrame(dt) {
             gvx = gDir * getRoll();
             if (!pkD()) {
                 if (canStandUp()) pSetState('run');
-                else pSetState('roll');
+                else if (canKneel()) pSetState('kneel');
+                else pSetState('roll'); // stay low
             } else pSetState('roll');
             break;
         case 'roll':
@@ -800,13 +816,20 @@ function playFrame(dt) {
             else gvx = 0;
             if (!pkD()) {
                 if (canStandUp()) pSetState('run');
-                else pSetState('kneel');
+                else if (canKneel()) pSetState('kneel');
+                // else stay in roll - no headroom
             }
-            else if (!(pkR() || pkL())) { gvx = 0; pSetState('roll_out'); }
+            else if (!(pkR() || pkL())) {
+                if (canKneel()) { gvx = 0; pSetState('roll_out'); }
+                // else stay in roll - no headroom to stop
+            }
             break;
         case 'roll_out':
             gvx = gDir * ROLL_SPD * 0.4;
-            if (gaDone) { gvx = 0; pSetState('kneel'); }
+            if (gaDone) {
+                if (canKneel()) { gvx = 0; pSetState('kneel'); }
+                else pSetState('roll'); // back to roll if no headroom
+            }
             break;
         case 'air':
             if (pkR()) { gDir = 1; gvx = getAir(); }
