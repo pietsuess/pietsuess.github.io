@@ -7310,20 +7310,52 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
-  // Player blip — offset by radar centre, zoom-aware clamping
+  // ── Jupiter moons on radar — small colored dots ──
+  if(_msHasLightSpeed){
+    for(const m of JUPITER_MOONS){
+      const _jmwx = JUPITER_WX + Math.cos(m.ang) * m.orbit;
+      const _jmwy = JUPITER_WY + Math.sin(m.ang) * m.orbit;
+      const _jmRx = mapX + (_jmwx - state._radarCX) * scale;
+      const _jmRy = mapY + (_jmwy - state._radarCY) * scale;
+      const _jmDx = _jmRx - mapX, _jmDy = _jmRy - mapY;
+      const _jmDist = Math.sqrt(_jmDx*_jmDx + _jmDy*_jmDy);
+      if(_jmDist <= mapR - 2){
+        ctx.globalAlpha = 0.7;
+        ctx.beginPath(); ctx.arc(_jmRx, _jmRy, 2, 0, PI2);
+        ctx.fillStyle = `rgb(${m.col[0]},${m.col[1]},${m.col[2]})`; ctx.fill();
+      }
+    }
+    ctx.globalAlpha = 0.85;
+  }
+
+  // Player blip — directional triangle, clamped to half radar radius
   var px = mapX + (state.x - state._radarCX) * scale;
   var py = mapY + (state.y - state._radarCY) * scale;
   var blipDx = px - mapX, blipDy = py - mapY;
   var blipDist = Math.sqrt(blipDx * blipDx + blipDy * blipDy);
-  var isClipped = blipDist > mapR;
-  var bx = isClipped ? mapX + (blipDx / blipDist) * (mapR - 3) : px;
-  var by = isClipped ? mapY + (blipDy / blipDist) * (mapR - 3) : py;
-  var blipPulse = 0.7 + Math.sin(state.frameCount * 0.1) * 0.3;
-  ctx.globalAlpha = isClipped ? blipPulse * 0.6 : blipPulse;
-  ctx.beginPath();
-  ctx.arc(bx, by, isClipped ? 3 : 4, 0, PI2);
+  var maxBlipR = mapR * 0.5; // never past halfway
+  var bx, by;
+  if(blipDist > maxBlipR){
+    bx = mapX + (blipDx / blipDist) * maxBlipR;
+    by = mapY + (blipDy / blipDist) * maxBlipR;
+  } else {
+    bx = px; by = py;
+  }
+  ctx.globalAlpha = 0.9;
+  ctx.save();
+  ctx.translate(bx, by);
+  ctx.rotate(state.angle); // point in ship direction
   ctx.fillStyle = '#00ffcc';
+  ctx.shadowColor = '#00ffcc'; ctx.shadowBlur = 6 * SB;
+  ctx.beginPath();
+  ctx.moveTo(0, -5);    // nose
+  ctx.lineTo(3.5, 4);   // right wing
+  ctx.lineTo(0, 2);     // tail notch
+  ctx.lineTo(-3.5, 4);  // left wing
+  ctx.closePath();
   ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.restore();
 
   ctx.restore();
 }
@@ -13256,6 +13288,8 @@ function drawJupiter(ctx, cx, cy){
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
   const drawSize = GR * 2 + GR * 0.1; // slight padding
+  // Clip to smooth circle before drawing scaled texture — eliminates pixelated edge
+  ctx.beginPath(); ctx.arc(screenX, screenY, GR, 0, Math.PI*2); ctx.clip();
   ctx.drawImage(_jupiterCache, screenX - drawSize/2, screenY - drawSize/2, drawSize, drawSize);
 
   // Thick atmosphere — only when planet edge is on screen (perf)
