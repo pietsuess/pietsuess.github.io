@@ -1026,17 +1026,39 @@ function playFrame(dt) {
     const PUSH_SPD = SPD * 0.5;
     const PUSH_DIST = 12; // distance from Gary's center to group edge
 
-    // Helper: check if a world position overlaps any OTHER pushable group
-    function hitsOtherGroup(wx, wy, skipGroup) {
-        for (const og of pushGroups) {
-            if (og === skipGroup) continue;
-            for (const oc of og.cells) {
-                const ocx = oc.tx * T + og.offsetX;
-                const ocy = oc.ty * T + og.offsetY;
-                if (wx >= ocx && wx < ocx + T && wy >= ocy && wy < ocy + T) return true;
+    // Check if a push chain can move. Returns array of groups to move, or null if blocked.
+    function canPushChain(startGroup, pushDir) {
+        const chain = [startGroup];
+        const checked = new Set();
+        for (let i = 0; i < chain.length; i++) {
+            const cur = chain[i];
+            if (checked.has(cur)) continue;
+            checked.add(cur);
+            for (const c of cur.cells) {
+                const cx = c.tx * T + cur.offsetX;
+                const cy = c.ty * T + cur.offsetY;
+                const isEdge = pushDir === 1
+                    ? !cur.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty)
+                    : !cur.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                if (!isEdge) continue;
+                const checkX = pushDir === 1 ? cx + T + 1 : cx - 1;
+                const checkTy = Math.floor(cy / T);
+                // Blocked by world tile?
+                if (isSolid(Math.floor(checkX / T), checkTy)) return null;
+                // Hits another group? Add to chain
+                for (const og of pushGroups) {
+                    if (checked.has(og) || chain.includes(og)) continue;
+                    for (const oc of og.cells) {
+                        const ocx = oc.tx * T + og.offsetX;
+                        const ocy = oc.ty * T + og.offsetY;
+                        if (checkX >= ocx && checkX < ocx + T && cy + T/2 >= ocy && cy + T/2 < ocy + T) {
+                            chain.push(og);
+                        }
+                    }
+                }
             }
         }
-        return false;
+        return chain;
     }
 
     for (const g of pushGroups) {
@@ -1054,7 +1076,9 @@ function playFrame(dt) {
             }
         }
 
-        if (gy <= gt || gy > gb + 8) continue;
+        // Skip if Gary's body doesn't overlap the group vertically
+        const bodyTop = gy - colBox()[3];
+        if (bodyTop >= gb || gy < gt - 8) continue;
 
         const touching = (gx + 30 > gl && gx - 30 < gr);
         if (!touching) continue;
@@ -1064,35 +1088,11 @@ function playFrame(dt) {
         if (g === pushingGroup) {
             // During settle-back, don't move the group or snap Gary
             if (pushSettleFrames > 0) continue;
-            let canMove = true;
             const pushDir = gDir;
-            for (const c of g.cells) {
-                const cx = c.tx * T + g.offsetX;
-                const cy = c.ty * T + g.offsetY;
-                if (pushDir === 1) {
-                    const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
-                    if (!hasRight) {
-                        const checkX = cx + T + 1;
-                        const checkTx = Math.floor(checkX / T);
-                        const checkTy = Math.floor(cy / T);
-                        if (isSolid(checkTx, checkTy) || hitsOtherGroup(checkX, cy + T/2, g))
-                            { canMove = false; break; }
-                    }
-                } else {
-                    const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
-                    if (!hasLeft) {
-                        const checkX = cx - 1;
-                        const checkTy = Math.floor(cy / T);
-                        if (isSolid(Math.floor(checkX / T), checkTy) || hitsOtherGroup(checkX, cy + T/2, g))
-                            { canMove = false; break; }
-                    }
-                }
-            }
-            if (canMove) {
+            const chain = canPushChain(g, pushDir);
+            if (chain) {
                 const amt = PUSH_SPD * dt;
-                g.offsetX += pushDir * amt;
-                // Recalculate bounds after move
-                const newEdge = pushDir === 1 ? gl + amt : gr + amt;
+                for (const cg of chain) cg.offsetX += pushDir * amt;
                 gx = pushDir === 1 ? (gl + amt) - PUSH_DIST : (gr + amt) + PUSH_DIST;
             } else {
                 gx = pushDir === 1 ? gl - PUSH_DIST : gr + PUSH_DIST;
