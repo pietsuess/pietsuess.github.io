@@ -7293,7 +7293,7 @@ function drawGame(){
   } else {
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
-  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? Math.min(1.3, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/300) : 1;
+  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? Math.min(2.5, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/60) : 1;
   if(!state.started)return;
   if(_lsZoom > 1.01){
     ctx.save();
@@ -7639,22 +7639,31 @@ function drawGame(){
       ctx.fillStyle = `rgba(0,0,5,${0.18 * _lsI})`;
       ctx.fillRect(0, 0, W, H);
 
-      // Star streaks — ship's facing direction, long, thick, glowing
+      // Star streaks — start AHEAD of ship, fly backward, empty central column
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 100 + Math.floor(_lsI * 200);
+      const streakCount = 120 + Math.floor(_lsI * 250);
+      const _screenDiag = Math.max(W, H);
       for(let k = 0; k < streakCount; k++){
-        const perpOfs = (Math.random()-0.5) * Math.max(W,H) * 1.6;
-        const travelOfs = (Math.random()-0.5) * Math.max(W,H);
+        // Perpendicular spread — avoid center column (ship corridor)
+        let perpOfs = (Math.random()-0.5) * _screenDiag * 1.2;
+        const centerGap = 30 + _lsI * 20; // empty corridor width
+        if(Math.abs(perpOfs) < centerGap) perpOfs = (perpOfs > 0 ? centerGap : -centerGap) + (Math.random()-0.5)*20;
+        // Start AHEAD of ship (positive travel direction), not behind
+        const travelOfs = -_screenDiag * 0.6 + Math.random() * _screenDiag * 0.5; // mostly ahead
         const sx = W/2 + Math.cos(perpAng)*perpOfs + Math.cos(travelAng)*travelOfs;
         const sy = H/2 + Math.sin(perpAng)*perpOfs + Math.sin(travelAng)*travelOfs;
-        // Streaks fly OPPOSITE to travel direction
+        // Streaks fly backward (opposite travel)
         const streakLen = 600 + _lsI * 3600 * (0.3 + Math.random()*0.7);
         const ex = sx - Math.cos(travelAng)*streakLen;
         const ey = sy - Math.sin(travelAng)*streakLen;
+        // Fade streaks that are far from center (no outer edge streaks)
+        const distFromCenter = Math.abs(perpOfs) / (_screenDiag * 0.6);
+        const edgeFade = Math.max(0, 1 - distFromCenter);
+        if(edgeFade < 0.1) continue;
         const hue = 280 + Math.random()*50;
         const lum = 60 + Math.random()*30;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
-        ctx.strokeStyle = `hsla(${hue},100%,${lum}%,${0.3 + _lsI*0.6})`;
+        ctx.strokeStyle = `hsla(${hue},100%,${lum}%,${(0.3 + _lsI*0.6) * edgeFade})`;
         ctx.lineWidth = 1.5 + _lsI * 8 * Math.random();
         ctx.shadowColor = `hsl(${hue},100%,${lum+10}%)`; ctx.shadowBlur = 14 * _lsI;
         ctx.stroke();
