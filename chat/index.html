@@ -1109,7 +1109,7 @@ let retryDelay = 1000;
 let lastEventTime = 0;
 function listen() {
   if (currentES) { try { currentES.close(); } catch(e) {} }
-  const since = lastEventTime ? lastEventTime : '5m';
+  const since = lastEventTime ? lastEventTime : '1m';
   const es = new EventSource('https://ntfy.sh/' + TOPIC + '/sse?since=' + since);
   currentES = es;
   es.onopen = () => {
@@ -1187,10 +1187,11 @@ function listen() {
     } catch(err) {}
   });
   es.onerror = () => {
-    document.getElementById('status').textContent = 'reconnecting...';
+    document.getElementById('status').textContent = 'retry in ' + Math.round(retryDelay/1000) + 's...';
     es.close();
+    currentES = null;
     setTimeout(listen, retryDelay);
-    retryDelay = Math.min(retryDelay * 2, 30000);
+    retryDelay = Math.min(retryDelay * 3, 120000);
   };
 }
 
@@ -1439,21 +1440,17 @@ function setupAdmin() {
     document.getElementById('admin-btn').style.display = '';
     document.getElementById('reset-btn').style.display = '';
   }
-  // Broadcast presence
-  sendPresence();
-  presenceInterval = setInterval(sendPresence, 60000);
-}
-
-function sendPresence() {
-  if (!name) return;
-  const msg = { type: 'presence', user: name, ts: Date.now(), id: 'p-' + Date.now() };
-  fetch('https://ntfy.sh/' + TOPIC, { method: 'POST', body: JSON.stringify(msg) });
 }
 
 function toggleAdmin() {
   const panel = document.getElementById('admin-panel');
   panel.classList.toggle('open');
-  if (panel.classList.contains('open')) renderUserList();
+  if (panel.classList.contains('open')) {
+    // Only send presence when admin opens panel
+    const msg = { type: 'presence', user: name, ts: Date.now(), id: 'p-' + Date.now() };
+    fetch('https://ntfy.sh/' + TOPIC, { method: 'POST', body: JSON.stringify(msg) });
+    renderUserList();
+  }
 }
 
 function renderUserList() {
