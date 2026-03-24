@@ -1024,40 +1024,7 @@ function playFrame(dt) {
     // ---- PUSHABLE GROUP SYSTEM ----
     if (gState !== 'push') pushingGroup = null;
     const PUSH_SPD = SPD * 0.5;
-    const PUSH_DIST = 12;
-
-    // Chain push: returns array of all groups that would move, or null if any is wall-blocked
-    function canPushChain(startGroup, pushDir) {
-        const chain = [startGroup];
-        const checked = new Set();
-        for (let i = 0; i < chain.length; i++) {
-            const cur = chain[i];
-            if (checked.has(cur)) continue;
-            checked.add(cur);
-            for (const c of cur.cells) {
-                const cx = c.tx * T + cur.offsetX;
-                const cy = c.ty * T + cur.offsetY;
-                const isEdge = pushDir === 1
-                    ? !cur.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty)
-                    : !cur.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
-                if (!isEdge) continue;
-                const checkX = pushDir === 1 ? cx + T + 1 : cx - 1;
-                const checkTy = Math.floor(cy / T);
-                if (isSolid(Math.floor(checkX / T), checkTy)) return null;
-                for (const og of pushGroups) {
-                    if (checked.has(og) || chain.includes(og)) continue;
-                    for (const oc of og.cells) {
-                        const ocx = oc.tx * T + og.offsetX;
-                        const ocy = oc.ty * T + og.offsetY;
-                        if (checkX >= ocx && checkX < ocx + T && cy >= ocy && cy < ocy + T) {
-                            chain.push(og);
-                        }
-                    }
-                }
-            }
-        }
-        return chain;
-    }
+    const PUSH_DIST = 14;
 
     for (const g of pushGroups) {
         let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
@@ -1068,34 +1035,87 @@ function playFrame(dt) {
             gb = Math.max(gb, c.ty * T + g.offsetY + T);
         }
 
-        // Landing on top of group
         if (gvy >= 0 && g !== pushingGroup) {
             if (gx >= gl - 4 && gx <= gr + 4 && gy >= gt - 3 && gy <= gt + 4) {
                 gy = gt; gvy = 0; gFloor = true;
             }
         }
 
-        // Skip if Gary is on top of the group (centered horizontally above it)
-        if (gy <= gt + 2 && gx >= gl - 2 && gx <= gr + 2) continue;
+        if (gy <= gt || gy > gb + 8) continue;
 
-        // Skip if no vertical overlap between Gary's body and group
-        const cb = colBox();
-        const bodyTop = gy + cb[1]; // top of hitbox (e.g. gy - 43)
-        if (bodyTop >= gb || gt > gy) continue;
-
-        // Must be horizontally close
-        if (gx + 20 <= gl && gx - 20 >= gr) continue;
+        const touching = (gx + 30 > gl && gx - 30 < gr);
+        if (!touching) continue;
 
         const garyIsLeft = gx < (gl + gr) / 2;
 
         if (g === pushingGroup) {
+            // Don't move group during settle-back animation
             if (pushSettleFrames > 0) continue;
+            let canMove = true;
+            let chainGroups = []; // other groups to chain-push
             const pushDir = gDir;
-            const chain = canPushChain(g, pushDir);
-            if (chain) {
+            for (const c of g.cells) {
+                if (pushDir === 1) {
+                    const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
+                    if (!hasRight) {
+                        const nextTx = Math.floor((c.tx * T + g.offsetX + T + 1) / T);
+                        const nextTy = Math.floor((c.ty * T + g.offsetY) / T);
+                        if (isSolid(nextTx, nextTy)) { canMove = false; break; }
+                        // Check other pushable groups
+                        for (const og of pushGroups) {
+                            if (og === g || chainGroups.includes(og)) continue;
+                            for (const oc of og.cells) {
+                                const ocx = oc.tx * T + og.offsetX;
+                                const ocy = oc.ty * T + og.offsetY;
+                                const checkX = c.tx * T + g.offsetX + T + 1;
+                                if (checkX >= ocx && checkX < ocx + T && c.ty * T + g.offsetY >= ocy && c.ty * T + g.offsetY < ocy + T) {
+                                    chainGroups.push(og);
+                                }
+                            }
+                        }
+                    }
+                } else {
+                    const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                    if (!hasLeft) {
+                        const nextTx = Math.floor((c.tx * T + g.offsetX - 1) / T);
+                        const nextTy = Math.floor((c.ty * T + g.offsetY) / T);
+                        if (isSolid(nextTx, nextTy)) { canMove = false; break; }
+                        for (const og of pushGroups) {
+                            if (og === g || chainGroups.includes(og)) continue;
+                            for (const oc of og.cells) {
+                                const ocx = oc.tx * T + og.offsetX;
+                                const ocy = oc.ty * T + og.offsetY;
+                                const checkX = c.tx * T + g.offsetX - 1;
+                                if (checkX >= ocx && checkX < ocx + T && c.ty * T + g.offsetY >= ocy && c.ty * T + g.offsetY < ocy + T) {
+                                    chainGroups.push(og);
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+            // Check if chained groups are also blocked by walls
+            if (canMove) {
+                for (const cg of chainGroups) {
+                    for (const c of cg.cells) {
+                        if (pushDir === 1) {
+                            const hasRight = cg.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
+                            if (!hasRight && isSolid(Math.floor((c.tx * T + cg.offsetX + T + 1) / T), Math.floor((c.ty * T + cg.offsetY) / T)))
+                                { canMove = false; break; }
+                        } else {
+                            const hasLeft = cg.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
+                            if (!hasLeft && isSolid(Math.floor((c.tx * T + cg.offsetX - 1) / T), Math.floor((c.ty * T + cg.offsetY) / T)))
+                                { canMove = false; break; }
+                        }
+                    }
+                    if (!canMove) break;
+                }
+            }
+            if (canMove) {
                 const amt = PUSH_SPD * dt;
-                for (const cg of chain) cg.offsetX += pushDir * amt;
-                gx = pushDir === 1 ? (gl + amt) - PUSH_DIST : (gr + amt) + PUSH_DIST;
+                g.offsetX += pushDir * amt;
+                for (const cg of chainGroups) cg.offsetX += pushDir * amt;
+                gx = pushDir === 1 ? gl - PUSH_DIST + pushDir * amt : gr + PUSH_DIST + pushDir * amt;
             } else {
                 gx = pushDir === 1 ? gl - PUSH_DIST : gr + PUSH_DIST;
                 gvx = 0;
@@ -1103,18 +1123,24 @@ function playFrame(dt) {
             continue;
         }
 
-        // Block Gary and set up push target
-        if (garyIsLeft && gvx > 0) {
-            gx = gl - PUSH_DIST;
-            gvx = 0;
-            wallBlocked = true;
-            pushTarget = g;
-        } else if (!garyIsLeft && gvx < 0) {
-            gx = gr + PUSH_DIST;
-            gvx = 0;
-            wallBlocked = true;
-            pushTarget = g;
+        // Only push if group reaches hand height (not just foot-level obstacles)
+        const handTop = gy - 43, handBot = gy - 33;
+        const atHandHeight = gt < handBot && gb > handTop;
+
+        if (garyIsLeft) {
+            if (gvx > 0) {
+                gx = gl - PUSH_DIST;
+                gvx = 0;
+                if (atHandHeight) { wallBlocked = true; pushTarget = g; }
+            }
+        } else {
+            if (gvx < 0) {
+                gx = gr + PUSH_DIST;
+                gvx = 0;
+                if (atHandHeight) { wallBlocked = true; pushTarget = g; }
+            }
         }
+        if (!atHandHeight) { pushTarget = null; }
     }
 
     // Wall push timer - same delay for walls and pushable groups
@@ -1388,7 +1414,7 @@ function playFrame(dt) {
         // Hand/push threshold zone (cyan)
         ctx.strokeStyle = '#0ff';
         ctx.fillStyle = 'rgba(0,255,255,0.15)';
-        const hzTop = gy - 43, hzBot = gy - 33;
+        const hzTop = gy - 43, hzBot = gy - 33; // hand zone for push
         ctx.fillRect(gx - 20, hzTop, 40, hzBot - hzTop);
         ctx.strokeRect(gx - 20, hzTop, 40, hzBot - hzTop);
 
