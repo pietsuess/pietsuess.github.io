@@ -7296,7 +7296,7 @@ function drawGame(){
   const _lsTarget = (_isLightSpeed && state.hyperspace) ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
   _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.08); // fast engage, faster fade
   if(_lsSmooth < 0.005) _lsSmooth = 0;
-  const _lsZoom = state.started ? 1 + _lsSmooth * 1.0 : 1; // up to 2x zoom
+  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? 1 + _lsSmooth * 1.0 : 1;
   if(!state.started)return;
   if(_lsZoom > 1.01){
     ctx.save();
@@ -7677,10 +7677,10 @@ function drawGame(){
       }
       ctx.shadowBlur = 0;
 
-      // Front burn shield — drawn with camera shake applied (uses _shakeX/_shakeY from drawGame)
+      // Front burn shield — at screen center (inherits camera shake from parent transform)
       if(_frontBurnImg.complete && _frontBurnImg.naturalWidth > 0){
         ctx.save();
-        ctx.translate(W/2, H/2); // already includes camera shake from parent transform
+        ctx.translate(W/2, H/2);
         ctx.rotate(travelAng + Math.PI/2);
         const burnSz = 55 + _lsI * 25;
         const burnY = -burnSz * 0.4;
@@ -9183,16 +9183,18 @@ function drawGame(){
     }
     // Light speed motion blur — ghost copies trailing behind ship
     if(_lsSmooth > 0.1){
-      const blurCopies = 4;
-      for(let bi = blurCopies; bi >= 1; bi--){
+      const s = ps.size;
+      for(let bi = 6; bi >= 1; bi--){
         ctx.save();
-        ctx.globalAlpha = alpha * (0.12 / bi);
-        ctx.translate(0, bi * 4 * _lsSmooth); // offset backward in ship-local Y
+        ctx.globalAlpha = 0.25 * (1 - bi/7) * _lsSmooth;
+        ctx.translate(0, bi * 6 * _lsSmooth);
         ctx.shadowBlur = 0;
-        const s = ps.size;
         ctx.beginPath();
         ctx.moveTo(0,-s); ctx.lineTo(s*0.6,s*0.7); ctx.lineTo(0,s*0.35); ctx.lineTo(-s*0.6,s*0.7); ctx.closePath();
-        ctx.strokeStyle = `rgba(255,105,180,${0.15/_lsSmooth})`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.fillStyle = `rgba(255,105,180,${0.2 * (1-bi/7)})`;
+        ctx.fill();
+        ctx.strokeStyle = noFuel ? '#ff6600' : ps.color;
+        ctx.lineWidth = 1; ctx.globalAlpha *= 0.5; ctx.stroke();
         ctx.restore();
       }
     }
