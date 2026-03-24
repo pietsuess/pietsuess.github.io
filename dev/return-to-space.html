@@ -1784,6 +1784,17 @@ const METEOR_SHOWER_COUNT     = 30;
 const MARS_WX = -BELT_OUTER - 15000;  // west of belt, opposite Earth
 const MARS_WY = -12000;               // slightly north
 const MARS_R  = 156;                   // 1.95x Moon (3390/1737), 0.578x Earth
+// Jupiter: 10.97x Earth radius, placed far enough to require light speed
+const JUPITER_WX = BELT_OUTER + 1087000; // ~1.09M px from belt — needs light speed
+const JUPITER_WY = -180000;              // offset south for variety
+const JUPITER_R  = 2960;                 // 69911/6371 * 270 = ~2962
+// Galilean moons — orbital radii from Jupiter center (to scale)
+const JUPITER_MOONS = [
+  { name:'Io',       r:77,  orbit:17870, speed:0.0042, col:[255,200,60],  ang:0 },
+  { name:'Europa',   r:66,  orbit:28450, speed:0.0021, col:[200,220,255], ang:Math.PI*0.7 },
+  { name:'Ganymede', r:112, orbit:45380, speed:0.00105,col:[160,150,140], ang:Math.PI*1.3 },
+  { name:'Callisto', r:102, orbit:79830, speed:0.00049,col:[100,90,80],   ang:Math.PI*0.4 },
+];
 const BARRIER_GAP_WIDTH = 50;                 // permanent gap half-width (100px total passage)
 const OUTER_TARGET_WX   = BELT_OUTER + 62500;
 const OUTER_TARGET_WY   = 0;
@@ -4130,7 +4141,7 @@ function update(){
   const BASE_ACCEL=0.15*ps.speedMult;
   const BASE_MAX=4*ps.speedMult;
   _isLightSpeed = state.fireMode==='lightspeed' && _msHasLightSpeed;
-  const BOOST_MAX=_isLightSpeed ? 240 : (state.fireMode==='boost2x'?36:18)*ps.speedMult;
+  const BOOST_MAX=_isLightSpeed ? 1000 : (state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _normalFric = 0.965;
@@ -4954,8 +4965,50 @@ function update(){
   _fpSub._tRockPhys0=performance.now();
   const rocksToAdd=[];
   const splitFlags=new Set();
-  // Light speed: invincible, skip all rock collision
-  if(_isLightSpeed && state.hyperspace){ /* skip rock physics entirely */ } else
+  // Light speed: asteroids shatter on contact — no damage to ship
+  if(_isLightSpeed && state.hyperspace){
+    const _lsHitR = 30; // collision radius at light speed
+    for(let ri=(state.spaceRocks||[]).length-1; ri>=0; ri--){
+      const r=state.spaceRocks[ri];
+      const dx=r.wx-state.x, dy=r.wy-state.y;
+      const dist=Math.sqrt(dx*dx+dy*dy);
+      if(dist < _lsHitR + (r.size||12)){
+        // Shatter burst — rock disintegrates
+        if(!state.explosions)state.explosions=[];
+        const pts=[];
+        const cnt=20+Math.floor(Math.random()*20);
+        for(let i=0;i<cnt;i++){
+          const ang=Math.random()*Math.PI*2;
+          const spd=3+Math.random()*12;
+          // Bias particles in ship travel direction
+          const bias=0.5;
+          pts.push({wx:r.wx,wy:r.wy,
+            vx:Math.cos(ang)*spd+state.vx*bias,
+            vy:Math.sin(ang)*spd+state.vy*bias,
+            age:0, size:0.5+Math.random()*2.5,
+            hue:Math.floor(Math.random()*40)+20}); // rock-brown hues
+        }
+        // Add bright white sparks
+        for(let i=0;i<8;i++){
+          const ang=Math.random()*Math.PI*2;
+          pts.push({wx:r.wx,wy:r.wy,
+            vx:Math.cos(ang)*(6+Math.random()*10)+state.vx*0.3,
+            vy:Math.sin(ang)*(6+Math.random()*10)+state.vy*0.3,
+            age:0, size:1+Math.random()*1.5, hue:0}); // white
+        }
+        state.explosions.push({particles:pts, age:0, isBubble:false, _lsShatter:true});
+        state.spaceRocks.splice(ri,1);
+        // Brief flash
+        state.collisionFlash = 4;
+        // Crunch sound
+        if(audioCtx && !state.sfxMuted){
+          const t=audioCtx.currentTime;
+          playBeep(60+Math.random()*40, t, 0.06, 'sawtooth', 0.04);
+          playBeep(200+Math.random()*200, t, 0.03, 'triangle', 0.02);
+        }
+      }
+    }
+  } else
   for(let ri=0;ri<(state.spaceRocks||[]).length;ri++){
     const r=state.spaceRocks[ri];
     r.rot+=r.rotSpd;
@@ -7203,6 +7256,30 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
+  // ── Jupiter dot — tan/orange, only after light speed earned ──
+  if(_msHasLightSpeed){
+    const _juRx = mapX + (JUPITER_WX - state._radarCX) * scale;
+    const _juRy = mapY + (JUPITER_WY - state._radarCY) * scale;
+    const _juDx = _juRx - mapX, _juDy = _juRy - mapY;
+    const _juDist = Math.sqrt(_juDx*_juDx + _juDy*_juDy);
+    const _juPulse = 0.5 + Math.sin(state.frameCount * 0.04) * 0.3;
+    if(_juDist <= mapR - 2){
+      ctx.globalAlpha = 0.8;
+      ctx.beginPath(); ctx.arc(_juRx, _juRy, 5, 0, PI2);
+      ctx.fillStyle = '#dda855'; ctx.fill();
+      ctx.shadowColor = '#dda855'; ctx.shadowBlur = 8 * SB;
+      ctx.beginPath(); ctx.arc(_juRx, _juRy, 5, 0, PI2); ctx.fill();
+      ctx.shadowBlur = 0;
+    } else {
+      const _juClX = mapX + (_juDx / _juDist) * (mapR - 4);
+      const _juClY = mapY + (_juDy / _juDist) * (mapR - 4);
+      ctx.globalAlpha = _juPulse;
+      ctx.beginPath(); ctx.arc(_juClX, _juClY, 3.5, 0, PI2);
+      ctx.fillStyle = '#dda855'; ctx.fill();
+    }
+    ctx.globalAlpha = 0.85;
+  }
+
   // ── Fuel dots — green, uncollected only ──
   if(state.fuelObjects){
     for(const fo of state.fuelObjects){
@@ -8675,6 +8752,7 @@ function drawGame(){
   drawEarth(ctx, cx, cy);
   drawMoon(ctx, cx, cy);
   drawMars(ctx, cx, cy);
+  drawJupiter(ctx, cx, cy);
   drawDebrisWall(ctx, cx, cy);
   drawScoopCollectible(ctx, cx, cy);
 
@@ -12976,6 +13054,229 @@ function drawMars(ctx, cx, cy){
 
   ctx.restore();
   ctx.restore();
+}
+
+// ── Jupiter texture — procedural horizontal cloud bands ──
+const _jupiterTexture = (function(){
+  const TW=1024, TH=512;
+  const tc=document.createElement('canvas');
+  tc.width=TW; tc.height=TH;
+  const tx=tc.getContext('2d', {willReadFrequently:true});
+  const imgData = tx.createImageData(TW, TH);
+  const d = imgData.data;
+
+  function hash(x,y){ let h=x*374761393+y*668265263; h=(h^(h>>13))*1274126177; return ((h^(h>>16))&0x7fffffff)/0x7fffffff; }
+  function noise(px,py){
+    const ix=Math.floor(px), iy=Math.floor(py);
+    const fx=px-ix, fy=py-iy;
+    const sx=fx*fx*(3-2*fx), sy=fy*fy*(3-2*fy);
+    const a=hash(ix,iy), b=hash(ix+1,iy), c=hash(ix,iy+1), dd=hash(ix+1,iy+1);
+    return a+(b-a)*sx + (c-a)*sy + (a-b-c+dd)*sx*sy;
+  }
+  function fbm(x,y,oct){
+    let v=0, amp=1, freq=1, total=0;
+    for(let i=0;i<oct;i++){ v+=noise(x*freq,y*freq)*amp; total+=amp; amp*=0.5; freq*=2; }
+    return v/total;
+  }
+
+  // Jupiter band structure — alternating zones (light) and belts (dark)
+  // Latitude mapped to 0-TH, bands defined by center latitude
+  const bands = [
+    // [latCenter (0-1), width (0-1), r, g, b] — from north to south
+    { lat:0.08, w:0.06, r:210,g:190,b:160 }, // North polar
+    { lat:0.15, w:0.05, r:180,g:140,b:100 }, // NTB (north temperate belt)
+    { lat:0.22, w:0.07, r:225,g:205,b:175 }, // NTZ (north temperate zone)
+    { lat:0.30, w:0.05, r:170,g:130,b:90 },  // NEB (north equatorial belt) — dark
+    { lat:0.38, w:0.08, r:235,g:215,b:185 }, // EZ (equatorial zone) — bright cream
+    { lat:0.47, w:0.06, r:160,g:110,b:70 },  // SEB (south equatorial belt) — darkest
+    { lat:0.55, w:0.07, r:230,g:210,b:180 }, // STZ (south tropical zone)
+    { lat:0.63, w:0.05, r:175,g:135,b:95 },  // STB (south temperate belt)
+    { lat:0.72, w:0.07, r:220,g:200,b:170 }, // SSTZ
+    { lat:0.80, w:0.05, r:165,g:130,b:100 }, // SSTB
+    { lat:0.90, w:0.08, r:195,g:175,b:150 }, // South polar
+  ];
+
+  for(let py=0; py<TH; py++){
+    const latNorm = py / TH; // 0=north pole, 1=south pole
+    // Blend band colors based on latitude
+    let br=190, bg=170, bb=145; // default mid-tone
+    for(const band of bands){
+      const dist = Math.abs(latNorm - band.lat) / (band.w * 0.5);
+      if(dist < 1){
+        const blend = 1 - dist * dist; // smooth falloff
+        br += (band.r - br) * blend * 0.8;
+        bg += (band.g - bg) * blend * 0.8;
+        bb += (band.b - bb) * blend * 0.8;
+      }
+    }
+    for(let px=0; px<TW; px++){
+      const lonNorm = px / TW;
+      // Turbulence — wavy band edges + cloud detail
+      const turb = fbm(lonNorm*8 + latNorm*0.5, latNorm*12, 5);
+      const detail = fbm(lonNorm*20 + 7.3, latNorm*20 + 3.1, 4) * 0.15;
+      // Zonal wind shear — horizontal stretching
+      const windShear = noise(lonNorm*3 + latNorm*50, latNorm*80) * 0.08;
+
+      let r = br + (turb - 0.5) * 50 + detail * 40 + windShear * 30;
+      let g = bg + (turb - 0.5) * 40 + detail * 30 + windShear * 20;
+      let b = bb + (turb - 0.5) * 25 + detail * 15;
+
+      // Great Red Spot — centered at ~22° south (latNorm ~0.62), lon ~0.3
+      const grsLat = 0.62, grsLon = 0.3, grsW = 0.06, grsH = 0.03;
+      const grsDx = (lonNorm - grsLon) / grsW;
+      const grsDy = (latNorm - grsLat) / grsH;
+      const grsDist = grsDx*grsDx + grsDy*grsDy;
+      if(grsDist < 1){
+        const grsBlend = (1 - grsDist) * 0.9;
+        // Swirl pattern inside the spot
+        const swirl = fbm(lonNorm*30 + latNorm*10 + 99, latNorm*30 + lonNorm*10, 4);
+        r = r + (200 - r) * grsBlend + swirl * 20 * grsBlend;
+        g = g + (80 - g) * grsBlend - swirl * 10 * grsBlend;
+        b = b + (50 - b) * grsBlend;
+      }
+
+      const idx = (py * TW + px) * 4;
+      d[idx]   = Math.max(0, Math.min(255, r));
+      d[idx+1] = Math.max(0, Math.min(255, g));
+      d[idx+2] = Math.max(0, Math.min(255, b));
+      d[idx+3] = 255;
+    }
+  }
+  tx.putImageData(imgData, 0, 0);
+  return tx.getImageData(0, 0, TW, TH);
+})();
+
+var _jupiterRot = 0;
+var _jupiterCache = null;
+var _jupiterPixelCache = null;
+var _jupiterLastRender = -999;
+
+function drawJupiter(ctx, cx, cy){
+  const screenX = JUPITER_WX - state.x + cx;
+  const screenY = JUPITER_WY - state.y + cy;
+  const GR = JUPITER_R;
+
+  // Generous cull — Jupiter is huge
+  if(screenX < -GR*3 || screenX > ctx.canvas.width+GR*3 ||
+     screenY < -GR*3 || screenY > ctx.canvas.height+GR*3) return;
+
+  // Fast rotation (Jupiter spins in ~10 hours vs Earth 24)
+  _jupiterRot = (_jupiterRot + 0.25) % 360;
+
+  const ATM_PAD = Math.ceil(GR * 0.4);
+  const GRID = Math.ceil(GR) * 2;
+  const SIZE = GRID + ATM_PAD * 2;
+  const CR = SIZE / 2;
+
+  if(!_jupiterCache || _jupiterCache.width !== SIZE){
+    _jupiterCache = document.createElement('canvas');
+    _jupiterCache.width = SIZE; _jupiterCache.height = SIZE;
+  }
+  const rc = _jupiterCache.getContext('2d');
+
+  // Re-render every 4 frames (faster rotation = more frequent updates)
+  if(state.frameCount - _jupiterLastRender >= 4 || _jupiterPixelCache === null){
+    _jupiterLastRender = state.frameCount;
+    rc.clearRect(0, 0, SIZE, SIZE);
+
+    const pix = rc.createImageData(SIZE, SIZE);
+    const pd = pix.data;
+    const texPx = _jupiterTexture.data;
+    const TW = _jupiterTexture.width, TH = _jupiterTexture.height;
+
+    const lx=-0.45, ly=-0.45, lz=0.78;
+    const startG = Math.max(0, Math.floor(CR - GR));
+    const endG   = Math.min(SIZE, Math.ceil(CR + GR));
+
+    // Step size — for huge radius, skip pixels for performance
+    const step = GR > 500 ? 2 : 1;
+
+    for(let gy=startG; gy<endG; gy+=step){
+      for(let gx=startG; gx<endG; gx+=step){
+        const nx=(gx-CR+0.5)/GR, ny=(gy-CR+0.5)/GR;
+        const d2=nx*nx+ny*ny;
+        if(d2>1) continue;
+        const nz=Math.sqrt(1-d2);
+        const lat=Math.asin(-ny)*180/Math.PI;
+        const lon=(Math.atan2(nx,nz)*180/Math.PI+_jupiterRot+360)%360;
+        const tx=Math.floor(lon/360*TW)%TW;
+        const ty=Math.min(TH-1,Math.floor((90-lat)/180*TH));
+        const ti=(ty*TW+tx)*4;
+        const r=texPx[ti], g=texPx[ti+1], b=texPx[ti+2];
+        const diff=Math.max(0,nx*lx+ny*ly+nz*lz);
+        const light=0.25+diff*0.75;
+        const rim=1-nz;
+
+        // Fill pixels (with step duplication for performance)
+        for(let sy=0; sy<step && gy+sy<endG; sy++){
+          for(let sx=0; sx<step && gx+sx<endG; sx++){
+            const idx=((gy+sy)*SIZE+(gx+sx))*4;
+            pd[idx]   = Math.min(255, r*light + rim*rim*30);
+            pd[idx+1] = Math.min(255, g*light + rim*rim*15);
+            pd[idx+2] = Math.min(255, b*light + rim*rim*8);
+            pd[idx+3] = 255;
+          }
+        }
+      }
+    }
+    rc.putImageData(pix,0,0);
+    _jupiterPixelCache = _jupiterCache;
+  }
+
+  ctx.save();
+  ctx.drawImage(_jupiterCache, screenX-CR, screenY-CR);
+
+  // Thick atmosphere — Jupiter has deep, layered glow
+  const atmMax = GR * 1.6;
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(screenX - atmMax, screenY - atmMax, atmMax*2, atmMax*2);
+  ctx.arc(screenX, screenY, GR, 0, Math.PI*2);
+  ctx.clip('evenodd');
+
+  // Warm tan rim
+  const g0=ctx.createRadialGradient(screenX,screenY,GR*0.96,screenX,screenY,GR*1.15);
+  g0.addColorStop(0,'rgba(220,180,120,0.6)');
+  g0.addColorStop(0.5,'rgba(180,140,80,0.2)');
+  g0.addColorStop(1,'rgba(140,100,50,0)');
+  ctx.fillStyle=g0; ctx.beginPath(); ctx.arc(screenX,screenY,GR*1.15,0,Math.PI*2); ctx.fill();
+
+  // Outer hydrogen haze
+  const g1=ctx.createRadialGradient(screenX,screenY,GR*0.98,screenX,screenY,GR*1.45);
+  g1.addColorStop(0,'rgba(200,170,120,0.15)');
+  g1.addColorStop(0.4,'rgba(160,130,80,0.05)');
+  g1.addColorStop(1,'rgba(0,0,0,0)');
+  ctx.fillStyle=g1; ctx.beginPath(); ctx.arc(screenX,screenY,GR*1.45,0,Math.PI*2); ctx.fill();
+
+  ctx.restore();
+  ctx.restore();
+
+  // ── Galilean Moons ──
+  for(const m of JUPITER_MOONS){
+    m.ang += m.speed;
+    const mwx = JUPITER_WX + Math.cos(m.ang) * m.orbit;
+    const mwy = JUPITER_WY + Math.sin(m.ang) * m.orbit;
+    const msx = mwx - state.x + cx;
+    const msy = mwy - state.y + cy;
+    if(msx < -m.r*2 || msx > ctx.canvas.width+m.r*2 ||
+       msy < -m.r*2 || msy > ctx.canvas.height+m.r*2) continue;
+
+    ctx.save();
+    // Simple shaded sphere for each moon
+    const mg = ctx.createRadialGradient(msx - m.r*0.3, msy - m.r*0.3, m.r*0.1, msx, msy, m.r);
+    mg.addColorStop(0, `rgba(${Math.min(255,m.col[0]+60)},${Math.min(255,m.col[1]+60)},${Math.min(255,m.col[2]+60)},1)`);
+    mg.addColorStop(0.7, `rgba(${m.col[0]},${m.col[1]},${m.col[2]},1)`);
+    mg.addColorStop(1, `rgba(${Math.floor(m.col[0]*0.3)},${Math.floor(m.col[1]*0.3)},${Math.floor(m.col[2]*0.3)},1)`);
+    ctx.beginPath(); ctx.arc(msx, msy, m.r, 0, Math.PI*2);
+    ctx.fillStyle = mg; ctx.fill();
+
+    // Moon name label
+    ctx.fillStyle = 'rgba(255,255,255,0.4)';
+    ctx.font = '9px "Press Start 2P",monospace'; _curFont='';
+    ctx.textAlign = 'center';
+    ctx.fillText(m.name.toUpperCase(), msx, msy + m.r + 14);
+    ctx.restore();
+  }
 }
 
 function drawDockInWorld(ctx, cx, cy){
