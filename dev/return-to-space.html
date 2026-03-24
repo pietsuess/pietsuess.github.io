@@ -4952,6 +4952,8 @@ function update(){
   _fpSub._tRockPhys0=performance.now();
   const rocksToAdd=[];
   const splitFlags=new Set();
+  // Light speed: invincible, skip all rock collision
+  if(_isLightSpeed && state.hyperspace){ /* skip rock physics entirely */ } else
   for(let ri=0;ri<(state.spaceRocks||[]).length;ri++){
     const r=state.spaceRocks[ri];
     r.rot+=r.rotSpd;
@@ -7292,7 +7294,14 @@ function drawGame(){
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
 
-  // (zoom transform removed — race system deleted)
+  // Light speed zoom — camera zooms in on ship
+  const _lsZoom = (_isLightSpeed && state.hyperspace) ? Math.min(1.4, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/200) : 1;
+  if(_lsZoom > 1.01){
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.scale(_lsZoom, _lsZoom);
+    ctx.translate(-cx, -cy);
+  }
 
   // (Speed particles removed — motion blur handles this now)
 
@@ -7605,53 +7614,134 @@ function drawGame(){
   // Light speed visual overlay
   if(_isLightSpeed && state.hyperspace){
     const _lsSpd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-    const _lsIntensity = Math.min(1, _lsSpd / 80); // ramps up as speed builds
-    if(_lsIntensity > 0.05){
+    const _lsI = Math.min(1, _lsSpd / 80);
+    if(_lsI > 0.05){
       ctx.save();
       const W = canvas.width, H = canvas.height;
+      const travelAng = Math.atan2(-state.vy, state.vx); // screen-space travel direction
 
-      // Motion blur overlay — semi-transparent black that doesn't fully clear
-      ctx.fillStyle = `rgba(0,0,8,${0.15 * _lsIntensity})`;
+      // Screen shake — shimmy proportional to speed
+      const shakeAmt = _lsI * 4;
+      const shakeX = (Math.random() - 0.5) * shakeAmt;
+      const shakeY = (Math.random() - 0.5) * shakeAmt;
+      ctx.translate(shakeX, shakeY);
+
+      // Motion blur
+      ctx.fillStyle = `rgba(0,0,8,${0.12 * _lsI})`;
       ctx.fillRect(0, 0, W, H);
 
-      // Star streaks — long lines radiating from center in travel direction
-      const _lsAng = state.angle;
-      const streakCount = 40 + Math.floor(_lsIntensity * 60);
+      // Star streaks — PARALLEL to travel direction, spread across screen
+      const perpAng = travelAng + Math.PI/2;
+      const streakCount = 50 + Math.floor(_lsI * 80);
       for(let k = 0; k < streakCount; k++){
-        const ang = (k / streakCount) * Math.PI * 2;
-        const baseR = 40 + Math.random() * Math.max(W, H) * 0.6;
-        const streakLen = 30 + _lsIntensity * 200 * (0.5 + Math.random() * 0.5);
-        const sx = W/2 + Math.cos(ang) * baseR;
-        const sy = H/2 + Math.sin(ang) * baseR;
-        const ex = sx + Math.cos(ang) * streakLen;
-        const ey = sy + Math.sin(ang) * streakLen;
+        // Spread perpendicular to travel, random offset along travel
+        const perpOfs = (Math.random() - 0.5) * Math.max(W, H) * 1.4;
+        const travelOfs = (Math.random() - 0.5) * Math.max(W, H) * 0.8;
+        const sx = W/2 + Math.cos(perpAng) * perpOfs + Math.cos(travelAng) * travelOfs;
+        const sy = H/2 + Math.sin(perpAng) * perpOfs + Math.sin(travelAng) * travelOfs;
+        const streakLen = 60 + _lsI * 350 * (0.3 + Math.random() * 0.7);
+        // Streak goes OPPOSITE to travel (stars fly past)
+        const ex = sx - Math.cos(travelAng) * streakLen;
+        const ey = sy - Math.sin(travelAng) * streakLen;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
-        const hue = 300 + Math.random() * 30; // pink-purple range
-        ctx.strokeStyle = `hsla(${hue},100%,${70 + Math.random()*20}%,${0.3 + _lsIntensity * 0.5})`;
-        ctx.lineWidth = 0.5 + _lsIntensity * 2 * Math.random();
+        const hue = 290 + Math.random() * 40;
+        ctx.strokeStyle = `hsla(${hue},100%,${65+Math.random()*25}%,${0.25 + _lsI * 0.55})`;
+        ctx.lineWidth = 0.8 + _lsI * 3 * Math.random();
+        ctx.shadowColor = `hsl(${hue},100%,80%)`; ctx.shadowBlur = 4 * _lsI;
         ctx.stroke();
       }
+      ctx.shadowBlur = 0;
 
-      // Pink/purple vignette tunnel
-      const vigR = Math.max(W, H) * (0.8 - _lsIntensity * 0.3);
-      const vigGrad = ctx.createRadialGradient(W/2, H/2, vigR * 0.3, W/2, H/2, vigR);
-      vigGrad.addColorStop(0, 'rgba(0,0,0,0)');
-      vigGrad.addColorStop(0.5, 'rgba(0,0,0,0)');
-      vigGrad.addColorStop(0.8, `rgba(80,0,60,${0.3 * _lsIntensity})`);
-      vigGrad.addColorStop(1, `rgba(40,0,30,${0.6 * _lsIntensity})`);
-      ctx.fillStyle = vigGrad;
-      ctx.fillRect(0, 0, W, H);
+      // Front dome — burning re-entry heat shield on ship nose
+      {
+        const noseX = W/2 + Math.cos(travelAng) * 30;
+        const noseY = H/2 + Math.sin(travelAng) * 30;
+        const domeR = 50 + _lsI * 30;
+        const domeGrad = ctx.createRadialGradient(noseX, noseY, 0, noseX, noseY, domeR);
+        domeGrad.addColorStop(0, `rgba(255,200,255,${0.35 * _lsI})`);
+        domeGrad.addColorStop(0.3, `rgba(255,105,180,${0.25 * _lsI})`);
+        domeGrad.addColorStop(0.6, `rgba(200,50,120,${0.12 * _lsI})`);
+        domeGrad.addColorStop(1, 'rgba(100,0,60,0)');
+        ctx.fillStyle = domeGrad;
+        ctx.beginPath(); ctx.arc(noseX, noseY, domeR, 0, Math.PI*2); ctx.fill();
+      }
 
-      // Ship glow — pink aura around center
-      const glowR = 60 + _lsIntensity * 40;
+      // Side screen glow — pink edges
+      // Left
+      const sideW = W * 0.15 * _lsI;
+      let sideGrad = ctx.createLinearGradient(0, 0, sideW, 0);
+      sideGrad.addColorStop(0, `rgba(255,50,150,${0.4 * _lsI})`);
+      sideGrad.addColorStop(1, 'rgba(255,50,150,0)');
+      ctx.fillStyle = sideGrad;
+      ctx.fillRect(0, 0, sideW, H);
+      // Right
+      sideGrad = ctx.createLinearGradient(W, 0, W - sideW, 0);
+      sideGrad.addColorStop(0, `rgba(255,50,150,${0.4 * _lsI})`);
+      sideGrad.addColorStop(1, 'rgba(255,50,150,0)');
+      ctx.fillStyle = sideGrad;
+      ctx.fillRect(W - sideW, 0, sideW, H);
+      // Top
+      sideGrad = ctx.createLinearGradient(0, 0, 0, sideW);
+      sideGrad.addColorStop(0, `rgba(200,30,120,${0.3 * _lsI})`);
+      sideGrad.addColorStop(1, 'rgba(200,30,120,0)');
+      ctx.fillStyle = sideGrad;
+      ctx.fillRect(0, 0, W, sideW);
+      // Bottom
+      sideGrad = ctx.createLinearGradient(0, H, 0, H - sideW);
+      sideGrad.addColorStop(0, `rgba(200,30,120,${0.3 * _lsI})`);
+      sideGrad.addColorStop(1, 'rgba(200,30,120,0)');
+      ctx.fillStyle = sideGrad;
+      ctx.fillRect(0, H - sideW, W, sideW);
+
+      // Pink aura around ship
+      const glowR = 70 + _lsI * 50;
       const glowGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
-      glowGrad.addColorStop(0, `rgba(255,105,180,${0.15 * _lsIntensity})`);
-      glowGrad.addColorStop(0.5, `rgba(255,105,180,${0.05 * _lsIntensity})`);
+      glowGrad.addColorStop(0, `rgba(255,105,180,${0.2 * _lsI})`);
+      glowGrad.addColorStop(0.4, `rgba(255,105,180,${0.08 * _lsI})`);
       glowGrad.addColorStop(1, 'rgba(255,105,180,0)');
       ctx.fillStyle = glowGrad;
       ctx.fillRect(W/2 - glowR, H/2 - glowR, glowR*2, glowR*2);
 
       ctx.restore();
+    }
+
+    // Crystal engine sound — shimmering resonance (not sawtooth)
+    if(!state._lsSoundActive && audioCtx && !state.sfxMuted){
+      state._lsSoundActive = true;
+      // Layered sine tones with slow LFO for crystalline shimmer
+      const _t = audioCtx.currentTime;
+      const _lsDur = 999; // runs until stopped
+      state._lsOscs = [];
+      [220, 330, 440, 554, 660].forEach((freq, i) => {
+        const osc = audioCtx.createOscillator();
+        const gain = audioCtx.createGain();
+        const lfo = audioCtx.createOscillator();
+        const lfoGain = audioCtx.createGain();
+        osc.type = 'sine';
+        osc.frequency.setValueAtTime(freq, _t);
+        // Slow frequency wobble for shimmer
+        lfo.type = 'sine';
+        lfo.frequency.setValueAtTime(2 + i * 0.7, _t);
+        lfoGain.gain.setValueAtTime(freq * 0.008, _t);
+        lfo.connect(lfoGain); lfoGain.connect(osc.frequency);
+        gain.gain.setValueAtTime(0, _t);
+        gain.gain.linearRampToValueAtTime(0.012 / (i+1), _t + 1.5); // slow build
+        osc.connect(gain); gain.connect(sfxGainNode);
+        osc.start(_t); lfo.start(_t);
+        state._lsOscs.push({ osc, gain, lfo, lfoGain });
+      });
+    }
+  } else if(state._lsSoundActive){
+    // Stop light speed sound
+    state._lsSoundActive = false;
+    if(state._lsOscs){
+      const _t = audioCtx.currentTime;
+      state._lsOscs.forEach(o => {
+        o.gain.gain.linearRampToValueAtTime(0, _t + 0.5);
+        o.osc.stop(_t + 0.6);
+        o.lfo.stop(_t + 0.6);
+      });
+      state._lsOscs = null;
     }
   }
 
@@ -8564,6 +8654,9 @@ function drawGame(){
   drawMars(ctx, cx, cy);
   drawDebrisWall(ctx, cx, cy);
   drawScoopCollectible(ctx, cx, cy);
+
+  // Close light speed zoom
+  if(_lsZoom > 1.01){ ctx.restore(); }
 
   // Debris cleanup HUD (DOM element, not canvas)
   updateDebrisHUD();
@@ -12097,6 +12190,9 @@ function updateDebrisWall(){
   }
 
   if(state._implodeTimer>0||state._driftingDead||state._implosionCountdown>0) return;
+
+  // Light speed: pass through debris
+  if(_isLightSpeed && state.hyperspace) return;
 
   const isBubble=state.cheat==='bubbles';
   const shipR=isBubble ? 8 * 1.4375 * ((state._bubblePopAnim) ? state._bubblePopAnim.scale : 1) : 12;
