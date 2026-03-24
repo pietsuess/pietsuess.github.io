@@ -7285,22 +7285,20 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  // Light speed: motion trail instead of full clear
-  if(_lsSmooth > 0.05 && _isLightSpeed && state.hyperspace){
+  // Light speed: motion trail instead of full clear (active during fadedown too)
+  if(_lsSmooth > 0.05){
     ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsSmooth * 0.3})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
-  // Hard clear any stain residue when light speed fading but no longer active
-  if(_lsSmooth > 0 && (!_isLightSpeed || !state.hyperspace)){
-    ctx.clearRect(0,0,canvas.width,canvas.height);
-  }
   // Smooth light speed intensity — lerps up and fades down gradually
-  const _lsTarget = (_isLightSpeed && state.hyperspace) ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
-  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.08); // fast engage, faster fade
+  const _lsActive = _isLightSpeed && state.hyperspace;
+  const _lsTarget = _lsActive ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
+  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.06);
   if(_lsSmooth < 0.005) _lsSmooth = 0;
-  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? 1 + _lsSmooth * 1.0 : 1;
+  // Zoom uses _lsSmooth so it eases out on release
+  const _lsZoom = (state.started && _lsSmooth > 0.01) ? 1 + _lsSmooth * 1.0 : 1;
   if(!state.started)return;
   // Light speed zoom applied directly (no save/restore - manually undone later)
   if(_lsZoom > 1.01){
@@ -7311,7 +7309,7 @@ function drawGame(){
   // Screen shake from BH flash, boss capture, or LIGHT SPEED
   let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
   let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
-  if(_lsSmooth > 0.05 && _isLightSpeed && state.hyperspace){
+  if(_lsSmooth > 0.05){
     const _lsSk = _lsSmooth * 8;
     _shakeX += (Math.random()-0.5) * _lsSk;
     _shakeY += (Math.random()-0.5) * _lsSk;
@@ -7628,8 +7626,8 @@ function drawGame(){
   // Wormhole transition overlay (dramatic)
   drawWormholeTransition();
 
-  // Light speed visual overlay
-  if(_lsSmooth > 0.05 && _isLightSpeed && state.hyperspace){
+  // Light speed visual overlay (continues during fadedown)
+  if(_lsSmooth > 0.05){
     const _lsI = _lsSmooth;
     {
       ctx.save();
@@ -9144,8 +9142,8 @@ function drawGame(){
     const _bhOfsX = _bhCap ? (_bhCap._ofsX||0) : 0;
     const _bhOfsY = _bhCap ? (_bhCap._ofsY||0) : 0;
     ctx.save();
-    // Light speed: ship vibrates independently (only while active)
-    const _lsShipShake = (_isLightSpeed && state.hyperspace) ? _lsSmooth * 3 : 0;
+    // Light speed: ship vibrates (fades with _lsSmooth)
+    const _lsShipShake = _lsSmooth * 3;
     ctx.translate(cx+_bhOfsX+(Math.random()-0.5)*_lsShipShake, cy+_bhOfsY+(Math.random()-0.5)*_lsShipShake);
     // Pre-capture stretch: ship elongates toward BH while in gravity well
     const _preBH = !_bhCap && state.secretBlackHole && state.inSecretLevel;
@@ -9163,12 +9161,12 @@ function drawGame(){
     } else {
       ctx.rotate(state.angle);
     }
-    // Multi-layer flame trail — drawn in ship space (active only)
-    if(_lsSmooth > 0.1 && _isLightSpeed && state.hyperspace){
-      _drawLsFlame(ctx, ps.size, _lsSmooth, state.frameCount||0);
+    // Multi-layer flame trail — layers 0-2 behind ship (fades with _lsSmooth)
+    if(_lsSmooth > 0.1){
+      _drawLsFlame(ctx, ps.size, _lsSmooth, state.frameCount||0, 0, 2);
     }
-    // Light speed motion blur — ghost copies trailing behind ship (active only)
-    if(_lsSmooth > 0.1 && _isLightSpeed && state.hyperspace){
+    // Light speed motion blur — ghost copies trailing behind ship (fades with _lsSmooth)
+    if(_lsSmooth > 0.1){
       const s = ps.size;
       for(let bi = 6; bi >= 1; bi--){
         ctx.save();
@@ -9345,6 +9343,10 @@ function drawGame(){
       ctx.moveTo(-10, 0); ctx.lineTo(10, 0);
       ctx.stroke();
       ctx.restore();
+    }
+    // Front shield layer — layer 3 drawn OVER the ship (fades with _lsSmooth)
+    if(_lsSmooth > 0.1){
+      _drawLsFlame(ctx, ps.size, _lsSmooth, state.frameCount||0, 3, 3);
     }
     ctx.restore();
     }
@@ -11249,17 +11251,19 @@ _genFlameFrames();
 // Regenerate periodically for variety
 var _lsFlameRegenTimer = 0;
 
-function _drawLsFlame(ctx, shipSize, intensity, frameNum){
+function _drawLsFlame(ctx, shipSize, intensity, frameNum, fromLayer, toLayer){
   if(intensity < 0.1) return;
   const scale = shipSize * 2.5;      // total flame length relative to ship
   const baseW = shipSize * 1.8;      // flame width at widest
   const fps6 = Math.floor(frameNum / 10); // ~6fps at 60fps game loop
+  const _from = fromLayer || 0;
+  const _to = toLayer !== undefined ? toLayer : _lsFlame.layers.length - 1;
 
   // Regenerate frames every ~2 seconds for fresh variation
   _lsFlameRegenTimer++;
   if(_lsFlameRegenTimer > 120){ _lsFlameRegenTimer = 0; _genFlameFrames(); }
 
-  for(let li = 0; li < _lsFlame.layers.length; li++){
+  for(let li = _from; li <= _to; li++){
     const L = _lsFlame.layers[li];
     // Layer fade-in: 0 below threshold, ramps to 1 over 0.2 above threshold
     const layerAlpha = Math.min(1, Math.max(0, (intensity - L.thresh) / 0.2));
@@ -11280,10 +11284,10 @@ function _drawLsFlame(ctx, shipSize, intensity, frameNum){
     ctx.globalAlpha = layerAlpha * flicker * 0.8;
     ctx.globalCompositeOperation = 'lighter';
 
-    // Draw each spike: root at ship nose (-Y), tips trail behind (+Y)
+    // Draw each spike: root ahead of ship nose (-Y), tips trail behind (+Y)
     for(let si = 0; si < spikes.length; si++){
       const sp = spikes[si];
-      const rootY = -shipSize;                        // root at ship nose
+      const rootY = -shipSize - 5;                    // 5px past the nose
       const tipX = sp.x * baseW;
       const tipY = rootY + sp.y * scale + scale * 0.5; // tips extend behind (+Y)
       const ctrlX = sp.cx1 * baseW;
