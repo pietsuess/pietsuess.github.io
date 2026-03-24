@@ -837,7 +837,17 @@ function playFrame(dt) {
     // Variable jump height
     if (gvy < 0 && !pkUp()) gvy *= 0.85;
 
+    // Inject pushable group cells into solidSet at their current offset positions
     pushSolidKeys = [];
+    for (const g of pushGroups) {
+        if (g === pushingGroup) continue; // skip group being actively pushed
+        for (const c of g.cells) {
+            const wx = Math.floor((c.tx * T + g.offsetX) / T);
+            const wy = Math.floor((c.ty * T + g.offsetY) / T);
+            const k = wx + ',' + wy;
+            if (!solidSet.has(k)) { solidSet.add(k); pushSolidKeys.push(k); }
+        }
+    }
 
     // Step 1: Move and resolve X
     gx += gvx * dt;
@@ -846,6 +856,9 @@ function playFrame(dt) {
     // Step 2: Move and resolve Y
     gy += gvy * dt;
     resolveY();
+
+    // Remove temporary push solid keys
+    for (const k of pushSolidKeys) solidSet.delete(k);
 
     if (gvy === 0 && gFloor) {
         gFloor = checkFloor();
