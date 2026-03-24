@@ -7295,7 +7295,7 @@ function drawGame(){
   // Smooth light speed intensity — lerps up and fades down gradually
   const _lsActive = _isLightSpeed && state.hyperspace;
   const _lsTarget = _lsActive ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
-  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.06);
+  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.15);
   if(_lsSmooth < 0.005) _lsSmooth = 0;
   // Zoom uses _lsSmooth so it eases out on release
   const _lsZoom = (state.started && _lsSmooth > 0.01) ? 1 + _lsSmooth * 1.0 : 1;
@@ -11209,21 +11209,26 @@ var _msHasLightSpeed = false;
 var _isLightSpeed = false;
 var _lsSmooth = 0; // smoothed light speed intensity for gradual fade
 // ── Multi-layer flame system for light speed ──
-// 4 layers, each with 4 frame variants of spike tails
+// 4 spike layers + wide envelope shapes underneath
 const _lsFlame = {
-  // Layer config: threshold (when it fades in), color stops, width scale, spike count range
   layers: [
     { thresh: 0.15, cols: ['#e93e3a','#ed683c','#f3903f'], w: 1.0,  spikes: [5,8],  glowCol: '#e93e3a' },
     { thresh: 0.30, cols: ['#f3903f','#f6a32d','#fdc70c'], w: 0.75, spikes: [4,7],  glowCol: '#f6a32d' },
     { thresh: 0.50, cols: ['#fdc70c','#ffe060','#fff4b0'], w: 0.5,  spikes: [3,6],  glowCol: '#ffe060' },
     { thresh: 0.70, cols: ['#fff4b0','#ffffff','#ff69b4'], w: 0.3,  spikes: [2,5],  glowCol: '#ff69b4' },
   ],
-  frames: [],  // [layer][frame] = array of spike points
+  // Wide envelope shapes that wrap under the entire ship
+  envelopes: [
+    { thresh: 0.10, col: '#e93e3a', alpha: 0.35, wMult: 1.6, tailMult: 1.4 },
+    { thresh: 0.25, col: '#f3903f', alpha: 0.30, wMult: 1.3, tailMult: 1.2 },
+    { thresh: 0.45, col: '#fdc70c', alpha: 0.25, wMult: 1.0, tailMult: 1.0 },
+  ],
+  frames: [],
+  envFrames: [], // [envelope][frame] = {bulgeL, bulgeR, tailLen, tailSkew}
   frameCount: 4,
-  flickerPhase: [0, 1.7, 3.1, 4.8], // independent flicker offsets per layer
-  shakeAmp: [3, 2.2, 1.5, 1.0],     // shake amplitude per layer (outer shakes more)
+  flickerPhase: [0, 1.7, 3.1, 4.8],
+  shakeAmp: [3, 2.2, 1.5, 1.0],
 };
-// Pre-generate spike frame variants for each layer
 function _genFlameFrames(){
   _lsFlame.frames = [];
   for(let li = 0; li < _lsFlame.layers.length; li++){
@@ -11233,50 +11238,104 @@ function _genFlameFrames(){
       const spikes = [];
       const count = L.spikes[0] + Math.floor(Math.random() * (L.spikes[1] - L.spikes[0] + 1));
       for(let si = 0; si < count; si++){
-        // x spread: wider for outer layers, normalized -1 to 1
         const xSpread = (Math.random() * 2 - 1) * L.w;
-        // y length: how far back the spike extends (positive = behind ship)
-        const yLen = 0.3 + Math.random() * 0.7;
-        // control point offsets for curve variation
-        const cx1 = xSpread + (Math.random() - 0.5) * L.w * 0.6;
-        const cy1 = 0.15 + Math.random() * 0.35;
+        const yLen = 0.4 + Math.random() * 0.6;
+        const cx1 = xSpread + (Math.random() - 0.5) * L.w * 0.5;
+        const cy1 = 0.2 + Math.random() * 0.3;
         spikes.push({ x: xSpread, y: yLen, cx1, cy1 });
       }
       layerFrames.push(spikes);
     }
     _lsFlame.frames.push(layerFrames);
   }
+  // Generate envelope frame variants
+  _lsFlame.envFrames = [];
+  for(let ei = 0; ei < _lsFlame.envelopes.length; ei++){
+    const envFrames = [];
+    for(let fi = 0; fi < _lsFlame.frameCount; fi++){
+      envFrames.push({
+        bulgeL: 0.7 + Math.random() * 0.6,  // left side bulge variation
+        bulgeR: 0.7 + Math.random() * 0.6,  // right side bulge variation
+        tailLen: 0.8 + Math.random() * 0.4, // tail length variation
+        tailSkew: (Math.random() - 0.5) * 0.3, // tail tip wanders left/right
+      });
+    }
+    _lsFlame.envFrames.push(envFrames);
+  }
 }
 _genFlameFrames();
-// Regenerate periodically for variety
 var _lsFlameRegenTimer = 0;
 
 function _drawLsFlame(ctx, shipSize, intensity, frameNum, fromLayer, toLayer){
   if(intensity < 0.1) return;
-  const scale = shipSize * 5;         // total flame length relative to ship
-  const baseW = shipSize * 3;         // flame width at widest
-  const fps6 = Math.floor(frameNum / 10); // ~6fps at 60fps game loop
+  const scale = shipSize * 5;
+  const baseW = shipSize * 3;
+  const minW = 4; // minimum spike width in px — never too narrow
+  const fps6 = Math.floor(frameNum / 10);
   const _from = fromLayer || 0;
   const _to = toLayer !== undefined ? toLayer : _lsFlame.layers.length - 1;
 
-  // Regenerate frames every ~2 seconds for fresh variation
   _lsFlameRegenTimer++;
   if(_lsFlameRegenTimer > 120){ _lsFlameRegenTimer = 0; _genFlameFrames(); }
 
+  const fi = fps6 % _lsFlame.frameCount;
+  const noseY = -shipSize - 5; // root: 5px past ship nose
+
+  // ── WIDE ENVELOPE SHAPES — big teardrop/shield wrapping under ship with long tail ──
+  if(_from === 0){
+    for(let ei = 0; ei < _lsFlame.envelopes.length; ei++){
+      const E = _lsFlame.envelopes[ei];
+      const eAlpha = Math.min(1, Math.max(0, (intensity - E.thresh) / 0.2));
+      if(eAlpha <= 0) continue;
+      const ef = _lsFlame.envFrames[ei][fi];
+      const eFlicker = 0.75 + 0.25 * Math.sin(frameNum * 0.09 + ei * 2.3);
+      const eShk = 2 * intensity;
+
+      ctx.save();
+      ctx.translate((Math.random()-0.5)*eShk, (Math.random()-0.5)*eShk*0.4);
+      ctx.globalAlpha = eAlpha * eFlicker * E.alpha;
+      ctx.globalCompositeOperation = 'lighter';
+
+      // Envelope: wide at ship center, narrows to tail tip well past ship
+      const envW = baseW * E.wMult;   // full width at widest point
+      const envNose = noseY - 4;      // starts ahead of nose
+      const envMidY = shipSize * 0.3; // widest at ship center-ish
+      const envTailY = shipSize * 2 + scale * 0.6 * E.tailMult * ef.tailLen; // long tail past ship
+      const bulgeL = envW * 0.5 * ef.bulgeL;
+      const bulgeR = envW * 0.5 * ef.bulgeR;
+      const tailTipX = ef.tailSkew * baseW * 0.3;
+
+      const grad = ctx.createLinearGradient(0, envNose, 0, envTailY);
+      grad.addColorStop(0, E.col + 'cc');
+      grad.addColorStop(0.15, E.col + 'aa');
+      grad.addColorStop(0.5, E.col + '66');
+      grad.addColorStop(1, E.col + '00');
+
+      ctx.beginPath();
+      ctx.moveTo(0, envNose); // nose tip
+      ctx.quadraticCurveTo(-bulgeL, envMidY, -bulgeL * 0.6, envTailY * 0.5); // left bulge
+      ctx.quadraticCurveTo(-bulgeL * 0.2, envTailY * 0.8, tailTipX, envTailY); // narrow to tail
+      ctx.quadraticCurveTo(bulgeR * 0.2, envTailY * 0.8, bulgeR * 0.6, envTailY * 0.5); // right side
+      ctx.quadraticCurveTo(bulgeR, envMidY, 0, envNose); // back to nose
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
+
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.restore();
+    }
+  }
+
+  // ── SPIKE LAYERS ──
   for(let li = _from; li <= _to; li++){
     const L = _lsFlame.layers[li];
-    // Layer fade-in: 0 below threshold, ramps to 1 over 0.2 above threshold
     const layerAlpha = Math.min(1, Math.max(0, (intensity - L.thresh) / 0.2));
     if(layerAlpha <= 0) continue;
 
-    // Independent brightness flicker
     const flicker = 0.7 + 0.3 * Math.sin(frameNum * 0.13 + _lsFlame.flickerPhase[li]);
-    // Independent micro-shake
     const shk = _lsFlame.shakeAmp[li] * intensity;
     const sx = (Math.random() - 0.5) * shk;
     const sy = (Math.random() - 0.5) * shk * 0.5;
-
-    const fi = fps6 % _lsFlame.frameCount;
     const spikes = _lsFlame.frames[li][fi];
 
     ctx.save();
@@ -11284,39 +11343,36 @@ function _drawLsFlame(ctx, shipSize, intensity, frameNum, fromLayer, toLayer){
     ctx.globalAlpha = layerAlpha * flicker * 0.8;
     ctx.globalCompositeOperation = 'lighter';
 
-    // Draw each spike: root ahead of ship nose (-Y), tips trail behind (+Y)
     for(let si = 0; si < spikes.length; si++){
       const sp = spikes[si];
-      const rootY = -shipSize - 5;                    // 5px past the nose
       const tipX = sp.x * baseW;
-      const tipY = rootY + sp.y * scale + scale * 0.5; // tips extend behind (+Y)
+      const tipY = noseY + sp.y * scale + scale * 0.5;
       const ctrlX = sp.cx1 * baseW;
-      const ctrlY = rootY + sp.cy1 * scale;
-      const rootW = baseW * L.w * 0.15;
+      const ctrlY = noseY + sp.cy1 * scale;
+      const rootW = Math.max(minW, baseW * L.w * 0.2); // enforced minimum width
 
-      // Gradient: hot at nose root, fades at tail tip
-      const grad = ctx.createLinearGradient(0, rootY, tipX, tipY);
-      grad.addColorStop(0, L.cols[2]); // hottest at root
+      const grad = ctx.createLinearGradient(0, noseY, tipX, tipY);
+      grad.addColorStop(0, L.cols[2]);
       grad.addColorStop(0.4, L.cols[1]);
-      grad.addColorStop(1, L.cols[0] + '00'); // fade to transparent at tip
+      grad.addColorStop(1, L.cols[0] + '00');
 
       ctx.beginPath();
-      ctx.moveTo(-rootW, rootY);
-      ctx.quadraticCurveTo(ctrlX - rootW * 0.5, ctrlY, tipX, tipY);
-      ctx.quadraticCurveTo(ctrlX + rootW * 0.5, ctrlY, rootW, rootY);
+      ctx.moveTo(-rootW, noseY);
+      ctx.quadraticCurveTo(ctrlX - rootW * 0.3, ctrlY, tipX, tipY);
+      ctx.quadraticCurveTo(ctrlX + rootW * 0.3, ctrlY, rootW, noseY);
       ctx.closePath();
       ctx.fillStyle = grad;
       ctx.fill();
     }
 
-    // Layer glow aura at ship nose
-    const glowR = shipSize * (0.6 + L.w * 0.8);
+    // Glow aura at nose
+    const glowR = shipSize * (0.8 + L.w * 1.0);
     const glow = ctx.createRadialGradient(0, -shipSize * 0.5, 0, 0, -shipSize * 0.5, glowR);
     glow.addColorStop(0, L.glowCol + '60');
     glow.addColorStop(0.5, L.glowCol + '20');
     glow.addColorStop(1, L.glowCol + '00');
     ctx.fillStyle = glow;
-    ctx.fillRect(-glowR, -glowR, glowR * 2, glowR * 2);
+    ctx.fillRect(-glowR, -shipSize * 0.5 - glowR, glowR * 2, glowR * 2);
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
