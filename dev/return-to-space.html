@@ -7284,16 +7284,18 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  // Light speed: motion trail instead of full clear
-  if(_isLightSpeed && state.hyperspace){
-    const _lsSpd = Math.sqrt(state.vx*state.vx+state.vy*state.vy);
-    const _lsTrail = Math.min(0.4, _lsSpd / 400);
-    ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsTrail})`;
+  // Light speed: motion trail instead of full clear (uses smooth fade)
+  if(_lsSmooth > 0.05){
+    ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsSmooth * 0.3})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
-  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? Math.min(2.0, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/150) : 1;
+  // Smooth light speed intensity — lerps up and fades down gradually
+  const _lsTarget = (_isLightSpeed && state.hyperspace) ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
+  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.015); // fast engage, slow fade
+  if(_lsSmooth < 0.005) _lsSmooth = 0;
+  const _lsZoom = state.started ? 1 + _lsSmooth * 1.0 : 1; // up to 2x zoom
   if(!state.started)return;
   if(_lsZoom > 1.01){
     ctx.save();
@@ -7304,8 +7306,8 @@ function drawGame(){
   // Screen shake from BH flash, boss capture, or LIGHT SPEED
   let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
   let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
-  if(_isLightSpeed && state.hyperspace){
-    const _lsSk = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) * 8;
+  if(_lsSmooth > 0.05){
+    const _lsSk = _lsSmooth * 8;
     _shakeX += (Math.random()-0.5) * _lsSk;
     _shakeY += (Math.random()-0.5) * _lsSk;
   }
@@ -7622,10 +7624,9 @@ function drawGame(){
   drawWormholeTransition();
 
   // Light speed visual overlay
-  if(_isLightSpeed && state.hyperspace){
-    const _lsSpd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-    const _lsI = Math.min(1, _lsSpd / 120);
-    if(_lsI > 0.05){
+  if(_lsSmooth > 0.05){
+    const _lsI = _lsSmooth;
+    {
       ctx.save();
       const W = canvas.width, H = canvas.height;
       // Ship's facing angle in screen space (angle 0 = up = -Y)
@@ -7641,7 +7642,7 @@ function drawGame(){
 
       // Star streaks — start AHEAD of ship, fly backward, empty central column
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 120 + Math.floor(_lsI * 250);
+      const streakCount = 60 + Math.floor(_lsI * 120);
       const _screenDiag = Math.max(W, H);
       for(let k = 0; k < streakCount; k++){
         // Perpendicular spread — avoid center column (ship corridor)
@@ -7670,17 +7671,31 @@ function drawGame(){
       }
       ctx.shadowBlur = 0;
 
-      // Front burn shield — SVG drawn at ship nose, rotated with ship
+      // Front burn shield — SVG wraps around ship nose, heat gradient overlay
       if(_frontBurnImg.complete && _frontBurnImg.naturalWidth > 0){
         ctx.save();
         ctx.translate(W/2, H/2);
-        ctx.rotate(travelAng + Math.PI/2); // align with ship facing
-        const burnSz = 50 + _lsI * 30;
-        const burnY = -(16 + burnSz * 0.3); // 16 ~= ship nose offset
-        ctx.globalAlpha = 0.5 + _lsI * 0.4;
-        ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 20 * _lsI;
-        ctx.drawImage(_frontBurnImg, -burnSz/2, burnY - burnSz*0.4, burnSz, burnSz * 0.7);
+        ctx.rotate(travelAng + Math.PI/2);
+        const burnSz = 55 + _lsI * 25;
+        const burnY = -burnSz * 0.25; // ship sits IN the hollow
+        // Draw with heat gradient: layer multiple colored versions
+        // White-hot core layer
+        ctx.globalAlpha = (0.3 + _lsI * 0.3);
+        ctx.globalCompositeOperation = 'lighter';
+        ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 25 * _lsI;
+        ctx.drawImage(_frontBurnImg, -burnSz/2, burnY, burnSz, burnSz * 0.65);
+        // Orange layer slightly larger
+        ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15 * _lsI;
+        ctx.globalAlpha = (0.2 + _lsI * 0.25);
+        ctx.drawImage(_frontBurnImg, -burnSz*0.55, burnY - 3, burnSz*1.1, burnSz * 0.7);
+        ctx.globalCompositeOperation = 'source-over';
         ctx.shadowBlur = 0;
+        // Animated cat-tail flicker — jitter the tips
+        const flickX = (Math.random()-0.5) * 4 * _lsI;
+        const flickY = (Math.random()-0.5) * 3 * _lsI;
+        ctx.globalAlpha = (0.15 + _lsI * 0.2);
+        ctx.translate(flickX, flickY);
+        ctx.drawImage(_frontBurnImg, -burnSz*0.52, burnY - 1, burnSz*1.04, burnSz * 0.67);
         ctx.restore();
       }
 
@@ -7728,8 +7743,8 @@ function drawGame(){
       ctx.restore();
     }
 
-    // Crystal engine sound — shimmering resonance (not sawtooth)
-    if(!state._lsSoundActive && audioCtx && !state.sfxMuted){
+    // Crystal engine sound — shimmering resonance
+    if(!state._lsSoundActive && _isLightSpeed && state.hyperspace && audioCtx && !state.sfxMuted){
       state._lsSoundActive = true;
       // Layered sine tones with slow LFO for crystalline shimmer
       const _t = audioCtx.currentTime;
@@ -7754,7 +7769,7 @@ function drawGame(){
         state._lsOscs.push({ osc, gain, lfo, lfoGain });
       });
     }
-  } else if(state._lsSoundActive){
+  } else if(state._lsSoundActive && (!_isLightSpeed || !state.hyperspace)){
     // Stop light speed sound
     state._lsSoundActive = false;
     if(state._lsOscs){
@@ -9294,15 +9309,18 @@ function drawGame(){
         ctx.lineTo(-2, flStart + flLen3*0.5);
         ctx.closePath();
         ctx.fillStyle = `rgba(255,255,255,${0.6+_exI*0.3})`; ctx.shadowColor='#ffffff'; ctx.shadowBlur=14*SB; ctx.fill();
-        // Tiny sparkle dots — extend well past the flame
-        const sparkTrail = flLen * 3;
-        for(let sp=0; sp<12+_exI*25; sp++){
-          const spY = fl + Math.random()*sparkTrail;
-          const spread = 6 * (spY / sparkTrail); // wider as they go further back
+        // Sparkle particles — tiny, bright, messy spread past flame
+        const sparkTrail = flLen * 4;
+        ctx.shadowBlur = 0;
+        for(let sp=0; sp<20+_exI*40; sp++){
+          const spY = flStart + Math.random()*sparkTrail;
+          const distRatio = (spY - flStart) / sparkTrail;
+          const spread = 3 + 15 * distRatio + (Math.random()-0.5)*8; // messy
           const spX = (Math.random()-0.5) * spread;
-          ctx.beginPath(); ctx.arc(spX, spY, 0.3+Math.random()*1, 0, Math.PI*2);
-          ctx.fillStyle = `rgba(255,${180+Math.random()*75},${200+Math.random()*55},${(0.6+Math.random()*0.4)*(1-spY/sparkTrail)})`;
-          ctx.shadowBlur=4; ctx.fill();
+          const sz = 0.2 + Math.random() * 0.6; // very tiny
+          ctx.beginPath(); ctx.arc(spX, spY, sz, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(255,${200+Math.random()*55},${220+Math.random()*35},${(0.8+Math.random()*0.2)*(1-distRatio*0.7)})`;
+          ctx.fill();
         }
         ctx.shadowBlur=0;
       } else {
@@ -11172,6 +11190,7 @@ var _msPopupOpen = false;
 var _msFirstCrystal = true;
 var _msHasLightSpeed = false;
 var _isLightSpeed = false;
+var _lsSmooth = 0; // smoothed light speed intensity for gradual fade
 // Front burn shield SVG as inline image
 const _frontBurnImg = new Image();
 _frontBurnImg.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><path fill="#ee2c24" d="M682.6,414.47l64.13,72.86,6.02,4.4c8.24,6.03,19.02-3.08,14.46-12.22l-1.92-3.85-84.91-94.35c-46.52-54.07-113.5-96.83-180.37-96.83s-133.86,42.76-180.37,96.83l-84.91,94.35-1.92,3.85c-4.57,9.13,6.21,18.24,14.46,12.22l6.02-4.4,64.13-72.86c4.52-1.73,8.4,3.67,5.31,7.4l-79.66,109.21-1.42,3.74c-4.42,11.67,10.16,21.15,19.04,12.39l3.73-3.68,76.55-118.44c2.88-4.46,9.69-.67,7.41,4.13l-92.72,192.81-.35,1.88c-2.47,13.24,13.97,21.41,23.03,11.44l2.51-2.76,104.13-242.84c1.36-3.18,6.11-2.21,6.11,1.25l-34.49,92.81v2.07c-.07,9.13,11.81,12.7,16.79,5.05l2.34-3.59s15.11-60.69,27.29-87.78c21.11-46.94,46.89-90.91,97-90.91s75.89,43.97,97,90.91c12.18,27.09,27.29,87.78,27.29,87.78l2.34,3.59c4.98,7.65,16.87,4.08,16.81-5.05v-2.07s-34.51-92.81-34.51-92.81c0-3.46,4.75-4.44,6.11-1.25l104.13,242.84,2.51,2.76c9.06,9.97,25.5,1.8,23.03-11.44l-.35-1.88-92.72-192.81c-2.28-4.8,4.53-8.59,7.41-4.13l76.55,118.44,3.73,3.68c8.88,8.77,23.45-.72,19.04-12.39l-1.42-3.74-79.66-109.21c-3.09-3.73.79-9.13,5.31-7.4Z"/></svg>');
