@@ -361,6 +361,9 @@ let pCoins, pRods, pChests, pArcades, pPlatforms;
 let pushGroups = [];
 let pushingGroup = null;
 let pushTarget = null; // group Gary is pressing against (before push starts)
+let pushSettleFrames = 0; // frames to settle back before pushing starts
+const PUSH_SETTLE_DIST = 8; // total pixels to move back over settle frames
+const PUSH_SETTLE_FRAMES = 3;
 let pushSolidKeys = [];
 let wallPushTimer = 0;
 let wallBlocked = false;
@@ -543,10 +546,10 @@ function pSetState(s) {
     if (gState === s) return;
     const from = gState;
     gState = s; gaDone = false;
-    // Don't reset animation when transitioning between movement states
-    // to prevent visual pop from sprite content shifting
     const keepAnim = (from === 'air' || from === 'fall') && s === 'run';
     if (!keepAnim) { gaFrame = 0; gaTimer = 0; }
+    // Start settle-back when entering push
+    if (s === 'push') pushSettleFrames = PUSH_SETTLE_FRAMES;
 }
 
 // ---- COLLISION ----
@@ -830,9 +833,16 @@ function playFrame(dt) {
             break;
         case 'push':
             if ((gDir === 1 && pkR()) || (gDir === -1 && pkL())) {
-                gvx = pushingGroup ? gDir * SPD * 0.5 : 0;
+                if (pushSettleFrames > 0) {
+                    // Settling back: move Gary away from object so hands land on it
+                    gvx = -gDir * (PUSH_SETTLE_DIST / PUSH_SETTLE_FRAMES) / dt;
+                    pushSettleFrames--;
+                } else {
+                    gvx = pushingGroup ? gDir * SPD * 0.5 : 0;
+                }
             } else {
                 pushingGroup = null;
+                pushSettleFrames = 0;
                 pSetState('idle');
             }
             break;
