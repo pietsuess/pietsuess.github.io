@@ -1024,7 +1024,20 @@ function playFrame(dt) {
     // ---- PUSHABLE GROUP SYSTEM ----
     if (gState !== 'push') pushingGroup = null;
     const PUSH_SPD = SPD * 0.5;
-    const PUSH_DIST = 14;
+    const PUSH_DIST = 8; // distance from Gary's center to group edge
+
+    // Helper: check if a world position overlaps any OTHER pushable group
+    function hitsOtherGroup(wx, wy, skipGroup) {
+        for (const og of pushGroups) {
+            if (og === skipGroup) continue;
+            for (const oc of og.cells) {
+                const ocx = oc.tx * T + og.offsetX;
+                const ocy = oc.ty * T + og.offsetY;
+                if (wx >= ocx && wx < ocx + T && wy >= ocy && wy < ocy + T) return true;
+            }
+        }
+        return false;
+    }
 
     for (const g of pushGroups) {
         let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
@@ -1052,16 +1065,23 @@ function playFrame(dt) {
             let canMove = true;
             const pushDir = gDir;
             for (const c of g.cells) {
+                const cx = c.tx * T + g.offsetX;
+                const cy = c.ty * T + g.offsetY;
                 if (pushDir === 1) {
                     const hasRight = g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty);
                     if (!hasRight) {
-                        if (isSolid(Math.floor((c.tx * T + g.offsetX + T + 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                        const checkX = cx + T + 1;
+                        const checkTx = Math.floor(checkX / T);
+                        const checkTy = Math.floor(cy / T);
+                        if (isSolid(checkTx, checkTy) || hitsOtherGroup(checkX, cy + T/2, g))
                             { canMove = false; break; }
                     }
                 } else {
                     const hasLeft = g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
                     if (!hasLeft) {
-                        if (isSolid(Math.floor((c.tx * T + g.offsetX - 1) / T), Math.floor((c.ty * T + g.offsetY) / T)))
+                        const checkX = cx - 1;
+                        const checkTy = Math.floor(cy / T);
+                        if (isSolid(Math.floor(checkX / T), checkTy) || hitsOtherGroup(checkX, cy + T/2, g))
                             { canMove = false; break; }
                     }
                 }
@@ -1069,9 +1089,10 @@ function playFrame(dt) {
             if (canMove) {
                 const amt = PUSH_SPD * dt;
                 g.offsetX += pushDir * amt;
-                gx = pushDir === 1 ? gl - PUSH_DIST + pushDir * amt : gr + PUSH_DIST + pushDir * amt;
+                // Recalculate bounds after move
+                const newEdge = pushDir === 1 ? gl + amt : gr + amt;
+                gx = pushDir === 1 ? (gl + amt) - PUSH_DIST : (gr + amt) + PUSH_DIST;
             } else {
-                // Group blocked: hold Gary at push distance, don't let him through
                 gx = pushDir === 1 ? gl - PUSH_DIST : gr + PUSH_DIST;
                 gvx = 0;
             }
@@ -1083,7 +1104,6 @@ function playFrame(dt) {
         const atHandHeight = gt < handBot && gb > handTop;
 
         if (garyIsLeft) {
-            // Only block if moving toward the group
             if (gvx > 0) {
                 gx = gl - PUSH_DIST;
                 gvx = 0;
