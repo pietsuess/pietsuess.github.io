@@ -360,6 +360,7 @@ let pCoins, pRods, pChests, pArcades, pPlatforms;
 // Pushable groups
 let pushGroups = [];
 let pushingGroup = null;
+let pushTarget = null; // group Gary is pressing against (before push starts)
 let pushSolidKeys = [];
 let wallPushTimer = 0;
 let wallBlocked = false;
@@ -867,7 +868,7 @@ function playFrame(dt) {
     // ---- PUSHABLE GROUP SYSTEM ----
     if (gState !== 'push') pushingGroup = null;
     const PUSH_SPD = SPD * 0.5;
-    const PUSH_DIST = 22;
+    const PUSH_DIST = 14;
 
     for (const g of pushGroups) {
         let gl = Infinity, gr = -Infinity, gt = Infinity, gb = -Infinity;
@@ -919,25 +920,24 @@ function playFrame(dt) {
 
         if (garyIsLeft) {
             gx = gl - PUSH_DIST;
-            if (gvx > 0) gvx = 0;
-            if ((gState === 'run' || gState === 'start') && pkR()) {
-                gDir = 1; pSetState('push'); pushingGroup = g;
-            }
+            if (gvx > 0) { gvx = 0; wallBlocked = true; pushTarget = g; }
         } else {
             gx = gr + PUSH_DIST;
-            if (gvx < 0) gvx = 0;
-            if ((gState === 'run' || gState === 'start') && pkL()) {
-                gDir = -1; pSetState('push'); pushingGroup = g;
-            }
+            if (gvx < 0) { gvx = 0; wallBlocked = true; pushTarget = g; }
         }
     }
 
-    // Wall push timer
+    // Wall push timer - same delay for walls and pushable groups
     if (wallBlocked && gFloor && !pushingGroup && (gState === 'run' || gState === 'start') && (pkR() || pkL())) {
         wallPushTimer += dt;
-        if (wallPushTimer >= WALL_PUSH_DELAY) { pSetState('push'); }
+        if (wallPushTimer >= WALL_PUSH_DELAY) {
+            pSetState('push');
+            // If pressing against a pushable group, start pushing it
+            if (pushTarget) { pushingGroup = pushTarget; }
+        }
     } else if (!pushingGroup) {
         wallPushTimer = 0;
+        pushTarget = null;
     }
     wallBlocked = false;
 
