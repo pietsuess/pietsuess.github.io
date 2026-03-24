@@ -1157,6 +1157,7 @@ function playFrame(dt) {
         const bottomCells = g.cells.filter(c =>
             !g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1)
         );
+        // Check world tiles
         for (const c of bottomCells) {
             const wx = c.tx * T + g.offsetX;
             const botY = c.ty * T + g.offsetY + T;
@@ -1171,8 +1172,23 @@ function playFrame(dt) {
             }
             if (onGround) break;
         }
+        // Check other groups as ground (using AABBs, not cell positions)
+        if (!onGround) {
+            for (const og of pushGroups) {
+                if (og === g) continue;
+                // Horizontal overlap AND this group's bottom is near the other's top
+                if (g.br > og.bl && g.bl < og.br && g.bb >= og.bt - 1 && g.bb <= og.bt + 2) {
+                    onGround = true;
+                    // Snap: set offsetY so g.bb lands exactly on og.bt
+                    const maxCellTy = Math.max(...g.cells.map(c => c.ty));
+                    g.offsetY = og.bt - (maxCellTy + 1) * T;
+                    break;
+                }
+            }
+        }
         if (!onGround) {
             g.offsetY += GRAV * dt * 0.35;
+            // Check world tiles after falling
             for (const c of bottomCells) {
                 const wx = c.tx * T + g.offsetX;
                 const botY = c.ty * T + g.offsetY + T;
@@ -1186,6 +1202,19 @@ function playFrame(dt) {
                     }
                 }
                 if (onGround) break;
+            }
+            // Check other groups after falling
+            if (!onGround) {
+                for (const og of pushGroups) {
+                    if (og === g) continue;
+                    const newBb = g.bb + GRAV * dt * 0.35; // approximate new bottom
+                    if (g.br > og.bl && g.bl < og.br && newBb >= og.bt && g.bt < og.bt) {
+                        const maxCellTy = Math.max(...g.cells.map(c => c.ty));
+                        g.offsetY = og.bt - (maxCellTy + 1) * T;
+                        onGround = true;
+                        break;
+                    }
+                }
             }
         }
         // Update AABB after gravity
