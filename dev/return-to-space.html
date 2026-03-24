@@ -7391,7 +7391,7 @@ function drawGame(){
   let _jupZoom = 1;
   if(_jDistDraw < _jZoomRange){
     const t = 1 - _jDistDraw / _jZoomRange; // 0 at edge, 1 at center
-    _jupZoom = 1 - t * 0.6; // zoom out to 0.4 at closest
+    _jupZoom = 1 - t * 0.75; // zoom out to 0.25 at closest
   }
   const _totalZoom = _lsZoom * _jupZoom;
   if(!state.started)return;
@@ -7775,47 +7775,7 @@ function drawGame(){
       ctx.shadowBlur = 0;
 
       // Front burn shield moved to ship draw section (shares ship transform)
-
-      // Tunnel vision — heavy dark vignette, slimming the view
-      const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
-      const vig = ctx.createRadialGradient(W/2, H/2, vigR*0.3, W/2, H/2, Math.max(W,H)*0.7);
-      vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(0.3, 'rgba(0,0,0,0)');
-      vig.addColorStop(0.55, `rgba(15,0,10,${0.4*_lsI})`);
-      vig.addColorStop(0.7, `rgba(25,0,18,${0.65*_lsI})`);
-      vig.addColorStop(0.85, `rgba(35,0,22,${0.8*_lsI})`);
-      vig.addColorStop(1, `rgba(8,0,4,${0.92*_lsI})`);
-      ctx.fillStyle = vig;
-      ctx.fillRect(0, 0, W, H);
-
-      // Pink edge glow on all sides
-      const edgeW = W * 0.2 * _lsI;
-      const edgeAlpha = 0.5 * _lsI;
-      // Left
-      let eg = ctx.createLinearGradient(0,0,edgeW,0);
-      eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
-      ctx.fillStyle = eg; ctx.fillRect(0,0,edgeW,H);
-      // Right
-      eg = ctx.createLinearGradient(W,0,W-edgeW,0);
-      eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
-      ctx.fillStyle = eg; ctx.fillRect(W-edgeW,0,edgeW,H);
-      // Top
-      eg = ctx.createLinearGradient(0,0,0,edgeW);
-      eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
-      ctx.fillStyle = eg; ctx.fillRect(0,0,W,edgeW);
-      // Bottom
-      eg = ctx.createLinearGradient(0,H,0,H-edgeW);
-      eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
-      ctx.fillStyle = eg; ctx.fillRect(0,H-edgeW,W,edgeW);
-
-      // Ship aura
-      const glowR = 80 + _lsI*60;
-      const gg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
-      gg.addColorStop(0, `rgba(255,105,180,${0.25*_lsI})`);
-      gg.addColorStop(0.35, `rgba(255,105,180,${0.1*_lsI})`);
-      gg.addColorStop(1, 'rgba(255,105,180,0)');
-      ctx.fillStyle = gg;
-      ctx.fillRect(W/2-glowR, H/2-glowR, glowR*2, glowR*2);
+      // Vignette + edge glow moved to after zoom reset (see end of drawGame)
 
       ctx.restore();
     }
@@ -9968,6 +9928,47 @@ function drawGame(){
   // Undo zoom — reset to identity for HUD drawing
   if(Math.abs(_totalZoom - 1) > 0.01){
     ctx.setTransform(1, 0, 0, 1, 0, 0);
+  }
+  // ── Light speed vignette + edge glow — drawn after zoom reset so they're screen-fixed ──
+  if(_lsSmooth > 0.05){
+    const _lsI = _lsSmooth;
+    const W = canvas.width, H = canvas.height;
+    ctx.save();
+    // Tunnel vision vignette
+    const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
+    const vig = ctx.createRadialGradient(W/2, H/2, vigR*0.3, W/2, H/2, Math.max(W,H)*0.7);
+    vig.addColorStop(0, 'rgba(0,0,0,0)');
+    vig.addColorStop(0.3, 'rgba(0,0,0,0)');
+    vig.addColorStop(0.55, `rgba(15,0,10,${0.4*_lsI})`);
+    vig.addColorStop(0.7, `rgba(25,0,18,${0.65*_lsI})`);
+    vig.addColorStop(0.85, `rgba(35,0,22,${0.8*_lsI})`);
+    vig.addColorStop(1, `rgba(8,0,4,${0.92*_lsI})`);
+    ctx.fillStyle = vig;
+    ctx.fillRect(0, 0, W, H);
+    // Pink edge glow
+    const edgeW = W * 0.2 * _lsI;
+    const edgeAlpha = 0.5 * _lsI;
+    let eg = ctx.createLinearGradient(0,0,edgeW,0);
+    eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
+    ctx.fillStyle = eg; ctx.fillRect(0,0,edgeW,H);
+    eg = ctx.createLinearGradient(W,0,W-edgeW,0);
+    eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
+    ctx.fillStyle = eg; ctx.fillRect(W-edgeW,0,edgeW,H);
+    eg = ctx.createLinearGradient(0,0,0,edgeW);
+    eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
+    ctx.fillStyle = eg; ctx.fillRect(0,0,W,edgeW);
+    eg = ctx.createLinearGradient(0,H,0,H-edgeW);
+    eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
+    ctx.fillStyle = eg; ctx.fillRect(0,H-edgeW,W,edgeW);
+    // Ship aura
+    const glowR = 80 + _lsI*60;
+    const gg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
+    gg.addColorStop(0, `rgba(255,105,180,${0.25*_lsI})`);
+    gg.addColorStop(0.35, `rgba(255,105,180,${0.1*_lsI})`);
+    gg.addColorStop(1, 'rgba(255,105,180,0)');
+    ctx.fillStyle = gg;
+    ctx.fillRect(W/2-glowR, H/2-glowR, glowR*2, glowR*2);
+    ctx.restore();
   }
   // ── HUD drawn AFTER transform reset so zoom/shake don't affect it ──
   drawZoneHUD();
@@ -13174,9 +13175,10 @@ function drawJupiter(ctx, cx, cy){
   const screenY = JUPITER_WY - state.y + cy;
   const GR = JUPITER_R;
 
-  // Generous cull
-  if(screenX < -GR*2 || screenX > ctx.canvas.width+GR*2 ||
-     screenY < -GR*2 || screenY > ctx.canvas.height+GR*2) return;
+  // Very generous cull — account for zoom-out showing 4x area
+  const _jCull = Math.max(ctx.canvas.width, ctx.canvas.height) * 4 + GR;
+  if(screenX < -_jCull || screenX > ctx.canvas.width+_jCull ||
+     screenY < -_jCull || screenY > ctx.canvas.height+_jCull) return;
 
   _jupiterRot = (_jupiterRot + 0.25) % 360;
 
@@ -13277,8 +13279,10 @@ function drawJupiter(ctx, cx, cy){
     const mwy = JUPITER_WY + Math.sin(m.ang) * m.orbit;
     const msx = mwx - state.x + cx;
     const msy = mwy - state.y + cy;
-    if(msx < -m.r*2 || msx > ctx.canvas.width+m.r*2 ||
-       msy < -m.r*2 || msy > ctx.canvas.height+m.r*2) continue;
+    // Wide cull to account for Jupiter zoom-out (screen shows ~4x area)
+    const _mCull = Math.max(ctx.canvas.width, ctx.canvas.height) * 3;
+    if(msx < -_mCull || msx > ctx.canvas.width+_mCull ||
+       msy < -_mCull || msy > ctx.canvas.height+_mCull) continue;
 
     ctx.save();
     // Simple shaded sphere for each moon
