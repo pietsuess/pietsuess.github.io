@@ -564,39 +564,32 @@ function colBox() {
 
 function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[3]]; }
 
-// Check if Gary has room to transition to kneel height (22px) from roll (15px)
-function canKneel() {
-    const kneelTop = gy - 22;
-    const left = gx - 6, width = 12;
+// Check if a Y range is clear of solid tiles (with sub-cell precision)
+function isRangeClear(newTop, currentTop) {
+    const left = gx - 7, width = 14;
     const l = Math.floor(left / T), r = Math.floor((left + width) / T);
-    const t = Math.floor(kneelTop / T);
-    const rollTop = Math.floor((gy - 15) / T);
-    for (let ty = t; ty < rollTop; ty++) {
+    const t = Math.floor(newTop / T);
+    const b = Math.floor((currentTop - 1) / T);
+    for (let ty = t; ty <= b; ty++) {
         for (let tx = l; tx <= r; tx++) {
-            if (isSolid(tx, ty)) return false;
+            if (!isSolid(tx, ty)) continue;
+            if (cellOverlap(tx, ty, newTop, currentTop)) return false;
         }
     }
     return true;
 }
 
-function canStandUp() {
-    const standTop = gy - 43;
-    const standLeft = gx - 6, standWidth = 12;
-    const l = Math.floor(standLeft / T), r = Math.floor((standLeft + standWidth) / T);
-    const t = Math.floor(standTop / T);
-    const currentTop = Math.floor((gy - 22) / T);
-    for (let ty = t; ty < currentTop; ty++) {
-        for (let tx = l; tx <= r; tx++) {
-            if (!isSolid(tx, ty)) continue;
-            if (cellOverlap(tx, ty, standTop, gy - 22)) return false;
-        }
-    }
-    for (let tx = l; tx <= r; tx++) {
-        if (!isSolid(tx, currentTop)) continue;
-        if (cellOverlap(tx, currentTop, standTop, gy - 22)) return false;
-    }
-    return true;
+// Check if Gary has room to transition to kneel height (22px) from roll (15px)
+function canKneel() {
+    return isRangeClear(gy - 22, gy - 15);
 }
+
+function canStandUp() {
+    // Check from standing top to current top (crouch or kneel)
+    const currentH = colBox()[3]; // current hitbox height
+    return isRangeClear(gy - 43, gy - currentH);
+}
+
 
 function rectHit(x, y, w, h) {
     const l = Math.floor(x / T), r = Math.floor((x + w) / T);
