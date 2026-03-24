@@ -632,12 +632,13 @@ function resolveX() {
             const c = colBox();
             if (gvx > 0) gx = rx - c[2] - c[0] - 0.01;
             else if (gvx < 0) gx = rx + T - c[0] + 0.01;
-            // Only trigger push if the wall tile is at hand height (chest to waist)
-            const tileTop = ty * T;
-            const tileBot = (ty + 1) * T;
-            const handTop = gy - 30;
-            const handBot = gy - 10;
-            if (tileTop < handBot && tileBot > handTop) wallBlocked = true;
+            // Check if there's a solid tile at hand height in front of Gary
+            const handTop = gy - 30, handBot = gy - 10;
+            const handTyT = Math.floor(handTop / T), handTyB = Math.floor(handBot / T);
+            const checkTx = gDir === 1 ? Math.floor((gx + c[0] + c[2] + 1) / T) : Math.floor((gx + c[0] - 1) / T);
+            for (let chy = handTyT; chy <= handTyB; chy++) {
+                if (isSolid(checkTx, chy)) { wallBlocked = true; break; }
+            }
             gvx = 0; return;
         }
     }
@@ -923,7 +924,7 @@ function playFrame(dt) {
             continue;
         }
 
-        // Only push if group is at hand height
+        // Only push if group reaches hand height (not just foot-level obstacles)
         const handTop = gy - 30, handBot = gy - 10;
         const atHandHeight = gt < handBot && gb > handTop;
 
@@ -934,6 +935,8 @@ function playFrame(dt) {
             gx = gr + PUSH_DIST;
             if (gvx < 0) { gvx = 0; if (atHandHeight) { wallBlocked = true; pushTarget = g; } }
         }
+        // If group is only at foot level, just stop Gary but don't push
+        if (!atHandHeight) { pushTarget = null; }
     }
 
     // Wall push timer - same delay for walls and pushable groups
