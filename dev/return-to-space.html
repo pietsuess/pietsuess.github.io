@@ -7295,8 +7295,11 @@ function drawGame(){
   // Smooth light speed intensity — lerps up and fades down gradually
   const _lsActive = _isLightSpeed && state.hyperspace;
   const _lsTarget = _lsActive ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
-  _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.15);
-  if(_lsSmooth < 0.005) _lsSmooth = 0;
+  if(_lsTarget > _lsSmooth){
+    _lsSmooth += (_lsTarget - _lsSmooth) * 0.04; // ease in
+  } else {
+    _lsSmooth = Math.max(0, _lsSmooth - 0.035);  // linear fade ~0.6 sec from full
+  }
   // Zoom uses _lsSmooth so it eases out on release
   const _lsZoom = (state.started && _lsSmooth > 0.01) ? 1 + _lsSmooth * 1.0 : 1;
   if(!state.started)return;
@@ -11219,9 +11222,9 @@ const _lsFlame = {
   ],
   // Wide envelope shapes that wrap under the entire ship
   envelopes: [
-    { thresh: 0.10, col: '#e93e3a', alpha: 0.35, wMult: 1.6, tailMult: 1.4 },
-    { thresh: 0.25, col: '#f3903f', alpha: 0.30, wMult: 1.3, tailMult: 1.2 },
-    { thresh: 0.45, col: '#fdc70c', alpha: 0.25, wMult: 1.0, tailMult: 1.0 },
+    { thresh: 0.10, col: '#e93e3a', alpha: 0.6, wMult: 1.8, tailMult: 1.5 },
+    { thresh: 0.25, col: '#f3903f', alpha: 0.5, wMult: 1.4, tailMult: 1.2 },
+    { thresh: 0.45, col: '#fdc70c', alpha: 0.45, wMult: 1.1, tailMult: 1.0 },
   ],
   frames: [],
   envFrames: [], // [envelope][frame] = {bulgeL, bulgeR, tailLen, tailSkew}
@@ -11294,11 +11297,10 @@ function _drawLsFlame(ctx, shipSize, intensity, frameNum, fromLayer, toLayer){
       ctx.save();
       ctx.translate((Math.random()-0.5)*eShk, (Math.random()-0.5)*eShk*0.4);
       ctx.globalAlpha = eAlpha * eFlicker * E.alpha;
-      ctx.globalCompositeOperation = 'lighter';
-
+      // Normal blend so envelopes are visible on dark bg
       // Envelope: wide at ship center, narrows to tail tip well past ship
       const envW = baseW * E.wMult;   // full width at widest point
-      const envNose = noseY - 4;      // starts ahead of nose
+      const envNose = noseY;           // starts at nose
       const envMidY = shipSize * 0.3; // widest at ship center-ish
       const envTailY = shipSize * 2 + scale * 0.6 * E.tailMult * ef.tailLen; // long tail past ship
       const bulgeL = envW * 0.5 * ef.bulgeL;
