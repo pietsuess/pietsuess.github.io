@@ -7369,6 +7369,8 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
+  // Far from home flag — suppress hints/radar clutter near Jupiter
+  state._farFromHome = (state.x*state.x + state.y*state.y) > 200000*200000;
   // Light speed: motion trail instead of full clear (active during fadedown too)
   if(_lsSmooth > 0.05){
     ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsSmooth * 0.3})`;
@@ -8850,9 +8852,8 @@ function drawGame(){
   }
   // HUD + radar drawn after transform reset (see end of drawGame)
 
-  // Suppress hint arrows/radar clutter when far from the main game area (e.g. at Jupiter)
-  const _farFromHome = (state.x*state.x + state.y*state.y) > 200000*200000;
-  state._farFromHome = _farFromHome;
+  // _farFromHome set at top of drawGame now
+  const _farFromHome = state._farFromHome;
 
   // "NEXT MISSION" arrow hint — delayed, only if not heading toward gap
   // Suppress all NEXT MISSION hints while fighting the main world boss
@@ -13182,8 +13183,8 @@ function drawJupiter(ctx, cx, cy){
   const screenY = JUPITER_WY - state.y + cy;
   const GR = JUPITER_R;
 
-  // Very generous cull — account for zoom-out showing 4x area
-  const _jCull = Math.max(ctx.canvas.width, ctx.canvas.height) * 4 + GR;
+  // Cull includes outermost moon orbit (Callisto at 12000) + zoom-out area
+  const _jCull = 15000 + Math.max(ctx.canvas.width, ctx.canvas.height) * 4;
   if(screenX < -_jCull || screenX > ctx.canvas.width+_jCull ||
      screenY < -_jCull || screenY > ctx.canvas.height+_jCull) return;
 
@@ -13247,7 +13248,10 @@ function drawJupiter(ctx, cx, cy){
     rc.putImageData(pix,0,0);
   }
 
-  // Scale the small render up to full Jupiter size
+  // Scale the small render up to full Jupiter size — only if planet is reasonably on screen
+  const _jBodyVis = screenX > -GR*4 && screenX < ctx.canvas.width+GR*4 &&
+                    screenY > -GR*4 && screenY < ctx.canvas.height+GR*4;
+  if(_jBodyVis){
   ctx.save();
   ctx.imageSmoothingEnabled = true;
   ctx.imageSmoothingQuality = 'high';
@@ -13282,6 +13286,7 @@ function drawJupiter(ctx, cx, cy){
   ctx.restore();
   } // end _jOnScreen atmosphere
   ctx.restore();
+  } // end _jBodyVis
 
   // ── Galilean Moons ──
   for(const m of JUPITER_MOONS){
