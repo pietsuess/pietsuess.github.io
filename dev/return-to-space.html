@@ -7294,11 +7294,19 @@ function drawGame(){
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
   if(!state.started)return;
+  // Light speed zoom — wraps everything
+  const _lsZoom = (_isLightSpeed && state.hyperspace) ? Math.min(1.3, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/300) : 1;
+  if(_lsZoom > 1.01){
+    ctx.save();
+    ctx.translate(canvas.width/2, canvas.height/2);
+    ctx.scale(_lsZoom, _lsZoom);
+    ctx.translate(-canvas.width/2, -canvas.height/2);
+  }
   // Screen shake from BH flash, boss capture, or LIGHT SPEED
   let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
   let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
   if(_isLightSpeed && state.hyperspace){
-    const _lsSk = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) * 6;
+    const _lsSk = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) * 8;
     _shakeX += (Math.random()-0.5) * _lsSk;
     _shakeY += (Math.random()-0.5) * _lsSk;
   }
@@ -7307,15 +7315,6 @@ function drawGame(){
   const cx=CX(), cy=CY();
   const ps=getPlayerStyle();
   const noFuel=state.fuel<=0;
-
-  // Light speed zoom — camera zooms in on ship
-  const _lsZoom = (_isLightSpeed && state.hyperspace) ? Math.min(1.3, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/300) : 1;
-  if(_lsZoom > 1.01){
-    ctx.save();
-    ctx.translate(cx, cy);
-    ctx.scale(_lsZoom, _lsZoom);
-    ctx.translate(-cx, -cy);
-  }
 
   // (Speed particles removed — motion blur handles this now)
 
@@ -7364,7 +7363,7 @@ function drawGame(){
       const _dotR = _tb ? Math.max(0.2, 5 - t.age*0.18) : Math.max(0.1, 3 - t.age*0.12);
       ctx.beginPath(); ctx.arc(lx,ly,_dotR,0,Math.PI*2);
       if(state.fireMode==='lightspeed' && _msHasLightSpeed){
-        ctx.fillStyle=`rgba(255,105,180,${alpha})`; ctx.shadowColor='#ff69b4'; ctx.shadowBlur=10;
+        continue; // no dot trail in light speed — streaks handle it
       } else if(_tb){
         ctx.fillStyle=`rgba(0,255,204,${alpha})`; ctx.shadowColor='#00ffcc'; ctx.shadowBlur=8;
       } else {
@@ -7382,9 +7381,7 @@ function drawGame(){
         const x1=cx-t1.vx*(t1.age*0.5), y1=cy-t1.vy*(t1.age*0.5);
         const alpha=(1-t0.age/28)*0.5;
         if(state.fireMode==='lightspeed' && _msHasLightSpeed){
-          ctx.strokeStyle=`rgba(255,105,180,${alpha})`;
-          ctx.lineWidth=Math.max(2, 8*(1-t0.age/28));
-          ctx.shadowColor='#ff69b4'; ctx.shadowBlur=10;
+          continue; // no ribbon trail in light speed
         } else if(_tb){
           ctx.strokeStyle=`rgba(0,255,204,${alpha})`;
           ctx.lineWidth=Math.max(1, 5*(1-t0.age/28));
@@ -7645,14 +7642,14 @@ function drawGame(){
 
       // Star streaks — ship's facing direction, long, thick, glowing
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 60 + Math.floor(_lsI * 100);
+      const streakCount = 100 + Math.floor(_lsI * 200);
       for(let k = 0; k < streakCount; k++){
         const perpOfs = (Math.random()-0.5) * Math.max(W,H) * 1.6;
         const travelOfs = (Math.random()-0.5) * Math.max(W,H);
         const sx = W/2 + Math.cos(perpAng)*perpOfs + Math.cos(travelAng)*travelOfs;
         const sy = H/2 + Math.sin(perpAng)*perpOfs + Math.sin(travelAng)*travelOfs;
         // Streaks fly OPPOSITE to travel direction
-        const streakLen = 200 + _lsI * 1200 * (0.3 + Math.random()*0.7);
+        const streakLen = 600 + _lsI * 3600 * (0.3 + Math.random()*0.7);
         const ex = sx - Math.cos(travelAng)*streakLen;
         const ey = sy - Math.sin(travelAng)*streakLen;
         const hue = 280 + Math.random()*50;
@@ -7665,52 +7662,7 @@ function drawGame(){
       }
       ctx.shadowBlur = 0;
 
-      // Re-entry burn — dome of fire in front, flame streaks trailing to back
-      {
-        ctx.save();
-        ctx.translate(W/2, H/2);
-        ctx.rotate(travelAng + Math.PI/2);
-        const bI = _lsI;
-        // Front dome — hot white-yellow core ahead of ship
-        const domeY = -(25 + bI*20);
-        const domeW = 80 + bI*50, domeH = 35 + bI*25;
-        // Outer fire envelope
-        const env = ctx.createRadialGradient(0, domeY, 0, 0, domeY, domeW*1.3);
-        env.addColorStop(0, `rgba(255,255,230,${0.55*bI})`);
-        env.addColorStop(0.15, `rgba(255,220,100,${0.5*bI})`);
-        env.addColorStop(0.3, `rgba(255,150,50,${0.4*bI})`);
-        env.addColorStop(0.5, `rgba(255,80,30,${0.25*bI})`);
-        env.addColorStop(0.75, `rgba(200,30,20,${0.12*bI})`);
-        env.addColorStop(1, 'rgba(100,0,0,0)');
-        ctx.fillStyle = env;
-        ctx.beginPath(); ctx.ellipse(0, domeY, domeW, domeH, 0, 0, Math.PI*2); ctx.fill();
-        // Flame streaks trailing backward from dome edges
-        const trailCount = 12 + Math.floor(bI*20);
-        for(let t=0; t<trailCount; t++){
-          const sideOfs = (Math.random()-0.5) * domeW * 1.8;
-          const startY = domeY + (Math.random()-0.3) * domeH;
-          const trailLen = 80 + bI * 300 * (0.4 + Math.random()*0.6);
-          const endY = startY + trailLen;
-          const curve = sideOfs * (0.3 + Math.random()*0.7);
-          const r = 255, g = Math.floor(100 + Math.random()*120), b = Math.floor(Math.random()*60);
-          ctx.beginPath();
-          ctx.moveTo(sideOfs, startY);
-          ctx.quadraticCurveTo(sideOfs + curve*0.3, startY + trailLen*0.4, sideOfs*0.2 + curve*0.1, endY);
-          ctx.strokeStyle = `rgba(${r},${g},${b},${(0.15 + bI*0.35) * (0.5+Math.random()*0.5)})`;
-          ctx.lineWidth = 1 + bI * 4 * Math.random();
-          ctx.shadowColor = `rgb(${r},${g},${b})`; ctx.shadowBlur = 6*bI;
-          ctx.stroke();
-        }
-        ctx.shadowBlur = 0;
-        // Sparks flying off the sides
-        for(let sp=0; sp<15*bI; sp++){
-          const spX = (Math.random()-0.5) * domeW * 2;
-          const spY = domeY + Math.random() * (100 + bI*200);
-          ctx.fillStyle = `rgba(255,${200+Math.random()*55},${50+Math.random()*100},${0.5*bI})`;
-          ctx.beginPath(); ctx.arc(spX, spY, 0.5+Math.random()*2.5, 0, Math.PI*2); ctx.fill();
-        }
-        ctx.restore();
-      }
+      // (Front burn dome stripped — rebuilding later)
 
       // Tunnel vision — heavy dark vignette, slimming the view
       const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
