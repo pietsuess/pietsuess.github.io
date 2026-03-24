@@ -7293,7 +7293,7 @@ function drawGame(){
   } else {
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
-  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? Math.min(2.5, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 1;
+  const _lsZoom = (state.started && _isLightSpeed && state.hyperspace) ? Math.min(2.0, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/150) : 1;
   if(!state.started)return;
   if(_lsZoom > 1.01){
     ctx.save();
@@ -7670,7 +7670,19 @@ function drawGame(){
       }
       ctx.shadowBlur = 0;
 
-      // (Front burn dome stripped — rebuilding later)
+      // Front burn shield — SVG drawn at ship nose, rotated with ship
+      if(_frontBurnImg.complete && _frontBurnImg.naturalWidth > 0){
+        ctx.save();
+        ctx.translate(W/2, H/2);
+        ctx.rotate(travelAng + Math.PI/2); // align with ship facing
+        const burnSz = 50 + _lsI * 30;
+        const burnY = -(16 + burnSz * 0.3); // 16 ~= ship nose offset
+        ctx.globalAlpha = 0.5 + _lsI * 0.4;
+        ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 20 * _lsI;
+        ctx.drawImage(_frontBurnImg, -burnSz/2, burnY - burnSz*0.4, burnSz, burnSz * 0.7);
+        ctx.shadowBlur = 0;
+        ctx.restore();
+      }
 
       // Tunnel vision — heavy dark vignette, slimming the view
       const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
@@ -9250,16 +9262,38 @@ function drawGame(){
     if(!noFuel&&(state.keys['ArrowUp']||state.hyperspace)){
       const fl=ps.size*0.5;
       if(_isLightSpeed && state.hyperspace){
-        // Massive pink-purple crystal exhaust
+        // Crystal exhaust — offset back from ship, soft corners
         const _exI = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120);
+        const flStart = fl + 4; // offset back off the ship
         const flLen = 40 + _exI*80 + Math.random()*30;
-        // Wide flame cone
-        ctx.beginPath(); ctx.moveTo(-8,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(8,fl);
+        // Outer flame — soft rounded corners using quadratic curves
+        ctx.beginPath();
+        ctx.moveTo(-2, flStart); // narrow at ship side
+        ctx.quadraticCurveTo(-9, flStart + 8, -6, flStart + flLen*0.4); // soft curve out
+        ctx.lineTo(0, flStart + flLen); // taper to point
+        ctx.lineTo(6, flStart + flLen*0.4); // other side
+        ctx.quadraticCurveTo(9, flStart + 8, 2, flStart); // soft curve back
+        ctx.closePath();
         ctx.fillStyle = `rgba(255,105,180,${0.4+_exI*0.4})`; ctx.shadowColor='#ff69b4'; ctx.shadowBlur=30*SB; ctx.fill();
-        // Inner hot core
+        // Purple mid layer
         const flLen2 = 25 + _exI*50 + Math.random()*20;
-        ctx.beginPath(); ctx.moveTo(-4,fl); ctx.lineTo(0,fl+flLen2); ctx.lineTo(4,fl);
-        ctx.fillStyle = `rgba(220,180,255,${0.5+_exI*0.3})`; ctx.shadowColor='#cc88ff'; ctx.shadowBlur=20*SB; ctx.fill();
+        ctx.beginPath();
+        ctx.moveTo(-1, flStart);
+        ctx.quadraticCurveTo(-5, flStart + 6, -3, flStart + flLen2*0.4);
+        ctx.lineTo(0, flStart + flLen2);
+        ctx.lineTo(3, flStart + flLen2*0.4);
+        ctx.quadraticCurveTo(5, flStart + 6, 1, flStart);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(200,140,255,${0.5+_exI*0.3})`; ctx.shadowColor='#cc88ff'; ctx.shadowBlur=20*SB; ctx.fill();
+        // Bright white central core — shorter, rounded ship end
+        const flLen3 = 15 + _exI*30 + Math.random()*12;
+        ctx.beginPath();
+        ctx.arc(0, flStart + 2, 2.5, Math.PI, 0); // rounded top
+        ctx.lineTo(2, flStart + flLen3*0.5);
+        ctx.lineTo(0, flStart + flLen3);
+        ctx.lineTo(-2, flStart + flLen3*0.5);
+        ctx.closePath();
+        ctx.fillStyle = `rgba(255,255,255,${0.6+_exI*0.3})`; ctx.shadowColor='#ffffff'; ctx.shadowBlur=14*SB; ctx.fill();
         // Tiny sparkle dots — extend well past the flame
         const sparkTrail = flLen * 3;
         for(let sp=0; sp<12+_exI*25; sp++){
@@ -11138,6 +11172,9 @@ var _msPopupOpen = false;
 var _msFirstCrystal = true;
 var _msHasLightSpeed = false;
 var _isLightSpeed = false;
+// Front burn shield SVG as inline image
+const _frontBurnImg = new Image();
+_frontBurnImg.src = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 1000"><path fill="#ee2c24" d="M682.6,414.47l64.13,72.86,6.02,4.4c8.24,6.03,19.02-3.08,14.46-12.22l-1.92-3.85-84.91-94.35c-46.52-54.07-113.5-96.83-180.37-96.83s-133.86,42.76-180.37,96.83l-84.91,94.35-1.92,3.85c-4.57,9.13,6.21,18.24,14.46,12.22l6.02-4.4,64.13-72.86c4.52-1.73,8.4,3.67,5.31,7.4l-79.66,109.21-1.42,3.74c-4.42,11.67,10.16,21.15,19.04,12.39l3.73-3.68,76.55-118.44c2.88-4.46,9.69-.67,7.41,4.13l-92.72,192.81-.35,1.88c-2.47,13.24,13.97,21.41,23.03,11.44l2.51-2.76,104.13-242.84c1.36-3.18,6.11-2.21,6.11,1.25l-34.49,92.81v2.07c-.07,9.13,11.81,12.7,16.79,5.05l2.34-3.59s15.11-60.69,27.29-87.78c21.11-46.94,46.89-90.91,97-90.91s75.89,43.97,97,90.91c12.18,27.09,27.29,87.78,27.29,87.78l2.34,3.59c4.98,7.65,16.87,4.08,16.81-5.05v-2.07s-34.51-92.81-34.51-92.81c0-3.46,4.75-4.44,6.11-1.25l104.13,242.84,2.51,2.76c9.06,9.97,25.5,1.8,23.03-11.44l-.35-1.88-92.72-192.81c-2.28-4.8,4.53-8.59,7.41-4.13l76.55,118.44,3.73,3.68c8.88,8.77,23.45-.72,19.04-12.39l-1.42-3.74-79.66-109.21c-3.09-3.73.79-9.13,5.31-7.4Z"/></svg>');
 
 function startMarsSurface(){
   state.paused = true;
