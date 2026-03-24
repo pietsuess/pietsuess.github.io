@@ -7377,7 +7377,7 @@ function drawGame(){
   }
   // Smooth light speed intensity — lerps up and fades down gradually
   const _lsActive = _isLightSpeed && state.hyperspace;
-  const _lsTarget = _lsActive ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
+  const _lsTarget = _lsActive ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/500) : 0;
   if(_lsTarget > _lsSmooth){
     _lsSmooth += (_lsTarget - _lsSmooth) * 0.04; // ease in
   } else {
@@ -7722,10 +7722,12 @@ function drawGame(){
   drawWormholeTransition();
 
   // Light speed visual overlay (continues during fadedown)
+  // Reset transform so overlays cover full screen, not zoomed area
   if(_lsSmooth > 0.05){
     const _lsI = _lsSmooth;
     {
       ctx.save();
+      ctx.setTransform(1, 0, 0, 1, 0, 0); // identity — full screen
       const W = canvas.width, H = canvas.height;
       // Ship's facing angle in screen space (angle 0 = up = -Y)
       const travelAng = state.angle - Math.PI/2;
@@ -9335,7 +9337,7 @@ function drawGame(){
       const fl=ps.size*0.5;
       if(_isLightSpeed && state.hyperspace){
         // Crystal exhaust — offset back from ship, soft corners
-        const _exI = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120);
+        const _exI = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/500);
         const flStart = fl + 4; // offset back off the ship
         const flLen = 40 + _exI*80 + Math.random()*30;
         // Outer flame — soft rounded corners using quadratic curves
@@ -13247,8 +13249,11 @@ function drawJupiter(ctx, cx, cy){
   const drawSize = GR * 2 + GR * 0.1; // slight padding
   ctx.drawImage(_jupiterCache, screenX - drawSize/2, screenY - drawSize/2, drawSize, drawSize);
 
-  // Thick atmosphere — Jupiter has deep, layered glow
+  // Thick atmosphere — only when planet edge is on screen (perf)
+  const _jOnScreen = screenX > -GR*1.5 && screenX < ctx.canvas.width+GR*1.5 &&
+                     screenY > -GR*1.5 && screenY < ctx.canvas.height+GR*1.5;
   const atmMax = GR * 1.6;
+  if(_jOnScreen){
   ctx.save();
   ctx.beginPath();
   ctx.rect(screenX - atmMax, screenY - atmMax, atmMax*2, atmMax*2);
@@ -13270,6 +13275,7 @@ function drawJupiter(ctx, cx, cy){
   ctx.fillStyle=g1; ctx.beginPath(); ctx.arc(screenX,screenY,GR*1.45,0,Math.PI*2); ctx.fill();
 
   ctx.restore();
+  } // end _jOnScreen atmosphere
   ctx.restore();
 
   // ── Galilean Moons ──
