@@ -598,8 +598,6 @@ function resolveX() {
     for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
         if (!isSolid(tx, ty)) continue;
         if (!cellOverlap(tx, ty, by, by + bh)) continue;
-        // When falling, skip tiles at feet level - let resolveY handle landing
-        if (gvy > 0 && ty === bt) continue;
         const rx = tx * T;
         if (bx < rx + T && bx + bw > rx) {
             const k = tx + ',' + ty;
@@ -833,17 +831,20 @@ function playFrame(dt) {
             break;
     }
 
-    // Physics
+    // Physics + Collision: separate axis resolution (industry standard)
+    // Move X, resolve X. Then move Y, resolve Y. Never both at once.
     if (!gFloor) gvy += GRAV * dt;
-    // Variable jump height: releasing up/W while rising cuts the jump short
-    if (gvy < 0 && !pkUp()) {
-        gvy *= 0.85; // dampen upward velocity quickly when button released
-    }
-    gx += gvx * dt;
-    gy += gvy * dt;
+    // Variable jump height
+    if (gvy < 0 && !pkUp()) gvy *= 0.85;
 
     pushSolidKeys = [];
+
+    // Step 1: Move and resolve X
+    gx += gvx * dt;
     resolveX();
+
+    // Step 2: Move and resolve Y
+    gy += gvy * dt;
     resolveY();
 
     if (gvy === 0 && gFloor) {
