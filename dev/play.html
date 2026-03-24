@@ -1013,36 +1013,49 @@ function playFrame(dt) {
         g.bl = gl; g.br = gr; g.bt = gt; g.bb = gb;
     }
 
-    // Try to push a group (and chain). Returns true if moved, false if blocked.
+    // Try to push a group (and chain). Returns pixels actually moved (0 = blocked).
     function tryPushGroup(g, dir, amt) {
-        // Check if group can move in dir by amt
+        let maxAmt = amt;
+        // Find max distance before hitting a wall tile
         for (const c of g.cells) {
             const cx = c.tx * T + g.offsetX;
             const cy = c.ty * T + g.offsetY;
-            const edgeX = dir === 1 ? cx + T : cx;
-            const checkX = dir === 1 ? edgeX + amt : edgeX - amt;
             const isEdge = dir === 1
                 ? !g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty)
                 : !g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty);
             if (!isEdge) continue;
-            // Check wall tiles
-            const checkTx = Math.floor(checkX / T);
+            const edgeX = dir === 1 ? cx + T : cx;
             const checkTy = Math.floor(cy / T);
-            if (isSolid(checkTx, checkTy)) return false;
-        }
-        // Check other groups and try chain push
-        const newL = g.bl + dir * amt, newR = g.br + dir * amt;
-        for (const og of pushGroups) {
-            if (og === g) continue;
-            // Does the moved group overlap this other group?
-            if (newR > og.bl && newL < og.br && g.bb > og.bt && g.bt < og.bb) {
-                if (!tryPushGroup(og, dir, amt)) return false;
+            // Find distance to next solid tile in push direction
+            if (dir === 1) {
+                const nextTileX = Math.ceil(edgeX / T) * T; // next tile boundary
+                const nextTx = Math.floor(nextTileX / T);
+                if (isSolid(nextTx, checkTy)) {
+                    maxAmt = Math.min(maxAmt, nextTileX - edgeX);
+                }
+            } else {
+                const prevTileX = Math.floor((edgeX - 0.01) / T) * T; // prev tile boundary right edge = this tile's left
+                const prevTx = Math.floor((edgeX - 0.01) / T);
+                if (isSolid(prevTx, checkTy)) {
+                    maxAmt = Math.min(maxAmt, edgeX - (prevTx + 1) * T);
+                }
             }
         }
-        // All clear - move
-        g.offsetX += dir * amt;
-        g.bl += dir * amt; g.br += dir * amt;
-        return true;
+        if (maxAmt <= 0.01) return 0;
+        // Check other groups - try chain push with clamped amount
+        const newL = g.bl + dir * maxAmt, newR = g.br + dir * maxAmt;
+        for (const og of pushGroups) {
+            if (og === g) continue;
+            if (newR > og.bl && newL < og.br && g.bb > og.bt && g.bt < og.bb) {
+                const chainMoved = tryPushGroup(og, dir, maxAmt);
+                if (chainMoved < maxAmt) maxAmt = chainMoved;
+            }
+        }
+        if (maxAmt <= 0.01) return 0;
+        // Move
+        g.offsetX += dir * maxAmt;
+        g.bl += dir * maxAmt; g.br += dir * maxAmt;
+        return maxAmt;
     }
 
     // Check if a rect overlaps any pushable group. Returns the group or null.
@@ -1065,24 +1078,17 @@ function playFrame(dt) {
             // Gary overlaps this group horizontally
             const c = colBox();
             if (gvx > 0) {
-                // Moving right - try to push group right
                 const pushAmt = (bx + bw) - g.bl;
-                if (g === pushingGroup && pushSettleFrames <= 0 && tryPushGroup(g, 1, pushAmt)) {
-                    // Group moved, Gary stays
-                } else {
-                    gx = g.bl - c[2] - c[0] - 0.01;
-                    gvx = 0;
-                }
+                const moved = (g === pushingGroup && pushSettleFrames <= 0) ? tryPushGroup(g, 1, pushAmt) : 0;
+                gx = g.bl - c[2] - c[0] - 0.01;
+                if (moved === 0) gvx = 0;
                 wallBlocked = true;
                 pushTarget = g;
             } else if (gvx < 0) {
                 const pushAmt = g.br - bx;
-                if (g === pushingGroup && pushSettleFrames <= 0 && tryPushGroup(g, -1, pushAmt)) {
-                    // Group moved, Gary stays
-                } else {
-                    gx = g.br - c[0] + 0.01;
-                    gvx = 0;
-                }
+                const moved = (g === pushingGroup && pushSettleFrames <= 0) ? tryPushGroup(g, -1, pushAmt) : 0;
+                gx = g.br - c[0] + 0.01;
+                if (moved === 0) gvx = 0;
                 wallBlocked = true;
                 pushTarget = g;
             }
@@ -1128,9 +1134,8 @@ function playFrame(dt) {
     // Active push: when in push state, move the group at push speed
     if (pushingGroup && gState === 'push' && pushSettleFrames <= 0) {
         const amt = PUSH_SPD * dt;
-        if (tryPushGroup(pushingGroup, gDir, amt)) {
-            gx += gDir * amt;
-        }
+        const moved = tryPushGroup(pushingGroup, gDir, amt);
+        if (moved > 0) gx += gDir * moved;
     }
 
     // Wall push timer - same delay for walls and pushable groups
