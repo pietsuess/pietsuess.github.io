@@ -7285,8 +7285,8 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  // Light speed: motion trail instead of full clear (uses smooth fade)
-  if(_lsSmooth > 0.05){
+  // Light speed: motion trail instead of full clear
+  if(_lsSmooth > 0.05 && _isLightSpeed && state.hyperspace){
     ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsSmooth * 0.3})`;
     ctx.fillRect(0, 0, canvas.width, canvas.height);
   } else {
@@ -7643,12 +7643,14 @@ function drawGame(){
 
       // Star streaks — start AHEAD of ship, fly backward, empty central column
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 50 + Math.floor(_lsI * 100);
-      const streakBand = 200; // ~200px on each side
+      const streakCount = 35 + Math.floor(_lsI * 70);
+      const streakBand = 400; // extends 400px but thins out
       for(let k = 0; k < streakCount; k++){
         // Perpendicular spread — narrow band, avoid center
         const centerGap = 25 + _lsI * 15;
-        let perpOfs = centerGap + Math.random() * streakBand;
+        // Weighted distribution: most streaks in inner 200px, sparse beyond
+        const r = Math.random();
+        let perpOfs = centerGap + (r * r) * streakBand; // squared = clusters inner
         if(Math.random() < 0.5) perpOfs = -perpOfs;
         // Start ahead of ship
         const travelOfs = W * 0.15 + Math.random() * W * 0.5;
@@ -7696,12 +7698,10 @@ function drawGame(){
         ctx.drawImage(_frontBurnImg, -burnSz*0.55, burnY - 3, burnSz*1.1, burnSz * 0.7);
         ctx.globalCompositeOperation = 'source-over';
         ctx.shadowBlur = 0;
-        // Animated cat-tail flicker — jitter the tips
-        const flickX = (Math.random()-0.5) * 4 * _lsI;
-        const flickY = (Math.random()-0.5) * 3 * _lsI;
+        // Third layer — slight size variation for flicker (no independent shake)
         ctx.globalAlpha = (0.15 + _lsI * 0.2);
-        ctx.translate(flickX, flickY);
-        ctx.drawImage(_frontBurnImg, -burnSz*0.52, burnY - 1, burnSz*1.04, burnSz * 0.67);
+        const flickSz = burnSz * (1 + (Math.random()-0.5)*0.06);
+        ctx.drawImage(_frontBurnImg, -flickSz*0.52, burnY - 1, flickSz*1.04, flickSz * 0.67);
         ctx.restore();
       }
 
@@ -9189,6 +9189,21 @@ function drawGame(){
       ctx.scale(_preShrX, _preStrY);
     } else {
       ctx.rotate(state.angle);
+    }
+    // Light speed motion blur — ghost copies trailing behind ship
+    if(_lsSmooth > 0.1){
+      const blurCopies = 4;
+      for(let bi = blurCopies; bi >= 1; bi--){
+        ctx.save();
+        ctx.globalAlpha = alpha * (0.12 / bi);
+        ctx.translate(0, bi * 4 * _lsSmooth); // offset backward in ship-local Y
+        ctx.shadowBlur = 0;
+        const s = ps.size;
+        ctx.beginPath();
+        ctx.moveTo(0,-s); ctx.lineTo(s*0.6,s*0.7); ctx.lineTo(0,s*0.35); ctx.lineTo(-s*0.6,s*0.7); ctx.closePath();
+        ctx.strokeStyle = `rgba(255,105,180,${0.15/_lsSmooth})`; ctx.lineWidth = 1.5; ctx.stroke();
+        ctx.restore();
+      }
     }
     ctx.globalAlpha=alpha;
     ctx.shadowBlur=noFuel?10:20;
