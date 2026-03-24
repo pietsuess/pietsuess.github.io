@@ -11,7 +11,7 @@
   ║    a. Set musicMuted:false and sfxMuted:false (sound ON)    ║
   ║    b. Add style="display:none" to #dev-panel div            ║
   ║       ⚠ KEEP THE CLOSING > !! The replacement must be:     ║
-  ║       <div id="dev-panel" class="collapsed">
+  ║       <div id="dev-panel" class="collapsed" style="display:none">
   ║       NOT: style="display:none"  ← MISSING > = GREEN BAR   ║
   ║    c. Force popups ON: _contentPopupsOn = true;             ║
   ║                                                             ║
@@ -817,7 +817,6 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
       <div style="font-size:16px;color:#ff69b4;letter-spacing:2px;text-shadow:0 0 8px rgba(255,105,180,0.7);margin-bottom:10px;animation:titleFadeUp 0.8s 0.3s both;">PIET SUESS</div>
       <div style="font-size:30px;color:#00ffcc;letter-spacing:2px;line-height:1;animation:titlePulse 1.6s ease-in-out infinite, titleFadeUp 0.7s 0.1s both;">RETURN TO SPACE</div>
       <div style="font-size:10px;color:#558877;letter-spacing:4px;margin-top:10px;animation:titleFadeUp 1s 0.7s both;">escape the debris field</div>
-      <div style="width:8px;height:8px;border-radius:50%;background:#ff69b4;box-shadow:0 0 12px #ff69b4;margin:14px auto 0;animation:titleFadeUp 1.2s 0.9s both;"></div>
     </div>
   </div>
   <div id="intro-sub" style="margin-top:12px;position:relative;z-index:1;">PRESS ANY KEY TO START</div>
@@ -850,7 +849,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
 </div>
 
 <!-- ── DEV PANEL ── -->
-<div id="dev-panel" class="collapsed">
+<div id="dev-panel" class="collapsed" style="display:none">
   <div id="dev-panel-header">
     <span id="dev-panel-title">⚙ DEV MODE</span>
     <div id="dev-panel-btns">
@@ -7293,6 +7292,10 @@ function drawGame(){
   } else {
     ctx.clearRect(0,0,canvas.width,canvas.height);
   }
+  // Hard clear any stain residue when light speed fading but no longer active
+  if(_lsSmooth > 0 && (!_isLightSpeed || !state.hyperspace)){
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
   // Smooth light speed intensity — lerps up and fades down gradually
   const _lsTarget = (_isLightSpeed && state.hyperspace) ? Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) : 0;
   _lsSmooth += (_lsTarget - _lsSmooth) * (_lsTarget > _lsSmooth ? 0.04 : 0.08); // fast engage, faster fade
@@ -7678,24 +7681,7 @@ function drawGame(){
       }
       ctx.shadowBlur = 0;
 
-      // Front burn shield — at screen center (inherits camera shake from parent transform)
-      if(_frontBurnImg.complete && _frontBurnImg.naturalWidth > 0){
-        ctx.save();
-        ctx.translate(W/2, H/2);
-        ctx.rotate(travelAng + Math.PI/2);
-        const burnSz = 55 + _lsI * 25;
-        const burnY = -burnSz * 0.4;
-        ctx.globalAlpha = (0.3 + _lsI * 0.3);
-        ctx.globalCompositeOperation = 'lighter';
-        ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 25 * _lsI;
-        ctx.drawImage(_frontBurnImg, -burnSz/2, burnY, burnSz, burnSz * 0.65);
-        ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15 * _lsI;
-        ctx.globalAlpha = (0.2 + _lsI * 0.25);
-        ctx.drawImage(_frontBurnImg, -burnSz*0.55, burnY - 3, burnSz*1.1, burnSz * 0.7);
-        ctx.globalCompositeOperation = 'source-over';
-        ctx.shadowBlur = 0;
-        ctx.restore();
-      }
+      // Front burn shield moved to ship draw section (shares ship transform)
 
       // Tunnel vision — heavy dark vignette, slimming the view
       const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
@@ -8693,12 +8679,7 @@ function drawGame(){
 
   // (zoom restore moved to after BH shake restore)
 
-  // DEBUG: light speed state
-  if(state.started){
-    ctx.save(); ctx.font='10px monospace'; ctx.fillStyle='#ff0'; ctx.textAlign='left';
-    ctx.fillText('LS:'+_isLightSpeed+' HS:'+state.hyperspace+' SM:'+_lsSmooth.toFixed(2)+' ZM:'+_lsZoom.toFixed(2)+' FM:'+state.fireMode, 10, canvas.height-60);
-    ctx.restore();
-  }
+  // (debug overlay removed)
   // Debris cleanup HUD (DOM element, not canvas)
   updateDebrisHUD();
 
@@ -8810,12 +8791,7 @@ function drawGame(){
       ctx.restore();
     });
   }
-  // ── Zone Object HUD — left-side progress column ──
-  drawZoneHUD();
-  _drawHudFlyAnims();
-
-  // ── On-screen radar minimap — bottom-right ──
-  drawRadarMap();
+  // HUD + radar drawn after transform reset (see end of drawGame)
 
   // "NEXT MISSION" arrow hint — delayed, only if not heading toward gap
   // Suppress all NEXT MISSION hints while fighting the main world boss
@@ -9187,20 +9163,36 @@ function drawGame(){
     } else {
       ctx.rotate(state.angle);
     }
+    // Front burn shield — drawn in ship space so it shakes with the ship
+    if(_lsSmooth > 0.1 && _frontBurnImg.complete && _frontBurnImg.naturalWidth > 0){
+      ctx.save();
+      const burnSz = 55 + _lsSmooth * 25;
+      const burnY = -ps.size - burnSz * 0.3;
+      ctx.globalAlpha = (0.3 + _lsSmooth * 0.3);
+      ctx.globalCompositeOperation = 'lighter';
+      ctx.shadowColor = '#ffaa00'; ctx.shadowBlur = 25 * _lsSmooth;
+      ctx.drawImage(_frontBurnImg, -burnSz/2, burnY, burnSz, burnSz * 0.65);
+      ctx.shadowColor = '#ff6600'; ctx.shadowBlur = 15 * _lsSmooth;
+      ctx.globalAlpha = (0.2 + _lsSmooth * 0.25);
+      ctx.drawImage(_frontBurnImg, -burnSz*0.55, burnY - 3, burnSz*1.1, burnSz * 0.7);
+      ctx.globalCompositeOperation = 'source-over';
+      ctx.shadowBlur = 0;
+      ctx.restore();
+    }
     // Light speed motion blur — ghost copies trailing behind ship
     if(_lsSmooth > 0.1){
       const s = ps.size;
       for(let bi = 6; bi >= 1; bi--){
         ctx.save();
-        ctx.globalAlpha = 0.25 * (1 - bi/7) * _lsSmooth;
-        ctx.translate(0, bi * 6 * _lsSmooth);
+        ctx.globalAlpha = 0.5 * (1 - bi/7) * _lsSmooth;
+        ctx.translate(0, bi * 12 * _lsSmooth);
         ctx.shadowBlur = 0;
         ctx.beginPath();
         ctx.moveTo(0,-s); ctx.lineTo(s*0.6,s*0.7); ctx.lineTo(0,s*0.35); ctx.lineTo(-s*0.6,s*0.7); ctx.closePath();
-        ctx.fillStyle = `rgba(255,105,180,${0.2 * (1-bi/7)})`;
+        ctx.fillStyle = `rgba(255,105,180,${0.4 * (1-bi/7)})`;
         ctx.fill();
         ctx.strokeStyle = noFuel ? '#ff6600' : ps.color;
-        ctx.lineWidth = 1; ctx.globalAlpha *= 0.5; ctx.stroke();
+        ctx.lineWidth = 1.5; ctx.globalAlpha *= 0.7; ctx.stroke();
         ctx.restore();
       }
     }
@@ -9887,6 +9879,10 @@ function drawGame(){
   if(_lsZoom > 1.01){
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
+  // ── HUD drawn AFTER transform reset so zoom/shake don't affect it ──
+  drawZoneHUD();
+  _drawHudFlyAnims();
+  drawRadarMap();
 }
 
 //  DRAW BUBBLE — with lasting collision deformations
