@@ -267,15 +267,22 @@ function isSolidAtlas(ax, ay) {
 
 function getCollisionData(ax, ay) {
     const key = ax + ',' + ay;
+    let source = null;
     if (key in collisionOverrides) {
         const ov = collisionOverrides[key];
         if (ov === null) return { type: 'none' };
         if (ov === 'solid') return { type: 'solid' };
-        return { type: 'partial', ranges: ov };
+        source = ov;
+    } else {
+        if (!SOLID_ATLAS.has(key)) return { type: 'none' };
+        if (PARTIAL_CELLS[key]) source = PARTIAL_CELLS[key];
+        else return { type: 'solid' };
     }
-    if (!SOLID_ATLAS.has(key)) return { type: 'none' };
-    if (PARTIAL_CELLS[key]) return { type: 'partial', ranges: PARTIAL_CELLS[key] };
-    return { type: 'solid' };
+    // Sub-grid: array of 8 numbers. Bar-ranges: array of arrays.
+    if (Array.isArray(source) && source.length === 8 && typeof source[0] === 'number') {
+        return { type: 'subgrid', grid: source };
+    }
+    return { type: 'partial', ranges: source };
 }
 
 // ---- IMAGES ----
@@ -391,6 +398,9 @@ function buildSolidSet() {
                 } else if (data.type === 'partial') {
                     solidSet.add(key);
                     cellCol[key] = data.ranges;
+                } else if (data.type === 'subgrid') {
+                    solidSet.add(key);
+                    cellCol[key] = data.grid;
                 }
             }
         }
@@ -399,12 +409,27 @@ function buildSolidSet() {
 
 function isSolid(tx, ty) { return solidSet.has(tx + ',' + ty); }
 
-function cellOverlap(tx, ty, worldTop, worldBot) {
+function cellOverlap(tx, ty, worldLeft, worldRight, worldTop, worldBot) {
     const k = tx + ',' + ty;
-    const ranges = cellCol[k];
-    if (!ranges) return true;
-    const cellY = ty * T;
-    for (const r of ranges) {
+    const data = cellCol[k];
+    if (!data) return true; // fully solid
+    const cellX = tx * T, cellY = ty * T;
+    // Sub-grid: 8 numbers (one byte per row)
+    if (typeof data[0] === 'number' && !Array.isArray(data[0])) {
+        const SUB = 2; // 2px per sub-cell
+        const col0 = Math.max(0, Math.floor((worldLeft - cellX) / SUB));
+        const col1 = Math.min(7, Math.floor((worldRight - cellX - 0.01) / SUB));
+        const row0 = Math.max(0, Math.floor((worldTop - cellY) / SUB));
+        const row1 = Math.min(7, Math.floor((worldBot - cellY - 0.01) / SUB));
+        for (let r = row0; r <= row1; r++) {
+            for (let c = col0; c <= col1; c++) {
+                if (data[r] & (1 << (7 - c))) return true;
+            }
+        }
+        return false;
+    }
+    // Legacy bar ranges
+    for (const r of data) {
         const barTop = cellY + r[0];
         const barBot = cellY + r[1];
         if (worldBot > barTop && worldTop < barBot) return true;
@@ -573,14 +598,14 @@ function worldBox() { const c = colBox(); return [gx + c[0], gy + c[1], c[2], c[
 
 // Check if a Y range is clear of solid tiles (with sub-cell precision)
 function isRangeClear(newTop, currentTop) {
-    const left = gx - 7, width = 14;
-    const l = Math.floor(left / T), r = Math.floor((left + width) / T);
+    const left = gx - 7, right = gx + 7;
+    const l = Math.floor(left / T), r = Math.floor(right / T);
     const t = Math.floor(newTop / T);
     const b = Math.floor((currentTop - 1) / T);
     for (let ty = t; ty <= b; ty++) {
         for (let tx = l; tx <= r; tx++) {
             if (!isSolid(tx, ty)) continue;
-            if (cellOverlap(tx, ty, newTop, currentTop)) return false;
+            if (cellOverlap(tx, ty, left, right, newTop, currentTop)) return false;
         }
     }
     return true;
@@ -603,7 +628,7 @@ function rectHit(x, y, w, h) {
     const t = Math.floor(y / T), b = Math.floor((y + h - 1) / T);
     for (let ty = t; ty <= b; ty++) for (let tx = l; tx <= r; tx++) {
         if (!isSolid(tx, ty)) continue;
-        if (cellOverlap(tx, ty, y, y + h)) return true;
+        if (cellOverlap(tx, ty, x, x + w, y, y + h)) return true;
     }
     return false;
 }
@@ -616,19 +641,37 @@ function resolveX() {
     const t = Math.floor(by / T), bt = Math.floor((by + bh - 1) / T);
     for (let ty = t; ty <= bt; ty++) for (let tx = l; tx <= r; tx++) {
         if (!isSolid(tx, ty)) continue;
-        if (!cellOverlap(tx, ty, by, by + bh)) continue;
+        if (!cellOverlap(tx, ty, bx, bx + bw, by, by + bh)) continue;
         const rx = tx * T;
         if (bx < rx + T && bx + bw > rx) {
             const k = tx + ',' + ty;
             const isPushCell = false;
-            const ranges = cellCol[k];
-            if (ranges && gFloor && !isPushCell) {
+            const colData = cellCol[k];
+            if (colData && gFloor && !isPushCell) {
+                // Step-up: find the top of the collision within this tile near Gary's feet
                 let maxBarTop = -Infinity;
-                for (const r2 of ranges) {
-                    const barTop = ty * T + r2[0];
-                    const barBot = ty * T + r2[1];
-                    if (by + bh > barTop && by + bh < barBot + STEP_UP) {
-                        maxBarTop = Math.max(maxBarTop, barTop);
+                if (typeof colData[0] === 'number' && !Array.isArray(colData[0])) {
+                    // Sub-grid: find topmost solid row near feet
+                    const SUB = 2, cellY = ty * T;
+                    const feetRow = Math.min(7, Math.floor((by + bh - cellY - 0.01) / SUB));
+                    const col0 = Math.max(0, Math.floor((bx - tx * T) / SUB));
+                    const col1 = Math.min(7, Math.floor((bx + bw - tx * T - 0.01) / SUB));
+                    for (let sr = feetRow; sr >= 0; sr--) {
+                        let hasSolid = false;
+                        for (let sc = col0; sc <= col1; sc++) {
+                            if (colData[sr] & (1 << (7 - sc))) { hasSolid = true; break; }
+                        }
+                        if (hasSolid) { maxBarTop = cellY + sr * SUB; }
+                        else break;
+                    }
+                } else {
+                    // Legacy bar ranges
+                    for (const r2 of colData) {
+                        const barTop = ty * T + r2[0];
+                        const barBot = ty * T + r2[1];
+                        if (by + bh > barTop && by + bh < barBot + STEP_UP) {
+                            maxBarTop = Math.max(maxBarTop, barTop);
+                        }
                     }
                 }
                 if (maxBarTop > -Infinity) {
@@ -639,7 +682,7 @@ function resolveX() {
                     }
                 }
             }
-            if (!ranges && gFloor && !isPushCell) {
+            if (!colData && gFloor && !isPushCell) {
                 const cellTop = ty * T;
                 const feetOverlap = (by + bh) - cellTop;
                 if (feetOverlap > 0 && feetOverlap <= STEP_UP) {
@@ -671,9 +714,33 @@ function resolveY() {
         if (!(bx < tx * T + T && bx + bw > tx * T)) continue;
         const ry = ty * T;
         const k = tx + ',' + ty;
-        const ranges = cellCol[k];
-        if (ranges) {
-            for (const r2 of ranges) {
+        const colData = cellCol[k];
+        if (colData && typeof colData[0] === 'number' && !Array.isArray(colData[0])) {
+            // Sub-grid: find the boundary within the tile for Gary's X range
+            const SUB = 2, cellX = tx * T;
+            const col0 = Math.max(0, Math.floor((bx - cellX) / SUB));
+            const col1 = Math.min(7, Math.floor((bx + bw - cellX - 0.01) / SUB));
+            // Find topmost and bottommost solid rows in Gary's column range
+            let topSolid = -1, botSolid = -1;
+            for (let sr = 0; sr < 8; sr++) {
+                for (let sc = col0; sc <= col1; sc++) {
+                    if (colData[sr] & (1 << (7 - sc))) {
+                        if (topSolid === -1) topSolid = sr;
+                        botSolid = sr;
+                        break;
+                    }
+                }
+            }
+            if (topSolid === -1) continue; // no solid sub-cells in Gary's columns
+            const barTop = ry + topSolid * SUB;
+            const barBot = ry + (botSolid + 1) * SUB;
+            if (by + bh > barTop && by < barBot) {
+                if (gvy > 0) { gy = gy - (by + bh - barTop); gvy = 0; gFloor = true; return; }
+                else if (gvy < 0) { const c = colBox(); gy = barBot - c[1] + 0.01; gvy = 0; return; }
+            }
+        } else if (colData) {
+            // Legacy bar ranges
+            for (const r2 of colData) {
                 const barTop = ry + r2[0];
                 const barBot = ry + r2[1];
                 if (by + bh > barTop && by < barBot) {
@@ -698,7 +765,7 @@ function nearGround(dist) {
     for (let d = 1; d <= dist; d++) {
         const ty = Math.floor((gy + d) / T);
         for (let tx = l; tx <= r; tx++) {
-            if (isSolid(tx, ty) && cellOverlap(tx, ty, gy + d - 1, gy + d + 1)) return true;
+            if (isSolid(tx, ty) && cellOverlap(tx, ty, bx, bx + bw, gy + d - 1, gy + d + 1)) return true;
         }
     }
     return false;
@@ -712,7 +779,7 @@ function checkFloor() {
     const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
     for (let tx = l; tx <= r; tx++) {
         if (!isSolid(tx, ty)) continue;
-        if (cellOverlap(tx, ty, gy, gy + 2)) return true;
+        if (cellOverlap(tx, ty, bx, bx + bw, gy, gy + 2)) return true;
     }
     return false;
 }
@@ -1294,10 +1361,23 @@ function playFrame(dt) {
             for (let tx = startTX; tx < endTX; tx++) {
                 if (!isSolid(tx, ty)) continue;
                 const k = tx + ',' + ty;
-                const ranges = cellCol[k];
-                if (ranges) {
+                const colData = cellCol[k];
+                if (colData && typeof colData[0] === 'number' && !Array.isArray(colData[0])) {
+                    // Sub-grid: draw individual 2px cells
+                    const SUB = 2;
+                    for (let sr = 0; sr < 8; sr++) {
+                        for (let sc = 0; sc < 8; sc++) {
+                            if (colData[sr] & (1 << (7 - sc))) {
+                                ctx.fillStyle = 'rgba(0,255,100,0.4)';
+                                ctx.fillRect(tx * T + sc * SUB, ty * T + sr * SUB, SUB, SUB);
+                            }
+                        }
+                    }
+                    ctx.strokeStyle = 'rgba(0,255,100,0.6)';
+                    ctx.strokeRect(tx * T, ty * T, T, T);
+                } else if (colData) {
                     ctx.fillStyle = 'rgba(255,160,0,0.4)';
-                    for (const r of ranges) {
+                    for (const r of colData) {
                         ctx.fillRect(tx * T, ty * T + r[0], T, r[1] - r[0]);
                     }
                     ctx.strokeStyle = 'rgba(255,160,0,0.6)';
