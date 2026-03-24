@@ -1790,11 +1790,12 @@ const JUPITER_WX = BELT_OUTER + 1087000; // ~1.09M px from belt — needs light 
 const JUPITER_WY = -180000;              // offset south for variety
 const JUPITER_R  = 2960;                 // 69911/6371 * 270 = ~2962
 // Galilean moons — orbital radii from Jupiter center (to scale)
+// Moon orbits compressed for visibility (~6x Jupiter radius spacing)
 const JUPITER_MOONS = [
-  { name:'Io',       r:77,  orbit:17870, speed:0.0042, col:[255,200,60],  ang:0 },
-  { name:'Europa',   r:66,  orbit:28450, speed:0.0021, col:[200,220,255], ang:Math.PI*0.7 },
-  { name:'Ganymede', r:112, orbit:45380, speed:0.00105,col:[160,150,140], ang:Math.PI*1.3 },
-  { name:'Callisto', r:102, orbit:79830, speed:0.00049,col:[100,90,80],   ang:Math.PI*0.4 },
+  { name:'Io',       r:77,  orbit:4500,  speed:0.0042, col:[255,200,60],  ang:0 },
+  { name:'Europa',   r:66,  orbit:6200,  speed:0.0021, col:[200,220,255], ang:Math.PI*0.7 },
+  { name:'Ganymede', r:112, orbit:8500,  speed:0.00105,col:[160,150,140], ang:Math.PI*1.3 },
+  { name:'Callisto', r:102, orbit:12000, speed:0.00049,col:[100,90,80],   ang:Math.PI*0.4 },
 ];
 const BARRIER_GAP_WIDTH = 50;                 // permanent gap half-width (100px total passage)
 const OUTER_TARGET_WX   = BELT_OUTER + 62500;
@@ -4047,7 +4048,7 @@ function update(){
     // Jupiter — camera push within 15000px (planet is 2960px radius)
     const _jDx = JUPITER_WX - state.x, _jDy = JUPITER_WY - state.y;
     const _jDist = Math.sqrt(_jDx*_jDx + _jDy*_jDy);
-    if(_jDist < 15000 && _jDist > 1) bodies.push({ dx:_jDx, dy:_jDy, dist:_jDist, range:15000, weight:1.0 });
+    if(_jDist < 8000 && _jDist > 1) bodies.push({ dx:_jDx, dy:_jDy, dist:_jDist, range:8000, weight:1.0 });
 
     // Boss (main world or secret level) — screen push within 1400px (600px before autokill at 800)
     const _camBoss = state.mainWorldBoss || state.secretBoss;
@@ -7237,8 +7238,8 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
-  // ── Mars dot — orange/red, only after debris cleared ──
-  if(_debrisMilestones[3]){
+  // ── Mars dot — orange/red, only after debris cleared, suppress when far ──
+  if(_debrisMilestones[3] && !state._farFromHome){
     const _maRx = mapX + (MARS_WX - state._radarCX) * scale;
     const _maRy = mapY + (MARS_WY - state._radarCY) * scale;
     const _maDx = _maRx - mapX, _maDy = _maRy - mapY;
@@ -7286,8 +7287,8 @@ function drawRadarMap(){
     ctx.globalAlpha = 0.85;
   }
 
-  // ── Fuel dots — green, uncollected only ──
-  if(state.fuelObjects){
+  // ── Fuel dots — green, uncollected only, suppress when far ──
+  if(state.fuelObjects && !state._farFromHome){
     for(const fo of state.fuelObjects){
       if(fo.collected) continue;
       const _fRx = mapX + (fo.wx - state._radarCX) * scale;
@@ -7387,7 +7388,7 @@ function drawGame(){
   const _lsZoom = (state.started && _lsSmooth > 0.01) ? 1 + _lsSmooth * 1.0 : 1;
   // Jupiter zoom-out — shrink view when near Jupiter so you can see it
   const _jDistDraw = Math.sqrt((JUPITER_WX-state.x)**2+(JUPITER_WY-state.y)**2);
-  const _jZoomRange = 20000; // start zooming out at this distance
+  const _jZoomRange = 8000; // start zooming out at this distance
   let _jupZoom = 1;
   if(_jDistDraw < _jZoomRange){
     const t = 1 - _jDistDraw / _jZoomRange; // 0 at edge, 1 at center
@@ -8849,10 +8850,14 @@ function drawGame(){
   }
   // HUD + radar drawn after transform reset (see end of drawGame)
 
+  // Suppress hint arrows/radar clutter when far from the main game area (e.g. at Jupiter)
+  const _farFromHome = (state.x*state.x + state.y*state.y) > 200000*200000;
+  state._farFromHome = _farFromHome;
+
   // "NEXT MISSION" arrow hint — delayed, only if not heading toward gap
   // Suppress all NEXT MISSION hints while fighting the main world boss
   const _mwbAlive = state.mainWorldBoss && !state.mainWorldBoss.dead;
-  if(!state._victoryPhase && !_mwbAlive && state.editMissionComplete && !state._interzoneComplete && (state._izRingMax === undefined || state._izRingMax < 0)){
+  if(!_farFromHome && !state._victoryPhase && !_mwbAlive && state.editMissionComplete && !state._interzoneComplete && (state._izRingMax === undefined || state._izRingMax < 0)){
     // Count down delay timer
     if(state._nextMissionHintDelay === undefined) state._nextMissionHintDelay = 360;
     if(state._nextMissionHintDelay > 0){ state._nextMissionHintDelay--; }
