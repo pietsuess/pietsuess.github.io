@@ -897,6 +897,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
           <button class="dev-btn gold" onclick="devClearAllDebris();devTeleport(MARS_WX+MARS_R+200,MARS_WY);state.fuel=1;updateFuelBar();">GO TO MARS</button>
           <button class="dev-btn" onclick="startMarsSurface();">MARS SURFACE</button>
           <button class="dev-btn purple" onclick="_msHasLightSpeed=true;state.fireMode='lightspeed';updateFireModeUI();state.zoneCrossFlash={lvl:-3,timer:60,msg:'LIGHTSPEED GIVEN',_col:'#ff69b4'};">GIVE LIGHTSPEED</button>
+          <button class="dev-btn purple" onclick="state.x=JUPITER_WX-5000;state.y=JUPITER_WY;state.vx=0;state.vy=0;_msHasLightSpeed=true;state.zoneCrossFlash={lvl:-3,timer:120,msg:'JUPITER APPROACH',_col:'#dda855'};">GO TO JUPITER</button>
           <button class="dev-btn" onclick="if(_marsSurface){_marsSurface.crystalsCollected=MS_CRYSTAL_COUNT;updateCrystalHUD(MS_CRYSTAL_COUNT);}">FILL CRYSTALS</button>
           <button class="dev-btn" onclick="if(typeof requestRefuel==='function')requestRefuel()">REQUEST REFUEL</button>
           <button class="dev-btn" onclick="if(typeof triggerCollision==='function')triggerCollision(state.x,state.y)">FAKE COLLISION</button>
@@ -13148,83 +13149,87 @@ const _jupiterTexture = (function(){
 
 var _jupiterRot = 0;
 var _jupiterCache = null;
-var _jupiterPixelCache = null;
 var _jupiterLastRender = -999;
+// Render at fixed 400px radius, scale up via drawImage — smooth and fast
+const _JUP_RENDER_R = 400;
+const _JUP_RENDER_SIZE = _JUP_RENDER_R * 2 + 40; // +padding for atmosphere
+const _JUP_RENDER_CR = _JUP_RENDER_SIZE / 2;
 
 function drawJupiter(ctx, cx, cy){
   const screenX = JUPITER_WX - state.x + cx;
   const screenY = JUPITER_WY - state.y + cy;
   const GR = JUPITER_R;
 
-  // Generous cull — Jupiter is huge
-  if(screenX < -GR*3 || screenX > ctx.canvas.width+GR*3 ||
-     screenY < -GR*3 || screenY > ctx.canvas.height+GR*3) return;
+  // Generous cull
+  if(screenX < -GR*2 || screenX > ctx.canvas.width+GR*2 ||
+     screenY < -GR*2 || screenY > ctx.canvas.height+GR*2) return;
 
-  // Fast rotation (Jupiter spins in ~10 hours vs Earth 24)
   _jupiterRot = (_jupiterRot + 0.25) % 360;
 
-  const ATM_PAD = Math.ceil(GR * 0.4);
-  const GRID = Math.ceil(GR) * 2;
-  const SIZE = GRID + ATM_PAD * 2;
-  const CR = SIZE / 2;
-
-  if(!_jupiterCache || _jupiterCache.width !== SIZE){
+  if(!_jupiterCache){
     _jupiterCache = document.createElement('canvas');
-    _jupiterCache.width = SIZE; _jupiterCache.height = SIZE;
+    _jupiterCache.width = _JUP_RENDER_SIZE; _jupiterCache.height = _JUP_RENDER_SIZE;
   }
   const rc = _jupiterCache.getContext('2d');
 
-  // Re-render every 4 frames (faster rotation = more frequent updates)
-  if(state.frameCount - _jupiterLastRender >= 4 || _jupiterPixelCache === null){
+  // Re-render every 6 frames at small fixed resolution
+  if(state.frameCount - _jupiterLastRender >= 6){
     _jupiterLastRender = state.frameCount;
-    rc.clearRect(0, 0, SIZE, SIZE);
+    rc.clearRect(0, 0, _JUP_RENDER_SIZE, _JUP_RENDER_SIZE);
 
-    const pix = rc.createImageData(SIZE, SIZE);
+    const pix = rc.createImageData(_JUP_RENDER_SIZE, _JUP_RENDER_SIZE);
     const pd = pix.data;
     const texPx = _jupiterTexture.data;
     const TW = _jupiterTexture.width, TH = _jupiterTexture.height;
+    const RR = _JUP_RENDER_R;
+    const CC = _JUP_RENDER_CR;
 
     const lx=-0.45, ly=-0.45, lz=0.78;
-    const startG = Math.max(0, Math.floor(CR - GR));
-    const endG   = Math.min(SIZE, Math.ceil(CR + GR));
+    const startG = Math.floor(CC - RR);
+    const endG = Math.ceil(CC + RR);
 
-    // Step size — for huge radius, skip pixels for performance
-    const step = GR > 500 ? 2 : 1;
-
-    for(let gy=startG; gy<endG; gy+=step){
-      for(let gx=startG; gx<endG; gx+=step){
-        const nx=(gx-CR+0.5)/GR, ny=(gy-CR+0.5)/GR;
+    for(let gy=startG; gy<endG; gy++){
+      for(let gx=startG; gx<endG; gx++){
+        const nx=(gx-CC+0.5)/RR, ny=(gy-CC+0.5)/RR;
         const d2=nx*nx+ny*ny;
         if(d2>1) continue;
         const nz=Math.sqrt(1-d2);
         const lat=Math.asin(-ny)*180/Math.PI;
         const lon=(Math.atan2(nx,nz)*180/Math.PI+_jupiterRot+360)%360;
-        const tx=Math.floor(lon/360*TW)%TW;
-        const ty=Math.min(TH-1,Math.floor((90-lat)/180*TH));
-        const ti=(ty*TW+tx)*4;
-        const r=texPx[ti], g=texPx[ti+1], b=texPx[ti+2];
+        // Bilinear texture sample for seamless wrapping
+        const txF = (lon/360*TW);
+        const tyF = (90-lat)/180*TH;
+        const tx0 = Math.floor(txF) % TW;
+        const tx1 = (tx0 + 1) % TW; // wraps seamlessly
+        const ty0 = Math.min(TH-1, Math.floor(tyF));
+        const ty1 = Math.min(TH-1, ty0 + 1);
+        const fx = txF - Math.floor(txF);
+        const fy = tyF - Math.floor(tyF);
+        const i00 = (ty0*TW+tx0)*4, i10 = (ty0*TW+tx1)*4;
+        const i01 = (ty1*TW+tx0)*4, i11 = (ty1*TW+tx1)*4;
+        const r = texPx[i00]*(1-fx)*(1-fy) + texPx[i10]*fx*(1-fy) + texPx[i01]*(1-fx)*fy + texPx[i11]*fx*fy;
+        const g = texPx[i00+1]*(1-fx)*(1-fy) + texPx[i10+1]*fx*(1-fy) + texPx[i01+1]*(1-fx)*fy + texPx[i11+1]*fx*fy;
+        const b = texPx[i00+2]*(1-fx)*(1-fy) + texPx[i10+2]*fx*(1-fy) + texPx[i01+2]*(1-fx)*fy + texPx[i11+2]*fx*fy;
+
         const diff=Math.max(0,nx*lx+ny*ly+nz*lz);
         const light=0.25+diff*0.75;
         const rim=1-nz;
-
-        // Fill pixels (with step duplication for performance)
-        for(let sy=0; sy<step && gy+sy<endG; sy++){
-          for(let sx=0; sx<step && gx+sx<endG; sx++){
-            const idx=((gy+sy)*SIZE+(gx+sx))*4;
-            pd[idx]   = Math.min(255, r*light + rim*rim*30);
-            pd[idx+1] = Math.min(255, g*light + rim*rim*15);
-            pd[idx+2] = Math.min(255, b*light + rim*rim*8);
-            pd[idx+3] = 255;
-          }
-        }
+        const idx=(gy*_JUP_RENDER_SIZE+gx)*4;
+        pd[idx]   = Math.min(255, r*light + rim*rim*30);
+        pd[idx+1] = Math.min(255, g*light + rim*rim*15);
+        pd[idx+2] = Math.min(255, b*light + rim*rim*8);
+        pd[idx+3] = 255;
       }
     }
     rc.putImageData(pix,0,0);
-    _jupiterPixelCache = _jupiterCache;
   }
 
+  // Scale the small render up to full Jupiter size
   ctx.save();
-  ctx.drawImage(_jupiterCache, screenX-CR, screenY-CR);
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  const drawSize = GR * 2 + GR * 0.1; // slight padding
+  ctx.drawImage(_jupiterCache, screenX - drawSize/2, screenY - drawSize/2, drawSize, drawSize);
 
   // Thick atmosphere — Jupiter has deep, layered glow
   const atmMax = GR * 1.6;
