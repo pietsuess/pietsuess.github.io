@@ -4044,6 +4044,11 @@ function update(){
     const _eDx = EARTH_WX - state.x, _eDy = EARTH_WY - state.y;
     var eDist = Math.sqrt(_eDx*_eDx + _eDy*_eDy);
 
+    // Jupiter — camera push within 15000px (planet is 2960px radius)
+    const _jDx = JUPITER_WX - state.x, _jDy = JUPITER_WY - state.y;
+    const _jDist = Math.sqrt(_jDx*_jDx + _jDy*_jDy);
+    if(_jDist < 15000 && _jDist > 1) bodies.push({ dx:_jDx, dy:_jDy, dist:_jDist, range:15000, weight:1.0 });
+
     // Boss (main world or secret level) — screen push within 1400px (600px before autokill at 800)
     const _camBoss = state.mainWorldBoss || state.secretBoss;
     if(_camBoss && !_camBoss.dead){
@@ -7380,11 +7385,20 @@ function drawGame(){
   }
   // Zoom uses _lsSmooth so it eases out on release
   const _lsZoom = (state.started && _lsSmooth > 0.01) ? 1 + _lsSmooth * 1.0 : 1;
+  // Jupiter zoom-out — shrink view when near Jupiter so you can see it
+  const _jDistDraw = Math.sqrt((JUPITER_WX-state.x)**2+(JUPITER_WY-state.y)**2);
+  const _jZoomRange = 20000; // start zooming out at this distance
+  let _jupZoom = 1;
+  if(_jDistDraw < _jZoomRange){
+    const t = 1 - _jDistDraw / _jZoomRange; // 0 at edge, 1 at center
+    _jupZoom = 1 - t * 0.6; // zoom out to 0.4 at closest
+  }
+  const _totalZoom = _lsZoom * _jupZoom;
   if(!state.started)return;
-  // Light speed zoom applied directly (no save/restore - manually undone later)
-  if(_lsZoom > 1.01){
+  // Combined zoom applied directly (no save/restore - manually undone later)
+  if(Math.abs(_totalZoom - 1) > 0.01){
     ctx.translate(canvas.width/2, canvas.height/2);
-    ctx.scale(_lsZoom, _lsZoom);
+    ctx.scale(_totalZoom, _totalZoom);
     ctx.translate(-canvas.width/2, -canvas.height/2);
   }
   // Screen shake from BH flash, boss capture, or LIGHT SPEED
@@ -9951,8 +9965,8 @@ function drawGame(){
   }
   // Close screen shake transform
   if(_bhShake){ ctx.restore(); }
-  // Undo light speed zoom — reset to identity for HUD drawing
-  if(_lsZoom > 1.01){
+  // Undo zoom — reset to identity for HUD drawing
+  if(Math.abs(_totalZoom - 1) > 0.01){
     ctx.setTransform(1, 0, 0, 1, 0, 0);
   }
   // ── HUD drawn AFTER transform reset so zoom/shake don't affect it ──
