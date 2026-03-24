@@ -1024,9 +1024,9 @@ function playFrame(dt) {
     // ---- PUSHABLE GROUP SYSTEM ----
     if (gState !== 'push') pushingGroup = null;
     const PUSH_SPD = SPD * 0.5;
-    const PUSH_DIST = 12; // distance from Gary's center to group edge
+    const PUSH_DIST = 12;
 
-    // Check if a push chain can move. Returns array of groups to move, or null if blocked.
+    // Chain push: returns array of all groups that would move, or null if any is wall-blocked
     function canPushChain(startGroup, pushDir) {
         const chain = [startGroup];
         const checked = new Set();
@@ -1043,15 +1043,13 @@ function playFrame(dt) {
                 if (!isEdge) continue;
                 const checkX = pushDir === 1 ? cx + T + 1 : cx - 1;
                 const checkTy = Math.floor(cy / T);
-                // Blocked by world tile?
                 if (isSolid(Math.floor(checkX / T), checkTy)) return null;
-                // Hits another group? Add to chain
                 for (const og of pushGroups) {
                     if (checked.has(og) || chain.includes(og)) continue;
                     for (const oc of og.cells) {
                         const ocx = oc.tx * T + og.offsetX;
                         const ocy = oc.ty * T + og.offsetY;
-                        if (checkX >= ocx && checkX < ocx + T && cy + T/2 >= ocy && cy + T/2 < ocy + T) {
+                        if (checkX >= ocx && checkX < ocx + T && cy >= ocy && cy < ocy + T) {
                             chain.push(og);
                         }
                     }
@@ -1070,23 +1068,27 @@ function playFrame(dt) {
             gb = Math.max(gb, c.ty * T + g.offsetY + T);
         }
 
+        // Landing on top of group
         if (gvy >= 0 && g !== pushingGroup) {
             if (gx >= gl - 4 && gx <= gr + 4 && gy >= gt - 3 && gy <= gt + 4) {
                 gy = gt; gvy = 0; gFloor = true;
             }
         }
 
-        // Skip if Gary's body doesn't overlap the group vertically
-        const bodyTop = gy - colBox()[3];
-        if (bodyTop >= gb || gy < gt - 8) continue;
+        // Skip if Gary is on top of the group (centered horizontally above it)
+        if (gy <= gt + 2 && gx >= gl - 2 && gx <= gr + 2) continue;
 
-        const touching = (gx + 30 > gl && gx - 30 < gr);
-        if (!touching) continue;
+        // Skip if no vertical overlap between Gary's body and group
+        const cb = colBox();
+        const bodyTop = gy + cb[1]; // top of hitbox (e.g. gy - 43)
+        if (bodyTop >= gb || gt > gy) continue;
+
+        // Must be horizontally close
+        if (gx + 20 <= gl && gx - 20 >= gr) continue;
 
         const garyIsLeft = gx < (gl + gr) / 2;
 
         if (g === pushingGroup) {
-            // During settle-back, don't move the group or snap Gary
             if (pushSettleFrames > 0) continue;
             const pushDir = gDir;
             const chain = canPushChain(g, pushDir);
@@ -1101,23 +1103,18 @@ function playFrame(dt) {
             continue;
         }
 
-        // Pushable groups: detect if group overlaps any part of Gary's body
-        const bodyOverlap = gt < gy && gb > bodyTop;
-
-        if (garyIsLeft) {
-            if (gvx > 0) {
-                gx = gl - PUSH_DIST;
-                gvx = 0;
-                if (bodyOverlap) { wallBlocked = true; pushTarget = g; }
-            }
-        } else {
-            if (gvx < 0) {
-                gx = gr + PUSH_DIST;
-                gvx = 0;
-                if (bodyOverlap) { wallBlocked = true; pushTarget = g; }
-            }
+        // Block Gary and set up push target
+        if (garyIsLeft && gvx > 0) {
+            gx = gl - PUSH_DIST;
+            gvx = 0;
+            wallBlocked = true;
+            pushTarget = g;
+        } else if (!garyIsLeft && gvx < 0) {
+            gx = gr + PUSH_DIST;
+            gvx = 0;
+            wallBlocked = true;
+            pushTarget = g;
         }
-        if (!bodyOverlap) { pushTarget = null; }
     }
 
     // Wall push timer - same delay for walls and pushable groups
