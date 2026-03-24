@@ -7284,11 +7284,24 @@ function drawBubbleHUD(){
 }
 
 function drawGame(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
+  // Light speed: motion trail instead of full clear
+  if(_isLightSpeed && state.hyperspace){
+    const _lsSpd = Math.sqrt(state.vx*state.vx+state.vy*state.vy);
+    const _lsTrail = Math.min(0.4, _lsSpd / 400);
+    ctx.fillStyle = `rgba(0,0,5,${0.6 + _lsTrail})`;
+    ctx.fillRect(0, 0, canvas.width, canvas.height);
+  } else {
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+  }
   if(!state.started)return;
-  // Screen shake from BH flash or boss capture
-  const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
-  const _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  // Screen shake from BH flash, boss capture, or LIGHT SPEED
+  let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
+  let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  if(_isLightSpeed && state.hyperspace){
+    const _lsSk = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120) * 6;
+    _shakeX += (Math.random()-0.5) * _lsSk;
+    _shakeY += (Math.random()-0.5) * _lsSk;
+  }
   const _bhShake = _shakeX || _shakeY;
   if(_bhShake){ ctx.save(); ctx.translate(_shakeX, _shakeY); }
   const cx=CX(), cy=CY();
@@ -7639,64 +7652,75 @@ function drawGame(){
         const sx = W/2 + Math.cos(perpAng)*perpOfs + Math.cos(travelAng)*travelOfs;
         const sy = H/2 + Math.sin(perpAng)*perpOfs + Math.sin(travelAng)*travelOfs;
         // Streaks fly OPPOSITE to travel direction
-        const streakLen = 100 + _lsI * 600 * (0.3 + Math.random()*0.7);
+        const streakLen = 200 + _lsI * 1200 * (0.3 + Math.random()*0.7);
         const ex = sx - Math.cos(travelAng)*streakLen;
         const ey = sy - Math.sin(travelAng)*streakLen;
         const hue = 280 + Math.random()*50;
         const lum = 60 + Math.random()*30;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
         ctx.strokeStyle = `hsla(${hue},100%,${lum}%,${0.3 + _lsI*0.6})`;
-        ctx.lineWidth = 1 + _lsI * 5 * Math.random();
-        ctx.shadowColor = `hsl(${hue},100%,${lum+10}%)`; ctx.shadowBlur = 8 * _lsI;
+        ctx.lineWidth = 1.5 + _lsI * 8 * Math.random();
+        ctx.shadowColor = `hsl(${hue},100%,${lum+10}%)`; ctx.shadowBlur = 14 * _lsI;
         ctx.stroke();
       }
       ctx.shadowBlur = 0;
 
-      // Re-entry burn — stretched heat shield wrapping around ship front
+      // Re-entry burn — dome of fire in front, flame streaks trailing to back
       {
         ctx.save();
         ctx.translate(W/2, H/2);
-        ctx.rotate(travelAng + Math.PI/2); // align with ship facing
-        // Stretched ellipse: wide across ship, compressed along travel
-        const burnW = 70 + _lsI * 40; // wider than ship
-        const burnH = 30 + _lsI * 20; // shallow depth
-        const burnY = -(20 + _lsI * 15); // in front of ship
-        // Hot white-orange core
-        const bg1 = ctx.createRadialGradient(0, burnY, 0, 0, burnY, burnW);
-        bg1.addColorStop(0, `rgba(255,240,220,${0.5*_lsI})`);
-        bg1.addColorStop(0.2, `rgba(255,180,120,${0.4*_lsI})`);
-        bg1.addColorStop(0.45, `rgba(255,100,80,${0.25*_lsI})`);
-        bg1.addColorStop(0.7, `rgba(200,40,80,${0.12*_lsI})`);
-        bg1.addColorStop(1, 'rgba(100,0,40,0)');
-        ctx.fillStyle = bg1;
-        ctx.beginPath(); ctx.ellipse(0, burnY, burnW, burnH, 0, 0, Math.PI*2); ctx.fill();
-        // Secondary wider glow
-        const bg2 = ctx.createRadialGradient(0, burnY+5, 0, 0, burnY+5, burnW*1.4);
-        bg2.addColorStop(0, `rgba(255,150,100,${0.15*_lsI})`);
-        bg2.addColorStop(0.5, `rgba(255,80,60,${0.08*_lsI})`);
-        bg2.addColorStop(1, 'rgba(150,20,40,0)');
-        ctx.fillStyle = bg2;
-        ctx.beginPath(); ctx.ellipse(0, burnY+5, burnW*1.4, burnH*1.8, 0, 0, Math.PI*2); ctx.fill();
-        // Flickering sparks along the edge
-        for(let sp=0; sp<8*_lsI; sp++){
-          const spAng = (Math.random()-0.5)*Math.PI*0.8;
-          const spR = burnW * (0.7 + Math.random()*0.5);
-          const spX = Math.cos(spAng)*spR;
-          const spY = burnY + Math.sin(spAng)*burnH*0.5 - Math.random()*10;
-          ctx.fillStyle = `rgba(255,${180+Math.random()*75},${80+Math.random()*80},${0.4*_lsI})`;
-          ctx.beginPath(); ctx.arc(spX, spY, 1+Math.random()*2, 0, Math.PI*2); ctx.fill();
+        ctx.rotate(travelAng + Math.PI/2);
+        const bI = _lsI;
+        // Front dome — hot white-yellow core ahead of ship
+        const domeY = -(25 + bI*20);
+        const domeW = 80 + bI*50, domeH = 35 + bI*25;
+        // Outer fire envelope
+        const env = ctx.createRadialGradient(0, domeY, 0, 0, domeY, domeW*1.3);
+        env.addColorStop(0, `rgba(255,255,230,${0.55*bI})`);
+        env.addColorStop(0.15, `rgba(255,220,100,${0.5*bI})`);
+        env.addColorStop(0.3, `rgba(255,150,50,${0.4*bI})`);
+        env.addColorStop(0.5, `rgba(255,80,30,${0.25*bI})`);
+        env.addColorStop(0.75, `rgba(200,30,20,${0.12*bI})`);
+        env.addColorStop(1, 'rgba(100,0,0,0)');
+        ctx.fillStyle = env;
+        ctx.beginPath(); ctx.ellipse(0, domeY, domeW, domeH, 0, 0, Math.PI*2); ctx.fill();
+        // Flame streaks trailing backward from dome edges
+        const trailCount = 12 + Math.floor(bI*20);
+        for(let t=0; t<trailCount; t++){
+          const sideOfs = (Math.random()-0.5) * domeW * 1.8;
+          const startY = domeY + (Math.random()-0.3) * domeH;
+          const trailLen = 80 + bI * 300 * (0.4 + Math.random()*0.6);
+          const endY = startY + trailLen;
+          const curve = sideOfs * (0.3 + Math.random()*0.7);
+          const r = 255, g = Math.floor(100 + Math.random()*120), b = Math.floor(Math.random()*60);
+          ctx.beginPath();
+          ctx.moveTo(sideOfs, startY);
+          ctx.quadraticCurveTo(sideOfs + curve*0.3, startY + trailLen*0.4, sideOfs*0.2 + curve*0.1, endY);
+          ctx.strokeStyle = `rgba(${r},${g},${b},${(0.15 + bI*0.35) * (0.5+Math.random()*0.5)})`;
+          ctx.lineWidth = 1 + bI * 4 * Math.random();
+          ctx.shadowColor = `rgb(${r},${g},${b})`; ctx.shadowBlur = 6*bI;
+          ctx.stroke();
+        }
+        ctx.shadowBlur = 0;
+        // Sparks flying off the sides
+        for(let sp=0; sp<15*bI; sp++){
+          const spX = (Math.random()-0.5) * domeW * 2;
+          const spY = domeY + Math.random() * (100 + bI*200);
+          ctx.fillStyle = `rgba(255,${200+Math.random()*55},${50+Math.random()*100},${0.5*bI})`;
+          ctx.beginPath(); ctx.arc(spX, spY, 0.5+Math.random()*2.5, 0, Math.PI*2); ctx.fill();
         }
         ctx.restore();
       }
 
       // Tunnel vision — heavy dark vignette, slimming the view
-      const vigR = Math.max(W,H) * (0.55 - _lsI*0.15);
-      const vig = ctx.createRadialGradient(W/2, H/2, vigR*0.4, W/2, H/2, Math.max(W,H)*0.75);
+      const vigR = Math.max(W,H) * (0.45 - _lsI*0.12);
+      const vig = ctx.createRadialGradient(W/2, H/2, vigR*0.3, W/2, H/2, Math.max(W,H)*0.7);
       vig.addColorStop(0, 'rgba(0,0,0,0)');
-      vig.addColorStop(0.4, 'rgba(0,0,0,0)');
-      vig.addColorStop(0.7, `rgba(20,0,15,${0.5*_lsI})`);
-      vig.addColorStop(0.85, `rgba(40,0,25,${0.7*_lsI})`);
-      vig.addColorStop(1, `rgba(10,0,5,${0.85*_lsI})`);
+      vig.addColorStop(0.3, 'rgba(0,0,0,0)');
+      vig.addColorStop(0.55, `rgba(15,0,10,${0.4*_lsI})`);
+      vig.addColorStop(0.7, `rgba(25,0,18,${0.65*_lsI})`);
+      vig.addColorStop(0.85, `rgba(35,0,22,${0.8*_lsI})`);
+      vig.addColorStop(1, `rgba(8,0,4,${0.92*_lsI})`);
       ctx.fillStyle = vig;
       ctx.fillRect(0, 0, W, H);
 
@@ -9265,11 +9289,33 @@ function drawGame(){
     ctx.fillStyle=noFuel?'#ff6600':ps.color; ctx.fill();
     if(!noFuel&&(state.keys['ArrowUp']||state.hyperspace)){
       const fl=ps.size*0.5;
-      const flLen=state.hyperspace?16+Math.random()*12:6+Math.random()*6;
-      ctx.beginPath(); ctx.moveTo(-3,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3,fl);
-      ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
-      ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
-      ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
+      if(_isLightSpeed && state.hyperspace){
+        // Massive pink-purple crystal exhaust
+        const _exI = Math.min(1, Math.sqrt(state.vx*state.vx+state.vy*state.vy)/120);
+        const flLen = 40 + _exI*80 + Math.random()*30;
+        // Wide flame cone
+        ctx.beginPath(); ctx.moveTo(-8,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(8,fl);
+        ctx.fillStyle = `rgba(255,105,180,${0.4+_exI*0.4})`; ctx.shadowColor='#ff69b4'; ctx.shadowBlur=30*SB; ctx.fill();
+        // Inner hot core
+        const flLen2 = 25 + _exI*50 + Math.random()*20;
+        ctx.beginPath(); ctx.moveTo(-4,fl); ctx.lineTo(0,fl+flLen2); ctx.lineTo(4,fl);
+        ctx.fillStyle = `rgba(220,180,255,${0.5+_exI*0.3})`; ctx.shadowColor='#cc88ff'; ctx.shadowBlur=20*SB; ctx.fill();
+        // Sparkles in exhaust
+        for(let sp=0; sp<6+_exI*10; sp++){
+          const spY = fl + Math.random()*flLen;
+          const spX = (Math.random()-0.5) * (8 * (1-spY/flLen/1.5));
+          ctx.beginPath(); ctx.arc(spX, spY, 0.5+Math.random()*2, 0, Math.PI*2);
+          ctx.fillStyle = `rgba(255,${180+Math.random()*75},${200+Math.random()*55},${0.5+Math.random()*0.5})`;
+          ctx.shadowBlur=8; ctx.fill();
+        }
+        ctx.shadowBlur=0;
+      } else {
+        const flLen=state.hyperspace?16+Math.random()*12:6+Math.random()*6;
+        ctx.beginPath(); ctx.moveTo(-3,fl); ctx.lineTo(0,fl+flLen); ctx.lineTo(3,fl);
+        ctx.strokeStyle=state.hyperspace?'#ffe000':'#ff8c00';
+        ctx.shadowColor=state.hyperspace?'#ffe000':'#ff8c00';
+        ctx.shadowBlur=(state.hyperspace?16:6)*SB; ctx.lineWidth=state.hyperspace?2.5:1.5; ctx.stroke();
+      }
     }
     // Scoop visual on ship nose — flat bar
     if(_hasScoop){
