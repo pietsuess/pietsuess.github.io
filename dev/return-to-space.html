@@ -4130,7 +4130,7 @@ function update(){
   const BASE_ACCEL=0.15*ps.speedMult;
   const BASE_MAX=4*ps.speedMult;
   _isLightSpeed = state.fireMode==='lightspeed' && _msHasLightSpeed;
-  const BOOST_MAX=_isLightSpeed ? 120 : (state.fireMode==='boost2x'?36:18)*ps.speedMult;
+  const BOOST_MAX=_isLightSpeed ? 240 : (state.fireMode==='boost2x'?36:18)*ps.speedMult;
   // During boost: near-zero friction (space inertia). After boost fades slowly.
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _normalFric = 0.965;
@@ -7296,7 +7296,7 @@ function drawGame(){
   const noFuel=state.fuel<=0;
 
   // Light speed zoom — camera zooms in on ship
-  const _lsZoom = (_isLightSpeed && state.hyperspace) ? Math.min(1.4, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/200) : 1;
+  const _lsZoom = (_isLightSpeed && state.hyperspace) ? Math.min(1.3, 1 + Math.sqrt(state.vx*state.vx+state.vy*state.vy)/300) : 1;
   if(_lsZoom > 1.01){
     ctx.save();
     ctx.translate(cx, cy);
@@ -7615,93 +7615,119 @@ function drawGame(){
   // Light speed visual overlay
   if(_isLightSpeed && state.hyperspace){
     const _lsSpd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-    const _lsI = Math.min(1, _lsSpd / 80);
+    const _lsI = Math.min(1, _lsSpd / 120);
     if(_lsI > 0.05){
       ctx.save();
       const W = canvas.width, H = canvas.height;
-      const travelAng = Math.atan2(-state.vy, state.vx); // screen-space travel direction
+      // Ship's facing angle in screen space (angle 0 = up = -Y)
+      const travelAng = state.angle - Math.PI/2;
 
-      // Screen shake — shimmy proportional to speed
-      const shakeAmt = _lsI * 4;
-      const shakeX = (Math.random() - 0.5) * shakeAmt;
-      const shakeY = (Math.random() - 0.5) * shakeAmt;
-      ctx.translate(shakeX, shakeY);
+      // Screen shake — heavy shimmy
+      const shakeAmt = _lsI * 8;
+      ctx.translate((Math.random()-0.5)*shakeAmt, (Math.random()-0.5)*shakeAmt);
 
       // Motion blur
-      ctx.fillStyle = `rgba(0,0,8,${0.12 * _lsI})`;
+      ctx.fillStyle = `rgba(0,0,5,${0.18 * _lsI})`;
       ctx.fillRect(0, 0, W, H);
 
-      // Star streaks — PARALLEL to travel direction, spread across screen
+      // Star streaks — ship's facing direction, long, thick, glowing
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 50 + Math.floor(_lsI * 80);
+      const streakCount = 60 + Math.floor(_lsI * 100);
       for(let k = 0; k < streakCount; k++){
-        // Spread perpendicular to travel, random offset along travel
-        const perpOfs = (Math.random() - 0.5) * Math.max(W, H) * 1.4;
-        const travelOfs = (Math.random() - 0.5) * Math.max(W, H) * 0.8;
-        const sx = W/2 + Math.cos(perpAng) * perpOfs + Math.cos(travelAng) * travelOfs;
-        const sy = H/2 + Math.sin(perpAng) * perpOfs + Math.sin(travelAng) * travelOfs;
-        const streakLen = 60 + _lsI * 350 * (0.3 + Math.random() * 0.7);
-        // Streak goes OPPOSITE to travel (stars fly past)
-        const ex = sx - Math.cos(travelAng) * streakLen;
-        const ey = sy - Math.sin(travelAng) * streakLen;
+        const perpOfs = (Math.random()-0.5) * Math.max(W,H) * 1.6;
+        const travelOfs = (Math.random()-0.5) * Math.max(W,H);
+        const sx = W/2 + Math.cos(perpAng)*perpOfs + Math.cos(travelAng)*travelOfs;
+        const sy = H/2 + Math.sin(perpAng)*perpOfs + Math.sin(travelAng)*travelOfs;
+        // Streaks fly OPPOSITE to travel direction
+        const streakLen = 100 + _lsI * 600 * (0.3 + Math.random()*0.7);
+        const ex = sx - Math.cos(travelAng)*streakLen;
+        const ey = sy - Math.sin(travelAng)*streakLen;
+        const hue = 280 + Math.random()*50;
+        const lum = 60 + Math.random()*30;
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
-        const hue = 290 + Math.random() * 40;
-        ctx.strokeStyle = `hsla(${hue},100%,${65+Math.random()*25}%,${0.25 + _lsI * 0.55})`;
-        ctx.lineWidth = 0.8 + _lsI * 3 * Math.random();
-        ctx.shadowColor = `hsl(${hue},100%,80%)`; ctx.shadowBlur = 4 * _lsI;
+        ctx.strokeStyle = `hsla(${hue},100%,${lum}%,${0.3 + _lsI*0.6})`;
+        ctx.lineWidth = 1 + _lsI * 5 * Math.random();
+        ctx.shadowColor = `hsl(${hue},100%,${lum+10}%)`; ctx.shadowBlur = 8 * _lsI;
         ctx.stroke();
       }
       ctx.shadowBlur = 0;
 
-      // Front dome — burning re-entry heat shield on ship nose
+      // Re-entry burn — stretched heat shield wrapping around ship front
       {
-        const noseX = W/2 + Math.cos(travelAng) * 30;
-        const noseY = H/2 + Math.sin(travelAng) * 30;
-        const domeR = 50 + _lsI * 30;
-        const domeGrad = ctx.createRadialGradient(noseX, noseY, 0, noseX, noseY, domeR);
-        domeGrad.addColorStop(0, `rgba(255,200,255,${0.35 * _lsI})`);
-        domeGrad.addColorStop(0.3, `rgba(255,105,180,${0.25 * _lsI})`);
-        domeGrad.addColorStop(0.6, `rgba(200,50,120,${0.12 * _lsI})`);
-        domeGrad.addColorStop(1, 'rgba(100,0,60,0)');
-        ctx.fillStyle = domeGrad;
-        ctx.beginPath(); ctx.arc(noseX, noseY, domeR, 0, Math.PI*2); ctx.fill();
+        ctx.save();
+        ctx.translate(W/2, H/2);
+        ctx.rotate(travelAng + Math.PI/2); // align with ship facing
+        // Stretched ellipse: wide across ship, compressed along travel
+        const burnW = 70 + _lsI * 40; // wider than ship
+        const burnH = 30 + _lsI * 20; // shallow depth
+        const burnY = -(20 + _lsI * 15); // in front of ship
+        // Hot white-orange core
+        const bg1 = ctx.createRadialGradient(0, burnY, 0, 0, burnY, burnW);
+        bg1.addColorStop(0, `rgba(255,240,220,${0.5*_lsI})`);
+        bg1.addColorStop(0.2, `rgba(255,180,120,${0.4*_lsI})`);
+        bg1.addColorStop(0.45, `rgba(255,100,80,${0.25*_lsI})`);
+        bg1.addColorStop(0.7, `rgba(200,40,80,${0.12*_lsI})`);
+        bg1.addColorStop(1, 'rgba(100,0,40,0)');
+        ctx.fillStyle = bg1;
+        ctx.beginPath(); ctx.ellipse(0, burnY, burnW, burnH, 0, 0, Math.PI*2); ctx.fill();
+        // Secondary wider glow
+        const bg2 = ctx.createRadialGradient(0, burnY+5, 0, 0, burnY+5, burnW*1.4);
+        bg2.addColorStop(0, `rgba(255,150,100,${0.15*_lsI})`);
+        bg2.addColorStop(0.5, `rgba(255,80,60,${0.08*_lsI})`);
+        bg2.addColorStop(1, 'rgba(150,20,40,0)');
+        ctx.fillStyle = bg2;
+        ctx.beginPath(); ctx.ellipse(0, burnY+5, burnW*1.4, burnH*1.8, 0, 0, Math.PI*2); ctx.fill();
+        // Flickering sparks along the edge
+        for(let sp=0; sp<8*_lsI; sp++){
+          const spAng = (Math.random()-0.5)*Math.PI*0.8;
+          const spR = burnW * (0.7 + Math.random()*0.5);
+          const spX = Math.cos(spAng)*spR;
+          const spY = burnY + Math.sin(spAng)*burnH*0.5 - Math.random()*10;
+          ctx.fillStyle = `rgba(255,${180+Math.random()*75},${80+Math.random()*80},${0.4*_lsI})`;
+          ctx.beginPath(); ctx.arc(spX, spY, 1+Math.random()*2, 0, Math.PI*2); ctx.fill();
+        }
+        ctx.restore();
       }
 
-      // Side screen glow — pink edges
-      // Left
-      const sideW = W * 0.15 * _lsI;
-      let sideGrad = ctx.createLinearGradient(0, 0, sideW, 0);
-      sideGrad.addColorStop(0, `rgba(255,50,150,${0.4 * _lsI})`);
-      sideGrad.addColorStop(1, 'rgba(255,50,150,0)');
-      ctx.fillStyle = sideGrad;
-      ctx.fillRect(0, 0, sideW, H);
-      // Right
-      sideGrad = ctx.createLinearGradient(W, 0, W - sideW, 0);
-      sideGrad.addColorStop(0, `rgba(255,50,150,${0.4 * _lsI})`);
-      sideGrad.addColorStop(1, 'rgba(255,50,150,0)');
-      ctx.fillStyle = sideGrad;
-      ctx.fillRect(W - sideW, 0, sideW, H);
-      // Top
-      sideGrad = ctx.createLinearGradient(0, 0, 0, sideW);
-      sideGrad.addColorStop(0, `rgba(200,30,120,${0.3 * _lsI})`);
-      sideGrad.addColorStop(1, 'rgba(200,30,120,0)');
-      ctx.fillStyle = sideGrad;
-      ctx.fillRect(0, 0, W, sideW);
-      // Bottom
-      sideGrad = ctx.createLinearGradient(0, H, 0, H - sideW);
-      sideGrad.addColorStop(0, `rgba(200,30,120,${0.3 * _lsI})`);
-      sideGrad.addColorStop(1, 'rgba(200,30,120,0)');
-      ctx.fillStyle = sideGrad;
-      ctx.fillRect(0, H - sideW, W, sideW);
+      // Tunnel vision — heavy dark vignette, slimming the view
+      const vigR = Math.max(W,H) * (0.55 - _lsI*0.15);
+      const vig = ctx.createRadialGradient(W/2, H/2, vigR*0.4, W/2, H/2, Math.max(W,H)*0.75);
+      vig.addColorStop(0, 'rgba(0,0,0,0)');
+      vig.addColorStop(0.4, 'rgba(0,0,0,0)');
+      vig.addColorStop(0.7, `rgba(20,0,15,${0.5*_lsI})`);
+      vig.addColorStop(0.85, `rgba(40,0,25,${0.7*_lsI})`);
+      vig.addColorStop(1, `rgba(10,0,5,${0.85*_lsI})`);
+      ctx.fillStyle = vig;
+      ctx.fillRect(0, 0, W, H);
 
-      // Pink aura around ship
-      const glowR = 70 + _lsI * 50;
-      const glowGrad = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
-      glowGrad.addColorStop(0, `rgba(255,105,180,${0.2 * _lsI})`);
-      glowGrad.addColorStop(0.4, `rgba(255,105,180,${0.08 * _lsI})`);
-      glowGrad.addColorStop(1, 'rgba(255,105,180,0)');
-      ctx.fillStyle = glowGrad;
-      ctx.fillRect(W/2 - glowR, H/2 - glowR, glowR*2, glowR*2);
+      // Pink edge glow on all sides
+      const edgeW = W * 0.2 * _lsI;
+      const edgeAlpha = 0.5 * _lsI;
+      // Left
+      let eg = ctx.createLinearGradient(0,0,edgeW,0);
+      eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
+      ctx.fillStyle = eg; ctx.fillRect(0,0,edgeW,H);
+      // Right
+      eg = ctx.createLinearGradient(W,0,W-edgeW,0);
+      eg.addColorStop(0, `rgba(255,40,140,${edgeAlpha})`); eg.addColorStop(1, 'rgba(255,40,140,0)');
+      ctx.fillStyle = eg; ctx.fillRect(W-edgeW,0,edgeW,H);
+      // Top
+      eg = ctx.createLinearGradient(0,0,0,edgeW);
+      eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
+      ctx.fillStyle = eg; ctx.fillRect(0,0,W,edgeW);
+      // Bottom
+      eg = ctx.createLinearGradient(0,H,0,H-edgeW);
+      eg.addColorStop(0, `rgba(180,20,100,${edgeAlpha*0.8})`); eg.addColorStop(1, 'rgba(180,20,100,0)');
+      ctx.fillStyle = eg; ctx.fillRect(0,H-edgeW,W,edgeW);
+
+      // Ship aura
+      const glowR = 80 + _lsI*60;
+      const gg = ctx.createRadialGradient(W/2, H/2, 0, W/2, H/2, glowR);
+      gg.addColorStop(0, `rgba(255,105,180,${0.25*_lsI})`);
+      gg.addColorStop(0.35, `rgba(255,105,180,${0.1*_lsI})`);
+      gg.addColorStop(1, 'rgba(255,105,180,0)');
+      ctx.fillStyle = gg;
+      ctx.fillRect(W/2-glowR, H/2-glowR, glowR*2, glowR*2);
 
       ctx.restore();
     }
