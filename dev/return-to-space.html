@@ -9347,9 +9347,9 @@ function drawGame(){
       ctx.stroke();
       ctx.restore();
     }
-    // Burn arc layers — drawn OVER the ship
+    // Procedural spike layers — drawn OVER the ship
     if(_lsSmooth > 0.1){
-      _drawBurnArcs(ctx, ps.size, _lsSmooth, state.frameCount||0);
+      _drawBurnSpikes(ctx, ps.size, _lsSmooth, state.frameCount||0);
     }
     ctx.restore();
     }
@@ -11277,94 +11277,99 @@ function _drawLsFlame(ctx, shipSize, intensity, frameNum, fromLayer, toLayer){
   }
 }
 
-// ── Procedural burn arc layers — drawn OVER ship ──
-const _burnArcs = {
+// ── Procedural spike layers — drawn OVER ship ──
+const _lsSpikes = {
   layers: [
-    { thresh: 0.20, cols: ['#e93e3a','#f3903f'], alpha: 0.7, w: 1.0,  arcs: [4,6] },
-    { thresh: 0.40, cols: ['#f3903f','#fdc70c'], alpha: 0.65, w: 0.7, arcs: [3,5] },
-    { thresh: 0.60, cols: ['#fdc70c','#fff4b0'], alpha: 0.6, w: 0.45, arcs: [2,4] },
-    { thresh: 0.75, cols: ['#fff4b0','#ff69b4'], alpha: 0.55, w: 0.25, arcs: [2,3] },
+    { thresh: 0.15, cols: ['#e93e3a','#ed683c','#f3903f'], w: 1.0,  spikes: [5,8],  glowCol: '#e93e3a' },
+    { thresh: 0.30, cols: ['#f3903f','#f6a32d','#fdc70c'], w: 0.75, spikes: [4,7],  glowCol: '#f6a32d' },
+    { thresh: 0.50, cols: ['#fdc70c','#ffe060','#fff4b0'], w: 0.5,  spikes: [3,6],  glowCol: '#ffe060' },
+    { thresh: 0.70, cols: ['#fff4b0','#ffffff','#ff69b4'], w: 0.3,  spikes: [2,5],  glowCol: '#ff69b4' },
   ],
-  frames: [], // [layer][frame] = array of arc control points
+  frames: [],
   frameCount: 4,
   flickerPhase: [0, 1.7, 3.1, 4.8],
   shakeAmp: [3, 2.2, 1.5, 1.0],
 };
-function _genArcFrames(){
-  _burnArcs.frames = [];
-  for(let li = 0; li < _burnArcs.layers.length; li++){
-    const L = _burnArcs.layers[li];
+function _genSpikeFrames(){
+  _lsSpikes.frames = [];
+  for(let li = 0; li < _lsSpikes.layers.length; li++){
+    const L = _lsSpikes.layers[li];
     const layerFrames = [];
-    for(let fi = 0; fi < _burnArcs.frameCount; fi++){
-      const arcs = [];
-      const count = L.arcs[0] + Math.floor(Math.random() * (L.arcs[1] - L.arcs[0] + 1));
-      for(let ai = 0; ai < count; ai++){
-        const ang = (Math.random() * 2 - 1) * L.w * 0.8; // spread angle from center
-        const len = 0.4 + Math.random() * 0.6; // arc length
-        const bulge = 0.3 + Math.random() * 0.5; // how far arc bows outward
-        const thick = 0.15 + Math.random() * 0.25; // arc thickness
-        arcs.push({ ang, len, bulge, thick });
+    for(let fi = 0; fi < _lsSpikes.frameCount; fi++){
+      const spikes = [];
+      const count = L.spikes[0] + Math.floor(Math.random() * (L.spikes[1] - L.spikes[0] + 1));
+      for(let si = 0; si < count; si++){
+        const xSpread = (Math.random() * 2 - 1) * L.w;
+        const yLen = 0.4 + Math.random() * 0.6;
+        const cx1 = xSpread + (Math.random() - 0.5) * L.w * 0.5;
+        const cy1 = 0.2 + Math.random() * 0.3;
+        spikes.push({ x: xSpread, y: yLen, cx1, cy1 });
       }
-      layerFrames.push(arcs);
+      layerFrames.push(spikes);
     }
-    _burnArcs.frames.push(layerFrames);
+    _lsSpikes.frames.push(layerFrames);
   }
 }
-_genArcFrames();
-var _burnArcRegenTimer = 0;
+_genSpikeFrames();
+var _lsSpikeRegenTimer = 0;
 
-function _drawBurnArcs(ctx, shipSize, intensity, frameNum){
-  if(intensity < 0.15) return;
-  const baseR = shipSize * 2.5; // arc radius from ship center
+function _drawBurnSpikes(ctx, shipSize, intensity, frameNum){
+  if(intensity < 0.1) return;
+  const scale = shipSize * 5;
+  const baseW = shipSize * 3;
+  const minW = 4;
   const fps6 = Math.floor(frameNum / 10);
+  const fi = fps6 % _lsSpikes.frameCount;
+  const noseY = -shipSize - 5;
 
-  _burnArcRegenTimer++;
-  if(_burnArcRegenTimer > 100){ _burnArcRegenTimer = 0; _genArcFrames(); }
+  _lsSpikeRegenTimer++;
+  if(_lsSpikeRegenTimer > 120){ _lsSpikeRegenTimer = 0; _genSpikeFrames(); }
 
-  const fi = fps6 % _burnArcs.frameCount;
-
-  for(let li = 0; li < _burnArcs.layers.length; li++){
-    const L = _burnArcs.layers[li];
+  for(let li = 0; li < _lsSpikes.layers.length; li++){
+    const L = _lsSpikes.layers[li];
     const layerAlpha = Math.min(1, Math.max(0, (intensity - L.thresh) / 0.2));
     if(layerAlpha <= 0) continue;
 
-    const flicker = 0.7 + 0.3 * Math.sin(frameNum * 0.13 + _burnArcs.flickerPhase[li]);
-    const shk = _burnArcs.shakeAmp[li] * intensity;
-    const arcs = _burnArcs.frames[li][fi];
+    const flicker = 0.7 + 0.3 * Math.sin(frameNum * 0.13 + _lsSpikes.flickerPhase[li]);
+    const shk = _lsSpikes.shakeAmp[li] * intensity;
+    const sx = (Math.random() - 0.5) * shk;
+    const sy = (Math.random() - 0.5) * shk * 0.5;
+    const spikes = _lsSpikes.frames[li][fi];
 
     ctx.save();
-    ctx.translate((Math.random()-0.5)*shk, (Math.random()-0.5)*shk*0.5);
-    ctx.globalAlpha = layerAlpha * flicker * L.alpha;
+    ctx.translate(sx, sy);
+    ctx.globalAlpha = layerAlpha * flicker * 0.8;
     ctx.globalCompositeOperation = 'lighter';
 
-    for(let ai = 0; ai < arcs.length; ai++){
-      const a = arcs[ai];
-      const r = baseR * (0.5 + L.w * 0.5);
-      // Arc sweeps from nose area outward/backward
-      const startAng = -Math.PI/2 + a.ang - a.len * 0.5;
-      const endAng = startAng + a.len * Math.PI * 0.6;
-      const midAng = (startAng + endAng) / 2;
-      const bulgeR = r + a.bulge * baseR * 0.4;
-      const cx = Math.cos(midAng) * (bulgeR - r) * 0.5;
-      const cy = -shipSize * 0.3 + Math.sin(midAng) * (bulgeR - r) * 0.5;
-      const lineW = Math.max(2, a.thick * shipSize * 0.8);
+    for(let si = 0; si < spikes.length; si++){
+      const sp = spikes[si];
+      const tipX = sp.x * baseW;
+      const tipY = noseY + sp.y * scale + scale * 0.5;
+      const ctrlX = sp.cx1 * baseW;
+      const ctrlY = noseY + sp.cy1 * scale;
+      const rootW = Math.max(minW, baseW * L.w * 0.2);
 
-      const grad = ctx.createLinearGradient(
-        Math.cos(startAng) * r, Math.sin(startAng) * r + cy,
-        Math.cos(endAng) * r, Math.sin(endAng) * r + cy
-      );
-      grad.addColorStop(0, L.cols[0] + '00');
-      grad.addColorStop(0.2, L.cols[1]);
-      grad.addColorStop(0.8, L.cols[0]);
+      const grad = ctx.createLinearGradient(0, noseY, tipX, tipY);
+      grad.addColorStop(0, L.cols[2]);
+      grad.addColorStop(0.4, L.cols[1]);
       grad.addColorStop(1, L.cols[0] + '00');
 
       ctx.beginPath();
-      ctx.arc(cx, cy, r, startAng, endAng);
-      ctx.strokeStyle = grad;
-      ctx.lineWidth = lineW;
-      ctx.lineCap = 'round';
-      ctx.stroke();
+      ctx.arc(0, noseY + rootW * 0.5, rootW, -Math.PI, 0);
+      ctx.quadraticCurveTo(ctrlX + rootW * 0.3, ctrlY, tipX, tipY);
+      ctx.quadraticCurveTo(ctrlX - rootW * 0.3, ctrlY, -rootW, noseY + rootW * 0.5);
+      ctx.closePath();
+      ctx.fillStyle = grad;
+      ctx.fill();
     }
+
+    const glowR = shipSize * (0.8 + L.w * 1.0);
+    const glow = ctx.createRadialGradient(0, -shipSize * 0.5, 0, 0, -shipSize * 0.5, glowR);
+    glow.addColorStop(0, L.glowCol + '60');
+    glow.addColorStop(0.5, L.glowCol + '20');
+    glow.addColorStop(1, L.glowCol + '00');
+    ctx.fillStyle = glow;
+    ctx.fillRect(-glowR, -shipSize * 0.5 - glowR, glowR * 2, glowR * 2);
 
     ctx.globalCompositeOperation = 'source-over';
     ctx.restore();
