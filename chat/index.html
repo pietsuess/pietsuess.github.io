@@ -457,6 +457,101 @@
   #gate .error { color: var(--coral); font-size: 0.85em; opacity: 0; transition: opacity 0.3s; }
   #gate .error.show { opacity: 1; }
 
+  /* Logout */
+  #logout-btn {
+    position: absolute;
+    left: 56px;
+    padding: 6px 14px;
+    border-radius: 8px;
+    border: 1px solid var(--glass-border);
+    background: var(--glass);
+    color: var(--cream);
+    font-family: 'Urbanist', sans-serif;
+    font-size: 0.65em;
+    font-weight: 600;
+    cursor: pointer;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    transition: all 0.3s;
+    opacity: 0.7;
+  }
+  #logout-btn:hover { opacity: 1; background: rgba(255,255,255,0.12); }
+  .no-admin #logout-btn { left: 16px; }
+
+  /* Chat rooms list */
+  #room-list {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    height: 100vh;
+    gap: 20px;
+    position: relative;
+    z-index: 1;
+  }
+  #room-list h1 {
+    font-family: 'Urbanist', sans-serif;
+    font-weight: 700;
+    font-size: clamp(1.8rem, 4vw, 3rem);
+    background: linear-gradient(135deg, var(--cream) 0%, var(--gold) 60%, var(--coral) 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+  .room-btn {
+    font-family: 'Urbanist', sans-serif;
+    font-size: 1.1em;
+    font-weight: 600;
+    padding: 16px 40px;
+    border: 1px solid var(--glass-border);
+    border-radius: 12px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    background: var(--glass);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    color: var(--cream);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    width: 260px;
+    text-align: center;
+  }
+  .room-btn:hover {
+    transform: translateY(-3px);
+    border-color: rgba(244,197,66,0.4);
+    box-shadow: 0 8px 30px rgba(0,0,0,0.3);
+    background: rgba(255,255,255,0.12);
+  }
+  .room-btn .room-desc {
+    font-family: 'Poppins', sans-serif;
+    font-size: 0.65em;
+    font-weight: 400;
+    opacity: 0.5;
+    margin-top: 4px;
+    letter-spacing: 0.02em;
+    text-transform: none;
+  }
+  #new-room-input {
+    display: none;
+    text-align: center;
+    margin-top: 10px;
+  }
+  #new-room-input input {
+    font-family: 'Poppins', sans-serif;
+    padding: 12px 18px;
+    border-radius: 10px;
+    border: 1px solid var(--glass-border);
+    font-size: 1em;
+    background: var(--glass);
+    backdrop-filter: blur(12px);
+    color: var(--cream);
+    outline: none;
+    text-align: center;
+    width: 200px;
+  }
+  #new-room-input input::placeholder { color: rgba(254,249,240,0.25); }
+  #new-room-input input:focus { border-color: var(--gold); }
+
   /* Admin Panel */
   #admin-btn {
     position: absolute;
@@ -637,7 +732,9 @@
     #send-btn { padding: 12px 18px; font-size: 0.85rem; }
     #img-btn { padding: 10px 14px; }
     #header { padding: 10px 60px 10px 60px; font-size: 0.9em; }
-    #admin-btn { left: 8px; padding: 5px 10px; font-size: 0.6em; }
+    #admin-btn { left: 8px; padding: 5px 8px; font-size: 0.55em; }
+    #logout-btn { left: 48px; padding: 5px 8px; font-size: 0.55em; }
+    .no-admin #logout-btn { left: 8px; }
     #admin-panel { width: 260px; }
     #reset-btn { right: 8px; padding: 6px 12px; font-size: 0.65em; }
     #messages { padding: 14px; }
@@ -663,11 +760,20 @@
     <button onclick="joinOther()">Join</button>
   </div>
 </div>
+<div id="room-list">
+  <h1>Channels</h1>
+  <div id="rooms-container"></div>
+  <button class="room-btn" onclick="showNewRoomInput()" style="border-style:dashed;opacity:0.6">+ New Channel</button>
+  <div id="new-room-input">
+    <input id="new-room-name" placeholder="Channel name..." maxlength="30">
+  </div>
+</div>
 <div id="chat">
   <div id="header">
     <span id="header-text">Chat</span>
     <span id="status">connecting...</span>
     <button id="admin-btn" style="display:none" onclick="toggleAdmin()">Admin</button>
+    <button id="logout-btn" onclick="logout()">Exit</button>
     <button id="reset-btn" style="display:none" onclick="resetChat()">Clear</button>
   </div>
   <div id="messages"></div>
@@ -699,14 +805,24 @@
   <div id="kick-text">KICKED</div>
 </div>
 <script>
-const TOPIC = 'ps-a6c5e5109115ac4afe7990057ee5cd12';
+const TOPIC_BASE = 'ps-a6c5e5109115ac4afe7990057ee5cd12';
+let TOPIC = TOPIC_BASE;
 const STORAGE_KEY = 'chat-messages';
 const NAME_KEY = 'chat-name';
+const ROOM_KEY = 'chat-room';
+const ROOMS_KEY = 'chat-rooms';
+const DEFAULT_ROOMS = [
+  { id: 'main', name: 'Main', desc: 'General chat' },
+  { id: 'work', name: 'Work', desc: 'Project talk' }
+];
 let name = '';
 let seen = new Set();
 let pendingImage = null;
 let allMessages = [];
 let audioCtx = null;
+let currentES = null;
+let knownUsers = {};
+let presenceInterval = null;
 
 function ensureAudio() {
   if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -800,7 +916,7 @@ function playSendSound() {
 
 function loadMessages() {
   try {
-    const stored = localStorage.getItem(STORAGE_KEY);
+    const stored = localStorage.getItem(STORAGE_KEY + '-' + (localStorage.getItem(ROOM_KEY)||'main'));
     if (stored) {
       allMessages = JSON.parse(stored);
       allMessages.forEach(m => {
@@ -815,7 +931,7 @@ function loadMessages() {
 
 function saveMessages() {
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(allMessages));
+    localStorage.setItem(STORAGE_KEY + '-' + (localStorage.getItem(ROOM_KEY)||'main'), JSON.stringify(allMessages));
   } catch(e) {}
 }
 
@@ -849,9 +965,15 @@ async function checkGate() {
   if (hash === PASS_HASH) {
     localStorage.setItem(PASS_KEY, '1');
     document.getElementById('gate').style.display = 'none';
-    document.getElementById('setup').style.display = 'flex';
     const saved = localStorage.getItem(NAME_KEY);
-    if (saved) join(saved);
+    if (saved) {
+      name = saved;
+      const savedRoom = localStorage.getItem(ROOM_KEY);
+      if (savedRoom) joinRoom(savedRoom);
+      else showRoomList();
+    } else {
+      document.getElementById('setup').style.display = 'flex';
+    }
   } else {
     document.getElementById('gate-error').classList.add('show');
     input.value = '';
@@ -866,11 +988,23 @@ document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('other-name').addEventListener('keydown', e => {
     if (e.key === 'Enter') { e.stopPropagation(); joinOther(); }
   });
+  document.getElementById('new-room-name').addEventListener('keydown', e => {
+    if (e.key === 'Enter') { e.stopPropagation(); createRoom(); }
+  });
   if (localStorage.getItem(PASS_KEY)) {
     document.getElementById('gate').style.display = 'none';
-    document.getElementById('setup').style.display = 'flex';
-    const saved = localStorage.getItem(NAME_KEY);
-    if (saved) join(saved);
+    const savedName = localStorage.getItem(NAME_KEY);
+    const savedRoom = localStorage.getItem(ROOM_KEY);
+    if (savedName) {
+      name = savedName;
+      if (savedRoom) {
+        joinRoom(savedRoom);
+      } else {
+        showRoomList();
+      }
+    } else {
+      document.getElementById('setup').style.display = 'flex';
+    }
   }
 });
 
@@ -878,8 +1012,74 @@ function join(n) {
   name = n;
   localStorage.setItem(NAME_KEY, n);
   document.getElementById('setup').style.display = 'none';
+  // Show room list
+  showRoomList();
+}
+
+function getRooms() {
+  try {
+    const stored = localStorage.getItem(ROOMS_KEY);
+    if (stored) return JSON.parse(stored);
+  } catch(e) {}
+  return DEFAULT_ROOMS;
+}
+
+function saveRooms(rooms) {
+  localStorage.setItem(ROOMS_KEY, JSON.stringify(rooms));
+}
+
+function showRoomList() {
+  document.getElementById('setup').style.display = 'none';
+  document.getElementById('chat').style.display = 'none';
+  document.getElementById('room-list').style.display = 'flex';
+  const container = document.getElementById('rooms-container');
+  const rooms = getRooms();
+  container.innerHTML = rooms.map(r =>
+    '<button class="room-btn" onclick="joinRoom(\'' + r.id + '\')">' + r.name +
+    (r.desc ? '<div class="room-desc">' + r.desc + '</div>' : '') + '</button>'
+  ).join('');
+}
+
+function showNewRoomInput() {
+  document.getElementById('new-room-input').style.display = 'block';
+  document.getElementById('new-room-name').focus();
+}
+
+function createRoom() {
+  const input = document.getElementById('new-room-name');
+  const roomName = input.value.trim();
+  if (!roomName) return;
+  const rooms = getRooms();
+  const id = roomName.toLowerCase().replace(/[^a-z0-9]/g, '-');
+  if (rooms.find(r => r.id === id)) { joinRoom(id); return; }
+  rooms.push({ id, name: roomName });
+  saveRooms(rooms);
+  input.value = '';
+  document.getElementById('new-room-input').style.display = 'none';
+  joinRoom(id);
+}
+
+function joinRoom(roomId) {
+  // Clean up previous room
+  if (currentES) { try { currentES.close(); } catch(e) {} currentES = null; }
+  if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
+  allMessages = [];
+  allReactions = {};
+  seen.clear();
+  lastEventTime = 0;
+
+  localStorage.setItem(ROOM_KEY, roomId);
+  TOPIC = TOPIC_BASE + '-' + roomId;
+
+  document.getElementById('room-list').style.display = 'none';
   document.getElementById('chat').style.display = 'flex';
-  document.getElementById('header-text').textContent = n;
+  if (!isAdmin()) document.getElementById('chat').classList.add('no-admin');
+  else document.getElementById('chat').classList.remove('no-admin');
+
+  const rooms = getRooms();
+  const room = rooms.find(r => r.id === roomId);
+  document.getElementById('header-text').textContent = room ? room.name : roomId;
+  document.getElementById('messages').innerHTML = '';
   document.getElementById('msg').focus();
   loadReactions();
   loadMessages();
@@ -887,9 +1087,20 @@ function join(n) {
   setupAdmin();
 }
 
+function logout() {
+  if (currentES) { try { currentES.close(); } catch(e) {} currentES = null; }
+  if (presenceInterval) { clearInterval(presenceInterval); presenceInterval = null; }
+  name = '';
+  allMessages = [];
+  allReactions = {};
+  seen.clear();
+  document.getElementById('chat').style.display = 'none';
+  document.getElementById('messages').innerHTML = '';
+  showRoomList();
+}
+
 let retryDelay = 1000;
 let lastEventTime = 0;
-let currentES = null;
 function listen() {
   if (currentES) { try { currentES.close(); } catch(e) {} }
   const since = lastEventTime ? lastEventTime : '5m';
@@ -1214,9 +1425,6 @@ document.addEventListener('click', e => {
 
 // === ADMIN SYSTEM ===
 const ADMINS = ['Book', 'Studio'];
-const PRESENCE_KEY = 'chat-presence';
-let knownUsers = {};
-let presenceInterval = null;
 
 function isAdmin() { return ADMINS.includes(name); }
 
