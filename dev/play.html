@@ -335,6 +335,11 @@ let showHitboxes = false;
 const pKeys = {};
 let pJumpBuf = 0;
 
+// Tap-step system: a quick tap moves exactly one tile (16px)
+let stepStartX = 0;       // gx when direction key was pressed
+let stepCompleting = false; // true = key released, finishing the 16px step
+let stepDir = 0;           // direction of the step
+
 function f(x, y) { return [x, y]; }
 const ANIMS = {
     idle:      { fr: [f(0,0),f(0,0),f(0,0),f(0,0),f(61,0),f(61,0),f(61,0),f(61,0)], fps: 8, loop: true },
@@ -550,6 +555,8 @@ function pSetState(s) {
     if (!keepAnim) { gaFrame = 0; gaTimer = 0; }
     // Start settle-back when entering push
     if (s === 'push') pushSettleFrames = PUSH_SETTLE_FRAMES;
+    // Cancel tap-step when jumping, crouching, falling, etc.
+    if (s !== 'idle' && s !== 'start' && s !== 'run') stepCompleting = false;
 }
 
 // ---- COLLISION ----
@@ -715,6 +722,9 @@ window.addEventListener('keydown', e => {
     if (!pKeys[e.code]) {
         if (e.code === 'ArrowUp' || e.code === 'KeyW') pJumpBuf = 8;
         if (e.code === 'KeyH') showHitboxes = !showHitboxes;
+        // Start tap-step tracking when a direction key is first pressed
+        if (e.code === 'ArrowRight' || e.code === 'KeyD') { stepStartX = gx; stepCompleting = false; stepDir = 1; }
+        if (e.code === 'ArrowLeft' || e.code === 'KeyA') { stepStartX = gx; stepCompleting = false; stepDir = -1; }
     }
     if (e.code === 'Escape') {
         if (videoOpen) closeVideo();
@@ -726,6 +736,14 @@ window.addEventListener('keydown', e => {
 });
 window.addEventListener('keyup', e => {
     pKeys[e.code] = false;
+    // When direction key released, check if we need to complete a tile step
+    const isRight = e.code === 'ArrowRight' || e.code === 'KeyD';
+    const isLeft = e.code === 'ArrowLeft' || e.code === 'KeyA';
+    if ((isRight && stepDir === 1) || (isLeft && stepDir === -1)) {
+        const dist = Math.abs(gx - stepStartX);
+        if (dist < T && gFloor) stepCompleting = true;
+        else stepCompleting = false;
+    }
 });
 
 const pkL = () => pKeys['ArrowLeft'] || pKeys['KeyA'];
@@ -749,6 +767,16 @@ function playFrame(dt) {
     switch (gState) {
         case 'idle':
             gvx = 0;
+            // Complete a tap-step if one is active
+            if (stepCompleting && gFloor) {
+                const dist = Math.abs(gx - stepStartX);
+                if (dist < T) {
+                    gvx = stepDir * getSpd();
+                    gDir = stepDir;
+                } else {
+                    stepCompleting = false;
+                }
+            }
             if (!gFloor && gvy > 0) pSetState('fall');
             else if (pkR()) { gDir = 1; pSetState('start'); }
             else if (pkL()) { gDir = -1; pSetState('start'); }
@@ -759,7 +787,12 @@ function playFrame(dt) {
         case 'start':
             gvx = gDir * getSpd();
             if (!gFloor && gvy > 0) pSetState('fall');
-            else if (!(pkR() || pkL())) pSetState('idle');
+            else if (!(pkR() || pkL())) {
+                // Key released: check tap-step
+                const dist = Math.abs(gx - stepStartX);
+                if (stepCompleting && dist < T) { /* keep moving via idle */ }
+                else pSetState('idle');
+            }
             else if (pUseJump()) { gvy = getJump(); gFloor = false; pSetState('air'); }
             else pSetState('run');
             break;
@@ -769,7 +802,12 @@ function playFrame(dt) {
             if (!gFloor && gvy > 0) pSetState('fall');
             else if (pUseJump()) { gvy = getJump(); gFloor = false; pSetState('air'); }
             else if (pkD()) pSetState('into_roll');
-            else if (!(pkR() || pkL())) pSetState('idle');
+            else if (!(pkR() || pkL())) {
+                // Key released: check tap-step
+                const dist = Math.abs(gx - stepStartX);
+                if (stepCompleting && dist < T) { /* keep moving via idle */ }
+                else pSetState('idle');
+            }
             break;
         case 'hop':
             if (pkR()) { gDir = 1; gvx = getAir(); pSetState('air'); }
