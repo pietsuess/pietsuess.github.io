@@ -4135,7 +4135,8 @@ function update(){
   const spd_now=Math.sqrt(state.vx**2+state.vy**2);
   const _normalFric = 0.965;
   const _boostFric = 0.9995;
-  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
+  const _lsCoastFric = (_isLightSpeed || _lsSmooth > 0.1) ? 0.9992 : null; // very low friction during/after light speed
+  const FRICTION = state._implodeTimer>0 ? 1.0 : (state._driftingDead||state._implosionCountdown>0) ? 0.9965 : _lsCoastFric ? _lsCoastFric : (state.hyperspace ? _boostFric : (spd_now>BASE_MAX*1.2 ? 0.988 : _normalFric));
 
   // Last-gasp boost: if boost pressed with tiny remaining fuel, burn it all for one final kick
   if(state.hyperspace&&state.fireMode!=='wave'&&state.fuel>0&&state.fuel<=0.005&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer&&!state._lastGaspFired){
@@ -7642,31 +7643,36 @@ function drawGame(){
 
       // Star streaks — start AHEAD of ship, fly backward, empty central column
       const perpAng = travelAng + Math.PI/2;
-      const streakCount = 60 + Math.floor(_lsI * 120);
-      const _screenDiag = Math.max(W, H);
+      const streakCount = 50 + Math.floor(_lsI * 100);
+      const streakBand = 200; // ~200px on each side
       for(let k = 0; k < streakCount; k++){
-        // Perpendicular spread — avoid center column (ship corridor)
-        let perpOfs = (Math.random()-0.5) * _screenDiag * 1.2;
-        const centerGap = 30 + _lsI * 20; // empty corridor width
-        if(Math.abs(perpOfs) < centerGap) perpOfs = (perpOfs > 0 ? centerGap : -centerGap) + (Math.random()-0.5)*20;
-        // Start AHEAD of ship — positive along travel direction
-        const travelOfs = _screenDiag * 0.1 + Math.random() * _screenDiag * 0.6; // all ahead of ship
+        // Perpendicular spread — narrow band, avoid center
+        const centerGap = 25 + _lsI * 15;
+        let perpOfs = centerGap + Math.random() * streakBand;
+        if(Math.random() < 0.5) perpOfs = -perpOfs;
+        // Start ahead of ship
+        const travelOfs = W * 0.15 + Math.random() * W * 0.5;
         const sx = W/2 + Math.cos(perpAng)*perpOfs + Math.cos(travelAng)*travelOfs;
         const sy = H/2 + Math.sin(perpAng)*perpOfs + Math.sin(travelAng)*travelOfs;
-        // Streaks fly backward (opposite travel)
         const streakLen = 600 + _lsI * 3600 * (0.3 + Math.random()*0.7);
         const ex = sx - Math.cos(travelAng)*streakLen;
         const ey = sy - Math.sin(travelAng)*streakLen;
-        // Fade streaks that are far from center (no outer edge streaks)
-        const distFromCenter = Math.abs(perpOfs) / (_screenDiag * 0.6);
-        const edgeFade = Math.max(0, 1 - distFromCenter);
-        if(edgeFade < 0.1) continue;
+        // Fade at edges of the band
+        const bandPos = (Math.abs(perpOfs) - centerGap) / streakBand;
+        const edgeFade = 1 - bandPos * bandPos;
         const hue = 280 + Math.random()*50;
         const lum = 60 + Math.random()*30;
+        const alpha = (0.3 + _lsI*0.5) * edgeFade;
+        // Gradient stroke for faded ends
+        const grad = ctx.createLinearGradient(sx, sy, ex, ey);
+        grad.addColorStop(0, `hsla(${hue},100%,${lum}%,0)`); // faded start
+        grad.addColorStop(0.1, `hsla(${hue},100%,${lum}%,${alpha})`);
+        grad.addColorStop(0.8, `hsla(${hue},100%,${lum}%,${alpha*0.6})`);
+        grad.addColorStop(1, `hsla(${hue},100%,${lum}%,0)`); // faded end
         ctx.beginPath(); ctx.moveTo(sx, sy); ctx.lineTo(ex, ey);
-        ctx.strokeStyle = `hsla(${hue},100%,${lum}%,${(0.3 + _lsI*0.6) * edgeFade})`;
-        ctx.lineWidth = 1.5 + _lsI * 8 * Math.random();
-        ctx.shadowColor = `hsl(${hue},100%,${lum+10}%)`; ctx.shadowBlur = 14 * _lsI;
+        ctx.strokeStyle = grad;
+        ctx.lineWidth = 1.5 + _lsI * 7 * Math.random();
+        ctx.shadowColor = `hsl(${hue},100%,80%)`; ctx.shadowBlur = 10 * _lsI;
         ctx.stroke();
       }
       ctx.shadowBlur = 0;
@@ -7677,7 +7683,7 @@ function drawGame(){
         ctx.translate(W/2, H/2);
         ctx.rotate(travelAng + Math.PI/2);
         const burnSz = 55 + _lsI * 25;
-        const burnY = -burnSz * 0.12; // ship nose just inside the hollow
+        const burnY = -burnSz * 0.4; // pulled forward so ship sits in the hollow
         // Draw with heat gradient: layer multiple colored versions
         // White-hot core layer
         ctx.globalAlpha = (0.3 + _lsI * 0.3);
