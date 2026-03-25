@@ -1028,18 +1028,18 @@ function playFrame(dt) {
             if (!isEdge) continue;
             const edgeX = dir === 1 ? cx + T : cx;
             const checkTy = Math.floor(cy / T);
-            // Find distance to next solid tile in push direction
+            // Check tile at the position edge would be after moving
             if (dir === 1) {
-                const nextTileX = Math.ceil(edgeX / T) * T; // next tile boundary
-                const nextTx = Math.floor(nextTileX / T);
-                if (isSolid(nextTx, checkTy)) {
-                    maxAmt = Math.min(maxAmt, nextTileX - edgeX);
+                const newEdge = edgeX + maxAmt;
+                const newTx = Math.floor(newEdge / T);
+                if (isSolid(newTx, checkTy)) {
+                    maxAmt = Math.min(maxAmt, Math.max(0, newTx * T - edgeX));
                 }
             } else {
-                const prevTileX = Math.floor((edgeX - 0.01) / T) * T; // prev tile boundary right edge = this tile's left
-                const prevTx = Math.floor((edgeX - 0.01) / T);
-                if (isSolid(prevTx, checkTy)) {
-                    maxAmt = Math.min(maxAmt, edgeX - (prevTx + 1) * T);
+                const newEdge = edgeX - maxAmt;
+                const newTx = Math.floor(newEdge / T);
+                if (isSolid(newTx, checkTy)) {
+                    maxAmt = Math.min(maxAmt, Math.max(0, edgeX - (newTx + 1) * T));
                 }
             }
         }
@@ -1077,22 +1077,21 @@ function playFrame(dt) {
         const [bx, by, bw, bh] = worldBox();
         for (const g of pushGroups) {
             if (bx + bw <= g.bl || bx >= g.br || by + bh <= g.bt || by >= g.bb) continue;
-            // Gary overlaps this group horizontally
+            // Gary overlaps this group - resolve horizontally
             const c = colBox();
-            if (gvx > 0) {
+            const garyLeft = gx < (g.bl + g.br) / 2;
+            if (garyLeft) {
+                // Gary is to the left of the group
                 const pushAmt = (bx + bw) - g.bl;
-                const moved = (g === pushingGroup && pushSettleFrames <= 0) ? tryPushGroup(g, 1, pushAmt) : 0;
+                const moved = (g === pushingGroup && pushSettleFrames <= 0 && gvx > 0) ? tryPushGroup(g, 1, pushAmt) : 0;
                 gx = g.bl - c[2] - c[0] - 0.01;
-                if (moved === 0) gvx = 0;
-                wallBlocked = true;
-                pushTarget = g;
-            } else if (gvx < 0) {
+                if (gvx > 0) { gvx = 0; wallBlocked = true; pushTarget = g; }
+            } else {
+                // Gary is to the right
                 const pushAmt = g.br - bx;
-                const moved = (g === pushingGroup && pushSettleFrames <= 0) ? tryPushGroup(g, -1, pushAmt) : 0;
+                const moved = (g === pushingGroup && pushSettleFrames <= 0 && gvx < 0) ? tryPushGroup(g, -1, pushAmt) : 0;
                 gx = g.br - c[0] + 0.01;
-                if (moved === 0) gvx = 0;
-                wallBlocked = true;
-                pushTarget = g;
+                if (gvx < 0) { gvx = 0; wallBlocked = true; pushTarget = g; }
             }
         }
     }
@@ -1101,32 +1100,35 @@ function playFrame(dt) {
     gy += gvy * dt;
     resolveY();
     // Now check overlap with pushable groups (Y axis)
+    // Only resolve if Gary's center is within the group horizontally
+    // and there was actual vertical movement (prevents side-adjacency teleports)
     {
         const [bx, by, bw, bh] = worldBox();
         for (const g of pushGroups) {
             if (bx + bw <= g.bl || bx >= g.br || by + bh <= g.bt || by >= g.bb) continue;
-            // Gary overlaps this group vertically
-            if (gvy >= 0) {
+            // Gary's center must be within the group's horizontal range
+            if (gx <= g.bl || gx >= g.br) continue;
+            if (gvy > 0) {
                 // Falling - land on top
                 gy = g.bt;
                 gvy = 0;
                 gFloor = true;
-            } else {
+            } else if (gvy < 0) {
                 // Rising - bonk head on bottom
                 const c = colBox();
                 gy = g.bb - c[1] + 0.01;
                 gvy = 0;
             }
+            // gvy == 0: don't resolve - overlap is from horizontal adjacency
         }
     }
 
     if (gvy === 0 && gFloor) {
         gFloor = checkFloor();
-        // Also check if standing on a group
+        // Also check if standing on a group (center must be over it)
         if (!gFloor) {
-            const [bx, by, bw, bh] = worldBox();
             for (const g of pushGroups) {
-                if (gx >= g.bl - 2 && gx <= g.br + 2 && gy >= g.bt - 1 && gy <= g.bt + 2) {
+                if (gx > g.bl && gx < g.br && gy >= g.bt - 1 && gy <= g.bt + 2) {
                     gFloor = true; break;
                 }
             }
