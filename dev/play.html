@@ -789,15 +789,27 @@ function nearGround(dist) {
 }
 
 function checkFloor() {
-    // Check center 8px of Gary - narrow enough for 1-tile gap assist,
-    // wide enough to stay grounded on irregular sub-grid terrain
-    const checkLeft = gx - 4, checkRight = gx + 4;
+    // Full hitbox width - if ANY part of Gary's feet touch solid ground, he's grounded
+    const c = colBox();
+    const bx = gx + c[0], bw = c[2];
     const feetY = gy + 1;
     const ty = Math.floor(feetY / T);
-    const l = Math.floor(checkLeft / T), r = Math.floor(checkRight / T);
+    const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
     for (let tx = l; tx <= r; tx++) {
         if (!isSolid(tx, ty)) continue;
-        if (cellOverlap(tx, ty, checkLeft, checkRight, gy, gy + 2)) return true;
+        if (cellOverlap(tx, ty, bx, bx + bw, gy, gy + 2)) return true;
+    }
+    return false;
+}
+
+// Gap assist: when Gary's center is over a real pit (2+ tiles deep with no solid),
+// drop him even if his hitbox edge still touches the platform
+function checkGapFall() {
+    const centerTx = Math.floor(gx / T);
+    const feetTy = Math.floor((gy + 1) / T);
+    // Only trigger if the tile under Gary's center AND the one below it are both empty
+    if (!isSolid(centerTx, feetTy) && !isSolid(centerTx, feetTy + 1)) {
+        return true; // real gap
     }
     return false;
 }
@@ -1133,6 +1145,10 @@ function playFrame(dt) {
                     gFloor = true; break;
                 }
             }
+        }
+        // Gap assist: if grounded but center is over a real pit, drop
+        if (gFloor && checkGapFall()) {
+            gFloor = false;
         }
     }
 
