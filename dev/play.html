@@ -1143,6 +1143,29 @@ function playFrame(dt) {
         }
     }
 
+    // Slope snap: when walking and floor drops away, snap down to ground
+    // instead of entering fall state (prevents stutter on downhill slopes)
+    if (!gFloor && gvy >= 0 && gvy < 100 && (gState === 'run' || gState === 'start' || gState === 'idle')) {
+        if (nearGround(8)) {
+            // Find exact ground Y within 8px below
+            const c = colBox();
+            const bx = gx + c[0], bw = c[2];
+            for (let d = 1; d <= 8; d++) {
+                const ty = Math.floor((gy + d) / T);
+                const l = Math.floor(bx / T), r = Math.floor((bx + bw) / T);
+                for (let tx = l; tx <= r; tx++) {
+                    if (isSolid(tx, ty) && cellOverlap(tx, ty, bx, bx + bw, gy + d - 1, gy + d + 1)) {
+                        gy += d;
+                        gvy = 0;
+                        gFloor = true;
+                        break;
+                    }
+                }
+                if (gFloor) break;
+            }
+        }
+    }
+
     // Active push: when in push state, move the group at push speed
     if (pushingGroup && gState === 'push' && pushSettleFrames <= 0) {
         const amt = PUSH_SPD * dt;
