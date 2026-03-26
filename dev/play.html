@@ -1170,7 +1170,11 @@ function playFrame(dt) {
     if (pushingGroup && gState === 'push' && pushSettleFrames <= 0) {
         const amt = PUSH_SPD * dt;
         const moved = tryPushGroup(pushingGroup, gDir, amt);
-        if (moved > 0) gx += gDir * moved;
+        if (moved > 0) {
+            gx += gDir * moved;
+            // Step-up for slopes: if bottom cells now overlap a sub-grid tile, nudge group up
+            slopeSnapGroup(pushingGroup);
+        }
     }
 
     // Wall push timer - same delay for walls and pushable groups
@@ -1186,13 +1190,54 @@ function playFrame(dt) {
     }
     wallBlocked = false;
 
+    // Find the top solid surface Y in a tile (respects sub-grid)
+    function tileTopSurface(tx, ty) {
+        const k = tx + ',' + ty;
+        const data = cellCol[k];
+        if (!data) return ty * T; // full solid: top of tile
+        if (typeof data[0] === 'number' && !Array.isArray(data[0])) {
+            // Sub-grid: find topmost solid row
+            for (let r = 0; r < 8; r++) {
+                if (data[r] > 0) return ty * T + r * 2;
+            }
+            return ty * T + T; // no solid rows
+        }
+        // Bar ranges: top of first bar
+        if (data.length > 0) return ty * T + data[0][0];
+        return ty * T;
+    }
+
+    // After horizontal push, snap group up if bottom cells overlap slope
+    function slopeSnapGroup(g) {
+        const bottomCells = g.cells.filter(c =>
+            !g.cells.some(oc => oc.tx === c.tx + 1 && oc.ty === c.ty) ||
+            !g.cells.some(oc => oc.tx === c.tx - 1 && oc.ty === c.ty)
+        );
+        for (const c of bottomCells) {
+            const wx = c.tx * T + g.offsetX;
+            const botY = c.ty * T + g.offsetY + T;
+            for (let dx = 0; dx < T; dx += 4) {
+                const checkTx = Math.floor((wx + dx) / T);
+                const checkTy = Math.floor(botY / T);
+                if (isSolid(checkTx, checkTy)) {
+                    const surface = tileTopSurface(checkTx, checkTy);
+                    const overlap = botY - surface;
+                    if (overlap > 0 && overlap <= 8) {
+                        g.offsetY -= overlap;
+                        return;
+                    }
+                }
+            }
+        }
+    }
+
     // Pushable group gravity
     for (const g of pushGroups) {
         let onGround = false;
         const bottomCells = g.cells.filter(c =>
             !g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1)
         );
-        // Check world tiles
+        // Check world tiles (snap to sub-grid surface, not just tile top)
         for (const c of bottomCells) {
             const wx = c.tx * T + g.offsetX;
             const botY = c.ty * T + g.offsetY + T;
@@ -1201,7 +1246,8 @@ function playFrame(dt) {
                 const checkTx = Math.floor((wx + dx) / T);
                 if (isSolid(checkTx, checkTy)) {
                     onGround = true;
-                    g.offsetY = checkTy * T - (c.ty + 1) * T;
+                    const surface = tileTopSurface(checkTx, checkTy);
+                    g.offsetY = surface - (c.ty + 1) * T;
                     break;
                 }
             }
@@ -1223,7 +1269,7 @@ function playFrame(dt) {
         }
         if (!onGround) {
             g.offsetY += GRAV * dt * 0.35;
-            // Check world tiles after falling
+            // Check world tiles after falling (snap to sub-grid surface)
             for (const c of bottomCells) {
                 const wx = c.tx * T + g.offsetX;
                 const botY = c.ty * T + g.offsetY + T;
@@ -1231,7 +1277,8 @@ function playFrame(dt) {
                 for (let dx = 0; dx < T; dx += 4) {
                     const checkTx = Math.floor((wx + dx) / T);
                     if (isSolid(checkTx, checkTy)) {
-                        g.offsetY = checkTy * T - (c.ty + 1) * T;
+                        const surface = tileTopSurface(checkTx, checkTy);
+                        g.offsetY = surface - (c.ty + 1) * T;
                         onGround = true;
                         break;
                     }
