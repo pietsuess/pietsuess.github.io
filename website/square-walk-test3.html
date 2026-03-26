@@ -1,0 +1,517 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Walking Squares — Grabbable Physics</title>
+  <style>
+    body { margin: 0; background: #1a0e2e; overflow: hidden; }
+    canvas { display: block; cursor: default; }
+    .label { position: fixed; bottom: 12px; left: 50%; transform: translateX(-50%); color: rgba(255,255,255,0.3); font: 12px monospace; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="label">Grab and throw the cubes!</div>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// --- LINE DEFINITIONS ---
+const demos = [
+  { type: 'horiz', y: 150, x: 100, len: 600 },
+  { type: 'vert-left', x: 200, y: 250, len: 500 },
+  { type: 'vert-left', x: 450, y: 250, len: 500 },
+  { type: 'vert-right', x: 700, y: 250, len: 500 },
+  { type: 'vert-right', x: 950, y: 250, len: 500 },
+];
+
+// --- WALK LOGIC ---
+function getWalkTransform(demo, size, dist, side) {
+  const totalLen = demo.len;
+  const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+  const steps = rawDist / size;
+  const stepIdx = Math.floor(steps);
+  const frac = steps - stepIdx;
+
+  const eased = frac < 0.5
+    ? 0.5 * Math.pow(frac * 2, 0.7)
+    : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+  const tipAngle = eased * (Math.PI / 2);
+
+  // Compute world position of the square center
+  if (demo.type === 'horiz') {
+    const pivotX = demo.x + ((stepIdx + 1) * size) % totalLen;
+    const pivotY = demo.y;
+    const yOff = side === 'above' ? -size : 0;
+    // Center of square in local (pre-tip) coords
+    const localCX = -size / 2;
+    const localCY = yOff + size / 2;
+    // Rotate around pivot by tipAngle
+    const cos = Math.cos(tipAngle);
+    const sin = Math.sin(tipAngle);
+    const worldX = pivotX + localCX * cos - localCY * sin;
+    const worldY = pivotY + localCX * sin + localCY * cos;
+    return { x: worldX, y: worldY, angle: tipAngle };
+  } else if (demo.type === 'vert-left') {
+    // +PI/2 rotation: local +X = screen DOWN
+    const pivotLocalX = ((stepIdx + 1) * size) % totalLen;
+    const yOff = side === 'above' ? -size : 0;
+    const localCX = pivotLocalX - size / 2;
+    const localCY = yOff + size / 2;
+    // After +PI/2 rotation around (demo.x, demo.y):
+    // screen_x = demo.x - localCY, screen_y = demo.y + localCX
+    // But also factor in tip angle... simplified: compute from pivot
+    const pLocalX = pivotLocalX;
+    const pLocalY = 0;
+    const cos90 = 0, sin90 = 1;
+    const pivotScreenX = demo.x + pLocalX * cos90 - pLocalY * sin90;
+    const pivotScreenY = demo.y + pLocalX * sin90 + pLocalY * cos90;
+    // In rotated space, square center relative to pivot
+    const rcx = -size / 2;
+    const rcy = yOff + size / 2;
+    // Rotate by tipAngle in local space, then by PI/2 to screen
+    const cosT = Math.cos(tipAngle);
+    const sinT = Math.sin(tipAngle);
+    const afterTipX = rcx * cosT - rcy * sinT;
+    const afterTipY = rcx * sinT + rcy * cosT;
+    // Then rotate by PI/2 to get screen offset
+    const screenDX = afterTipX * cos90 - afterTipY * sin90;
+    const screenDY = afterTipX * sin90 + afterTipY * cos90;
+    return { x: pivotScreenX + screenDX, y: pivotScreenY + screenDY, angle: tipAngle + Math.PI / 2 };
+  } else {
+    // vert-right: scale(-1,1) then rotate(PI/2)
+    const pivotLocalX = ((stepIdx + 1) * size) % totalLen;
+    const yOff = side === 'above' ? -size : 0;
+    const rcx = -size / 2;
+    const rcy = yOff + size / 2;
+    const cosT = Math.cos(tipAngle);
+    const sinT = Math.sin(tipAngle);
+    const afterTipX = rcx * cosT - rcy * sinT;
+    const afterTipY = rcx * sinT + rcy * cosT;
+    // scale(-1,1) then rotate(PI/2)
+    const sx = -afterTipX;
+    const sy = afterTipY;
+    const cos90 = 0, sin90 = 1;
+    const screenDX = sx * cos90 - sy * sin90;
+    const screenDY = sx * sin90 + sy * cos90;
+    const pScreenX = demo.x - pivotLocalX * 0 + 0;
+    const pScreenY = demo.y - pivotLocalX * (-1) * 0;
+    // Simpler: just use the draw approach
+    const px = demo.x;
+    const py = demo.y + pivotLocalX;
+    return { x: px + screenDX, y: py + screenDY, angle: -(tipAngle + Math.PI / 2) };
+  }
+}
+
+// --- WALKER INSTANCES (each is independently grabbable) ---
+const walkers = [];
+let walkerId = 0;
+
+for (const demo of demos) {
+  const defs = [
+    { size: 40, speed: 60, offset: 0, side: 'above', color: 'rgba(244,197,66,0.85)' },
+    { size: 30, speed: -45, offset: 200, side: 'above', color: 'rgba(232,115,90,0.85)' },
+  ];
+  for (const w of defs) {
+    walkers.push({
+      id: walkerId++,
+      demo, size: w.size, speed: w.speed, offset: w.offset, side: w.side, color: w.color,
+      // Physics state (when grabbed/thrown)
+      state: 'walking', // 'walking' | 'grabbed' | 'flying'
+      px: 0, py: 0, // physics position (center)
+      vx: 0, vy: 0, // velocity
+      angle: 0, angularVel: 0,
+      returnTimer: 0, // countdown to return to walking
+    });
+  }
+}
+
+// --- DRAW SQUARE (standalone, at world position) ---
+function drawSquareAt(ctx, x, y, size, angle, color) {
+  const s = size;
+  const r = s * 0.15;
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(-s/2 + r, -s/2);
+  ctx.lineTo(s/2 - r, -s/2);
+  ctx.quadraticCurveTo(s/2, -s/2, s/2, -s/2 + r);
+  ctx.lineTo(s/2, s/2 - r);
+  ctx.quadraticCurveTo(s/2, s/2, s/2 - r, s/2);
+  ctx.lineTo(-s/2 + r, s/2);
+  ctx.quadraticCurveTo(-s/2, s/2, -s/2, s/2 - r);
+  ctx.lineTo(-s/2, -s/2 + r);
+  ctx.quadraticCurveTo(-s/2, -s/2, -s/2 + r, -s/2);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// --- DRAW WALKING SQUARE (original logic, on canvas transforms) ---
+function drawWalkingSquare(ctx, demo, size, dist, color, side) {
+  const totalLen = demo.len;
+  const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+  const steps = rawDist / size;
+  const stepIdx = Math.floor(steps);
+  const frac = steps - stepIdx;
+  const eased = frac < 0.5
+    ? 0.5 * Math.pow(frac * 2, 0.7)
+    : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+  const tipAngle = eased * (Math.PI / 2);
+  const pivotX = ((stepIdx + 1) * size) % totalLen;
+  const s = size;
+  const r = s * 0.15;
+  const yOff = side === 'above' ? -s : 0;
+
+  ctx.save();
+  ctx.translate(pivotX, 0);
+  ctx.rotate(tipAngle);
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  const x = -s, y = yOff;
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + s - r, y);
+  ctx.quadraticCurveTo(x + s, y, x + s, y + r);
+  ctx.lineTo(x + s, y + s - r);
+  ctx.quadraticCurveTo(x + s, y + s, x + s - r, y + s);
+  ctx.lineTo(x + r, y + s);
+  ctx.quadraticCurveTo(x, y + s, x, y + s - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+  ctx.restore();
+}
+
+// --- GET WORLD POS OF WALKING SQUARE ---
+function getWalkWorldPos(demo, size, speed, offset, side, elapsed) {
+  const dist = speed * elapsed + offset;
+  const totalLen = demo.len;
+  const rawDist = ((dist % totalLen) + totalLen) % totalLen;
+  const steps = rawDist / size;
+  const stepIdx = Math.floor(steps);
+  const frac = steps - stepIdx;
+  const eased = frac < 0.5
+    ? 0.5 * Math.pow(frac * 2, 0.7)
+    : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+  const tipAngle = eased * (Math.PI / 2);
+  const pivotLocalX = ((stepIdx + 1) * size) % totalLen;
+  const yOff = side === 'above' ? -size : 0;
+  const rcx = -size / 2;
+  const rcy = yOff + size / 2;
+  const cosT = Math.cos(tipAngle);
+  const sinT = Math.sin(tipAngle);
+  const lcx = pivotLocalX + rcx * cosT - rcy * sinT;
+  const lcy = rcx * sinT + rcy * cosT;
+
+  if (demo.type === 'horiz') {
+    return { x: demo.x + lcx, y: demo.y + lcy, angle: tipAngle };
+  } else if (demo.type === 'vert-left') {
+    // rotate PI/2: screenX = demo.x - lcy, screenY = demo.y + lcx
+    return { x: demo.x - lcy, y: demo.y + lcx, angle: tipAngle + Math.PI / 2 };
+  } else {
+    // vert-right: scale(-1,1) then rotate(PI/2)
+    // after scale: (-lcx, lcy), then rotate PI/2: screenX = demo.x - lcy, screenY = demo.y - lcx
+    return { x: demo.x - lcy, y: demo.y - lcx, angle: -(tipAngle + Math.PI / 2) };
+  }
+}
+
+// --- LINE SEGMENTS for collision ---
+function getLineSegments() {
+  const segs = [];
+  for (const d of demos) {
+    if (d.type === 'horiz') {
+      segs.push({ x1: d.x, y1: d.y, x2: d.x + d.len, y2: d.y });
+    } else {
+      segs.push({ x1: d.x, y1: d.y, x2: d.x, y2: d.y + d.len });
+    }
+  }
+  return segs;
+}
+const lineSegments = getLineSegments();
+
+// --- PHYSICS CONSTANTS ---
+const GRAVITY = 800;
+const BOUNCE = 0.55;
+const FRICTION = 0.97;
+const ANGULAR_FRICTION = 0.95;
+const SETTLE_THRESHOLD = 15; // velocity below this = settled
+const RETURN_DELAY = 0.8; // seconds after settling before returning to walk
+
+// --- MOUSE / TOUCH INTERACTION ---
+let grabbed = null; // walker being grabbed
+let mouseX = 0, mouseY = 0;
+let prevMouseX = 0, prevMouseY = 0;
+let mouseVelX = 0, mouseVelY = 0;
+let mouseDown = false;
+
+function getPointerPos(e) {
+  const touch = e.touches ? e.touches[0] : e;
+  return { x: touch.clientX, y: touch.clientY };
+}
+
+function findWalkerAt(x, y, elapsed) {
+  // Check in reverse so top-drawn ones get priority
+  for (let i = walkers.length - 1; i >= 0; i--) {
+    const w = walkers[i];
+    let wx, wy, ws;
+    if (w.state === 'walking') {
+      const pos = getWalkWorldPos(w.demo, w.size, w.speed, w.offset, w.side, elapsed);
+      wx = pos.x; wy = pos.y;
+    } else {
+      wx = w.px; wy = w.py;
+    }
+    ws = w.size;
+    if (Math.abs(x - wx) < ws / 2 + 5 && Math.abs(y - wy) < ws / 2 + 5) {
+      return w;
+    }
+  }
+  return null;
+}
+
+let currentElapsed = 0;
+
+canvas.addEventListener('mousedown', (e) => {
+  const p = getPointerPos(e);
+  mouseX = prevMouseX = p.x;
+  mouseY = prevMouseY = p.y;
+  mouseDown = true;
+  const w = findWalkerAt(p.x, p.y, currentElapsed);
+  if (w) {
+    grabbed = w;
+    w.state = 'grabbed';
+    // Initialize physics position from current walk position
+    if (w.px === 0 && w.py === 0) {
+      const pos = getWalkWorldPos(w.demo, w.size, w.speed, w.offset, w.side, currentElapsed);
+      w.px = pos.x; w.py = pos.y; w.angle = pos.angle;
+    }
+    w.vx = 0; w.vy = 0; w.angularVel = 0;
+    canvas.style.cursor = 'grabbing';
+  }
+});
+
+canvas.addEventListener('mousemove', (e) => {
+  const p = getPointerPos(e);
+  prevMouseX = mouseX; prevMouseY = mouseY;
+  mouseX = p.x; mouseY = p.y;
+  if (grabbed) {
+    grabbed.px = mouseX;
+    grabbed.py = mouseY;
+  } else {
+    // Hover cursor
+    const w = findWalkerAt(p.x, p.y, currentElapsed);
+    canvas.style.cursor = w ? 'grab' : 'default';
+  }
+});
+
+canvas.addEventListener('mouseup', (e) => {
+  mouseDown = false;
+  if (grabbed) {
+    // Calculate throw velocity from mouse movement
+    grabbed.vx = (mouseX - prevMouseX) * 15;
+    grabbed.vy = (mouseY - prevMouseY) * 15;
+    grabbed.angularVel = (grabbed.vx) * 0.05;
+    grabbed.state = 'flying';
+    grabbed.returnTimer = 0;
+    grabbed = null;
+  }
+  canvas.style.cursor = 'default';
+});
+
+// Touch support
+canvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  const p = getPointerPos(e);
+  mouseX = prevMouseX = p.x;
+  mouseY = prevMouseY = p.y;
+  mouseDown = true;
+  const w = findWalkerAt(p.x, p.y, currentElapsed);
+  if (w) {
+    grabbed = w;
+    w.state = 'grabbed';
+    const pos = getWalkWorldPos(w.demo, w.size, w.speed, w.offset, w.side, currentElapsed);
+    w.px = pos.x; w.py = pos.y; w.angle = pos.angle;
+    w.vx = 0; w.vy = 0; w.angularVel = 0;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  const p = getPointerPos(e);
+  prevMouseX = mouseX; prevMouseY = mouseY;
+  mouseX = p.x; mouseY = p.y;
+  if (grabbed) {
+    grabbed.px = mouseX;
+    grabbed.py = mouseY;
+  }
+}, { passive: false });
+
+canvas.addEventListener('touchend', (e) => {
+  mouseDown = false;
+  if (grabbed) {
+    grabbed.vx = (mouseX - prevMouseX) * 15;
+    grabbed.vy = (mouseY - prevMouseY) * 15;
+    grabbed.angularVel = (grabbed.vx) * 0.05;
+    grabbed.state = 'flying';
+    grabbed.returnTimer = 0;
+    grabbed = null;
+  }
+});
+
+// --- PHYSICS UPDATE ---
+function updatePhysics(w, dt) {
+  if (w.state !== 'flying') return;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const half = w.size / 2;
+
+  // Gravity
+  w.vy += GRAVITY * dt;
+
+  // Move
+  w.px += w.vx * dt;
+  w.py += w.vy * dt;
+  w.angle += w.angularVel * dt;
+
+  // Friction
+  w.vx *= FRICTION;
+  w.angularVel *= ANGULAR_FRICTION;
+
+  // Wall collisions
+  if (w.px - half < 0) { w.px = half; w.vx = Math.abs(w.vx) * BOUNCE; w.angularVel += w.vy * 0.01; }
+  if (w.px + half > W) { w.px = W - half; w.vx = -Math.abs(w.vx) * BOUNCE; w.angularVel -= w.vy * 0.01; }
+  if (w.py - half < 0) { w.py = half; w.vy = Math.abs(w.vy) * BOUNCE; }
+  if (w.py + half > H) { w.py = H - half; w.vy = -Math.abs(w.vy) * BOUNCE; w.angularVel += w.vx * 0.01; }
+
+  // Line segment collisions
+  for (const seg of lineSegments) {
+    if (seg.y1 === seg.y2) {
+      // Horizontal line
+      const lineY = seg.y1;
+      const minX = Math.min(seg.x1, seg.x2);
+      const maxX = Math.max(seg.x1, seg.x2);
+      if (w.px + half > minX && w.px - half < maxX) {
+        // Coming from above
+        if (w.py + half > lineY && w.py + half < lineY + half && w.vy > 0) {
+          w.py = lineY - half;
+          w.vy = -Math.abs(w.vy) * BOUNCE;
+          w.angularVel += w.vx * 0.01;
+        }
+        // Coming from below
+        if (w.py - half < lineY && w.py - half > lineY - half && w.vy < 0) {
+          w.py = lineY + half;
+          w.vy = Math.abs(w.vy) * BOUNCE;
+          w.angularVel += w.vx * 0.01;
+        }
+      }
+    } else {
+      // Vertical line
+      const lineX = seg.x1;
+      const minY = Math.min(seg.y1, seg.y2);
+      const maxY = Math.max(seg.y1, seg.y2);
+      if (w.py + half > minY && w.py - half < maxY) {
+        // Coming from left
+        if (w.px + half > lineX && w.px + half < lineX + half && w.vx > 0) {
+          w.px = lineX - half;
+          w.vx = -Math.abs(w.vx) * BOUNCE;
+          w.angularVel -= w.vy * 0.01;
+        }
+        // Coming from right
+        if (w.px - half < lineX && w.px - half > lineX - half && w.vx < 0) {
+          w.px = lineX + half;
+          w.vx = Math.abs(w.vx) * BOUNCE;
+          w.angularVel -= w.vy * 0.01;
+        }
+      }
+    }
+  }
+
+  // Check if settled
+  const totalVel = Math.sqrt(w.vx * w.vx + w.vy * w.vy);
+  if (totalVel < SETTLE_THRESHOLD && Math.abs(w.angularVel) < 0.3) {
+    w.returnTimer += dt;
+    if (w.returnTimer > RETURN_DELAY) {
+      w.state = 'walking';
+      w.px = 0; w.py = 0;
+      w.returnTimer = 0;
+    }
+  } else {
+    w.returnTimer = 0;
+  }
+}
+
+// --- ANIMATION LOOP ---
+let startTime = null;
+
+function animate(time) {
+  if (!startTime) startTime = time;
+  const elapsed = (time - startTime) / 1000;
+  currentElapsed = elapsed;
+  const dt = Math.min(1/30, elapsed - (animate.lastElapsed || 0));
+  animate.lastElapsed = elapsed;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw all guide lines
+  ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+  ctx.lineWidth = 1;
+  for (const seg of lineSegments) {
+    ctx.beginPath();
+    ctx.moveTo(seg.x1, seg.y1);
+    ctx.lineTo(seg.x2, seg.y2);
+    ctx.stroke();
+  }
+
+  // Update and draw walkers
+  for (const w of walkers) {
+    if (w.state === 'flying') {
+      updatePhysics(w, dt);
+    }
+
+    if (w.state === 'walking') {
+      // Draw using original transform approach
+      const demo = w.demo;
+      const dist = w.speed * elapsed + w.offset;
+
+      if (demo.type === 'horiz') {
+        drawWalkingSquare(ctx, demo, w.size, dist, w.color, w.side);
+      } else if (demo.type === 'vert-left') {
+        ctx.save();
+        ctx.translate(demo.x, demo.y);
+        ctx.rotate(Math.PI / 2);
+        drawWalkingSquare(ctx, demo, w.size, dist, w.color, w.side);
+        ctx.restore();
+      } else if (demo.type === 'vert-right') {
+        ctx.save();
+        ctx.translate(demo.x, demo.y);
+        ctx.scale(-1, 1);
+        ctx.rotate(Math.PI / 2);
+        drawWalkingSquare(ctx, demo, w.size, dist, w.color, w.side);
+        ctx.restore();
+      }
+    } else {
+      // Grabbed or flying: draw at physics position
+      drawSquareAt(ctx, w.px, w.py, w.size, w.angle, w.color);
+    }
+  }
+
+  requestAnimationFrame(animate);
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>

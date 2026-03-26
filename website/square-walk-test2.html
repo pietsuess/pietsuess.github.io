@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Walking Squares — Vertical Lines Test</title>
+  <style>
+    body { margin: 0; background: #1a0e2e; overflow: hidden; }
+    canvas { display: block; }
+  </style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+
+// Each vertical line has walkers on it
+// face: 'left' = body sits LEFT of the line, 'right' = body sits RIGHT of the line
+const lines = [
+  // LEFT FACE lines
+  { x: 200,  label: 'LEFT face' },
+  { x: 400,  label: 'LEFT face' },
+  // RIGHT FACE lines
+  { x: 700,  label: 'RIGHT face' },
+  { x: 900,  label: 'RIGHT face' },
+];
+
+const walkers = [
+  // Left face walkers (body left of line)
+  { lineIdx: 0, face: 'left', size: 40, speed: 60, offset: 0,   color: 'rgba(244,197,66,0.7)' },   // gold, down
+  { lineIdx: 0, face: 'left', size: 30, speed: -45, offset: 200, color: 'rgba(232,115,90,0.7)' },  // coral, up
+  { lineIdx: 1, face: 'left', size: 35, speed: 50, offset: 100, color: 'rgba(212,84,122,0.7)' },   // rose, down
+  { lineIdx: 1, face: 'left', size: 28, speed: -55, offset: 300, color: 'rgba(184,61,142,0.7)' },  // magenta, up
+
+  // Right face walkers (body right of line)
+  { lineIdx: 2, face: 'right', size: 40, speed: 60, offset: 50,  color: 'rgba(244,197,66,0.7)' },  // gold, down
+  { lineIdx: 2, face: 'right', size: 30, speed: -45, offset: 250, color: 'rgba(232,115,90,0.7)' }, // coral, up
+  { lineIdx: 3, face: 'right', size: 35, speed: 50, offset: 150, color: 'rgba(212,84,122,0.7)' },  // rose, down
+  { lineIdx: 3, face: 'right', size: 28, speed: -55, offset: 350, color: 'rgba(184,61,142,0.7)' }, // magenta, up
+];
+
+// Walk zone
+const TOP = 80;
+const BOTTOM = canvas.height - 40;
+
+let startTime = null;
+
+function animate(time) {
+  if (!startTime) startTime = time;
+  const elapsed = (time - startTime) / 1000;
+
+  const W = canvas.width;
+  const H = canvas.height;
+  const walkLen = H - TOP - 40; // total vertical walk distance
+
+  ctx.clearRect(0, 0, W, H);
+
+  // Draw the vertical lines
+  for (const line of lines) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.15)';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(line.x, TOP);
+    ctx.lineTo(line.x, TOP + walkLen);
+    ctx.stroke();
+
+    // Label
+    ctx.fillStyle = 'rgba(255,255,255,0.3)';
+    ctx.font = '11px monospace';
+    ctx.textAlign = 'center';
+    ctx.fillText(line.label, line.x, TOP - 10);
+  }
+
+  // Draw walkers
+  for (const w of walkers) {
+    const lineX = lines[w.lineIdx].x;
+    const goingDown = w.speed > 0;
+
+    // Distance travelled
+    const dist = Math.abs(w.speed) * elapsed + w.offset;
+
+    // Step math
+    const steps = dist / w.size;
+    const stepIdx = Math.floor(steps);
+    const frac = steps - stepIdx;
+
+    // Gravity easing — tips slow at start, accelerates, slows at landing
+    const eased = frac < 0.5
+      ? 0.5 * Math.pow(frac * 2, 0.7)
+      : 1 - 0.5 * Math.pow((1 - frac) * 2, 0.7);
+    const tipAngle = eased * (Math.PI / 2);
+
+    // Pivot position along the line (wraps)
+    const pivotAlong = ((stepIdx + 1) * w.size) % walkLen;
+    const pivotY = goingDown
+      ? TOP + pivotAlong
+      : TOP + walkLen - pivotAlong;
+
+    ctx.save();
+    ctx.translate(lineX, pivotY);
+
+    if (w.face === 'left') {
+      // Body extends LEFT of the line
+      if (goingDown) {
+        // Pivot = bottom-right corner, body goes left and up
+        // Tip forward (downward) = rotate clockwise
+        ctx.rotate(tipAngle);
+        // Draw: bottom-right at origin, body at (-s, -s) to (0, 0)
+        drawSquare(ctx, -w.size, -w.size, w.size, w.color);
+      } else {
+        // Walking up: pivot = top-right corner, body goes left and down
+        // Tip forward (upward) = rotate counter-clockwise
+        ctx.rotate(-tipAngle);
+        // Draw: top-right at origin, body at (-s, 0) to (0, s)
+        drawSquare(ctx, -w.size, 0, w.size, w.color);
+      }
+    } else {
+      // Body extends RIGHT of the line
+      if (goingDown) {
+        // Pivot = bottom-left corner, body goes right and up
+        // Tip forward (downward) = rotate counter-clockwise
+        ctx.rotate(-tipAngle);
+        // Draw: bottom-left at origin, body at (0, -s) to (s, 0)
+        drawSquare(ctx, 0, -w.size, w.size, w.color);
+      } else {
+        // Walking up: pivot = top-left corner, body goes right and down
+        // Tip forward (upward) = rotate clockwise
+        ctx.rotate(tipAngle);
+        // Draw: top-left at origin, body at (0, 0) to (s, s)
+        drawSquare(ctx, 0, 0, w.size, w.color);
+      }
+    }
+
+    ctx.restore();
+  }
+
+  // Labels at bottom
+  ctx.fillStyle = 'rgba(255,255,255,0.2)';
+  ctx.font = '12px monospace';
+  ctx.textAlign = 'center';
+  ctx.fillText('speed > 0 = walks DOWN,  speed < 0 = walks UP', W / 2, H - 10);
+
+  requestAnimationFrame(animate);
+}
+
+function drawSquare(ctx, x, y, size, color) {
+  const r = size * 0.15;
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  ctx.moveTo(x + r, y);
+  ctx.lineTo(x + size - r, y);
+  ctx.quadraticCurveTo(x + size, y, x + size, y + r);
+  ctx.lineTo(x + size, y + size - r);
+  ctx.quadraticCurveTo(x + size, y + size, x + size - r, y + size);
+  ctx.lineTo(x + r, y + size);
+  ctx.quadraticCurveTo(x, y + size, x, y + size - r);
+  ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+  ctx.closePath();
+  ctx.fill();
+}
+
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
