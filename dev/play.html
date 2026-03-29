@@ -1108,38 +1108,33 @@ function playFrame(dt) {
     gy += gvy * dt;
     resolveY();
     // Now check overlap with pushable groups (Y axis)
-    // Check individual cells, not AABB, to avoid landing on empty space in irregular groups
+    // Use individual cells to avoid landing on empty space in irregular groups
     {
         const [bx, by, bw, bh] = worldBox();
         for (const g of pushGroups) {
             if (bx + bw <= g.bl || bx >= g.br || by + bh <= g.bt || by >= g.bb) continue;
-            if (gvy > 0) {
-                // Falling - find the topmost cell under Gary's center
-                let landY = Infinity;
-                for (const c of g.cells) {
-                    const cx = c.tx * T + g.offsetX;
-                    const cy = c.ty * T + g.offsetY;
-                    // Cell must be horizontally under Gary's center
-                    if (gx <= cx || gx >= cx + T) continue;
-                    // Cell top must be between Gary's old and new position
-                    if (cy < by + bh && cy >= by) continue; // Gary was already past this cell
-                    if (cy < landY && by + bh > cy) landY = cy;
-                }
-                if (landY < Infinity) {
-                    gy = landY;
-                    gvy = 0;
-                    gFloor = true;
-                }
-            } else if (gvy < 0) {
-                // Rising - find the bottommost cell above Gary's head
-                for (const c of g.cells) {
-                    const cx = c.tx * T + g.offsetX;
-                    const cy = c.ty * T + g.offsetY;
-                    if (gx <= cx || gx >= cx + T) continue;
-                    const cellBot = cy + T;
-                    if (by < cellBot && by + bh > cy) {
+            for (const c of g.cells) {
+                const cx = c.tx * T + g.offsetX;
+                const cy = c.ty * T + g.offsetY;
+                // Cell must be horizontally under Gary's center
+                if (gx <= cx || gx >= cx + T) continue;
+                // Check vertical overlap
+                if (by + bh <= cy || by >= cy + T) continue;
+                if (gvy > 0) {
+                    // Falling - land on this cell's top (only top cells)
+                    const hasAbove = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty - 1);
+                    if (!hasAbove) {
+                        gy = cy;
+                        gvy = 0;
+                        gFloor = true;
+                        break;
+                    }
+                } else if (gvy < 0) {
+                    // Rising - bonk on this cell's bottom (only bottom cells)
+                    const hasBelow = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty + 1);
+                    if (!hasBelow) {
                         const cb = colBox();
-                        gy = cellBot - cb[1] + 0.01;
+                        gy = cy + T - cb[1] + 0.01;
                         gvy = 0;
                         break;
                     }
@@ -1793,30 +1788,28 @@ function mainLoop(ts) {
 
 // ---- INIT ----
 Promise.all(imgLoads).then(() => {
-    function boot(data) {
+    // Load level from localStorage
+    const raw = localStorage.getItem('gary-play-level');
+    if (!raw) {
+        document.body.style.display = 'flex';
+        document.body.style.alignItems = 'center';
+        document.body.style.justifyContent = 'center';
+        document.body.style.color = '#ff4444';
+        document.body.style.fontFamily = "'Press Start 2P', monospace";
+        document.body.style.fontSize = '12px';
+        document.body.innerHTML = '<div style="text-align:center;">No level data found.<br><br>Open the editor and press PLAY.</div>';
+        return;
+    }
+    try {
+        const data = JSON.parse(raw);
         applyLevelData(data);
-        startPlay();
-        requestAnimationFrame(mainLoop);
+    } catch (err) {
+        alert('Failed to parse level data: ' + err.message);
+        return;
     }
 
-    // Load level from localStorage, fall back to Level1.json
-    const raw = localStorage.getItem('gary-play-level');
-    if (raw) {
-        try { boot(JSON.parse(raw)); } catch (err) { alert('Failed to parse level data: ' + err.message); }
-    } else {
-        fetch('levels/Level1.json?t=' + Date.now())
-            .then(r => r.json())
-            .then(data => boot(data))
-            .catch(() => {
-                document.body.style.display = 'flex';
-                document.body.style.alignItems = 'center';
-                document.body.style.justifyContent = 'center';
-                document.body.style.color = '#ff4444';
-                document.body.style.fontFamily = "'Press Start 2P', monospace";
-                document.body.style.fontSize = '12px';
-                document.body.innerHTML = '<div style="text-align:center;">No level data found.<br><br>Open the editor and press PLAY.</div>';
-            });
-    }
+    startPlay();
+    requestAnimationFrame(mainLoop);
 });
 </script>
 </body>
