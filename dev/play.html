@@ -1768,28 +1768,30 @@ function mainLoop(ts) {
 
 // ---- INIT ----
 Promise.all(imgLoads).then(() => {
-    // Load level from localStorage
-    const raw = localStorage.getItem('gary-play-level');
-    if (!raw) {
-        document.body.style.display = 'flex';
-        document.body.style.alignItems = 'center';
-        document.body.style.justifyContent = 'center';
-        document.body.style.color = '#ff4444';
-        document.body.style.fontFamily = "'Press Start 2P', monospace";
-        document.body.style.fontSize = '12px';
-        document.body.innerHTML = '<div style="text-align:center;">No level data found.<br><br>Open the editor and press PLAY.</div>';
-        return;
-    }
-    try {
-        const data = JSON.parse(raw);
+    function boot(data) {
         applyLevelData(data);
-    } catch (err) {
-        alert('Failed to parse level data: ' + err.message);
-        return;
+        startPlay();
+        requestAnimationFrame(mainLoop);
     }
 
-    startPlay();
-    requestAnimationFrame(mainLoop);
+    // Load level from localStorage, fall back to Level1.json
+    const raw = localStorage.getItem('gary-play-level');
+    if (raw) {
+        try { boot(JSON.parse(raw)); } catch (err) { alert('Failed to parse level data: ' + err.message); }
+    } else {
+        fetch('levels/Level1.json?t=' + Date.now())
+            .then(r => r.json())
+            .then(data => boot(data))
+            .catch(() => {
+                document.body.style.display = 'flex';
+                document.body.style.alignItems = 'center';
+                document.body.style.justifyContent = 'center';
+                document.body.style.color = '#ff4444';
+                document.body.style.fontFamily = "'Press Start 2P', monospace";
+                document.body.style.fontSize = '12px';
+                document.body.innerHTML = '<div style="text-align:center;">No level data found.<br><br>Open the editor and press PLAY.</div>';
+            });
+    }
 });
 </script>
 </body>
