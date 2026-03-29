@@ -1080,25 +1080,49 @@ function playFrame(dt) {
     gx += gvx * dt;
     resolveX();
     // Now check overlap with pushable groups (X axis)
+    // Use cell-level checks, not AABB, to handle irregular group shapes
     {
         const [bx, by, bw, bh] = worldBox();
         for (const g of pushGroups) {
+            // Broad AABB check first
             if (bx + bw <= g.bl || bx >= g.br || by + bh <= g.bt || by >= g.bb) continue;
-            // Gary overlaps this group - resolve horizontally
-            const c = colBox();
+            // Check if Gary actually overlaps any CELL in this group
+            let hitCell = null;
+            for (const c of g.cells) {
+                const cx = c.tx * T + g.offsetX;
+                const cy = c.ty * T + g.offsetY;
+                if (bx + bw > cx && bx < cx + T && by + bh > cy && by < cy + T) {
+                    hitCell = c;
+                    break;
+                }
+            }
+            if (!hitCell) continue; // No actual cell overlap - Gary is in empty AABB space
+            const cb = colBox();
             const garyLeft = gx < (g.bl + g.br) / 2;
-            // Only allow pushing if group reaches hand zone (head to mid-torso)
             const handTop = gy - 43, handBot = gy - 30;
             const atHandHeight = g.bt < handBot && g.bb > handTop;
             if (garyLeft) {
-                const pushAmt = (bx + bw) - g.bl;
+                // Find leftmost cell edge at Gary's Y level
+                let wallX = g.bl;
+                for (const c of g.cells) {
+                    const cx = c.tx * T + g.offsetX;
+                    const cy = c.ty * T + g.offsetY;
+                    if (by + bh > cy && by < cy + T) wallX = Math.min(wallX, cx);
+                }
+                const pushAmt = (bx + bw) - wallX;
                 const moved = (g === pushingGroup && pushSettleFrames <= 0 && gvx > 0) ? tryPushGroup(g, 1, pushAmt) : 0;
-                gx = g.bl - c[2] - c[0] - 0.01;
+                gx = wallX - cb[2] - cb[0] - 0.01;
                 if (gvx > 0) { gvx = 0; wallBlocked = true; if (atHandHeight) pushTarget = g; }
             } else {
-                const pushAmt = g.br - bx;
+                let wallX = g.br;
+                for (const c of g.cells) {
+                    const cx = c.tx * T + g.offsetX;
+                    const cy = c.ty * T + g.offsetY;
+                    if (by + bh > cy && by < cy + T) wallX = Math.max(wallX, cx + T);
+                }
+                const pushAmt = wallX - bx;
                 const moved = (g === pushingGroup && pushSettleFrames <= 0 && gvx < 0) ? tryPushGroup(g, -1, pushAmt) : 0;
-                gx = g.br - c[0] + 0.01;
+                gx = wallX - cb[0] + 0.01;
                 if (gvx < 0) { gvx = 0; wallBlocked = true; if (atHandHeight) pushTarget = g; }
             }
         }
