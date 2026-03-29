@@ -1108,37 +1108,62 @@ function playFrame(dt) {
     gy += gvy * dt;
     resolveY();
     // Now check overlap with pushable groups (Y axis)
-    // Only resolve if Gary's center is within the group horizontally
-    // and there was actual vertical movement (prevents side-adjacency teleports)
+    // Check individual cells, not AABB, to avoid landing on empty space in irregular groups
     {
         const [bx, by, bw, bh] = worldBox();
         for (const g of pushGroups) {
             if (bx + bw <= g.bl || bx >= g.br || by + bh <= g.bt || by >= g.bb) continue;
-            // Gary's center must be within the group's horizontal range
-            if (gx <= g.bl || gx >= g.br) continue;
             if (gvy > 0) {
-                // Falling - land on top
-                gy = g.bt;
-                gvy = 0;
-                gFloor = true;
+                // Falling - find the topmost cell under Gary's center
+                let landY = Infinity;
+                for (const c of g.cells) {
+                    const cx = c.tx * T + g.offsetX;
+                    const cy = c.ty * T + g.offsetY;
+                    // Cell must be horizontally under Gary's center
+                    if (gx <= cx || gx >= cx + T) continue;
+                    // Cell top must be between Gary's old and new position
+                    if (cy < by + bh && cy >= by) continue; // Gary was already past this cell
+                    if (cy < landY && by + bh > cy) landY = cy;
+                }
+                if (landY < Infinity) {
+                    gy = landY;
+                    gvy = 0;
+                    gFloor = true;
+                }
             } else if (gvy < 0) {
-                // Rising - bonk head on bottom
-                const c = colBox();
-                gy = g.bb - c[1] + 0.01;
-                gvy = 0;
+                // Rising - find the bottommost cell above Gary's head
+                for (const c of g.cells) {
+                    const cx = c.tx * T + g.offsetX;
+                    const cy = c.ty * T + g.offsetY;
+                    if (gx <= cx || gx >= cx + T) continue;
+                    const cellBot = cy + T;
+                    if (by < cellBot && by + bh > cy) {
+                        const cb = colBox();
+                        gy = cellBot - cb[1] + 0.01;
+                        gvy = 0;
+                        break;
+                    }
+                }
             }
-            // gvy == 0: don't resolve - overlap is from horizontal adjacency
         }
     }
 
     if (gvy === 0 && gFloor) {
         gFloor = checkFloor();
-        // Also check if standing on a group (center must be over it)
+        // Also check if standing on a group cell (not AABB - avoids empty space in irregular groups)
         if (!gFloor) {
             for (const g of pushGroups) {
-                if (gx > g.bl && gx < g.br && gy >= g.bt - 1 && gy <= g.bt + 2) {
-                    gFloor = true; break;
+                for (const c of g.cells) {
+                    const cx = c.tx * T + g.offsetX;
+                    const cy = c.ty * T + g.offsetY;
+                    // Gary's center must be over this cell, and feet near its top
+                    if (gx > cx && gx < cx + T && gy >= cy - 1 && gy <= cy + 2) {
+                        // Make sure no cell above this one in the same column (only top cells count)
+                        const hasAbove = g.cells.some(oc => oc.tx === c.tx && oc.ty === c.ty - 1);
+                        if (!hasAbove) { gFloor = true; break; }
+                    }
                 }
+                if (gFloor) break;
             }
         }
     }
