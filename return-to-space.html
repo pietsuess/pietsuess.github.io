@@ -1398,11 +1398,22 @@ function _analyticsPayload(event, extra){
   if(extra) Object.assign(p, extra);
   return p;
 }
+let _lastHeartbeatKey = '';
 function _sendAnalytics(event, extra){
   // Kill analytics in dev mode or for site owner
   const _dp = document.getElementById('dev-panel');
   if(_dp && _dp.style.display !== 'none') return;
   if(_geoData.isOwner) return;
+  if(location.pathname.includes('/dev/')) return;
+  // Skip heartbeat if nothing changed since last one
+  if(event === 'heartbeat'){
+    const p = _analyticsPayload(event, extra);
+    const key = p.zone+'|'+p.score+'|'+p.objectsCollected+'|'+p.deaths+'|'+Math.round(p.wx/100)+'|'+Math.round(p.wy/100)+'|'+p.fireMode+'|'+p.editComplete+'|'+p.interzoneComplete+'|'+p.secretFound+'|'+p.bossDefeated+'|'+p.victory+'|'+p.outsideBarrier+'|'+p.actions;
+    if(key === _lastHeartbeatKey) return;
+    _lastHeartbeatKey = key;
+    try { navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(p)); } catch(e){}
+    return;
+  }
   try {
     navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(_analyticsPayload(event, extra)));
     if(event !== 'heartbeat') _analyticsActions = [];
