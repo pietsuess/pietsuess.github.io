@@ -1532,8 +1532,14 @@ document.addEventListener('DOMContentLoaded', () => {
     // Send final data on page leave
     window.addEventListener('beforeunload', () => send('leave'));
 
-    // Heartbeat every 30s
-    setInterval(() => send('heartbeat'), 30000);
+    // Heartbeat every 30s — only if something changed
+    let _lastHBKey = '';
+    setInterval(() => {
+      const key = page+'|'+maxScroll+'|'+actions.length;
+      if (key === _lastHBKey) return;
+      _lastHBKey = key;
+      send('heartbeat');
+    }, 30000);
   })();
 
 });
