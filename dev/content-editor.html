@@ -1,0 +1,1393 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>NAVIGATOR — Content Editor (PHOTO & DESIGN)</title>
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body {
+    background:#0a0a0a; color:#ccc;
+    font-family:'Segoe UI',system-ui,sans-serif; font-size:14px;
+    padding:20px; min-height:100vh;
+  }
+  h1 {
+    font-family:'Courier New',monospace; color:#00ffcc;
+    text-shadow:0 0 12px rgba(0,255,204,0.4);
+    font-size:22px; letter-spacing:3px; margin-bottom:6px;
+  }
+  .subtitle { color:#888; font-size:12px; margin-bottom:24px; }
+
+  /* Tabs */
+  .tabs { display:flex; gap:4px; margin-bottom:20px; }
+  .tab {
+    padding:10px 28px; cursor:pointer; border:1px solid #333;
+    background:#111; color:#888; font-size:13px; font-weight:600;
+    letter-spacing:1px; transition:all 0.2s; border-radius:6px 6px 0 0;
+  }
+  .tab:hover { color:#fff; border-color:#555; }
+  .tab.active { background:#1a1a1a; color:#ffe000; border-color:#ffe000; border-bottom-color:#1a1a1a; }
+  .tab.photo.active { color:#ffcc00; border-color:#ffcc00; border-bottom-color:#1a1a1a; }
+  .tab.design.active { color:#ff8c00; border-color:#ff8c00; border-bottom-color:#1a1a1a; }
+
+  .zone-panel { display:none; }
+  .zone-panel.active { display:block; }
+
+  /* Content cards */
+  .card {
+    background:#141414; border:1px solid #2a2a2a; border-radius:8px;
+    padding:20px; margin-bottom:16px; position:relative;
+    transition:border-color 0.15s, box-shadow 0.15s;
+  }
+  .card:hover { border-color:#444; }
+  .card.drop-target {
+    border-color:#00ffcc !important;
+    box-shadow:0 0 20px rgba(0,255,204,0.15), inset 0 0 30px rgba(0,255,204,0.03);
+  }
+  .card-header { display:flex; align-items:center; gap:12px; margin-bottom:14px; flex-wrap:wrap; }
+  .card-num {
+    background:#222; color:#666; font-size:11px; font-weight:700;
+    padding:3px 8px; border-radius:4px; min-width:28px; text-align:center;
+  }
+  .card-num.drag-handle { cursor:grab; }
+  .card-num.drag-handle:active { cursor:grabbing; }
+  .photo .card-num { color:#ffcc00; }
+  .design .card-num { color:#ff8c00; }
+  .card.is-hidden { opacity:0.4; }
+  .card.is-hidden .card-body { display:none; }
+  .hide-toggle {
+    font-size:9px; padding:2px 6px; border:1px solid #444; border-radius:3px;
+    background:#222; color:#666; cursor:pointer; white-space:nowrap;
+  }
+  .hide-toggle.active { background:#ff4444; color:#fff; border-color:#ff4444; font-weight:700; }
+  .card.dragging { opacity:0.3; }
+  .card.drag-above { border-top:3px solid #ff69b4 !important; }
+  .card.drag-below { border-bottom:3px solid #ff69b4 !important; }
+
+  .type-badge {
+    font-size:10px; font-weight:700; padding:2px 8px; border-radius:3px;
+    letter-spacing:1px; text-transform:uppercase;
+  }
+  .type-badge.single { background:#1a2a1a; color:#44ff44; border:1px solid #44ff4444; }
+  .type-badge.gallery { background:#1a1a2a; color:#4488ff; border:1px solid #4488ff44; }
+
+  label { display:block; color:#888; font-size:11px; margin-bottom:4px; letter-spacing:0.5px; }
+  input[type="text"], textarea {
+    width:100%; background:#0d0d0d; border:1px solid #333; color:#eee;
+    padding:8px 10px; font-size:13px; font-family:inherit; border-radius:4px;
+    transition:border-color 0.2s;
+  }
+  input[type="text"]:focus, textarea:focus { outline:none; border-color:#00ffcc; }
+  textarea { resize:vertical; min-height:60px; line-height:1.5; }
+  input[type="number"] {
+    width:80px; background:#0d0d0d; border:1px solid #333; color:#eee;
+    padding:6px 8px; font-size:13px; border-radius:4px;
+  }
+  input[type="number"]:focus { outline:none; border-color:#00ffcc; }
+
+  .field-row { display:flex; gap:12px; margin-bottom:10px; align-items:flex-end; }
+  .field-row .field { flex:1; }
+  .field-row .field.sm { flex:0 0 100px; }
+
+  /* Gallery */
+  .gallery-label { color:#888; font-size:11px; margin:14px 0 8px; letter-spacing:0.5px; }
+  .gallery-grid {
+    display:flex; flex-wrap:wrap; gap:10px;
+    margin-bottom:10px; min-height:60px;
+    padding:6px; border:2px dashed transparent; border-radius:8px;
+    transition:border-color 0.15s, background 0.15s;
+  }
+  .gallery-grid.drag-over {
+    border-color:#00ffcc;
+    background:rgba(0,255,204,0.03);
+  }
+  .gallery-item {
+    background:#0a0a0a; border:1px solid #2a2a2a; border-radius:6px;
+    overflow:hidden; position:relative; width:170px; flex-shrink:0;
+    cursor:grab; transition:opacity 0.15s, transform 0.15s, box-shadow 0.15s;
+  }
+  .gallery-item:active { cursor:grabbing; }
+  .gallery-item.dragging { opacity:0.3; transform:scale(0.95); }
+  .gallery-item img {
+    width:100%; height:120px; object-fit:cover; display:block;
+    background:#1a1a1a; pointer-events:none;
+  }
+  .gallery-item img.loading { opacity:0.3; }
+  .gallery-item img.error { opacity:0.15; filter:grayscale(1); }
+  .gallery-item .caption-row {
+    display:flex; align-items:center; gap:4px; padding:4px 6px;
+  }
+  .gallery-item .caption-row input {
+    flex:1; font-size:11px; padding:4px 6px; border:1px solid #222;
+    background:#111; color:#ccc; border-radius:3px;
+  }
+  .gallery-item .remove-img {
+    background:none; border:none; color:#ff4444; cursor:pointer;
+    font-size:16px; padding:2px 4px; opacity:0.5;
+  }
+  .gallery-item .remove-img:hover { opacity:1; }
+  .gallery-item.is-wide { border-color:#ff69b4; }
+  .wide-toggle {
+    font-size:9px; padding:2px 6px; border:1px solid #444; border-radius:3px;
+    background:#222; color:#888; cursor:pointer; white-space:nowrap;
+  }
+  .wide-toggle.active { background:#ff69b4; color:#000; border-color:#ff69b4; font-weight:700; }
+
+  /* Single photo display */
+  .single-photo {
+    display:flex; align-items:center; gap:16px; padding:8px;
+    background:#0a0a0a; border:1px solid #2a2a2a; border-radius:6px; margin-bottom:10px;
+  }
+  .single-photo img {
+    width:200px; height:140px; object-fit:cover; border-radius:4px;
+    background:#1a1a1a;
+  }
+  .single-photo img.error { opacity:0.15; filter:grayscale(1); }
+  .single-photo .file-name { color:#888; font-size:12px; font-family:monospace; }
+
+  /* Row layout for design */
+  .row-section { margin-bottom:12px; }
+  .row-header {
+    display:flex; align-items:center; gap:8px; margin-bottom:6px;
+  }
+  .row-label {
+    font-size:11px; font-weight:700; color:#ff8c00; letter-spacing:1px;
+  }
+  .row-label.hero { color:#ffe000; }
+
+  .add-img-row { display:flex; gap:8px; align-items:center; margin-top:4px; }
+  .add-img-row select {
+    flex:1; background:#0d0d0d; border:1px solid #333; color:#ccc;
+    padding:6px 8px; font-size:12px; border-radius:4px; max-width:350px;
+  }
+  .add-img-row input[type="text"] { flex:1; max-width:400px; font-size:12px; }
+
+  /* Buttons */
+  .btn {
+    padding:8px 18px; border:1px solid #555; background:#1a1a1a;
+    color:#ccc; cursor:pointer; font-size:12px; border-radius:4px;
+    transition:all 0.2s; font-weight:500;
+  }
+  .btn:hover { background:#222; border-color:#888; color:#fff; }
+  .btn.primary { border-color:#00ffcc; color:#00ffcc; }
+  .btn.primary:hover { background:#002a22; }
+  .btn.sm { padding:5px 12px; font-size:11px; }
+  .btn.danger { border-color:#ff4444; color:#ff4444; }
+  .btn.danger:hover { background:#2a0000; }
+  .btn.yellow { border-color:#ffe000; color:#ffe000; }
+  .btn.yellow:hover { background:#2a2a00; }
+  .btn.publish { border-color:#ff00ff; color:#ff00ff; font-weight:700; }
+  .btn.publish:hover { background:#2a002a; }
+  .btn.publish.success { border-color:#00ff88; color:#00ff88; }
+  .btn.publish.fail { border-color:#ff4444; color:#ff4444; }
+
+  /* Token bar */
+  .token-bar {
+    background:#111; border:1px solid #333; border-radius:6px;
+    padding:10px 14px; margin-bottom:20px; display:flex; align-items:center; gap:10px;
+    font-size:12px;
+  }
+  .token-bar label { margin:0; color:#888; white-space:nowrap; }
+  .token-bar input {
+    flex:1; max-width:400px; background:#0a0a0a; border:1px solid #333;
+    color:#666; padding:6px 10px; font-size:12px; font-family:monospace;
+    border-radius:4px; letter-spacing:1px;
+  }
+  .token-bar input:focus { border-color:#ff00ff; color:#ccc; outline:none; }
+  .token-bar .token-status { font-size:11px; }
+  .publish-status {
+    font-size:12px; margin-top:8px; padding:8px 12px; border-radius:4px;
+    display:none;
+  }
+  .publish-status.show { display:block; }
+  .publish-status.ok { background:#002a10; border:1px solid #00ff8844; color:#00ff88; }
+  .publish-status.err { background:#2a0000; border:1px solid #ff444444; color:#ff4444; }
+
+  /* Output */
+  .output-section {
+    background:#0a0a0a; border:2px solid #00ffcc; border-radius:8px;
+    padding:16px; margin-top:20px; position:relative;
+  }
+  .output-section h3 { color:#00ffcc; font-family:'Courier New',monospace; font-size:14px; margin-bottom:10px; }
+  .output-section pre {
+    color:#0f0; font-family:'Courier New',monospace; font-size:12px;
+    white-space:pre-wrap; word-break:break-all; max-height:400px;
+    overflow:auto; line-height:1.5;
+  }
+  .output-section .copy-btn { position:absolute; top:12px; right:12px; }
+
+  /* Unassigned pool */
+  .pool { margin-top:24px; border-top:1px solid #333; padding-top:16px; }
+  .pool h3 { color:#888; font-size:13px; margin-bottom:10px; }
+  .pool-grid { display:flex; flex-wrap:wrap; gap:8px; }
+  .pool-item {
+    background:#111; border:1px solid #222; border-radius:4px;
+    overflow:hidden; cursor:grab; position:relative; width:130px;
+    transition:opacity 0.15s, border-color 0.15s;
+  }
+  .pool-item:active { cursor:grabbing; }
+  .pool-item.dragging { opacity:0.3; }
+  .pool-item img { width:100%; height:80px; object-fit:cover; display:block; pointer-events:none; }
+  .pool-item .pool-name {
+    font-size:9px; color:#888; padding:3px 5px; white-space:nowrap;
+    overflow:hidden; text-overflow:ellipsis; pointer-events:none;
+  }
+  .pool-item:hover { border-color:#00ffcc; }
+
+  /* Action bar */
+  .action-bar {
+    position:sticky; bottom:0; background:#0a0a0a; border-top:1px solid #333;
+    padding:14px 0; display:flex; gap:10px; z-index:10; margin-top:20px;
+    flex-wrap:wrap;
+  }
+
+  /* Lightbox */
+  #lightbox {
+    display:none; position:fixed; inset:0; background:rgba(0,0,0,0.92);
+    z-index:1000; align-items:center; justify-content:center; cursor:pointer;
+  }
+  #lightbox.show { display:flex; }
+  #lightbox img { max-width:90vw; max-height:90vh; object-fit:contain; border-radius:4px; }
+
+  .zone-info {
+    background:#111; border-left:3px solid #555; padding:10px 14px;
+    margin-bottom:20px; font-size:12px; color:#999; line-height:1.6;
+  }
+  .zone-info.photo { border-color:#ffcc00; }
+  .zone-info.design { border-color:#ff8c00; }
+  .zone-info strong { color:#eee; }
+  .zone-info code { color:#00ffcc; background:#0a0a0a; padding:1px 4px; border-radius:2px; }
+
+  .collapse-btn {
+    background:none; border:none; color:#666; cursor:pointer; font-size:16px;
+    padding:2px 6px; transition:transform 0.2s;
+  }
+  .collapse-btn.collapsed { transform:rotate(-90deg); }
+  .card-body { overflow:hidden; }
+  .card-body.collapsed { display:none; }
+
+  .drag-hint {
+    background:#111; border:1px solid #333; border-radius:6px;
+    padding:8px 14px; margin-bottom:16px; font-size:11px; color:#777;
+    display:flex; align-items:center; gap:8px;
+  }
+  .drag-hint span { color:#00ffcc; font-size:14px; }
+
+  select.type-select {
+    background:#0d0d0d; border:1px solid #333; color:#ccc;
+    padding:4px 8px; font-size:11px; border-radius:4px;
+  }
+
+  .herowidth-input {
+    width:60px; background:#0d0d0d; border:1px solid #333; color:#eee;
+    padding:4px 6px; font-size:11px; border-radius:4px; text-align:center;
+  }
+</style>
+</head>
+<body>
+
+<h1>NAVIGATOR // CONTENT EDITOR</h1>
+<p class="subtitle">Edit PHOTO & DESIGN manifest files — exports JSON for GitHub repos.</p>
+
+<div class="token-bar">
+  <label>GitHub Token:</label>
+  <input type="password" id="gh-token" placeholder="ghp_..." oninput="saveToken(this.value)">
+  <span class="token-status" id="token-status"></span>
+</div>
+
+<div class="tabs">
+  <div class="tab photo active" onclick="switchTab('photo')">PHOTO ZONE</div>
+  <div class="tab design" onclick="switchTab('design')">DESIGN ZONE</div>
+</div>
+
+<!-- PHOTO ZONE -->
+<div id="panel-photo" class="zone-panel photo active">
+  <div class="zone-info photo">
+    <strong>PHOTO zone</strong> — Each item is either a <strong>single</strong> hero image or a <strong>gallery</strong> of photos.
+    Images served from <code>pietsuess/piet-photos</code> repo.
+    Exports to <code>manifest.json</code>.
+  </div>
+  <div class="drag-hint"><span>&#x2B80;</span> Drag images between galleries. Drag from unassigned pool to add.</div>
+  <div id="photo-cards"></div>
+  <div style="margin:12px 0;"><button class="btn sm yellow" onclick="addPhotoItem()">+ ADD PHOTO ITEM</button></div>
+  <div class="pool" id="photo-pool"></div>
+</div>
+
+<!-- DESIGN ZONE -->
+<div id="panel-design" class="zone-panel design">
+  <div class="zone-info design">
+    <strong>DESIGN zone</strong> — Each item is a project with <strong>rows</strong> of images.
+    Row 1 is the hero row. Images served from <code>pietsuess/design-portfolio</code> repo.
+    Exports to <code>manifest.json</code>.
+  </div>
+  <div class="drag-hint"><span>&#x2B80;</span> Drag images between rows. Drag from unassigned pool to add.</div>
+  <div id="design-cards"></div>
+  <div style="margin:12px 0;"><button class="btn sm yellow" onclick="addDesignItem()">+ ADD DESIGN ITEM</button></div>
+  <div class="pool" id="design-pool"></div>
+</div>
+
+<div class="action-bar">
+  <button class="btn publish" id="pub-photo-btn" onclick="publishManifest('photo')">PUBLISH PHOTO</button>
+  <button class="btn publish" id="pub-design-btn" onclick="publishManifest('design')">PUBLISH DESIGN</button>
+  <button class="btn publish" onclick="publishBoth()">PUBLISH BOTH</button>
+  <span style="color:#333;">|</span>
+  <button class="btn" onclick="exportPhotoManifest()">Export Photo JSON</button>
+  <button class="btn" onclick="exportDesignManifest()">Export Design JSON</button>
+  <button class="btn" onclick="document.getElementById('import-photo').click()">Import Photo</button>
+  <input type="file" id="import-photo" accept=".json" style="display:none" onchange="importManifest(event,'photo')">
+  <button class="btn" onclick="document.getElementById('import-design').click()">Import Design</button>
+  <input type="file" id="import-design" accept=".json" style="display:none" onchange="importManifest(event,'design')">
+  <button class="btn danger" onclick="resetAll()">Reset</button>
+</div>
+<div class="publish-status" id="publish-status"></div>
+
+<div id="output-area" style="display:none">
+  <div class="output-section" id="output-photo-section" style="display:none">
+    <h3>PHOTO manifest.json</h3>
+    <button class="btn sm copy-btn" onclick="copyOutput('output-photo')">COPY</button>
+    <pre id="output-photo"></pre>
+  </div>
+  <div class="output-section" id="output-design-section" style="display:none; margin-top:16px;">
+    <h3>DESIGN manifest.json</h3>
+    <button class="btn sm copy-btn" onclick="copyOutput('output-design')">COPY</button>
+    <pre id="output-design"></pre>
+  </div>
+</div>
+
+<div id="lightbox" onclick="this.classList.remove('show')">
+  <img id="lightbox-img" src="">
+</div>
+
+<script>
+// --- GitHub raw base URLs ---
+const PHOTO_BASE = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/photos/';
+const DESIGN_BASE = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/';
+
+// --- All available photos ---
+// These get populated dynamically from GitHub on load
+let ALL_PHOTOS = [];
+let ALL_DESIGN_IMAGES = [];
+
+async function fetchFileList(owner, repo, branch, path) {
+  const token = getToken();
+  const headers = token ? { Authorization: `token ${token}` } : {};
+  const url = `https://api.github.com/repos/${owner}/${repo}/contents/${path || ''}?ref=${branch}&_t=${Date.now()}`;
+  const res = await fetch(url, { headers });
+  if (!res.ok) return [];
+  const items = await res.json();
+  if (!Array.isArray(items)) return [];
+  const imgExts = /\.(jpe?g|png|gif|webp)$/i;
+  return items.filter(f => f.type === 'file' && imgExts.test(f.name)).map(f => f.name).sort();
+}
+
+async function loadFileLists() {
+  try {
+    ALL_PHOTOS = await fetchFileList('pietsuess', 'piet-photos', 'master', 'photos');
+    console.log('[EDITOR] Photo file list:', ALL_PHOTOS.length, 'images');
+  } catch(e) { console.warn('[EDITOR] Failed to load photo file list:', e.message); }
+  try {
+    ALL_DESIGN_IMAGES = await fetchFileList('pietsuess', 'design-portfolio', 'main', '');
+    console.log('[EDITOR] Design file list:', ALL_DESIGN_IMAGES.length, 'images');
+  } catch(e) { console.warn('[EDITOR] Failed to load design file list:', e.message); }
+}
+
+// --- Default PHOTO data (manifest format) ---
+function defaultPhotoData() {
+  return [
+    { title:'RURAL VISTA', type:'single', file:'IMG_4296.jpg' },
+    { title:'TRIPTYCH', type:'gallery', files:[
+      {file:'IMG_3379_2.jpg',caption:'MANDELA'},{file:'IMG_7151.jpg',caption:'LANDSCAPE'},{file:'k03.jpg',caption:'PORTRAIT'}
+    ]},
+    { title:'GOLDEN FIELD', type:'single', file:'IMG_2342_2.jpg' },
+    { title:'EZRA \u2014 CRAZY HORSE', type:'single', file:'Ezra_CrazyHorse_IMG_8585.jpg' },
+    { title:'HIGHLANDS', type:'single', file:'IMG_5965.jpg' },
+    { title:'LANDSCAPES', type:'gallery', files:[
+      {file:'IMG_9289-2.jpg',caption:'COAST'},{file:'IMG_7373-2.jpg',caption:'VALLEY'},
+      {file:'IMG_7827-2.jpg',caption:'RIDGE'},{file:'IMG_9731-2.jpg',caption:'TRAIL'},
+      {file:'IMG_8834-2.jpg',caption:'PEAK'},{file:'IMG_8490-2.jpg',caption:'MEADOW'},
+      {file:'IMG_7914.jpg',caption:'DUSK'},{file:'IMG_7832.jpg',caption:'MORNING'},
+      {file:'IMG_7662.jpg',caption:'CLEARING'}
+    ]},
+    { title:'SILHOUETTE', type:'single', file:'IMG_3558.jpg' },
+    { title:'RUTH', type:'single', file:'RUTH_4551.jpg' },
+    { title:'PORTRAITS', type:'gallery', files:[
+      {file:'IMG_0081.jpg',caption:'PORTRAIT 01'},{file:'IMG_0167.jpg',caption:'PORTRAIT 02'},
+      {file:'Natalie_Red_Gown.jpg',caption:'NATALIE'},{file:'DSC05244-2.jpg',caption:'RAVECOACH 01'},
+      {file:'DSC05329.jpg',caption:'RAVECOACH 02'},{file:'DSC05533.jpg',caption:'RAVECOACH 03'},
+      {file:'Adina_DSC03757-3.jpg',caption:'ADINA 01'},{file:'Adina_DSC03789-2.jpg',caption:'ADINA 02'},
+      {file:'Adina_DSC03798-2.jpg',caption:'ADINA 03'},{file:'DSC08322.jpg',caption:'SESSION 01'},
+      {file:'DSC08657.jpg',caption:'SESSION 02'},{file:'DSC08670.jpg',caption:'SESSION 03'},
+      {file:'DSC06178.jpg',caption:'SESSION 04'},{file:'DSC05685.jpg',caption:'SESSION 05'},
+      {file:'DSC05873.jpg',caption:'SESSION 06'},{file:'Adina_DSC03637.jpg',caption:'ADINA 04'},
+      {file:'Adina_DSC03615.jpg',caption:'ADINA 05'},{file:'Adina_DSC03597-2.jpg',caption:'ADINA 06'},
+      {file:'DSC05095-2.jpg',caption:'SESSION 07'},{file:'DSC04989.jpg',caption:'SESSION 08'},
+      {file:'DSC05026.jpg',caption:'SESSION 09'},{file:'Rieter_DSC06406.jpg',caption:'RIETER 01'},
+      {file:'Rieter_DSC06527.jpg',caption:'RIETER 02'},{file:'Rieter_DSC06533.jpg',caption:'RIETER 03'}
+    ]},
+    { title:'FACEBOOK FOX', type:'single', file:'FacebookFox_11m.jpg' },
+    { title:'NIGHT COLOUR THEORY', type:'gallery', files:[
+      {file:'NCT-02_sm.jpg',caption:'NCT 02'},{file:'NCT-03_sm.jpg',caption:'NCT 03'},
+      {file:'NCT-04_sm.jpg',caption:'NCT 04'},{file:'NCT-06_sm.jpg',caption:'NCT 06'},
+      {file:'NCT-05_sm.jpg',caption:'NCT 05'},{file:'NCT-09_sm.jpg',caption:'NCT 09'}
+    ]},
+    { title:'HORSE BRIDGE', type:'single', file:'HorseBridge.jpg' },
+    { title:'MUSIC & EVENTS', type:'gallery', files:[
+      {file:'IMG_7488.jpg',caption:'PERFORMANCE 01'},{file:'AlexDuncan_MG_9333.jpg',caption:'ALEX DUNCAN'},
+      {file:'IMG_1626.jpg',caption:'PERFORMANCE 02'},{file:'IMG_5159.jpg',caption:'PERFORMANCE 03'},
+      {file:'DSC03354.jpg',caption:'BACKSTAGE'},{file:'0P2A3050.jpg',caption:'PERFORMANCE 04'}
+    ]},
+    { title:'STREET ART', type:'gallery', files:[
+      {file:'EastVan_IMG_5311.jpg',caption:'EAST VAN 01'},{file:'flagged_IMG_6404.jpg',caption:'FLAGGED'},
+      {file:'Hurst_IMG_6313.jpg',caption:'HURST'},{file:'Kids_IMG_6424.jpg',caption:'KIDS'},
+      {file:'ShippingReceiving_IMG_6331.jpg',caption:'SHIPPING & RECEIVING'},{file:'Splat_IMG_6376.jpg',caption:'SPLAT'}
+    ]},
+    { title:'DOWNTOWN LA', type:'single', file:'DTLA_IMG_0648.jpg' },
+    { title:'PACIFIC DAWN', type:'single', file:'IMG_0107.jpg' },
+    { title:'ERYN', type:'single', file:'Eryn_IMG_3857.jpg' },
+    { title:'DADAAB', type:'single', file:'Dadaab_IMG_1047.jpg' }
+  ];
+}
+
+// --- Default DESIGN data (manifest format with rows) ---
+function defaultDesignData() {
+  return [
+    { title:'VAN SOLO', subtitle:'Logo & Font',
+      text:'For Van Solo the task was to create a mark incorporating the idea of a bird with the specific drum kit used in his one man show. He came with some sketches and some ideas, and we landed on this primary logo and minimalist bird face which is also the shape of foot pedal drum set.\n\nThe font was informed by the logo and done by hand giving it an organic feel. In addition we created a support element of the three feathers, symbolism that was meaningful to the client.',
+      rows:[
+        [{file:'VanSolo_LOGOS-01.png',caption:'PRIMARY LOGO'},{file:'VanSolo_LOGOS-02.png',caption:'MINIMALIST BIRD'}],
+        [{file:'WhatsApp_Image_1.34.12.jpeg',caption:'APPLICATION 01'},{file:'WhatsApp_Image_1.35.00.jpeg',caption:'APPLICATION 02'},{file:'VanSolo_LOGO_Detail.jpg',caption:'LOGO DETAIL'}]
+      ]},
+    { title:'CONVERGENCE FEST', subtitle:'Branding', heroWidth:'75%',
+      text:'This multi-year local festival came to me with a rebrand challenge. The task was to integrate the concept of converging, in a font logo. It came as a delightful undertaking, drawing upon several concept inspirations, coming to spring forth with this pairing of bold distorted main font, and the hand drawn sub-title FESTIVAL, which I then developed into its own unique font set.\n\nThe result is this funky, retro inspired and bold mark to immediately convey the concepts within the title.',
+      rows:[
+        [{file:'CONVERGENCE_LOGO.png',caption:'WORD MARK'}],
+        [{file:'JollyBeanFont.png',caption:'JOLLY BEAN FONT'},{file:'CONVERGENCE_Process_01.jpg',caption:'PROCESS'}]
+      ]},
+    { title:'HAYAN COLLECTION', subtitle:'Apparel Logo',
+      text:'The task to create a brand logo for this eclectic world inspired clothing company was a welcome challenge. The client wanted something that gave a nod to its Somali roots and would work well on clothing tags while feeling international.\n\nThe result we arrived at is this long legged traveller, which has a very boxy profile, ideal for tags.',
+      rows:[
+        [{file:'Hayan_Collection_logo.png',caption:'BRAND LOGO'}],
+        [{file:'Hayan_ex.jpg',caption:'APPLICATION'},{file:'Hayan_Tag_01.jpg',caption:'CLOTHING TAG'}]
+      ]},
+    { title:'CHASM AUDIO', subtitle:'Identity',
+      text:'The client had a very specific vision of a blend between a clean classical stamp logo and an 80s arcade game, with a timeless feel that you might see in the corner of an amp from the manufacturer.\n\nStarting from a basic serif font and fully reworking it into this upward flowing stamp, with a custom built Audio nestled underneath.\n\nTo further the idea of a Chasm (pr: Khazz-uhm) we developed a support element of a deep break in the earth which doubles as a representation of the electrification required for the business. The result being this clean and bold emblem that conveys a number of concurrent ideas.',
+      rows:[
+        [{file:'Chasm_BlackMark.png',caption:'BLACK STAMP LOGO'}],
+        [{file:'Chasm_CONCERTSound_Logo.png',caption:'CONCERT SOUND'},{file:'card_pic_web.jpg',caption:'BUSINESS CARDS'}],
+        [{file:'ChasmTravelCase_Pic.jpg',caption:'TRAVEL CASE'},{file:'card_pic_CU.jpg',caption:'CARD CLOSE-UP'}]
+      ]},
+    { title:'GAIA FOODS', subtitle:'Label Design',
+      text:'Before I designed a series of miso labels for this client, I first was invited to make a house call and lunch visit to get let in on the level of artistry that they employ for their products. The Koji for this miso, is hand fermented, making it a one of a kind product. They are true masters of creating unique and delicious food items. The visit was wonderful inspiration and gave a keen insight towards the feeling that the labels needed to elicit.',
+      rows:[
+        [{file:'ChickPeaMiso_Label_simple.png',caption:'SIMPLE LABEL'}],
+        [{file:'chick_pea_sketch_web.jpg',caption:'SKETCH'},{file:'Chickpeas_StillLife.jpg',caption:'STILL LIFE'},{file:'MisoJar_pic.jpg',caption:'PRODUCT SHOT'}],
+        [{file:'ChickPeaMiso_Label.jpg',caption:'FULL LABEL'}]
+      ]},
+    { title:'TRUE LOVE PIZZA', subtitle:'Illustration', heroWidth:'75%',
+      text:'This client wanted a fun pizza sticker and hat illustration to add to their existing brand. The challenge was to create something that could be embroidered as well as coloured in for a pop-sticker.\n\nThe position and layout were the key components to address for first approvals. I sketched a series of slices of different flavours and we landed on number 8 pepperoni.',
+      rows:[
+        [{file:'TrueLove_Pizza_Illustrations.png',caption:'LINE ART'},{file:'TrueLove_Pizza_Illustrations-02.png',caption:'COLOUR VERSION'}],
+        [{file:'TL_StickerLayouts.jpg',caption:'STICKER LAYOUTS'},{file:'HatsPic.jpg',caption:'EMBROIDERED HATS'}],
+        [{file:'CU_hat_web.jpg',caption:'HAT CLOSE-UP'},{file:'ECU_hat.jpg',caption:'HAT DETAIL'}]
+      ]},
+    { title:'MORGAN FRY CONST.', subtitle:'Logo',
+      text:'Morgan came to me with the idea that the structures he builds are puzzles. His clients know him to be able to pull off the impossible. He wanted something very structural as well as a letter mark. We played around with many variations of this idea of the M that is also triangles, trusses and beams.\n\nThis impossibly constructed shape contains all the letters of his name, though they are not overly accentuated, and tells the story of what Morgan can do.',
+      rows:[
+        [{file:'Puzzle_Logo_Background_BLACK.png',caption:'LOGO ON BLACK'}],
+        [{file:'Ideas.png',caption:'IDEATION'},{file:'MFC_CardMockup.jpg',caption:'CARD MOCKUP'}]
+      ]},
+    { title:'MICK BROMLEY PTG', subtitle:'Identity',
+      text:'When Mick saw what I had come up with, he was giddy, he loved it because it was what he spent all his working time immersed in; edges and colours and shapes.\n\nI wanted to create something using simple geometry and lots of colour, and landed here with delight.',
+      rows:[
+        [{file:'MBpaintingLogo.png',caption:'COLOUR LOGO'}],
+        [{file:'MBpaintingLogo_BW.png',caption:'B&W VERSION'},{file:'MBpainting_Painting.png',caption:'PAINTED APPLICATION'}]
+      ]}
+  ];
+}
+
+// --- State ---
+let photoData = defaultPhotoData();
+let designData = defaultDesignData();
+let activeTab = 'photo';
+let dragState = null;
+
+// --- Helpers ---
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+  document.querySelector(`.tab.${tab}`).classList.add('active');
+  document.querySelectorAll('.zone-panel').forEach(p => p.classList.remove('active'));
+  document.getElementById(`panel-${tab}`).classList.add('active');
+}
+
+function getImgUrl(file, zone) {
+  return (zone === 'photo' ? PHOTO_BASE : DESIGN_BASE) + encodeURIComponent(file);
+}
+
+function esc(s) {
+  return (s || '').replace(/&/g,'&amp;').replace(/"/g,'&quot;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// --- Get all files used in a zone ---
+function getUsedFiles(zone) {
+  const data = zone === 'photo' ? photoData : designData;
+  const used = new Set();
+  data.forEach(item => {
+    if (zone === 'photo') {
+      if (item.type === 'single') used.add(item.file);
+      else (item.files || []).forEach(f => used.add(f.file));
+    } else {
+      (item.rows || []).forEach(row => row.forEach(f => used.add(f.file)));
+    }
+  });
+  return used;
+}
+
+// =====================
+// RENDER: PHOTO CARDS
+// =====================
+function renderPhotoCards() {
+  const container = document.getElementById('photo-cards');
+  container.innerHTML = photoData.map((item, idx) => {
+    const isSingle = item.type === 'single';
+    let body = '';
+
+    if (isSingle) {
+      const url = getImgUrl(item.file, 'photo');
+      body = `
+        <div class="single-photo">
+          <img src="${url}" ondblclick="openLightbox('${url}')" onerror="this.classList.add('error')">
+          <div>
+            <div class="file-name">${esc(item.file)}</div>
+            <div class="add-img-row" style="margin-top:8px;">
+              <select onchange="changeSingleFile('photo',${idx},this.value)">
+                <option value="${esc(item.file)}">${esc(item.file)}</option>
+                ${ALL_PHOTOS.filter(f=>f!==item.file).map(f=>`<option value="${esc(f)}">${f}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        </div>`;
+    } else {
+      body = `
+        <div class="gallery-label">GALLERY (${(item.files||[]).length} images)</div>
+        <div class="gallery-grid" data-zone="photo" data-idx="${idx}"
+             ondragover="onGridDragOver(event)" ondragleave="onGridDragLeave(event)" ondrop="onGridDrop(event)">
+          ${(item.files||[]).map((img, gi) => renderGalleryItem('photo', idx, gi, img)).join('')}
+        </div>
+        <div class="add-img-row">
+          <select id="add-sel-photo-${idx}">
+            <option value="">-- add image --</option>
+            ${ALL_PHOTOS.map(f=>`<option value="${f}">${f}</option>`).join('')}
+          </select>
+          <input type="text" id="add-cap-photo-${idx}" placeholder="Caption" style="max-width:160px;">
+          <button class="btn sm" onclick="addPhotoImage(${idx})">Add</button>
+        </div>`;
+    }
+
+    return `
+      <div class="card photo ${item.hidden?'is-hidden':''}" data-zone="photo" data-idx="${idx}"
+           ondragover="onCardReorderOver(event);onCardDragOver(event)" ondragleave="onCardReorderLeave(event);onCardDragLeave(event)" ondrop="if(cardDrag){onCardReorderDrop(event)}else{onCardDrop(event)}"
+        <div class="card-header">
+          <span class="card-num drag-handle" draggable="true"
+                ondragstart="onCardReorderStart(event,'photo',${idx})"
+                ondragend="onCardReorderEnd(event)"
+                title="Drag to reorder">${idx + 1}</span>
+          <button class="hide-toggle ${item.hidden?'active':''}" onclick="toggleHidden('photo',${idx})" title="${item.hidden?'Show in game':'Hide from game'}">${item.hidden?'HIDDEN':'visible'}</button>
+          <button class="collapse-btn" onclick="toggleCollapse(this)">&#9660;</button>
+          <span class="type-badge ${isSingle?'single':'gallery'}">${isSingle?'SINGLE':'GALLERY'}</span>
+          <select class="type-select" onchange="togglePhotoType(${idx},this.value)">
+            <option value="single" ${isSingle?'selected':''}>Single</option>
+            <option value="gallery" ${!isSingle?'selected':''}>Gallery</option>
+          </select>
+          <div style="flex:1; min-width:200px;">
+            <input type="text" value="${esc(item.title)}" placeholder="Title"
+                   onchange="photoData[${idx}].title=this.value"
+                   style="font-weight:600; color:#ffcc00;">
+          </div>
+          <button class="btn sm danger" onclick="removePhotoItem(${idx})">&#x2715;</button>
+        </div>
+        <div class="card-body">${body}</div>
+      </div>`;
+  }).join('');
+
+  renderPool('photo');
+}
+
+function renderGalleryItem(zone, cardIdx, imgIdx, img) {
+  const url = getImgUrl(img.file, zone);
+  const wideBtn = zone === 'photo'
+    ? `<button class="wide-toggle ${img.wide?'active':''}" onclick="toggleWide(${cardIdx},${imgIdx})"
+         title="Toggle full-width">${img.wide?'WIDE':'narrow'}</button>`
+    : '';
+  return `
+    <div class="gallery-item ${img.wide?'is-wide':''}" draggable="true"
+         data-zone="${zone}" data-card="${cardIdx}" data-img="${imgIdx}"
+         data-file="${esc(img.file)}" data-caption="${esc(img.caption)}"
+         ondragstart="onImgDragStart(event)" ondragend="onImgDragEnd(event)"
+         ondragover="onImgDragOver(event)" ondragleave="onImgDragLeave(event)">
+      <img src="${url}" alt="${esc(img.caption)}" loading="lazy"
+           ondblclick="openLightbox('${url}')"
+           onerror="this.classList.add('error')" onload="this.classList.remove('loading')" class="loading">
+      <div class="caption-row">
+        ${wideBtn}
+        <input type="text" value="${esc(img.caption)}" placeholder="Caption"
+               onchange="updateCaption('${zone}',${cardIdx},${imgIdx},this.value)">
+        <button class="remove-img" onclick="removeImage('${zone}',${cardIdx},${imgIdx})">&#x2715;</button>
+      </div>
+    </div>`;
+}
+
+function toggleWide(cardIdx, imgIdx) {
+  photoData[cardIdx].files[imgIdx].wide = !photoData[cardIdx].files[imgIdx].wide;
+  renderPhotoCards();
+}
+
+function toggleHidden(zone, idx) {
+  const arr = zone === 'photo' ? photoData : designData;
+  arr[idx].hidden = !arr[idx].hidden;
+  if (zone === 'photo') renderPhotoCards(); else renderDesignCards();
+}
+
+// =====================
+// RENDER: DESIGN CARDS
+// =====================
+function renderDesignCards() {
+  const container = document.getElementById('design-cards');
+  container.innerHTML = designData.map((item, idx) => {
+    const rows = item.rows || [[]];
+    const heroWidthVal = item.heroWidth || '';
+
+    const rowsHtml = rows.map((row, ri) => {
+      const isHero = ri === 0;
+      return `
+        <div class="row-section">
+          <div class="row-header">
+            <span class="row-label ${isHero?'hero':''}">${isHero?'HERO ROW':'ROW '+(ri+1)}</span>
+            ${isHero ? `<label style="margin:0;font-size:10px;">heroWidth: <input class="herowidth-input" type="text" value="${esc(heroWidthVal)}" placeholder="auto" onchange="designData[${idx}].heroWidth=this.value||undefined;"></label>` : ''}
+            ${!isHero ? `<button class="btn sm danger" onclick="removeDesignRow(${idx},${ri})" style="padding:2px 6px;font-size:10px;">remove row</button>` : ''}
+          </div>
+          <div class="gallery-grid" data-zone="design" data-idx="${idx}" data-row="${ri}"
+               ondragover="onGridDragOver(event)" ondragleave="onGridDragLeave(event)" ondrop="onDesignRowDrop(event)">
+            ${row.map((img, gi) => renderDesignRowItem(idx, ri, gi, img)).join('')}
+          </div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="card design ${item.hidden?'is-hidden':''}" data-zone="design" data-idx="${idx}"
+           ondragover="onCardReorderOver(event)" ondragleave="onCardReorderLeave(event)" ondrop="if(cardDrag){onCardReorderDrop(event)}">
+        <div class="card-header">
+          <span class="card-num drag-handle" draggable="true"
+                ondragstart="onCardReorderStart(event,'design',${idx})"
+                ondragend="onCardReorderEnd(event)"
+                title="Drag to reorder">${idx + 1}</span>
+          <button class="hide-toggle ${item.hidden?'active':''}" onclick="toggleHidden('design',${idx})" title="${item.hidden?'Show in game':'Hide from game'}">${item.hidden?'HIDDEN':'visible'}</button>
+          <button class="collapse-btn" onclick="toggleCollapse(this)">&#9660;</button>
+          <div style="flex:1; min-width:200px;">
+            <input type="text" value="${esc(item.title)}" placeholder="Title"
+                   onchange="designData[${idx}].title=this.value"
+                   style="font-weight:600; color:#ff8c00;">
+          </div>
+          <div style="flex:0 0 160px;">
+            <input type="text" value="${esc(item.subtitle||'')}" placeholder="Subtitle"
+                   onchange="designData[${idx}].subtitle=this.value"
+                   style="color:#aaa; font-size:12px;">
+          </div>
+          <button class="btn sm danger" onclick="removeDesignItem(${idx})">&#x2715;</button>
+        </div>
+        <div class="card-body">
+          <div style="margin-bottom:10px;">
+            <label>DESCRIPTION</label>
+            <textarea rows="3" onchange="designData[${idx}].text=this.value">${esc(item.text||'')}</textarea>
+          </div>
+          ${rowsHtml}
+          <div style="margin-top:8px; display:flex; gap:8px; align-items:center;">
+            <button class="btn sm" onclick="addDesignRow(${idx})">+ Add Row</button>
+            <div class="add-img-row" style="margin:0;">
+              <select id="add-sel-design-${idx}">
+                <option value="">-- add to last row --</option>
+                ${ALL_DESIGN_IMAGES.map(f=>`<option value="${f}">${f}</option>`).join('')}
+              </select>
+              <input type="text" id="add-cap-design-${idx}" placeholder="Caption" style="max-width:140px;">
+              <button class="btn sm" onclick="addDesignImage(${idx})">Add</button>
+            </div>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+
+  renderPool('design');
+}
+
+function renderDesignRowItem(cardIdx, rowIdx, imgIdx, img) {
+  const url = getImgUrl(img.file, 'design');
+  return `
+    <div class="gallery-item" draggable="true"
+         data-zone="design" data-card="${cardIdx}" data-row="${rowIdx}" data-img="${imgIdx}"
+         data-file="${esc(img.file)}" data-caption="${esc(img.caption)}"
+         ondragstart="onImgDragStart(event)" ondragend="onImgDragEnd(event)"
+         ondragover="onImgDragOver(event)" ondragleave="onImgDragLeave(event)">
+      <img src="${url}" alt="${esc(img.caption)}" loading="lazy"
+           ondblclick="openLightbox('${url}')"
+           onerror="this.classList.add('error')" onload="this.classList.remove('loading')" class="loading">
+      <div class="caption-row">
+        <input type="text" value="${esc(img.caption)}" placeholder="Caption"
+               onchange="updateDesignCaption(${cardIdx},${rowIdx},${imgIdx},this.value)">
+        <button class="remove-img" onclick="removeDesignImage(${cardIdx},${rowIdx},${imgIdx})">&#x2715;</button>
+      </div>
+    </div>`;
+}
+
+// --- Pool ---
+function renderPool(zone) {
+  const allFiles = zone === 'photo' ? ALL_PHOTOS : ALL_DESIGN_IMAGES;
+  const used = getUsedFiles(zone);
+  const poolEl = document.getElementById(`${zone}-pool`);
+  const unused = allFiles.filter(f => !used.has(f));
+
+  if (unused.length === 0) {
+    poolEl.innerHTML = '<h3>All images assigned</h3>';
+    return;
+  }
+
+  poolEl.innerHTML = `
+    <h3>UNASSIGNED (${unused.length}) -- drag into any gallery above</h3>
+    <div class="pool-grid">
+      ${unused.map(f => `
+        <div class="pool-item" draggable="true"
+             data-zone="${zone}" data-file="${f}" data-source="pool"
+             ondragstart="onPoolDragStart(event)" ondragend="onPoolDragEnd(event)" title="${f}">
+          <img src="${getImgUrl(f, zone)}" loading="lazy" onerror="this.style.opacity=0.15">
+          <div class="pool-name">${f}</div>
+        </div>
+      `).join('')}
+    </div>`;
+}
+
+// ======================
+// DATA MUTATIONS: PHOTO
+// ======================
+function togglePhotoType(idx, newType) {
+  const item = photoData[idx];
+  if (newType === 'single' && item.type !== 'single') {
+    item.type = 'single';
+    item.file = (item.files && item.files[0]) ? item.files[0].file : ALL_PHOTOS[0];
+    delete item.files;
+  } else if (newType === 'gallery' && item.type !== 'gallery') {
+    item.type = 'gallery';
+    item.files = item.file ? [{ file: item.file, caption: item.title }] : [];
+    delete item.file;
+  }
+  renderPhotoCards();
+}
+
+function changeSingleFile(zone, idx, file) {
+  photoData[idx].file = file;
+  renderPhotoCards();
+}
+
+function addPhotoImage(idx) {
+  const sel = document.getElementById(`add-sel-photo-${idx}`);
+  const cap = document.getElementById(`add-cap-photo-${idx}`);
+  if (!sel.value) return;
+  if (!photoData[idx].files) photoData[idx].files = [];
+  photoData[idx].files.push({ file: sel.value, caption: cap.value || sel.value.replace(/\.[^.]+$/, '') });
+  renderPhotoCards();
+}
+
+function addPhotoItem() {
+  photoData.push({ title: 'NEW ITEM', type: 'single', file: ALL_PHOTOS[0] });
+  renderPhotoCards();
+}
+
+function removePhotoItem(idx) {
+  if (!confirm('Remove "' + photoData[idx].title + '"?')) return;
+  photoData.splice(idx, 1);
+  renderPhotoCards();
+}
+
+// ======================
+// DATA MUTATIONS: DESIGN
+// ======================
+function addDesignRow(idx) {
+  if (!designData[idx].rows) designData[idx].rows = [[]];
+  designData[idx].rows.push([]);
+  renderDesignCards();
+}
+
+function removeDesignRow(idx, ri) {
+  designData[idx].rows.splice(ri, 1);
+  renderDesignCards();
+}
+
+function addDesignImage(idx) {
+  const sel = document.getElementById(`add-sel-design-${idx}`);
+  const cap = document.getElementById(`add-cap-design-${idx}`);
+  if (!sel.value) return;
+  const rows = designData[idx].rows;
+  if (!rows || rows.length === 0) { designData[idx].rows = [[]]; }
+  designData[idx].rows[designData[idx].rows.length - 1].push({
+    file: sel.value, caption: cap.value || sel.value.replace(/\.[^.]+$/, '')
+  });
+  renderDesignCards();
+}
+
+function addDesignItem() {
+  designData.push({ title: 'NEW PROJECT', subtitle: '', text: '', rows: [[]] });
+  renderDesignCards();
+}
+
+function removeDesignItem(idx) {
+  if (!confirm('Remove "' + designData[idx].title + '"?')) return;
+  designData.splice(idx, 1);
+  renderDesignCards();
+}
+
+function updateDesignCaption(cardIdx, rowIdx, imgIdx, val) {
+  designData[cardIdx].rows[rowIdx][imgIdx].caption = val;
+}
+
+function removeDesignImage(cardIdx, rowIdx, imgIdx) {
+  designData[cardIdx].rows[rowIdx].splice(imgIdx, 1);
+  // Remove empty non-hero rows
+  if (rowIdx > 0 && designData[cardIdx].rows[rowIdx].length === 0) {
+    designData[cardIdx].rows.splice(rowIdx, 1);
+  }
+  renderDesignCards();
+}
+
+// ======================
+// SHARED MUTATIONS
+// ======================
+function updateCaption(zone, cardIdx, imgIdx, val) {
+  if (zone === 'photo') photoData[cardIdx].files[imgIdx].caption = val;
+}
+
+function removeImage(zone, cardIdx, imgIdx) {
+  if (zone === 'photo') {
+    photoData[cardIdx].files.splice(imgIdx, 1);
+    renderPhotoCards();
+  }
+}
+
+// ======================
+// DRAG & DROP
+// ======================
+// =====================
+// CARD REORDER DRAG
+// =====================
+let cardDrag = null;
+
+function onCardReorderStart(e, zone, idx) {
+  e.stopPropagation();
+  cardDrag = { zone, idx };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', 'card');
+  e.currentTarget.closest('.card').classList.add('dragging');
+}
+
+function onCardReorderEnd(e) {
+  document.querySelectorAll('.card.dragging').forEach(c => c.classList.remove('dragging'));
+  document.querySelectorAll('.card.drag-above,.card.drag-below').forEach(c => { c.classList.remove('drag-above','drag-below'); });
+  cardDrag = null;
+}
+
+function onCardReorderOver(e) {
+  if (!cardDrag) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const card = e.currentTarget;
+  const rect = card.getBoundingClientRect();
+  const midY = rect.top + rect.height / 2;
+  card.classList.toggle('drag-above', e.clientY < midY);
+  card.classList.toggle('drag-below', e.clientY >= midY);
+}
+
+function onCardReorderLeave(e) {
+  e.currentTarget.classList.remove('drag-above', 'drag-below');
+}
+
+function onCardReorderDrop(e) {
+  e.preventDefault();
+  const card = e.currentTarget;
+  card.classList.remove('drag-above', 'drag-below');
+  if (!cardDrag) return;
+  const targetZone = card.dataset.zone;
+  const targetIdx = +card.dataset.idx;
+  if (cardDrag.zone !== targetZone) return;
+
+  const arr = targetZone === 'photo' ? photoData : designData;
+  const fromIdx = cardDrag.idx;
+  if (fromIdx === targetIdx) return;
+
+  const rect = card.getBoundingClientRect();
+  const insertAfter = e.clientY >= rect.top + rect.height / 2;
+  let toIdx = insertAfter ? targetIdx + 1 : targetIdx;
+  if (fromIdx < toIdx) toIdx--;
+
+  const [item] = arr.splice(fromIdx, 1);
+  arr.splice(toIdx, 0, item);
+
+  cardDrag = null;
+  if (targetZone === 'photo') renderPhotoCards(); else renderDesignCards();
+}
+
+function onImgDragStart(e) {
+  const el = e.currentTarget;
+  el.classList.add('dragging');
+  dragState = {
+    zone: el.dataset.zone,
+    cardIdx: +el.dataset.card,
+    imgIdx: +el.dataset.img,
+    row: el.dataset.row !== undefined ? +el.dataset.row : -1,
+    file: el.dataset.file,
+    caption: el.dataset.caption,
+    source: 'gallery'
+  };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', el.dataset.file);
+}
+
+function onImgDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  clearAllHighlights();
+  dragState = null;
+}
+
+function onImgDragOver(e) {
+  if (!dragState) return;
+  e.preventDefault();
+  e.stopPropagation();
+}
+
+function onImgDragLeave(e) {}
+
+function onPoolDragStart(e) {
+  const el = e.currentTarget;
+  el.classList.add('dragging');
+  dragState = {
+    zone: el.dataset.zone, cardIdx: -1, imgIdx: -1, row: -1,
+    file: el.dataset.file,
+    caption: el.dataset.file.replace(/\.[^.]+$/, '').replace(/_/g, ' '),
+    source: 'pool'
+  };
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', el.dataset.file);
+}
+
+function onPoolDragEnd(e) {
+  e.currentTarget.classList.remove('dragging');
+  clearAllHighlights();
+  dragState = null;
+}
+
+function onGridDragOver(e) {
+  if (!dragState) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.classList.add('drag-over');
+}
+
+function onGridDragLeave(e) {
+  const grid = e.currentTarget;
+  if (e.relatedTarget && grid.contains(e.relatedTarget)) return;
+  grid.classList.remove('drag-over');
+}
+
+function onGridDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  e.currentTarget.classList.remove('drag-over');
+  if (!dragState || dragState.zone !== 'photo') return;
+
+  const targetCard = +e.currentTarget.dataset.idx;
+  const dropIdx = getDropIndex(e, e.currentTarget);
+
+  // Remove from source
+  if (dragState.source === 'gallery') {
+    photoData[dragState.cardIdx].files.splice(dragState.imgIdx, 1);
+    // Adjust if same card
+    let adj = dropIdx;
+    if (dragState.cardIdx === targetCard && dragState.imgIdx < dropIdx) adj--;
+    photoData[targetCard].files.splice(adj, 0, { file: dragState.file, caption: dragState.caption });
+  } else {
+    if (!photoData[targetCard].files) photoData[targetCard].files = [];
+    photoData[targetCard].files.splice(dropIdx, 0, { file: dragState.file, caption: dragState.caption });
+  }
+
+  dragState = null;
+  renderPhotoCards();
+}
+
+function onDesignRowDrop(e) {
+  e.preventDefault(); e.stopPropagation();
+  e.currentTarget.classList.remove('drag-over');
+  if (!dragState || dragState.zone !== 'design') return;
+
+  const targetCard = +e.currentTarget.dataset.idx;
+  const targetRow = +e.currentTarget.dataset.row;
+  const dropIdx = getDropIndex(e, e.currentTarget);
+
+  if (dragState.source === 'gallery') {
+    designData[dragState.cardIdx].rows[dragState.row].splice(dragState.imgIdx, 1);
+    let adj = dropIdx;
+    if (dragState.cardIdx === targetCard && dragState.row === targetRow && dragState.imgIdx < dropIdx) adj--;
+    designData[targetCard].rows[targetRow].splice(adj, 0, { file: dragState.file, caption: dragState.caption });
+    // Clean empty non-hero rows
+    if (dragState.row > 0 && designData[dragState.cardIdx].rows[dragState.row] &&
+        designData[dragState.cardIdx].rows[dragState.row].length === 0) {
+      designData[dragState.cardIdx].rows.splice(dragState.row, 1);
+    }
+  } else {
+    designData[targetCard].rows[targetRow].splice(dropIdx, 0, { file: dragState.file, caption: dragState.caption });
+  }
+
+  dragState = null;
+  renderDesignCards();
+}
+
+function onCardDragOver(e) {
+  if (!dragState) return;
+  e.preventDefault();
+  e.currentTarget.classList.add('drop-target');
+}
+
+function onCardDragLeave(e) {
+  const card = e.currentTarget;
+  if (e.relatedTarget && card.contains(e.relatedTarget)) return;
+  card.classList.remove('drop-target');
+}
+
+function onCardDrop(e) {
+  if (e.defaultPrevented) { e.currentTarget.classList.remove('drop-target'); return; }
+  e.preventDefault();
+  e.currentTarget.classList.remove('drop-target');
+  if (!dragState) return;
+  // Append to end of last gallery/row
+  const targetCard = +e.currentTarget.dataset.idx;
+  const zone = e.currentTarget.dataset.zone;
+  if (zone === 'photo') {
+    if (photoData[targetCard].type === 'gallery') {
+      if (!photoData[targetCard].files) photoData[targetCard].files = [];
+      if (dragState.source === 'gallery') photoData[dragState.cardIdx].files.splice(dragState.imgIdx, 1);
+      photoData[targetCard].files.push({ file: dragState.file, caption: dragState.caption });
+    }
+    dragState = null; renderPhotoCards();
+  } else {
+    const rows = designData[targetCard].rows;
+    if (dragState.source === 'gallery') {
+      designData[dragState.cardIdx].rows[dragState.row].splice(dragState.imgIdx, 1);
+    }
+    rows[rows.length - 1].push({ file: dragState.file, caption: dragState.caption });
+    dragState = null; renderDesignCards();
+  }
+}
+
+function getDropIndex(e, grid) {
+  const items = grid.querySelectorAll('.gallery-item');
+  if (items.length === 0) return 0;
+  let closestIdx = items.length, closestDist = Infinity;
+  items.forEach((item, i) => {
+    const rect = item.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const dist = Math.abs(e.clientX - cx);
+    if (dist < closestDist) { closestDist = dist; closestIdx = e.clientX < cx ? i : i + 1; }
+  });
+  return closestIdx;
+}
+
+function clearAllHighlights() {
+  document.querySelectorAll('.drag-over,.drop-target,.dragging').forEach(el =>
+    el.classList.remove('drag-over','drop-target','dragging'));
+}
+
+// ======================
+// UI HELPERS
+// ======================
+function toggleCollapse(btn) {
+  btn.closest('.card').querySelector('.card-body').classList.toggle('collapsed');
+  btn.classList.toggle('collapsed');
+}
+
+function openLightbox(url) {
+  document.getElementById('lightbox-img').src = url;
+  document.getElementById('lightbox').classList.add('show');
+}
+
+// ======================
+// EXPORT MANIFESTS
+// ======================
+function buildPhotoManifest() {
+  return {
+    baseUrl: PHOTO_BASE,
+    items: photoData.filter(item => !item.hidden).map(item => {
+      const o = { title: item.title };
+      if (item.type === 'single') {
+        o.type = 'single';
+        o.file = item.file;
+      } else {
+        o.type = 'gallery';
+        o.files = (item.files || []).map(f => { const g={file:f.file, caption:f.caption}; if(f.wide) g.wide=true; return g; });
+      }
+      return o;
+    }),
+    _hidden: photoData.filter(item => item.hidden).map(item => {
+      const o = { title: item.title, hidden: true };
+      if (item.type === 'single') { o.type = 'single'; o.file = item.file; }
+      else { o.type = 'gallery'; o.files = (item.files || []).map(f => { const g={file:f.file, caption:f.caption}; if(f.wide) g.wide=true; return g; }); }
+      return o;
+    })
+  };
+}
+
+function buildDesignManifest() {
+  return {
+    baseUrl: DESIGN_BASE,
+    items: designData.filter(item => !item.hidden).map(item => {
+      const o = { title: item.title };
+      if (item.subtitle) o.subtitle = item.subtitle;
+      if (item.heroWidth) o.heroWidth = item.heroWidth;
+      if (item.text) o.text = item.text;
+      o.rows = (item.rows || [[]]).map(row => row.map(f => ({ file: f.file, caption: f.caption })));
+      return o;
+    }),
+    _hidden: designData.filter(item => item.hidden).map(item => {
+      const o = { title: item.title, hidden: true };
+      if (item.subtitle) o.subtitle = item.subtitle;
+      if (item.heroWidth) o.heroWidth = item.heroWidth;
+      if (item.text) o.text = item.text;
+      o.rows = (item.rows || [[]]).map(row => row.map(f => ({ file: f.file, caption: f.caption })));
+      return o;
+    })
+  };
+}
+
+function exportPhotoManifest() {
+  const json = JSON.stringify(buildPhotoManifest(), null, 2);
+  showOutput('photo', json);
+  downloadJSON(json, 'photo-manifest.json');
+}
+
+function exportDesignManifest() {
+  const json = JSON.stringify(buildDesignManifest(), null, 2);
+  showOutput('design', json);
+  downloadJSON(json, 'design-manifest.json');
+}
+
+function exportBoth() {
+  exportPhotoManifest();
+  exportDesignManifest();
+}
+
+function showOutput(which, json) {
+  document.getElementById('output-area').style.display = 'block';
+  document.getElementById(`output-${which}-section`).style.display = 'block';
+  document.getElementById(`output-${which}`).textContent = json;
+  document.getElementById(`output-${which}-section`).scrollIntoView({ behavior: 'smooth' });
+}
+
+function downloadJSON(json, filename) {
+  const blob = new Blob([json], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+}
+
+function copyOutput(id) {
+  const code = document.getElementById(id).textContent;
+  navigator.clipboard.writeText(code).then(() => {
+    const btn = document.getElementById(id).closest('.output-section').querySelector('.copy-btn');
+    btn.textContent = 'COPIED';
+    setTimeout(() => btn.textContent = 'COPY', 1500);
+  });
+}
+
+// ======================
+// IMPORT MANIFESTS
+// ======================
+function importManifest(e, zone) {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = function(ev) {
+    try {
+      const data = JSON.parse(ev.target.result);
+      if (!data.items || !Array.isArray(data.items)) throw new Error('Missing items array');
+      if (zone === 'photo') {
+        photoData = data.items;
+        renderPhotoCards();
+      } else {
+        designData = data.items;
+        renderDesignCards();
+      }
+    } catch(err) { alert('Invalid manifest JSON: ' + err.message); }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+}
+
+function resetAll() {
+  if (!confirm('Reset all data to defaults? This cannot be undone.')) return;
+  photoData = defaultPhotoData();
+  designData = defaultDesignData();
+  renderPhotoCards();
+  renderDesignCards();
+}
+
+// ======================
+// GITHUB PUBLISH
+// ======================
+const GH_REPOS = {
+  photo: { owner:'pietsuess', repo:'piet-photos', branch:'master', path:'manifest.json' },
+  design: { owner:'pietsuess', repo:'design-portfolio', branch:'main', path:'manifest.json' }
+};
+
+function saveToken(val) {
+  try { localStorage.setItem('gh_token', val); } catch(e) {}
+  document.getElementById('token-status').textContent = val ? 'saved locally' : '';
+}
+
+function getToken() {
+  return document.getElementById('gh-token').value ||
+    (localStorage.getItem('gh_token') || '');
+}
+
+async function publishManifest(zone) {
+  const token = getToken();
+  if (!token) { showPublishStatus('Enter your GitHub token first.', false); return; }
+
+  const btn = document.getElementById(`pub-${zone}-btn`);
+  const orig = btn.textContent;
+  btn.textContent = 'PUBLISHING...';
+  btn.disabled = true;
+
+  const cfg = GH_REPOS[zone];
+  const manifest = zone === 'photo' ? buildPhotoManifest() : buildDesignManifest();
+  const json = JSON.stringify(manifest, null, 2) + '\n';
+  const content = btoa(unescape(encodeURIComponent(json)));
+
+  try {
+    // Helper: get current SHA (cache-busted)
+    async function getSha() {
+      const r = await fetch(
+        `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}?ref=${cfg.branch}&_t=${Date.now()}`,
+        { headers: { Authorization: `token ${token}`, 'If-None-Match': '' } }
+      );
+      if (r.ok) { const d = await r.json(); return d.sha; }
+      return null;
+    }
+
+    // Helper: PUT the file
+    async function putFile(sha) {
+      const body = { message: `Update ${cfg.path} via Content Editor`, content, branch: cfg.branch };
+      if (sha) body.sha = sha;
+      return fetch(
+        `https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path}`,
+        { method: 'PUT', headers: { Authorization: `token ${token}`, 'Content-Type': 'application/json' }, body: JSON.stringify(body) }
+      );
+    }
+
+    let sha = await getSha();
+    let putRes = await putFile(sha);
+
+    // Retry once on 409 conflict (stale SHA)
+    if (putRes.status === 409) {
+      console.warn('[PUBLISH] 409 conflict, retrying with fresh SHA...');
+      sha = await getSha();
+      putRes = await putFile(sha);
+    }
+
+    if (putRes.ok) {
+      showPublishStatus(`${zone.toUpperCase()} manifest published to ${cfg.owner}/${cfg.repo}`, true);
+      btn.textContent = 'PUBLISHED';
+      btn.classList.add('success');
+      setTimeout(() => { btn.textContent = orig; btn.classList.remove('success'); }, 3000);
+    } else {
+      const err = await putRes.json();
+      throw new Error(`${putRes.status}: ${err.message || 'Unknown error'}`);
+    }
+  } catch(e) {
+    console.error('[PUBLISH]', zone, e);
+    showPublishStatus(`Failed to publish ${zone}: ${e.message}`, false);
+    btn.textContent = 'FAILED';
+    btn.classList.add('fail');
+    setTimeout(() => { btn.textContent = orig; btn.classList.remove('fail'); }, 3000);
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function publishBoth() {
+  await publishManifest('photo');
+  await publishManifest('design');
+}
+
+function showPublishStatus(msg, ok) {
+  const el = document.getElementById('publish-status');
+  el.textContent = msg;
+  el.className = 'publish-status show ' + (ok ? 'ok' : 'err');
+  setTimeout(() => el.classList.remove('show'), 6000);
+}
+
+// ======================
+// LOAD FROM GITHUB ON INIT
+// ======================
+async function loadFromGitHub() {
+  const token = getToken();
+  const headers = token ? { Authorization: `token ${token}`, 'If-None-Match': '' } : { 'If-None-Match': '' };
+
+  // Load photo manifest (cache-busted)
+  try {
+    const photoRes = await fetch(
+      `https://api.github.com/repos/${GH_REPOS.photo.owner}/${GH_REPOS.photo.repo}/contents/${GH_REPOS.photo.path}?ref=${GH_REPOS.photo.branch}&_t=${Date.now()}`,
+      { headers }
+    );
+    if (photoRes.ok) {
+      const data = await photoRes.json();
+      const json = JSON.parse(atob(data.content));
+      if (json.items && json.items.length > 0) {
+        const hidden = (json._hidden || []).map(h => { h.hidden = true; return h; });
+        photoData = [...json.items, ...hidden];
+        console.log('[EDITOR] Loaded photo manifest from GitHub:', json.items.length, 'active +', hidden.length, 'hidden');
+      }
+    }
+  } catch(e) { console.warn('[EDITOR] Failed to load photo manifest:', e.message); }
+
+  // Load design manifest (cache-busted)
+  try {
+    const designRes = await fetch(
+      `https://api.github.com/repos/${GH_REPOS.design.owner}/${GH_REPOS.design.repo}/contents/${GH_REPOS.design.path}?ref=${GH_REPOS.design.branch}&_t=${Date.now()}`,
+      { headers }
+    );
+    if (designRes.ok) {
+      const data = await designRes.json();
+      const json = JSON.parse(atob(data.content));
+      if (json.items && json.items.length > 0) {
+        const dHidden = (json._hidden || []).map(h => { h.hidden = true; return h; });
+        designData = [...json.items, ...dHidden];
+        console.log('[EDITOR] Loaded design manifest from GitHub:', json.items.length, 'active +', dHidden.length, 'hidden');
+      }
+    }
+  } catch(e) { console.warn('[EDITOR] Failed to load design manifest:', e.message); }
+
+  renderPhotoCards();
+  renderDesignCards();
+}
+
+// --- Init ---
+// Restore saved token
+try {
+  const saved = localStorage.getItem('gh_token');
+  if (saved) document.getElementById('gh-token').value = saved;
+} catch(e) {}
+
+// Load file lists from GitHub, then manifests, then render
+(async () => {
+  await loadFileLists();
+  renderPhotoCards();
+  renderDesignCards();
+  await loadFromGitHub();
+})();
+</script>
+</body>
+</html>
