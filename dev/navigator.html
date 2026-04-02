@@ -2538,7 +2538,6 @@ let _viewHintTargetX = 22; // where the first fly landed (for hint arrow positio
 let _viewHintTargetY = 0;
 
 function _spawnHudFlyAnim(itemTitle){
-  // Find which zone & index this item belongs to
   for(let li = 0; li < LEVELS.length; li++){
     const lvlName = LEVELS[li];
     const items = CONTENT_DATA[lvlName] || [];
@@ -2562,13 +2561,15 @@ function _spawnHudFlyAnim(itemTitle){
       color: col,
       title: itemTitle,
       progress: 0,
-      duration: isFirst ? 90 : 45, // first: ~1.5s, rest: ~0.75s
+      duration: isFirst ? 120 : 45, // first: ~2s, rest: ~0.75s
       _isFirst: isFirst,
-      _trail: isFirst ? [] : null // trail positions for glow afterimages
+      _trail: isFirst ? [] : null
     });
     if(isFirst){
       _viewHintTargetX = targetX;
       _viewHintTargetY = targetY;
+      // Kill mission flash text immediately on first collection
+      if(state.zoneCrossFlash) state.zoneCrossFlash.timer = 0;
     }
     return;
   }
@@ -2584,26 +2585,24 @@ function _drawHudFlyAnims(){
     a.progress += 1 / a.duration;
     if(a.progress >= 1){
       if(a.title) _hudFlyingTitles.delete(a.title);
-      // First collection landed — trigger hint
       if(a._isFirst && !_firstCollectAnimDone){
         _firstCollectAnimDone = true;
-        _viewHintTimer = 300; // 5s total (4s display + 1s fade)
+        _viewHintTimer = 300; // 5s (4s display + 1s fade)
       }
       _hudFlyAnims.splice(i, 1);
       continue;
     }
     const t = a.progress;
-    const ease = t * t * (3 - 2 * t); // smoothstep
+    const ease = t * t * (3 - 2 * t);
     const x = a.startX + (a.targetX - a.startX) * ease;
     const y = a.startY + (a.targetY - a.startY) * ease;
 
     if(a._isFirst){
-      // Enhanced first-collection animation: bigger, with glow trail
-      const scale = 4 - 3 * ease; // shrink from 4x to 1x
+      // Enhanced first-collection: bigger, slower, glow trail, hint arrow follows
+      const scale = 4 - 3 * ease;
       const sz = 10 * scale;
-      // Store trail position
       if(a._trail) a._trail.push({x, y, t});
-      // Draw trail afterimages (last 4 positions, spaced apart)
+      // Trail afterimages
       if(a._trail && a._trail.length > 1){
         const step = Math.max(1, Math.floor(a._trail.length / 4));
         for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
@@ -2623,7 +2622,7 @@ function _drawHudFlyAnims(){
           ctx.shadowBlur = 0;
         }
       }
-      // Draw main shape
+      // Main shape
       const alpha = 0.5 + 0.5 * (1 - t);
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = a.color;
@@ -2633,6 +2632,18 @@ function _drawHudFlyAnims(){
       drawHUDShape(ctx, a.shape, x, y, sz);
       ctx.stroke();
       ctx.shadowBlur = 0;
+      // Hint arrow: ▼ pointing down at the flying object from above
+      const arrowPulse = 0.7 + 0.3 * Math.sin(state.frameCount * 0.1);
+      ctx.globalAlpha = alpha * arrowPulse;
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowBlur = 12;
+      ctx.shadowColor = '#00ffcc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      setFont(FONT_12);
+      ctx.fillText('\u25BC', x, y - sz - 6);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'left';
     } else {
       // Normal fly animation
       const scale = 2.5 - 1.5 * ease;
@@ -2652,7 +2663,7 @@ function _drawHudFlyAnims(){
   // "VIEW AT ANY TIME" hint after first content fly lands
   if(_viewHintTimer > 0){
     _viewHintTimer--;
-    const fadeStart = 60; // last 60 frames = fade out
+    const fadeStart = 60;
     let alpha = 1;
     if(_viewHintTimer < fadeStart) alpha = _viewHintTimer / fadeStart;
     const pulse = 0.7 + 0.3 * Math.sin(state.frameCount * 0.08);
@@ -2660,13 +2671,13 @@ function _drawHudFlyAnims(){
     ctx.fillStyle = '#00ffcc';
     ctx.shadowBlur = 12;
     ctx.shadowColor = '#00ffcc';
-    // Pulsing arrow
-    setFont(FONT_18);
     ctx.textBaseline = 'middle';
-    ctx.fillText('\u25C0', _viewHintTargetX + 18, _viewHintTargetY);
-    // "VIEW AT ANY TIME" text
-    setFont(FONT_9);
-    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 36, _viewHintTargetY);
+    // Arrow pointing at HUD icon
+    setFont(FONT_8);
+    ctx.fillText('\u25C0', _viewHintTargetX + 16, _viewHintTargetY);
+    // Text
+    setFont(FONT_7);
+    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 28, _viewHintTargetY);
     ctx.shadowBlur = 0;
   }
 
@@ -2675,7 +2686,13 @@ function _drawHudFlyAnims(){
     const a = _fuelFlyAnims[i];
     a.progress += 1 / a.duration;
     if(a.progress >= 1){
-      _fuelHintTimer = 180; // 3s bar pulse
+      // Fuel lands — NOW fill the bar
+      if(_pendingFuelAmount > 0){
+        state.fuel = Math.min(1, state.fuel + _pendingFuelAmount);
+        _pendingFuelAmount = 0;
+        updateFuelBar();
+      }
+      _fuelHintTimer = 180;
       _fuelFlyAnims.splice(i, 1);
       continue;
     }
@@ -2685,9 +2702,8 @@ function _drawHudFlyAnims(){
     const y = a.startY + (a.targetY - a.startY) * ease;
     const scale = 4 - 3 * ease;
     const alpha = 0.5 + 0.5 * (1 - t);
-    // Store trail
     if(a._trail) a._trail.push({x, y, t});
-    // Draw trail
+    // Trail
     if(a._trail && a._trail.length > 1){
       const step = Math.max(1, Math.floor(a._trail.length / 4));
       for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
@@ -2704,7 +2720,7 @@ function _drawHudFlyAnims(){
         ctx.shadowBlur = 0;
       }
     }
-    // Draw main fuel cell
+    // Main fuel cell
     ctx.globalAlpha = alpha;
     ctx.strokeStyle = '#00ff88';
     ctx.lineWidth = 3;
@@ -2714,12 +2730,12 @@ function _drawHudFlyAnims(){
     ctx.shadowBlur = 0;
   }
 
-  // Fuel bar pulse hint after fly lands
+  // Fuel bar pulse after fly lands
   if(_fuelHintTimer > 0){
     _fuelHintTimer--;
     const fuelHud = document.getElementById('fuel-hud');
     if(fuelHud){
-      const pulseVal = Math.sin(_fuelHintTimer * 0.12) * 0.5 + 0.5; // 0-1 pulsing
+      const pulseVal = Math.sin(_fuelHintTimer * 0.12) * 0.5 + 0.5;
       fuelHud.style.boxShadow = `0 0 ${12 + pulseVal * 20}px rgba(0,255,136,${0.3 + pulseVal * 0.5})`;
       fuelHud.style.borderColor = `rgba(0,255,136,${0.4 + pulseVal * 0.6})`;
       if(_fuelHintTimer <= 0){
@@ -2736,9 +2752,9 @@ function _drawHudFlyAnims(){
 let _firstFuelAnimDone = false;
 let _fuelFlyAnims = [];
 let _fuelHintTimer = 0;
+let _pendingFuelAmount = 0; // deferred fuel fill for first collection
 
 function _drawFuelCellShape(ctx, x, y, sz){
-  // Fuel cell: rectangle with cap on top
   const w = sz, h = sz * 2;
   ctx.beginPath();
   ctx.rect(x - w/2, y - h/2, w, h);
@@ -5426,7 +5442,14 @@ function updateWaveBeams(){
         const r=f.size+14;
         if((f.wx-b.wx)**2+(f.wy-b.wy)**2 < r*r){
           f.collected=true;
-          state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
+          // First fuel: delay fill until fly animation lands
+          if(!_firstFuelAnimDone){
+            _firstFuelAnimDone = true;
+            _pendingFuelAmount = 0.35;
+            _spawnFuelFlyAnim();
+          } else {
+            state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
+          }
           if(audioCtx&&!state.sfxMuted){
             const t=audioCtx.currentTime;
             // Bright bell-like coin collect: two quick rising tones
@@ -5434,11 +5457,6 @@ function updateWaveBeams(){
             playBeep(noteFreq(1047,4),t+0.05,0.04,'sine',0.12);
             playBeep(noteFreq(1047,7),t+0.09,0.04,'sine',0.10);
             playBeep(noteFreq(1047,12),t+0.13,0.18,'sine',0.14);
-          }
-          // First fuel collection — fly-to-bar animation instead of popup
-          if(!_firstFuelAnimDone){
-            _firstFuelAnimDone = true;
-            _spawnFuelFlyAnim();
           }
           break;
         }
@@ -7499,18 +7517,21 @@ function update(){
       const _fCollectR = f.size+12;
       if(nearCenter(f.wx,f.wy,_fCollectR)){
         f.collected=true;
-        state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
+        if(!_firstFuelAnimDone && !f._outerLaunchpadFuel){
+          // First fuel: delay fill until fly animation lands
+          _firstFuelAnimDone = true;
+          _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
+          _spawnFuelFlyAnim();
+        } else {
+          state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
+          updateFuelBar();
+        }
         if(f._outerLaunchpadFuel){
           state._outerLaunchpadRefuelled=true;
           triggerLaunchpadVictory();
         }
-        updateFuelBar();
         addScore(f._outerLaunchpadFuel?25000:300);
         if(!f._outerLaunchpadFuel&&audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,7,12].forEach((n,i)=>playBeep(noteFreq(330,n),now+i*0.06,0.12,'triangle',0.06));}
-        // First fuel collection — fly-to-bar animation instead of popup
-        if(!_firstFuelAnimDone && !f._outerLaunchpadFuel){
-          _firstFuelAnimDone = true;
-          _spawnFuelFlyAnim();
         }
       }
     });
