@@ -2533,6 +2533,7 @@ let _hudFlyAnims = [];
 let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
 let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
 let _lastCollectedWx = 0, _lastCollectedWy = 0; // world coords of last collected object
+let _burstPendingObj = null; // object kept visible during radial burst
 let _firstCollectAnimDone = false; // enhanced animation for very first collection
 let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
 let _viewHintTargetX = 22; // where the first fly landed (for hint arrow position)
@@ -2584,8 +2585,11 @@ function _spawnHudFlyAnim(itemTitle, objWx, objWy){
       _viewHintTargetX = targetX;
       _viewHintTargetY = targetY;
       if(state.zoneCrossFlash) state.zoneCrossFlash.timer = 0;
-      // Radial burst centered on the object
-      _spawnRadialBurst(burstX, burstY, col, function(){ animData._waiting = false; });
+      // Radial burst centered on the object — hide object when burst ends
+      _spawnRadialBurst(burstX, burstY, col, function(){
+        animData._waiting = false;
+        if(_burstPendingObj){ _burstPendingObj.collected = true; _burstPendingObj = null; }
+      });
     }
 
     _hudFlyAnims.push(animData);
@@ -5494,7 +5498,7 @@ function updateWaveBeams(){
       if((obj.wx-b.wx)**2+(obj.wy-b.wy)**2 < r*r){
         _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
         if(!obj._permanent && !obj._bio && !obj._social){
-          if(!_firstCollectAnimDone){ obj._fadeDelay = 60; } else { obj.collected=true; }
+          if(!_firstCollectAnimDone){ _burstPendingObj = obj; } else { obj.collected=true; }
         }
         b.maxAge=0; hit=true;
         if(!state.collectedItems) state.collectedItems=[];
@@ -7567,8 +7571,8 @@ function update(){
         _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
         // Permanent stations (social/bio) stay visible — don't mark collected
         if(!obj._permanent && !obj._bio && !obj._social){
-          // First collection: delay disappearance for radial burst
-          if(!_firstCollectAnimDone){ obj._fadeDelay = 60; } else { obj.collected=true; }
+          // First collection: keep visible until radial burst ends (burst callback sets collected)
+          if(!_firstCollectAnimDone){ _burstPendingObj = obj; } else { obj.collected=true; }
           const ct=obj.content&&obj.content.title;
           // Also mark other copies of same item (from other cells)
           if(ct){ state.objects.forEach(o=>{ if(o!==obj&&!o._permanent&&!o._bio&&o.content&&o.content.title===ct) o.collected=true; }); }
@@ -9438,8 +9442,6 @@ function drawGame(){
   // Content objects — hidden in secret level
   _fpSub._tObjs0=performance.now();
   if(!state.inSecretLevel || state._victoryPhase==='room') state.objects.forEach(obj=>{
-    // Delayed fade for first collection radial burst
-    if(obj._fadeDelay > 0){ obj._fadeDelay--; if(obj._fadeDelay <= 0) obj.collected = true; }
     if(obj.collected)return;
     const sx=obj.wx-state.x+cx, sy=obj.wy-state.y+cy;
     const offScreen=sx<-60||sx>canvas.width+60||sy<-60||sy>canvas.height+60;
