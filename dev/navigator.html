@@ -2536,6 +2536,11 @@ let _firstCollectAnimDone = false; // enhanced animation for very first collecti
 let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
 let _viewHintTargetX = 22; // where the first fly landed (for hint arrow position)
 let _viewHintTargetY = 0;
+let _radialBursts = []; // expanding ring bursts before fly starts
+
+function _spawnRadialBurst(x, y, color, onDone){
+  _radialBursts.push({ x, y, color, age: 0, maxAge: 50, rings: 3, onDone });
+}
 
 function _spawnHudFlyAnim(itemTitle){
   for(let li = 0; li < LEVELS.length; li++){
@@ -2552,7 +2557,8 @@ function _spawnHudFlyAnim(itemTitle){
     const targetX = 22;
     const isFirst = !_firstCollectAnimDone;
     _hudFlyingTitles.add(itemTitle);
-    _hudFlyAnims.push({
+
+    const animData = {
       startX: canvas.width / 2,
       startY: canvas.height / 2,
       targetX: targetX,
@@ -2561,27 +2567,61 @@ function _spawnHudFlyAnim(itemTitle){
       color: col,
       title: itemTitle,
       progress: 0,
-      duration: isFirst ? 120 : 45, // first: ~2s, rest: ~0.75s
+      duration: isFirst ? 180 : 45, // first: ~3s, rest: ~0.75s
       _isFirst: isFirst,
-      _trail: isFirst ? [] : null
-    });
+      _trail: isFirst ? [] : null,
+      _waiting: isFirst // wait for radial burst to finish before flying
+    };
+
     if(isFirst){
       _viewHintTargetX = targetX;
       _viewHintTargetY = targetY;
-      // Kill mission flash text immediately on first collection
       if(state.zoneCrossFlash) state.zoneCrossFlash.timer = 0;
+      // Radial burst first, then fly
+      _spawnRadialBurst(canvas.width / 2, canvas.height / 2, col, function(){ animData._waiting = false; });
     }
+
+    _hudFlyAnims.push(animData);
     return;
   }
 }
 
 function _drawHudFlyAnims(){
-  if(_hudFlyAnims.length === 0 && _viewHintTimer <= 0 && _fuelFlyAnims.length === 0 && _fuelHintTimer <= 0) return;
+  if(_hudFlyAnims.length === 0 && _viewHintTimer <= 0 && _fuelFlyAnims.length === 0 && _fuelHintTimer <= 0 && _radialBursts.length === 0 && _fuelFillAnim <= 0) return;
   ctx.save();
+
+  // Radial bursts — expanding rings
+  for(let i = _radialBursts.length - 1; i >= 0; i--){
+    const b = _radialBursts[i];
+    b.age++;
+    if(b.age >= b.maxAge){
+      if(b.onDone) b.onDone();
+      _radialBursts.splice(i, 1);
+      continue;
+    }
+    const t = b.age / b.maxAge;
+    for(let r = 0; r < b.rings; r++){
+      const delay = r * 0.2;
+      const rt = Math.max(0, (t - delay) / (1 - delay));
+      if(rt <= 0) continue;
+      const radius = rt * 80;
+      const alpha = (1 - rt) * 0.6;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth = 2.5 - rt * 1.5;
+      ctx.shadowBlur = 16;
+      ctx.shadowColor = b.color;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
 
   // Content fly anims
   for(let i = _hudFlyAnims.length - 1; i >= 0; i--){
     const a = _hudFlyAnims[i];
+    if(a._waiting) continue; // waiting for radial burst
     a.progress += 1 / a.duration;
     if(a.progress >= 1){
       if(a.title) _hudFlyingTitles.delete(a.title);
@@ -2640,8 +2680,8 @@ function _drawHudFlyAnims(){
       ctx.shadowColor = '#00ffcc';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      setFont(FONT_12);
-      ctx.fillText('\u25BC', x, y - sz - 6);
+      setFont('32px "Press Start 2P",monospace');
+      ctx.fillText('\u25BC', x, y - sz - 8);
       ctx.shadowBlur = 0;
       ctx.textAlign = 'left';
     } else {
@@ -2672,25 +2712,26 @@ function _drawHudFlyAnims(){
     ctx.shadowBlur = 12;
     ctx.shadowColor = '#00ffcc';
     ctx.textBaseline = 'middle';
-    // Arrow pointing at HUD icon
-    setFont(FONT_8);
-    ctx.fillText('\u25C0', _viewHintTargetX + 16, _viewHintTargetY);
+    // Arrow pointing at HUD icon (32px arrow, 18px text — matches left HUD hint style)
+    setFont('32px "Press Start 2P",monospace');
+    ctx.fillText('\u25C0', _viewHintTargetX + 20, _viewHintTargetY);
     // Text
-    setFont(FONT_7);
-    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 28, _viewHintTargetY);
+    setFont(FONT_18);
+    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 52, _viewHintTargetY);
     ctx.shadowBlur = 0;
   }
 
   // Fuel fly anims
   for(let i = _fuelFlyAnims.length - 1; i >= 0; i--){
     const a = _fuelFlyAnims[i];
+    if(a._waiting) continue; // waiting for radial burst
     a.progress += 1 / a.duration;
     if(a.progress >= 1){
-      // Fuel lands — NOW fill the bar
+      // Fuel lands — animate the fill gradually
       if(_pendingFuelAmount > 0){
-        state.fuel = Math.min(1, state.fuel + _pendingFuelAmount);
+        _fuelFillTarget = Math.min(1, state.fuel + _pendingFuelAmount);
+        _fuelFillAnim = 90; // 1.5s gradual fill
         _pendingFuelAmount = 0;
-        updateFuelBar();
       }
       _fuelHintTimer = 180;
       _fuelFlyAnims.splice(i, 1);
@@ -2730,6 +2771,15 @@ function _drawHudFlyAnims(){
     ctx.shadowBlur = 0;
   }
 
+  // Gradual fuel fill animation
+  if(_fuelFillAnim > 0){
+    _fuelFillAnim--;
+    const step = (_fuelFillTarget - state.fuel) / (_fuelFillAnim + 1);
+    state.fuel += step;
+    if(_fuelFillAnim <= 0) state.fuel = _fuelFillTarget;
+    updateFuelBar();
+  }
+
   // Fuel bar pulse after fly lands
   if(_fuelHintTimer > 0){
     _fuelHintTimer--;
@@ -2753,6 +2803,8 @@ let _firstFuelAnimDone = false;
 let _fuelFlyAnims = [];
 let _fuelHintTimer = 0;
 let _pendingFuelAmount = 0; // deferred fuel fill for first collection
+let _fuelFillTarget = 0; // target fuel level for gradual fill
+let _fuelFillAnim = 0; // frames remaining in gradual fill
 
 function _drawFuelCellShape(ctx, x, y, sz){
   const w = sz, h = sz * 2;
@@ -2770,15 +2822,19 @@ function _spawnFuelFlyAnim(){
   const r = fuelHud.getBoundingClientRect();
   const targetX = r.left + r.width / 2;
   const targetY = r.top + r.height / 2;
-  _fuelFlyAnims.push({
+  const animData = {
     startX: canvas.width / 2,
     startY: canvas.height / 2,
     targetX: targetX,
     targetY: targetY,
     progress: 0,
-    duration: 90,
-    _trail: []
-  });
+    duration: 120, // ~2s flight
+    _trail: [],
+    _waiting: true // wait for radial burst
+  };
+  // Radial burst first, then fly
+  _spawnRadialBurst(canvas.width / 2, canvas.height / 2, '#00ff88', function(){ animData._waiting = false; });
+  _fuelFlyAnims.push(animData);
 }
 
 let state = {
