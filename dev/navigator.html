@@ -2532,6 +2532,7 @@ function _updateWavePopupHighlight(){
 let _hudFlyAnims = [];
 let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
 let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
+let _lastCollectedWx = 0, _lastCollectedWy = 0; // world coords of last collected object
 let _firstCollectAnimDone = false; // enhanced animation for very first collection
 let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
 let _viewHintTargetX = 22; // where the first fly landed (for hint arrow position)
@@ -2539,10 +2540,10 @@ let _viewHintTargetY = 0;
 let _radialBursts = []; // expanding ring bursts before fly starts
 
 function _spawnRadialBurst(x, y, color, onDone){
-  _radialBursts.push({ x, y, color, age: 0, maxAge: 50, rings: 3, onDone });
+  _radialBursts.push({ x, y, color, age: 0, maxAge: 60, rings: 4, onDone });
 }
 
-function _spawnHudFlyAnim(itemTitle){
+function _spawnHudFlyAnim(itemTitle, objWx, objWy){
   for(let li = 0; li < LEVELS.length; li++){
     const lvlName = LEVELS[li];
     const items = CONTENT_DATA[lvlName] || [];
@@ -2558,16 +2559,22 @@ function _spawnHudFlyAnim(itemTitle){
     const isFirst = !_firstCollectAnimDone;
     _hudFlyingTitles.add(itemTitle);
 
+    // Screen position of the collected object (or ship center as fallback)
+    const cx = canvas.width / 2;
+    const cy = canvas.height / 2;
+    const burstX = (objWx !== undefined) ? (objWx - state.x + cx) : cx;
+    const burstY = (objWy !== undefined) ? (objWy - state.y + cy) : cy;
+
     const animData = {
-      startX: canvas.width / 2,
-      startY: canvas.height / 2,
+      startX: burstX,
+      startY: burstY,
       targetX: targetX,
       targetY: targetY,
       shape: shape,
       color: col,
       title: itemTitle,
       progress: 0,
-      duration: isFirst ? 180 : 45, // first: ~3s, rest: ~0.75s
+      duration: isFirst ? 210 : 45, // first: ~3.5s, rest: ~0.75s
       _isFirst: isFirst,
       _trail: isFirst ? [] : null,
       _waiting: isFirst // wait for radial burst to finish before flying
@@ -2577,8 +2584,8 @@ function _spawnHudFlyAnim(itemTitle){
       _viewHintTargetX = targetX;
       _viewHintTargetY = targetY;
       if(state.zoneCrossFlash) state.zoneCrossFlash.timer = 0;
-      // Radial burst first, then fly
-      _spawnRadialBurst(canvas.width / 2, canvas.height / 2, col, function(){ animData._waiting = false; });
+      // Radial burst centered on the object
+      _spawnRadialBurst(burstX, burstY, col, function(){ animData._waiting = false; });
     }
 
     _hudFlyAnims.push(animData);
@@ -2601,15 +2608,15 @@ function _drawHudFlyAnims(){
     }
     const t = b.age / b.maxAge;
     for(let r = 0; r < b.rings; r++){
-      const delay = r * 0.2;
+      const delay = r * 0.15;
       const rt = Math.max(0, (t - delay) / (1 - delay));
       if(rt <= 0) continue;
-      const radius = rt * 80;
-      const alpha = (1 - rt) * 0.6;
+      const radius = rt * 160; // bigger spread
+      const alpha = (1 - rt) * 0.85; // brighter
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = b.color;
-      ctx.lineWidth = 2.5 - rt * 1.5;
-      ctx.shadowBlur = 16;
+      ctx.lineWidth = 3 - rt * 2;
+      ctx.shadowBlur = 24;
       ctx.shadowColor = b.color;
       ctx.beginPath();
       ctx.arc(b.x, b.y, radius, 0, Math.PI * 2);
@@ -2628,6 +2635,8 @@ function _drawHudFlyAnims(){
       if(a._isFirst && !_firstCollectAnimDone){
         _firstCollectAnimDone = true;
         _viewHintTimer = 300; // 5s (4s display + 1s fade)
+        // Radial burst on HUD landing
+        _spawnRadialBurst(a.targetX, a.targetY, a.color, null);
       }
       _hudFlyAnims.splice(i, 1);
       continue;
@@ -2672,16 +2681,17 @@ function _drawHudFlyAnims(){
       drawHUDShape(ctx, a.shape, x, y, sz);
       ctx.stroke();
       ctx.shadowBlur = 0;
-      // Hint arrow: ▼ pointing down at the flying object from above
+      // Hint arrow: ▼ pointing down at the flying object, bouncing above it
+      const bounce = Math.sin(state.frameCount * 0.15) * 8; // bounce up/down
       const arrowPulse = 0.7 + 0.3 * Math.sin(state.frameCount * 0.1);
       ctx.globalAlpha = alpha * arrowPulse;
       ctx.fillStyle = '#00ffcc';
-      ctx.shadowBlur = 12;
+      ctx.shadowBlur = 18;
       ctx.shadowColor = '#00ffcc';
       ctx.textAlign = 'center';
       ctx.textBaseline = 'bottom';
-      setFont('32px "Press Start 2P",monospace');
-      ctx.fillText('\u25BC', x, y - sz - 8);
+      setFont('42px "Press Start 2P",monospace');
+      ctx.fillText('\u25BC', x, y - sz - 18 + bounce);
       ctx.shadowBlur = 0;
       ctx.textAlign = 'left';
     } else {
@@ -2816,24 +2826,26 @@ function _drawFuelCellShape(ctx, x, y, sz){
   ctx.stroke();
 }
 
-function _spawnFuelFlyAnim(){
+function _spawnFuelFlyAnim(fuelWx, fuelWy){
   const fuelHud = document.getElementById('fuel-hud');
   if(!fuelHud) return;
   const r = fuelHud.getBoundingClientRect();
   const targetX = r.left + r.width / 2;
   const targetY = r.top + r.height / 2;
+  const cx = canvas.width / 2, cy = canvas.height / 2;
+  const burstX = (fuelWx !== undefined) ? (fuelWx - state.x + cx) : cx;
+  const burstY = (fuelWy !== undefined) ? (fuelWy - state.y + cy) : cy;
   const animData = {
-    startX: canvas.width / 2,
-    startY: canvas.height / 2,
+    startX: burstX,
+    startY: burstY,
     targetX: targetX,
     targetY: targetY,
     progress: 0,
-    duration: 120, // ~2s flight
+    duration: 150, // ~2.5s flight
     _trail: [],
-    _waiting: true // wait for radial burst
+    _waiting: true
   };
-  // Radial burst first, then fly
-  _spawnRadialBurst(canvas.width / 2, canvas.height / 2, '#00ff88', function(){ animData._waiting = false; });
+  _spawnRadialBurst(burstX, burstY, '#00ff88', function(){ animData._waiting = false; });
   _fuelFlyAnims.push(animData);
 }
 
@@ -5479,7 +5491,10 @@ function updateWaveBeams(){
       if(obj.collected)continue;
       const r=obj.size+16;
       if((obj.wx-b.wx)**2+(obj.wy-b.wy)**2 < r*r){
-        if(!obj._permanent && !obj._bio && !obj._social) obj.collected=true;
+        _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
+        if(!obj._permanent && !obj._bio && !obj._social){
+          if(!_firstCollectAnimDone){ obj._fadeDelay = 60; } else { obj.collected=true; }
+        }
         b.maxAge=0; hit=true;
         if(!state.collectedItems) state.collectedItems=[];
         if(!state.collectedItems.find(c=>c.title===obj.content.title)){
@@ -5502,7 +5517,7 @@ function updateWaveBeams(){
           if(!_firstFuelAnimDone){
             _firstFuelAnimDone = true;
             _pendingFuelAmount = 0.35;
-            _spawnFuelFlyAnim();
+            _spawnFuelFlyAnim(f.wx, f.wy);
           } else {
             state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
           }
@@ -7548,9 +7563,11 @@ function update(){
       if(_qdx*_qdx+_qdy*_qdy>360000)return;
       if((obj._permanent||obj._bio||obj._social) && obj._cooldown && obj._cooldown > state.frameCount) return;
       if(nearCenter(obj.wx,obj.wy,obj.size+14)){
+        _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
         // Permanent stations (social/bio) stay visible — don't mark collected
         if(!obj._permanent && !obj._bio && !obj._social){
-          obj.collected=true;
+          // First collection: delay disappearance for radial burst
+          if(!_firstCollectAnimDone){ obj._fadeDelay = 60; } else { obj.collected=true; }
           const ct=obj.content&&obj.content.title;
           // Also mark other copies of same item (from other cells)
           if(ct){ state.objects.forEach(o=>{ if(o!==obj&&!o._permanent&&!o._bio&&o.content&&o.content.title===ct) o.collected=true; }); }
@@ -7577,7 +7594,7 @@ function update(){
           // First fuel: delay fill until fly animation lands
           _firstFuelAnimDone = true;
           _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
-          _spawnFuelFlyAnim();
+          _spawnFuelFlyAnim(f.wx, f.wy);
         } else {
           state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
           updateFuelBar();
@@ -9420,6 +9437,8 @@ function drawGame(){
   // Content objects — hidden in secret level
   _fpSub._tObjs0=performance.now();
   if(!state.inSecretLevel || state._victoryPhase==='room') state.objects.forEach(obj=>{
+    // Delayed fade for first collection radial burst
+    if(obj._fadeDelay > 0){ obj._fadeDelay--; if(obj._fadeDelay <= 0) obj.collected = true; }
     if(obj.collected)return;
     const sx=obj.wx-state.x+cx, sy=obj.wy-state.y+cy;
     const offScreen=sx<-60||sx>canvas.width+60||sy<-60||sy>canvas.height+60;
@@ -11609,7 +11628,7 @@ function openContent(item, replay=false){
         pop.style.opacity='1'; setTimeout(()=>{ pop.style.opacity='0'; },800); }
       state.collectedItems.push(item);
       persistCollect(item);
-      _spawnHudFlyAnim(item.title);
+      _spawnHudFlyAnim(item.title, _lastCollectedWx, _lastCollectedWy);
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
     if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,4,7,12,16].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.07,0.14,'square',0.055));}
