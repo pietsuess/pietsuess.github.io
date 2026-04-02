@@ -2572,7 +2572,7 @@ function _spawnHudFlyAnim(itemTitle){
       _burstFrames: isFirst ? 60 : 0,
       _burstAge: 0,
       progress: 0,
-      duration: isFirst ? 210 : 45,
+      duration: isFirst ? 150 : 45, // first: ~2.5s fly, rest: ~0.75s
       _worldObj: isFirst ? _lastCollectedObj : null // reference to world object for screen tracking
     };
 
@@ -2787,6 +2787,8 @@ function _drawHudFlyAnims(){
         ctx.stroke();
         ctx.shadowBlur = 0;
       }
+      // Hide fuel object when burst ends
+      if(a._burstAge >= a._burstFrames && a._fuelObj){ a._fuelObj.collected = true; a._fuelObj = null; }
       continue;
     }
 
@@ -2894,7 +2896,7 @@ function _spawnFuelFlyAnim(fuelObj){
     targetX: targetX,
     targetY: targetY,
     progress: 0,
-    duration: 150,
+    duration: 120, // ~2s fly
     _trail: [],
     _burstFrames: 60,
     _burstAge: 0,
@@ -5561,16 +5563,17 @@ function updateWaveBeams(){
     if(!hit){
       for(let fi=0;fi<state.fuelObjects.length;fi++){
         const f=state.fuelObjects[fi];
-        if(f.collected)continue;
+        if(f.collected || f._burstHold)continue;
         const r=f.size+14;
         if((f.wx-b.wx)**2+(f.wy-b.wy)**2 < r*r){
-          f.collected=true;
-          // First fuel: delay fill until fly animation lands
+          // First fuel: keep visible during burst, anim sets collected
           if(!_firstFuelAnimDone){
+            f._burstHold = true;
             _firstFuelAnimDone = true;
             _pendingFuelAmount = 0.35;
             _spawnFuelFlyAnim(f);
           } else {
+            f.collected=true;
             state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
           }
           if(audioCtx&&!state.sfxMuted){
@@ -7637,16 +7640,17 @@ function update(){
 
     // Collect fuel
     state.fuelObjects.forEach(f=>{
-      if(f.collected)return;
+      if(f.collected || f._burstHold)return;
       const _fCollectR = f.size+12;
       if(nearCenter(f.wx,f.wy,_fCollectR)){
-        f.collected=true;
         if(!_firstFuelAnimDone && !f._outerLaunchpadFuel){
-          // First fuel: delay fill until fly animation lands
+          // First fuel: keep visible during burst, anim sets collected
+          f._burstHold = true;
           _firstFuelAnimDone = true;
           _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
           _spawnFuelFlyAnim(f);
         } else {
+          f.collected=true;
           state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
           updateFuelBar();
         }
