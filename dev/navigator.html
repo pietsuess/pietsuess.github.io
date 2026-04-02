@@ -6977,7 +6977,7 @@ function update(){
       const nx=dx/Math.max(1,dist), ny=dy/Math.max(1,dist);
       // Bubble: bounces away hard, never damages rocks
       if(state.cheat==='bubbles'){
-        triggerCollision(state.x,state.y);
+        triggerCollision(state.x,state.y,r.size);
         state.vx=-nx*384; state.vy=-ny*384;
       } else {
         // Rock damage mechanic — cooldown prevents multi-hit from single pass
@@ -7021,7 +7021,7 @@ function update(){
         }
         const hn = r.hitsNeeded || 4;
         if(r.hits < hn){
-          triggerCollision(state.x,state.y);
+          triggerCollision(state.x,state.y,r.size);
           if(r.hits >= Math.ceil(hn/2)) r.crackDeep=true;
         } else {
           splitFlags.add(ri);
@@ -8431,8 +8431,14 @@ function _buildBranch(parentZZ){
   return {pts, angle:branchAng, isBranch:true};
 }
 
-function triggerCollision(wx,wy){
+function triggerCollision(wx,wy,rockSize){
   state.collisionFlash=18;
+  // Camera shake scaled by rock size (small rocks ~15, big rocks ~40+)
+  if(rockSize > 0){
+    const intensity = Math.min(12, rockSize * 0.25);
+    state._impactShake = intensity;
+    state._impactShakeTimer = 12;
+  }
   addScore(state.cheat==='bubbles' ? 4 : 40);
   if(!state.explosions)state.explosions=[];
   const particles=[];
@@ -9162,9 +9168,17 @@ function drawBubbleHUD(){
 function drawGame(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!state.started)return;
-  // Screen shake from BH flash or boss capture
-  const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
-  const _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  // Screen shake from BH flash, boss capture, or asteroid impact
+  let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
+  let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  // Asteroid impact shake
+  if(state._impactShakeTimer > 0){
+    state._impactShakeTimer--;
+    const decay = state._impactShakeTimer / 12;
+    const intensity = (state._impactShake || 4) * decay;
+    _shakeX += (Math.random() - 0.5) * 2 * intensity;
+    _shakeY += (Math.random() - 0.5) * 2 * intensity;
+  }
   const _bhShake = _shakeX || _shakeY;
   if(_bhShake){ ctx.save(); ctx.translate(_shakeX, _shakeY); }
   const cx=CX(), cy=CY();
