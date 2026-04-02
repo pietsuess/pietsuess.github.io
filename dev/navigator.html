@@ -2803,32 +2803,46 @@ function _drawHudFlyAnims(){
     const ease = t * t * (3 - 2 * t);
     const x = a.startX + (a.targetX - a.startX) * ease;
     const y = a.startY + (a.targetY - a.startY) * ease;
-    const scale = 4 - 3 * ease;
-    const alpha = 0.5 + 0.5 * (1 - t);
-    if(a._trail) a._trail.push({x, y, t});
-    if(a._trail && a._trail.length > 1){
-      const step = Math.max(1, Math.floor(a._trail.length / 4));
-      for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
-        const tp = a._trail[ti];
-        const age = (t - tp.t);
-        const trailAlpha = Math.max(0, 0.3 - age * 1.2);
-        if(trailAlpha <= 0) continue;
-        ctx.globalAlpha = trailAlpha;
-        ctx.strokeStyle = '#00ff88';
-        ctx.lineWidth = 2;
-        ctx.shadowBlur = 16;
-        ctx.shadowColor = '#00ff88';
-        _drawFuelCellShape(ctx, tp.x, tp.y, 8 * (4 - 3 * (tp.t * tp.t * (3 - 2 * tp.t))));
-        ctx.shadowBlur = 0;
+    if(a._fast){
+      // Fast mode: small shape, no trail
+      const scale = 2.5 - 1.5 * ease;
+      const alpha = 0.4 + 0.6 * (1 - t);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 2;
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = '#00ff88';
+      _drawFuelCellShape(ctx, x, y, 6 * scale);
+      ctx.shadowBlur = 0;
+    } else {
+      // First collection: big shape with trail
+      const scale = 4 - 3 * ease;
+      const alpha = 0.5 + 0.5 * (1 - t);
+      if(a._trail) a._trail.push({x, y, t});
+      if(a._trail && a._trail.length > 1){
+        const step = Math.max(1, Math.floor(a._trail.length / 4));
+        for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
+          const tp = a._trail[ti];
+          const age = (t - tp.t);
+          const trailAlpha = Math.max(0, 0.3 - age * 1.2);
+          if(trailAlpha <= 0) continue;
+          ctx.globalAlpha = trailAlpha;
+          ctx.strokeStyle = '#00ff88';
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 16;
+          ctx.shadowColor = '#00ff88';
+          _drawFuelCellShape(ctx, tp.x, tp.y, 8 * (4 - 3 * (tp.t * tp.t * (3 - 2 * tp.t))));
+          ctx.shadowBlur = 0;
+        }
       }
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = '#00ff88';
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = '#00ff88';
+      _drawFuelCellShape(ctx, x, y, 8 * scale);
+      ctx.shadowBlur = 0;
     }
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = '#00ff88';
-    ctx.lineWidth = 3;
-    ctx.shadowBlur = 24;
-    ctx.shadowColor = '#00ff88';
-    _drawFuelCellShape(ctx, x, y, 8 * scale);
-    ctx.shadowBlur = 0;
   }
 
   // Gradual fuel fill animation
@@ -2876,7 +2890,7 @@ function _drawFuelCellShape(ctx, x, y, sz){
   ctx.stroke();
 }
 
-function _spawnFuelFlyAnim(fuelObj){
+function _spawnFuelFlyAnim(fuelObj, fast){
   const fuelHud = document.getElementById('fuel-hud');
   if(!fuelHud) return;
   const r = fuelHud.getBoundingClientRect();
@@ -2884,18 +2898,17 @@ function _spawnFuelFlyAnim(fuelObj){
   const targetY = r.top + r.height / 2;
   let startX = canvas.width / 2, startY = canvas.height / 2;
   if(fuelObj){ startX = fuelObj.wx - state.x + canvas.width/2; startY = fuelObj.wy - state.y + canvas.height/2; }
-  // Mark collected immediately — radials are cosmetic
-  if(fuelObj) fuelObj.collected = true;
   _fuelFlyAnims.push({
     startX: startX,
     startY: startY,
     targetX: targetX,
     targetY: targetY,
     progress: 0,
-    duration: 120,
-    _trail: [],
-    _burstFrames: 60,
-    _burstAge: 0
+    duration: fast ? 45 : 120,
+    _trail: fast ? null : [],
+    _burstFrames: fast ? 0 : 60,
+    _burstAge: 0,
+    _fast: !!fast
   });
 }
 
@@ -5562,14 +5575,14 @@ function updateWaveBeams(){
         if(f.collected)continue;
         const r=f.size+14;
         if((f.wx-b.wx)**2+(f.wy-b.wy)**2 < r*r){
-          // First fuel: fly animation with radials
+          f.collected=true;
           if(!_firstFuelAnimDone){
             _firstFuelAnimDone = true;
             _pendingFuelAmount = 0.35;
-            _spawnFuelFlyAnim(f);
+            _spawnFuelFlyAnim(f, false);
           } else {
-            f.collected=true;
             state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
+            _spawnFuelFlyAnim(f, true);
           }
           if(audioCtx&&!state.sfxMuted){
             const t=audioCtx.currentTime;
@@ -7638,15 +7651,15 @@ function update(){
       if(f.collected)return;
       const _fCollectR = f.size+12;
       if(nearCenter(f.wx,f.wy,_fCollectR)){
+        f.collected=true;
         if(!_firstFuelAnimDone && !f._outerLaunchpadFuel){
-          // First fuel: fly animation with radials
           _firstFuelAnimDone = true;
           _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
-          _spawnFuelFlyAnim(f);
+          _spawnFuelFlyAnim(f, false);
         } else {
-          f.collected=true;
           state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
           updateFuelBar();
+          if(!f._outerLaunchpadFuel) _spawnFuelFlyAnim(f, true);
         }
         if(f._outerLaunchpadFuel){
           state._outerLaunchpadRefuelled=true;
