@@ -6977,7 +6977,7 @@ function update(){
       const nx=dx/Math.max(1,dist), ny=dy/Math.max(1,dist);
       // Bubble: bounces away hard, never damages rocks
       if(state.cheat==='bubbles'){
-        triggerCollision(state.x,state.y);
+        triggerCollision(state.x,state.y,r.size);
         state.vx=-nx*384; state.vy=-ny*384;
       } else {
         // Rock damage mechanic — cooldown prevents multi-hit from single pass
@@ -7021,7 +7021,7 @@ function update(){
         }
         const hn = r.hitsNeeded || 4;
         if(r.hits < hn){
-          triggerCollision(state.x,state.y);
+          triggerCollision(state.x,state.y,r.size);
           if(r.hits >= Math.ceil(hn/2)) r.crackDeep=true;
         } else {
           splitFlags.add(ri);
@@ -8431,8 +8431,14 @@ function _buildBranch(parentZZ){
   return {pts, angle:branchAng, isBranch:true};
 }
 
-function triggerCollision(wx,wy){
+function triggerCollision(wx,wy,rockSize){
   state.collisionFlash=18;
+  // Camera shake scaled by rock size (small rocks ~15, big rocks ~40+)
+  if(rockSize > 0){
+    const intensity = Math.min(12, rockSize * 0.25);
+    state._impactShake = intensity;
+    state._impactShakeTimer = 12;
+  }
   addScore(state.cheat==='bubbles' ? 4 : 40);
   if(!state.explosions)state.explosions=[];
   const particles=[];
@@ -8458,7 +8464,42 @@ function triggerCollision(wx,wy){
   }
   if(audioCtx&&!state.sfxMuted){
     const now=audioCtx.currentTime;
-    [0,4,7,12].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.04,0.12,'square',0.08));
+    const vol = Math.min(0.18, 0.06 + (rockSize||20) * 0.002);
+    // Rock break: noise crack + low thud + debris crumble
+    // 1. Crack — short filtered noise burst
+    const bufLen = Math.floor(audioCtx.sampleRate * 0.04);
+    const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for(let i = 0; i < bufLen; i++) noiseData[i] = (Math.random() * 2 - 1) * (1 - i/bufLen);
+    const nSrc = audioCtx.createBufferSource();
+    nSrc.buffer = noiseBuf;
+    const nFilt = audioCtx.createBiquadFilter();
+    nFilt.type = 'bandpass'; nFilt.frequency.value = 1200; nFilt.Q.value = 1.5;
+    const nGain = audioCtx.createGain();
+    nGain.gain.setValueAtTime(vol * 1.5, now);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(sfxGainNode);
+    nSrc.start(now); nSrc.stop(now + 0.05);
+    // 2. Thud — low sine impact
+    const thud = audioCtx.createOscillator(), tGain = audioCtx.createGain();
+    thud.type = 'sine'; thud.frequency.setValueAtTime(90, now); thud.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+    tGain.gain.setValueAtTime(vol, now); tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    thud.connect(tGain); tGain.connect(sfxGainNode);
+    thud.start(now); thud.stop(now + 0.12);
+    // 3. Crumble — rapid tiny noise pops
+    for(let d = 0; d < 3; d++){
+      const dt = 0.03 + d * 0.025 + Math.random() * 0.02;
+      const dLen = Math.floor(audioCtx.sampleRate * 0.015);
+      const dBuf = audioCtx.createBuffer(1, dLen, audioCtx.sampleRate);
+      const dData = dBuf.getChannelData(0);
+      for(let i = 0; i < dLen; i++) dData[i] = (Math.random() * 2 - 1) * (1 - i/dLen);
+      const dSrc = audioCtx.createBufferSource(); dSrc.buffer = dBuf;
+      const dG = audioCtx.createGain();
+      dG.gain.setValueAtTime(vol * (0.6 - d * 0.15), now + dt);
+      dG.gain.exponentialRampToValueAtTime(0.001, now + dt + 0.02);
+      dSrc.connect(dG); dG.connect(sfxGainNode);
+      dSrc.start(now + dt); dSrc.stop(now + dt + 0.03);
+    }
   }
 }
 
@@ -9162,9 +9203,17 @@ function drawBubbleHUD(){
 function drawGame(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   if(!state.started)return;
-  // Screen shake from BH flash or boss capture
-  const _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
-  const _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  // Screen shake from BH flash, boss capture, or asteroid impact
+  let _shakeX = (state.bhCapture && state.bhCapture._shakeX) || state._bossShakeX || 0;
+  let _shakeY = (state.bhCapture && state.bhCapture._shakeY) || state._bossShakeY || 0;
+  // Asteroid impact shake
+  if(state._impactShakeTimer > 0){
+    state._impactShakeTimer--;
+    const decay = state._impactShakeTimer / 12;
+    const intensity = (state._impactShake || 4) * decay;
+    _shakeX += (Math.random() - 0.5) * 2 * intensity;
+    _shakeY += (Math.random() - 0.5) * 2 * intensity;
+  }
   const _bhShake = _shakeX || _shakeY;
   if(_bhShake){ ctx.save(); ctx.translate(_shakeX, _shakeY); }
   const cx=CX(), cy=CY();
@@ -11396,13 +11445,13 @@ function drawGame(){
 
   }
 
-  // Collision flash overlay
-  if(state.collisionFlash>0){
-    ctx.save();
-    ctx.globalAlpha=state.collisionFlash/18*0.5;
-    ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
-    ctx.restore();
-  }
+  // Collision flash overlay — disabled for testing
+  // if(state.collisionFlash>0){
+  //   ctx.save();
+  //   ctx.globalAlpha=state.collisionFlash/18*0.5;
+  //   ctx.fillStyle='#ffffff'; ctx.fillRect(0,0,canvas.width,canvas.height);
+  //   ctx.restore();
+  // }
 
   // ── Victory: ship flies up from bottom, locks at centre pointing up ──
   if(state._victoryPhase === 'fireworks' || state._victoryPhase === 'initials'){
