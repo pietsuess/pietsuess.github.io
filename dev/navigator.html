@@ -2532,7 +2532,7 @@ function _updateWavePopupHighlight(){
 let _hudFlyAnims = [];
 let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
 let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
-let _lastCollectedWx = 0, _lastCollectedWy = 0; // world coords of last collected object
+let _lastCollectedSx = 0, _lastCollectedSy = 0; // screen coords of last collected object
 let _burstPendingObj = null; // object kept visible during radial burst
 let _firstCollectAnimDone = false; // enhanced animation for very first collection
 let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
@@ -2541,10 +2541,10 @@ let _viewHintTargetY = 0;
 let _radialBursts = []; // expanding ring bursts before fly starts
 
 function _spawnRadialBurst(x, y, color, onDone){
-  _radialBursts.push({ x, y, color, age: 0, maxAge: 60, rings: 4, onDone });
+  _radialBursts.push({ x, y, color, age: 0, maxAge: 60, rings: 2, onDone });
 }
 
-function _spawnHudFlyAnim(itemTitle, objWx, objWy){
+function _spawnHudFlyAnim(itemTitle){
   for(let li = 0; li < LEVELS.length; li++){
     const lvlName = LEVELS[li];
     const items = CONTENT_DATA[lvlName] || [];
@@ -2560,11 +2560,9 @@ function _spawnHudFlyAnim(itemTitle, objWx, objWy){
     const isFirst = !_firstCollectAnimDone;
     _hudFlyingTitles.add(itemTitle);
 
-    // Screen position of the collected object (or ship center as fallback)
-    const cx = canvas.width / 2;
-    const cy = canvas.height / 2;
-    const burstX = (objWx !== undefined) ? (objWx - state.x + cx) : cx;
-    const burstY = (objWy !== undefined) ? (objWy - state.y + cy) : cy;
+    // Use stored screen coords of the collected object
+    const burstX = _lastCollectedSx || canvas.width / 2;
+    const burstY = _lastCollectedSy || canvas.height / 2;
 
     const animData = {
       startX: burstX,
@@ -2619,7 +2617,7 @@ function _drawHudFlyAnims(){
       const alpha = (1 - rt) * 0.85; // brighter
       ctx.globalAlpha = alpha;
       ctx.strokeStyle = b.color;
-      ctx.lineWidth = 3 - rt * 2;
+      ctx.lineWidth = 5 - rt * 3;
       ctx.shadowBlur = 24;
       ctx.shadowColor = b.color;
       ctx.beginPath();
@@ -2831,15 +2829,14 @@ function _drawFuelCellShape(ctx, x, y, sz){
   ctx.stroke();
 }
 
-function _spawnFuelFlyAnim(fuelWx, fuelWy){
+function _spawnFuelFlyAnim(fuelSx, fuelSy){
   const fuelHud = document.getElementById('fuel-hud');
   if(!fuelHud) return;
   const r = fuelHud.getBoundingClientRect();
   const targetX = r.left + r.width / 2;
   const targetY = r.top + r.height / 2;
-  const cx = canvas.width / 2, cy = canvas.height / 2;
-  const burstX = (fuelWx !== undefined) ? (fuelWx - state.x + cx) : cx;
-  const burstY = (fuelWy !== undefined) ? (fuelWy - state.y + cy) : cy;
+  const burstX = fuelSx || canvas.width / 2;
+  const burstY = fuelSy || canvas.height / 2;
   const animData = {
     startX: burstX,
     startY: burstY,
@@ -5493,12 +5490,12 @@ function updateWaveBeams(){
     let hit=false;
     for(let oi=0;oi<state.objects.length&&!hit;oi++){
       const obj=state.objects[oi];
-      if(obj.collected)continue;
+      if(obj.collected || obj._collecting)continue;
       const r=obj.size+16;
       if((obj.wx-b.wx)**2+(obj.wy-b.wy)**2 < r*r){
-        _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
+        _lastCollectedSx = obj.wx - state.x + canvas.width/2; _lastCollectedSy = obj.wy - state.y + canvas.height/2;
         if(!obj._permanent && !obj._bio && !obj._social){
-          if(!_firstCollectAnimDone){ _burstPendingObj = obj; } else { obj.collected=true; }
+          if(!_firstCollectAnimDone){ obj._collecting = true; _burstPendingObj = obj; } else { obj.collected=true; }
         }
         b.maxAge=0; hit=true;
         if(!state.collectedItems) state.collectedItems=[];
@@ -5522,7 +5519,7 @@ function updateWaveBeams(){
           if(!_firstFuelAnimDone){
             _firstFuelAnimDone = true;
             _pendingFuelAmount = 0.35;
-            _spawnFuelFlyAnim(f.wx, f.wy);
+            _spawnFuelFlyAnim(f.wx - state.x + canvas.width/2, f.wy - state.y + canvas.height/2);
           } else {
             state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
           }
@@ -7563,16 +7560,16 @@ function update(){
   // Collect content objects
   if(!state.inSecretLevel){
     state.objects.forEach(obj=>{
-      if(obj.collected)return;
+      if(obj.collected || obj._collecting)return;
       const _qdx=obj.wx-state.x,_qdy=obj.wy-state.y;
       if(_qdx*_qdx+_qdy*_qdy>360000)return;
       if((obj._permanent||obj._bio||obj._social) && obj._cooldown && obj._cooldown > state.frameCount) return;
       if(nearCenter(obj.wx,obj.wy,obj.size+14)){
-        _lastCollectedWx = obj.wx; _lastCollectedWy = obj.wy;
+        _lastCollectedSx = obj.wx - state.x + CX(); _lastCollectedSy = obj.wy - state.y + CY();
         // Permanent stations (social/bio) stay visible — don't mark collected
         if(!obj._permanent && !obj._bio && !obj._social){
           // First collection: keep visible until radial burst ends (burst callback sets collected)
-          if(!_firstCollectAnimDone){ _burstPendingObj = obj; } else { obj.collected=true; }
+          if(!_firstCollectAnimDone){ obj._collecting = true; _burstPendingObj = obj; } else { obj.collected=true; }
           const ct=obj.content&&obj.content.title;
           // Also mark other copies of same item (from other cells)
           if(ct){ state.objects.forEach(o=>{ if(o!==obj&&!o._permanent&&!o._bio&&o.content&&o.content.title===ct) o.collected=true; }); }
@@ -7599,7 +7596,7 @@ function update(){
           // First fuel: delay fill until fly animation lands
           _firstFuelAnimDone = true;
           _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
-          _spawnFuelFlyAnim(f.wx, f.wy);
+          _spawnFuelFlyAnim(f.wx - state.x + CX(), f.wy - state.y + CY());
         } else {
           state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
           updateFuelBar();
@@ -11631,7 +11628,7 @@ function openContent(item, replay=false){
         pop.style.opacity='1'; setTimeout(()=>{ pop.style.opacity='0'; },800); }
       state.collectedItems.push(item);
       persistCollect(item);
-      _spawnHudFlyAnim(item.title, _lastCollectedWx, _lastCollectedWy);
+      _spawnHudFlyAnim(item.title);
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
     if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,4,7,12,16].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.07,0.14,'square',0.055));}
