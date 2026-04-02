@@ -8464,7 +8464,42 @@ function triggerCollision(wx,wy,rockSize){
   }
   if(audioCtx&&!state.sfxMuted){
     const now=audioCtx.currentTime;
-    [0,4,7,12].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.04,0.12,'square',0.08));
+    const vol = Math.min(0.18, 0.06 + (rockSize||20) * 0.002);
+    // Rock break: noise crack + low thud + debris crumble
+    // 1. Crack — short filtered noise burst
+    const bufLen = Math.floor(audioCtx.sampleRate * 0.04);
+    const noiseBuf = audioCtx.createBuffer(1, bufLen, audioCtx.sampleRate);
+    const noiseData = noiseBuf.getChannelData(0);
+    for(let i = 0; i < bufLen; i++) noiseData[i] = (Math.random() * 2 - 1) * (1 - i/bufLen);
+    const nSrc = audioCtx.createBufferSource();
+    nSrc.buffer = noiseBuf;
+    const nFilt = audioCtx.createBiquadFilter();
+    nFilt.type = 'bandpass'; nFilt.frequency.value = 1200; nFilt.Q.value = 1.5;
+    const nGain = audioCtx.createGain();
+    nGain.gain.setValueAtTime(vol * 1.5, now);
+    nGain.gain.exponentialRampToValueAtTime(0.001, now + 0.04);
+    nSrc.connect(nFilt); nFilt.connect(nGain); nGain.connect(sfxGainNode);
+    nSrc.start(now); nSrc.stop(now + 0.05);
+    // 2. Thud — low sine impact
+    const thud = audioCtx.createOscillator(), tGain = audioCtx.createGain();
+    thud.type = 'sine'; thud.frequency.setValueAtTime(90, now); thud.frequency.exponentialRampToValueAtTime(40, now + 0.08);
+    tGain.gain.setValueAtTime(vol, now); tGain.gain.exponentialRampToValueAtTime(0.001, now + 0.1);
+    thud.connect(tGain); tGain.connect(sfxGainNode);
+    thud.start(now); thud.stop(now + 0.12);
+    // 3. Crumble — rapid tiny noise pops
+    for(let d = 0; d < 3; d++){
+      const dt = 0.03 + d * 0.025 + Math.random() * 0.02;
+      const dLen = Math.floor(audioCtx.sampleRate * 0.015);
+      const dBuf = audioCtx.createBuffer(1, dLen, audioCtx.sampleRate);
+      const dData = dBuf.getChannelData(0);
+      for(let i = 0; i < dLen; i++) dData[i] = (Math.random() * 2 - 1) * (1 - i/dLen);
+      const dSrc = audioCtx.createBufferSource(); dSrc.buffer = dBuf;
+      const dG = audioCtx.createGain();
+      dG.gain.setValueAtTime(vol * (0.6 - d * 0.15), now + dt);
+      dG.gain.exponentialRampToValueAtTime(0.001, now + dt + 0.02);
+      dSrc.connect(dG); dG.connect(sfxGainNode);
+      dSrc.start(now + dt); dSrc.stop(now + dt + 0.03);
+    }
   }
 }
 
