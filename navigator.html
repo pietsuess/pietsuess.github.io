@@ -1815,7 +1815,10 @@ const ZONE_PALETTE = {
 };
 
 // Content pop-ups preference — persisted in localStorage
-let _contentPopupsOn = true;
+let _contentPopupsOn = (() => {
+  try { const v = localStorage.getItem('contentPopupsOn'); return v === null ? false : v === 'true'; }
+  catch(e) { return false; }
+})();
 let _firstPopupShown = false;
 let _firstFuelPopupShown = false;
 let _fuelAnimId = null;
@@ -2529,9 +2532,18 @@ function _updateWavePopupHighlight(){
 let _hudFlyAnims = [];
 let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
 let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
+let _lastCollectedObj = null; // reference to the world object just collected (for burst positioning)
+let _firstCollectAnimDone = false; // enhanced animation for very first collection
+let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
+let _viewHintTargetX = 22; // where the first fly landed (for hint arrow position)
+let _viewHintTargetY = 0;
+let _radialBursts = []; // expanding ring bursts
+
+function _spawnRadialBurst(x, y, color){
+  _radialBursts.push({ x, y, color, age: 0, maxAge: 60, rings: 2 });
+}
 
 function _spawnHudFlyAnim(itemTitle){
-  // Find which zone & index this item belongs to
   for(let li = 0; li < LEVELS.length; li++){
     const lvlName = LEVELS[li];
     const items = CONTENT_DATA[lvlName] || [];
@@ -2544,46 +2556,339 @@ function _spawnHudFlyAnim(itemTitle){
     const totalH = spacing * (count - 1);
     const targetY = (canvas.height / 2) - (totalH / 2) + idx * spacing;
     const targetX = 22;
+    const isFirst = !_firstCollectAnimDone;
     _hudFlyingTitles.add(itemTitle);
-    _hudFlyAnims.push({
-      startX: canvas.width / 2,
-      startY: canvas.height / 2,
+
+    // Screen position of the object (for start point)
+    const _cx = canvas.width / 2, _cy = canvas.height / 2;
+    let startX = _cx, startY = _cy;
+    if(isFirst && _lastCollectedObj){
+      startX = _lastCollectedObj.wx - state.x + _cx;
+      startY = _lastCollectedObj.wy - state.y + _cy;
+    }
+
+    const animData = {
+      startX: startX,
+      startY: startY,
       targetX: targetX,
       targetY: targetY,
       shape: shape,
       color: col,
       title: itemTitle,
+      _isFirst: isFirst,
+      _trail: isFirst ? [] : null,
       progress: 0,
-      duration: 45 // ~0.75s at 60fps
-    });
+      duration: isFirst ? 150 : 45, // first: ~2.5s fly, rest: ~0.75s
+      _burstAge: 0,
+      _burstFrames: isFirst ? 60 : 0 // radials play alongside fly, not before
+    };
+
+    if(isFirst){
+      _viewHintTargetX = targetX;
+      _viewHintTargetY = targetY;
+      if(state.zoneCrossFlash) state.zoneCrossFlash.timer = 0;
+      // Mark object collected immediately — radials are cosmetic, fly starts now
+      if(_lastCollectedObj){ _lastCollectedObj.collected = true; _lastCollectedObj = null; }
+    }
+
+    _hudFlyAnims.push(animData);
     return;
   }
 }
 
 function _drawHudFlyAnims(){
-  if(_hudFlyAnims.length === 0) return;
+  if(_hudFlyAnims.length === 0 && _viewHintTimer <= 0 && _fuelFlyAnims.length === 0 && _fuelHintTimer <= 0 && _radialBursts.length === 0 && _fuelFillAnim <= 0) return;
   ctx.save();
+
+  // Standalone radial bursts (landing bursts)
+  for(let i = _radialBursts.length - 1; i >= 0; i--){
+    const b = _radialBursts[i];
+    b.age++;
+    if(b.age >= b.maxAge){ _radialBursts.splice(i, 1); continue; }
+    const t = b.age / b.maxAge;
+    for(let r = 0; r < b.rings; r++){
+      const delay = r * 0.25;
+      const rt = Math.max(0, (t - delay) / (1 - delay));
+      if(rt <= 0) continue;
+      const radius = rt * 160;
+      const alpha = (1 - rt) * 0.85;
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = b.color;
+      ctx.lineWidth = 5 - rt * 3;
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = b.color;
+      ctx.beginPath();
+      ctx.arc(b.x, b.y, radius, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // Content fly anims (radials + fly run simultaneously for first collection)
+  const cx = canvas.width / 2, cy = canvas.height / 2;
   for(let i = _hudFlyAnims.length - 1; i >= 0; i--){
     const a = _hudFlyAnims[i];
+
+    // Radial burst rings — play alongside the fly, not before
+    if(a._burstAge < a._burstFrames){
+      a._burstAge++;
+      const bt = a._burstAge / a._burstFrames;
+      for(let r = 0; r < 2; r++){
+        const delay = r * 0.25;
+        const rt = Math.max(0, (bt - delay) / (1 - delay));
+        if(rt <= 0) continue;
+        const radius = rt * 220;
+        const alpha = (1 - rt) * 0.9;
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = a.color;
+        ctx.lineWidth = 6 - rt * 4;
+        ctx.shadowBlur = 28;
+        ctx.shadowColor = a.color;
+        ctx.beginPath();
+        ctx.arc(a.startX, a.startY, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // FLY — runs from frame 0
     a.progress += 1 / a.duration;
-    if(a.progress >= 1){ if(a.title) _hudFlyingTitles.delete(a.title); _hudFlyAnims.splice(i, 1); continue; }
+    if(a.progress >= 1){
+      if(a.title) _hudFlyingTitles.delete(a.title);
+      if(a._isFirst && !_firstCollectAnimDone){
+        _firstCollectAnimDone = true;
+        _viewHintTimer = 300;
+        // Landing burst on HUD
+        _spawnRadialBurst(a.targetX, a.targetY, a.color);
+      }
+      _hudFlyAnims.splice(i, 1);
+      continue;
+    }
     const t = a.progress;
-    const ease = t * t * (3 - 2 * t); // smoothstep
+    const ease = t * t * (3 - 2 * t);
     const x = a.startX + (a.targetX - a.startX) * ease;
     const y = a.startY + (a.targetY - a.startY) * ease;
-    const scale = 2.5 - 1.5 * ease; // shrink from 2.5x to 1x
-    const sz = 10 * scale;
-    const alpha = 0.4 + 0.6 * (1 - t); // fade slightly as it arrives
-    ctx.globalAlpha = alpha;
-    ctx.strokeStyle = a.color;
-    ctx.lineWidth = 2.5;
-    ctx.shadowBlur = 14;
-    ctx.shadowColor = a.color;
-    drawHUDShape(ctx, a.shape, x, y, sz);
-    ctx.stroke();
+
+    if(a._isFirst){
+      const scale = 4 - 3 * ease;
+      const sz = 10 * scale;
+      if(a._trail) a._trail.push({x, y, t});
+      // Trail afterimages
+      if(a._trail && a._trail.length > 1){
+        const step = Math.max(1, Math.floor(a._trail.length / 4));
+        for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
+          const tp = a._trail[ti];
+          const age = (t - tp.t);
+          const trailAlpha = Math.max(0, 0.3 - age * 1.2);
+          if(trailAlpha <= 0) continue;
+          const trailScale = 4 - 3 * (tp.t * tp.t * (3 - 2 * tp.t));
+          const trailSz = 10 * trailScale;
+          ctx.globalAlpha = trailAlpha;
+          ctx.strokeStyle = a.color;
+          ctx.lineWidth = 2;
+          ctx.shadowBlur = 20;
+          ctx.shadowColor = a.color;
+          drawHUDShape(ctx, a.shape, tp.x, tp.y, trailSz);
+          ctx.stroke();
+          ctx.shadowBlur = 0;
+        }
+      }
+      // Main shape
+      const alpha = 0.5 + 0.5 * (1 - t);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = 3;
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = a.color;
+      drawHUDShape(ctx, a.shape, x, y, sz);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+      // Bouncing hint arrow above
+      const bounce = Math.sin(state.frameCount * 0.15) * 10;
+      const arrowPulse = 0.7 + 0.3 * Math.sin(state.frameCount * 0.1);
+      ctx.globalAlpha = alpha * arrowPulse;
+      ctx.fillStyle = '#00ffcc';
+      ctx.shadowBlur = 24;
+      ctx.shadowColor = '#00ffcc';
+      ctx.textAlign = 'center';
+      ctx.textBaseline = 'bottom';
+      setFont('bold 54px "Press Start 2P",monospace');
+      ctx.fillText('\u25BC', x, y - sz - 22 + bounce);
+      ctx.shadowBlur = 0;
+      ctx.textAlign = 'left';
+    } else {
+      const scale = 2.5 - 1.5 * ease;
+      const sz = 10 * scale;
+      const alpha = 0.4 + 0.6 * (1 - t);
+      ctx.globalAlpha = alpha;
+      ctx.strokeStyle = a.color;
+      ctx.lineWidth = 2.5;
+      ctx.shadowBlur = 14;
+      ctx.shadowColor = a.color;
+      drawHUDShape(ctx, a.shape, x, y, sz);
+      ctx.stroke();
+      ctx.shadowBlur = 0;
+    }
+  }
+
+  // "VIEW AT ANY TIME" hint — dismiss on HUD hover
+  if(_viewHintTimer > 0 && state._hudHoverItem) _viewHintTimer = 0;
+  if(_viewHintTimer > 0){
+    _viewHintTimer--;
+    const fadeStart = 60;
+    let alpha = 1;
+    if(_viewHintTimer < fadeStart) alpha = _viewHintTimer / fadeStart;
+    const pulse = 0.7 + 0.3 * Math.sin(state.frameCount * 0.08);
+    ctx.globalAlpha = alpha * pulse;
+    ctx.fillStyle = '#00ffcc';
+    ctx.shadowBlur = 12;
+    ctx.shadowColor = '#00ffcc';
+    ctx.textBaseline = 'middle';
+    // Arrow pointing at HUD icon (32px arrow, 18px text — matches left HUD hint style)
+    setFont('32px "Press Start 2P",monospace');
+    ctx.fillText('\u25C0', _viewHintTargetX + 20, _viewHintTargetY);
+    // Text
+    setFont(FONT_18);
+    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 52, _viewHintTargetY);
     ctx.shadowBlur = 0;
   }
+
+  // Fuel fly anims (radials + fly simultaneous)
+  for(let i = _fuelFlyAnims.length - 1; i >= 0; i--){
+    const a = _fuelFlyAnims[i];
+
+    // Radial burst — plays alongside fly
+    if(a._burstAge < a._burstFrames){
+      a._burstAge++;
+      const bt = a._burstAge / a._burstFrames;
+      for(let r = 0; r < 2; r++){
+        const delay = r * 0.25;
+        const rt = Math.max(0, (bt - delay) / (1 - delay));
+        if(rt <= 0) continue;
+        const radius = rt * 220;
+        const alpha = (1 - rt) * 0.9;
+        ctx.globalAlpha = alpha;
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 6 - rt * 4;
+        ctx.shadowBlur = 28;
+        ctx.shadowColor = '#00ff88';
+        ctx.beginPath();
+        ctx.arc(a.startX, a.startY, radius, 0, Math.PI * 2);
+        ctx.stroke();
+        ctx.shadowBlur = 0;
+      }
+    }
+
+    // FLY — runs from frame 0
+    a.progress += 1 / a.duration;
+    if(a.progress >= 1){
+      if(_pendingFuelAmount > 0){
+        _fuelFillTarget = Math.min(1, state.fuel + _pendingFuelAmount);
+        _fuelFillAnim = 90;
+        _pendingFuelAmount = 0;
+      }
+      _fuelHintTimer = 180;
+      _fuelFlyAnims.splice(i, 1);
+      continue;
+    }
+    const t = a.progress;
+    const ease = t * t * (3 - 2 * t);
+    const x = a.startX + (a.targetX - a.startX) * ease;
+    const y = a.startY + (a.targetY - a.startY) * ease;
+    const scale = 4 - 3 * ease;
+    const alpha = 0.5 + 0.5 * (1 - t);
+    if(a._trail) a._trail.push({x, y, t});
+    if(a._trail && a._trail.length > 1){
+      const step = Math.max(1, Math.floor(a._trail.length / 4));
+      for(let ti = Math.max(0, a._trail.length - step * 4); ti < a._trail.length - 1; ti += step){
+        const tp = a._trail[ti];
+        const age = (t - tp.t);
+        const trailAlpha = Math.max(0, 0.3 - age * 1.2);
+        if(trailAlpha <= 0) continue;
+        ctx.globalAlpha = trailAlpha;
+        ctx.strokeStyle = '#00ff88';
+        ctx.lineWidth = 2;
+        ctx.shadowBlur = 16;
+        ctx.shadowColor = '#00ff88';
+        _drawFuelCellShape(ctx, tp.x, tp.y, 8 * (4 - 3 * (tp.t * tp.t * (3 - 2 * tp.t))));
+        ctx.shadowBlur = 0;
+      }
+    }
+    ctx.globalAlpha = alpha;
+    ctx.strokeStyle = '#00ff88';
+    ctx.lineWidth = 3;
+    ctx.shadowBlur = 24;
+    ctx.shadowColor = '#00ff88';
+    _drawFuelCellShape(ctx, x, y, 8 * scale);
+    ctx.shadowBlur = 0;
+  }
+
+  // Gradual fuel fill animation
+  if(_fuelFillAnim > 0){
+    _fuelFillAnim--;
+    const step = (_fuelFillTarget - state.fuel) / (_fuelFillAnim + 1);
+    state.fuel += step;
+    if(_fuelFillAnim <= 0) state.fuel = _fuelFillTarget;
+    updateFuelBar();
+  }
+
+  // Fuel bar pulse after fly lands
+  if(_fuelHintTimer > 0){
+    _fuelHintTimer--;
+    const fuelHud = document.getElementById('fuel-hud');
+    if(fuelHud){
+      const pulseVal = Math.sin(_fuelHintTimer * 0.12) * 0.5 + 0.5;
+      fuelHud.style.boxShadow = `0 0 ${12 + pulseVal * 20}px rgba(0,255,136,${0.3 + pulseVal * 0.5})`;
+      fuelHud.style.borderColor = `rgba(0,255,136,${0.4 + pulseVal * 0.6})`;
+      if(_fuelHintTimer <= 0){
+        fuelHud.style.boxShadow = '';
+        fuelHud.style.borderColor = '';
+      }
+    }
+  }
+
   ctx.restore();
+}
+
+// ── Fuel cell fly-to-bar animation ──────────────────────────────────
+let _firstFuelAnimDone = false;
+let _fuelFlyAnims = [];
+let _fuelHintTimer = 0;
+let _pendingFuelAmount = 0; // deferred fuel fill for first collection
+let _fuelFillTarget = 0; // target fuel level for gradual fill
+let _fuelFillAnim = 0; // frames remaining in gradual fill
+
+function _drawFuelCellShape(ctx, x, y, sz){
+  const w = sz, h = sz * 2;
+  ctx.beginPath();
+  ctx.rect(x - w/2, y - h/2, w, h);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.rect(x - w/4, y - h/2 - sz*0.5, w/2, sz*0.5);
+  ctx.stroke();
+}
+
+function _spawnFuelFlyAnim(fuelObj){
+  const fuelHud = document.getElementById('fuel-hud');
+  if(!fuelHud) return;
+  const r = fuelHud.getBoundingClientRect();
+  const targetX = r.left + r.width / 2;
+  const targetY = r.top + r.height / 2;
+  let startX = canvas.width / 2, startY = canvas.height / 2;
+  if(fuelObj){ startX = fuelObj.wx - state.x + canvas.width/2; startY = fuelObj.wy - state.y + canvas.height/2; }
+  // Mark collected immediately — radials are cosmetic
+  if(fuelObj) fuelObj.collected = true;
+  _fuelFlyAnims.push({
+    startX: startX,
+    startY: startY,
+    targetX: targetX,
+    targetY: targetY,
+    progress: 0,
+    duration: 120,
+    _trail: [],
+    _burstFrames: 60,
+    _burstAge: 0
+  });
 }
 
 let state = {
@@ -2604,7 +2909,7 @@ let state = {
   collisionFlash:0,
   visitedLevels:new Set([1]),
   frameCount:0, menuOpen:false, contentOpen:false, paused:false,
-  fuel:1.0, gameOver:false,
+  fuel:0.75, gameOver:false,
   outsideBarrier:false, _prevX:0, _prevY:0, _committedInside:true, _implodeTimer:0, _driftingDead:false, _driftTimer:0, _refuelDenied:false, _implosionCountdown:0, _shipDestroyed:false, _implosionRing:false, _implosionRingWx:0, _implosionRingWy:0,
   cheat:null,
   hasWaveBeam:false,
@@ -5228,7 +5533,10 @@ function updateWaveBeams(){
       if(obj.collected)continue;
       const r=obj.size+16;
       if((obj.wx-b.wx)**2+(obj.wy-b.wy)**2 < r*r){
-        if(!obj._permanent && !obj._bio && !obj._social) obj.collected=true;
+        if(!obj._permanent && !obj._bio && !obj._social){
+          _lastCollectedObj = obj;
+          obj.collected=true;
+        }
         b.maxAge=0; hit=true;
         if(!state.collectedItems) state.collectedItems=[];
         if(!state.collectedItems.find(c=>c.title===obj.content.title)){
@@ -5246,8 +5554,15 @@ function updateWaveBeams(){
         if(f.collected)continue;
         const r=f.size+14;
         if((f.wx-b.wx)**2+(f.wy-b.wy)**2 < r*r){
-          f.collected=true;
-          state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
+          // First fuel: fly animation with radials
+          if(!_firstFuelAnimDone){
+            _firstFuelAnimDone = true;
+            _pendingFuelAmount = 0.35;
+            _spawnFuelFlyAnim(f);
+          } else {
+            f.collected=true;
+            state.fuel=Math.min(1,state.fuel+0.35); updateFuelBar();
+          }
           if(audioCtx&&!state.sfxMuted){
             const t=audioCtx.currentTime;
             // Bright bell-like coin collect: two quick rising tones
@@ -5255,11 +5570,6 @@ function updateWaveBeams(){
             playBeep(noteFreq(1047,4),t+0.05,0.04,'sine',0.12);
             playBeep(noteFreq(1047,7),t+0.09,0.04,'sine',0.10);
             playBeep(noteFreq(1047,12),t+0.13,0.18,'sine',0.14);
-          }
-          // First fuel popup
-          if(!_firstFuelPopupShown){
-            _firstFuelPopupShown = true;
-            setTimeout(_showFuelPopup, 200);
           }
           break;
         }
@@ -7297,6 +7607,7 @@ function update(){
       if(nearCenter(obj.wx,obj.wy,obj.size+14)){
         // Permanent stations (social/bio) stay visible — don't mark collected
         if(!obj._permanent && !obj._bio && !obj._social){
+          _lastCollectedObj = obj;
           obj.collected=true;
           const ct=obj.content&&obj.content.title;
           // Also mark other copies of same item (from other cells)
@@ -7319,20 +7630,22 @@ function update(){
       if(f.collected)return;
       const _fCollectR = f.size+12;
       if(nearCenter(f.wx,f.wy,_fCollectR)){
-        f.collected=true;
-        state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
+        if(!_firstFuelAnimDone && !f._outerLaunchpadFuel){
+          // First fuel: fly animation with radials
+          _firstFuelAnimDone = true;
+          _pendingFuelAmount = f._outerLaunchpadFuel ? 1.0 : 0.35;
+          _spawnFuelFlyAnim(f);
+        } else {
+          f.collected=true;
+          state.fuel=Math.min(1,state.fuel+(f._outerLaunchpadFuel?1.0:0.35));
+          updateFuelBar();
+        }
         if(f._outerLaunchpadFuel){
           state._outerLaunchpadRefuelled=true;
           triggerLaunchpadVictory();
         }
-        updateFuelBar();
         addScore(f._outerLaunchpadFuel?25000:300);
         if(!f._outerLaunchpadFuel&&audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,7,12].forEach((n,i)=>playBeep(noteFreq(330,n),now+i*0.06,0.12,'triangle',0.06));}
-        // First fuel popup
-        if(!_firstFuelPopupShown && !f._outerLaunchpadFuel){
-          _firstFuelPopupShown = true;
-          setTimeout(_showFuelPopup, 200);
-        }
       }
     });
 
@@ -7558,7 +7871,12 @@ function hardRestart(){
   _dismissPeanutPopup();
   _dismissBubblePopup();
   _dismissWavePopup();
-  Object.assign(state,{gameOver:false,fuel:1.0,score:0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
+  // Reset first-collection animation state
+  _firstCollectAnimDone = false; _firstFuelAnimDone = false;
+  _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
+  _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
+  _lastCollectedObj = null;
+  Object.assign(state,{gameOver:false,fuel:0.75,score:0,levelIndex:1,x:OUTER_TARGET_WX,y:OUTER_TARGET_WY,vx:0,vy:0,
     tracers:[],hyperspace:false,cheat:null,hasWaveBeam:false,fireMode:'boost',
     waveBeams:[],wormholes:[],wormholeZoneSet:new Set(),wormholeFlash:0,currentLevel:1,paused:false,tronTrail:[],
     refuelShip:null,refuelRequested:false,debrisWall:[],spaceRocks:[],explosions:[],outsideBarrier:true,_prevX:OUTER_TARGET_WX,_prevY:OUTER_TARGET_WY,_committedInside:false,_implodeTimer:0,_driftingDead:false,_driftTimer:0,_refuelDenied:false,_implosionCountdown:0,_shipDestroyed:false,_implosionRing:false,_implosionRingWx:0,_implosionRingWy:0,bubbleDeforms:[],honeyHexCount:1,honeySplitTimer:0,honeyReversing:false,showAll:false,collectedItems:[],dockStation:null,rocksDestroyed:0,secretUnlocked:false,secretVisitCount:0,secretThreshold:10,inSecretLevel:false,bubbles:[],secretBlackHole:null,bhCapture:null,exitSpin:0,boostDoubled:false,_missionShown:false,_mission2Shown:false,_interzoneComplete:false,_zoneMissionShown:null,_zoneEntryCount:0,_beltRocksDestroyed:0,_beltHintDelay:undefined,_beltMissionShown:false,_trailBoost:null,_outerLaunchpadRefuelled:false,_debrisKill:false,_debrisChain:false,secretBoss:null,secretBossExploding:0,secretBossHits:0,secretBossDefeated:false,
@@ -11676,11 +11994,11 @@ function closeContent(){
     _spawnHudFlyAnim(_pendingFlyTitle);
     _pendingFlyTitle = null;
   }
-  // First-popup prompt: show once after the very first content popup is closed (not in boring mode, not in victory room)
-  if(!_firstPopupShown && !window._boringModeWasStarted && !state._victoryPhase && document.getElementById('boring-mode-popup').style.display!=='flex'){
-    _firstPopupShown=true;
-    setTimeout(_showPopupPrompt, 300);
-  }
+  // First-popup prompt: disabled — popups default to OFF now, hint animations handle onboarding
+  // if(!_firstPopupShown && !window._boringModeWasStarted && !state._victoryPhase && document.getElementById('boring-mode-popup').style.display!=='flex'){
+  //   _firstPopupShown=true;
+  //   setTimeout(_showPopupPrompt, 300);
+  // }
 }
 
 function checkLevelComplete(){
@@ -12518,6 +12836,11 @@ function startGame(){
   state.started=true;
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = true;
+  // Reset first-collection animation state
+  _firstCollectAnimDone = false; _firstFuelAnimDone = false;
+  _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
+  _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
+  _lastCollectedObj = null;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
   state.collectedItems = [];
   state._prevX=0; state._prevY=0;
@@ -14013,7 +14336,7 @@ function returnToTitleWithScore(initials, score){
   // Full reset — identical to page-load state
   Object.assign(state,{
     started:false, gameOver:false, paused:false, menuOpen:false,
-    fuel:1.0, score:0,
+    fuel:0.75, score:0,
     x:0, y:0, vx:0, vy:0, angle:0,
     tracers:[], hyperspace:false, hsTimer:0, hsTail:[],
     cheat:null, hasWaveBeam:false, fireMode:'boost', waveBeams:[],
