@@ -5008,10 +5008,11 @@ function playSFX(freq,start,dur,type='square',gain=0.08){
 
 // ── Thrust SFX engine (procedural, looping) ──────────────────────
 const THRUST_PRESETS = {
-  base:    { pitch:170, harmSpread:1.0,  harm2:0.47, harm3:0.41, tremRate:40, tremDepth:0.74, wobRate:0,  wobDepth:30,   rumFreq:66, rumGain:0.25, hissCut:500,  hissGain:0.0    },
-  reverse: { pitch:127, harmSpread:1.0,  harm2:0.03, harm3:0.63, tremRate:23, tremDepth:0.83, wobRate:0,  wobDepth:30,   rumFreq:47, rumGain:0.15, hissCut:500,  hissGain:0.0    },
-  boost:   { pitch:245, harmSpread:2.1,  harm2:0.61, harm3:0.18, tremRate:40, tremDepth:0.71, wobRate:20, wobDepth:0,    rumFreq:76, rumGain:0.21, hissCut:500,  hissGain:0.0    },
-  boost2x: { pitch:300, harmSpread:1.85, harm2:0.31, harm3:0.55, tremRate:40, tremDepth:0.75, wobRate:20, wobDepth:24.5, rumFreq:92, rumGain:0.25, hissCut:8000, hissGain:0.0025 }
+  idle:    { pitch:112, harmSpread:2.8,  harm2:0.0,  harm3:0.0,  tremRate:19.5, tremDepth:0.11, wobRate:10.8, wobDepth:30,   rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.40 },
+  base:    { pitch:181, harmSpread:1.4,  harm2:0.34, harm3:0.28, tremRate:40,   tremDepth:0.52, wobRate:14.3, wobDepth:27.5, rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.45 },
+  reverse: { pitch:109, harmSpread:2.1,  harm2:0.39, harm3:0.02, tremRate:40,   tremDepth:0.52, wobRate:20,   wobDepth:27.5, rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.45 },
+  boost:   { pitch:257, harmSpread:2.2,  harm2:0.07, harm3:0.13, tremRate:23.5, tremDepth:0.26, wobRate:18.9, wobDepth:27.5, rumFreq:100, rumGain:0.25, hissCut:600,  hissGain:0.0025, masterGain:0.45 },
+  boost2x: { pitch:300, harmSpread:1.9,  harm2:0.31, harm3:0.55, tremRate:31,   tremDepth:0.75, wobRate:20,   wobDepth:24.5, rumFreq:68,  rumGain:0.40, hissCut:8000, hissGain:0.0025, masterGain:0.60 }
 };
 // Shared 2s noise buffer for thrust hiss (lazy-created when audioCtx ready)
 let _thrustNoiseBuf = null;
@@ -5023,7 +5024,8 @@ function _getThrustNoiseBuf(){
   for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
   return _thrustNoiseBuf;
 }
-let _thrustSFX = { mode: null, sources: null, out: null };
+let _thrustLayers = []; // active layers for crossfading
+const THRUST_FADE_SEC = 0.35;
 
 function _buildThrustSFX(p){
   const out = audioCtx.createGain();
@@ -5082,38 +5084,43 @@ function _buildThrustSFX(p){
   return { sources, out };
 }
 
-function _startThrustSFX(mode){
-  const preset = THRUST_PRESETS[mode];
-  if(!preset || !audioCtx) return;
-  const built = _buildThrustSFX(preset);
+function _fadeOutThrustLayer(layer){
+  if(!layer || layer._fading) return;
+  layer._fading = true;
   const t = audioCtx.currentTime;
-  built.out.gain.setValueAtTime(0.0001, t);
-  built.out.gain.exponentialRampToValueAtTime(1.0, t + 0.04);
-  built.sources.forEach(s => { try { s.start(t); } catch(e){} });
-  _thrustSFX = { mode, sources: built.sources, out: built.out };
-}
-
-function _stopThrustSFX(){
-  if(!_thrustSFX.out) return;
-  const t = audioCtx.currentTime;
-  const out = _thrustSFX.out;
-  const srcs = _thrustSFX.sources;
+  const fadeSec = THRUST_FADE_SEC;
   try {
-    out.gain.cancelScheduledValues(t);
-    out.gain.setValueAtTime(out.gain.value, t);
-    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+    layer.out.gain.cancelScheduledValues(t);
+    layer.out.gain.setValueAtTime(Math.max(layer.out.gain.value, 0.0001), t);
+    layer.out.gain.exponentialRampToValueAtTime(0.0001, t + fadeSec);
   } catch(e){}
   setTimeout(() => {
-    srcs.forEach(s => { try { s.stop(); } catch(e){} });
-    try { out.disconnect(); } catch(e){}
-  }, 220);
-  _thrustSFX = { mode: null, sources: null, out: null };
+    layer.sources.forEach(s => { try { s.stop(); } catch(e){} });
+    try { layer.out.disconnect(); } catch(e){}
+    const i = _thrustLayers.indexOf(layer);
+    if(i >= 0) _thrustLayers.splice(i, 1);
+  }, (fadeSec * 1000) + 60);
 }
 
 function _updateThrustSFX(newMode){
-  if(_thrustSFX.mode === newMode) return;
-  if(_thrustSFX.mode) _stopThrustSFX();
-  if(newMode && audioCtx && !state.sfxMuted) _startThrustSFX(newMode);
+  // Current top-of-stack layer (non-fading)
+  const current = _thrustLayers.find(l => !l._fading);
+  const currentMode = current ? current.mode : null;
+  if(currentMode === newMode) return;
+
+  // Fade out any active layers
+  _thrustLayers.forEach(l => { if(!l._fading) _fadeOutThrustLayer(l); });
+
+  if(!newMode || !audioCtx || state.sfxMuted) return;
+  const preset = THRUST_PRESETS[newMode];
+  if(!preset) return;
+  const built = _buildThrustSFX(preset);
+  const t = audioCtx.currentTime;
+  const target = preset.masterGain || 0.5;
+  built.out.gain.setValueAtTime(0.0001, t);
+  built.out.gain.exponentialRampToValueAtTime(target, t + THRUST_FADE_SEC);
+  built.sources.forEach(s => { try { s.start(t); } catch(e){} });
+  _thrustLayers.push({ mode: newMode, sources: built.sources, out: built.out, _fading: false });
 }
 
 function _computeThrustMode(){
@@ -5126,7 +5133,7 @@ function _computeThrustMode(){
   }
   if(state.keys && state.keys['ArrowUp']) return 'base';
   if(state.keys && state.keys['ArrowDown']) return 'reverse';
-  return null;
+  return 'idle';
 }
 
 //  MUSIC ENGINE — simple, user-controlled
