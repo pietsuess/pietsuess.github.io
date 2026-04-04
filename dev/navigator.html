@@ -1203,10 +1203,16 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   </div>
   <div id="music-drawer-controls" style="padding:8px 14px 4px;display:flex;flex-direction:column;gap:6px;">
     <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
-      <span style="color:#666;white-space:nowrap;">VOL</span>
+      <span style="color:#666;white-space:nowrap;width:26px;">VOL</span>
       <input id="vol-slider" type="range" min="0" max="1" step="0.01" value="0.82"
         oninput="setVolume(parseFloat(this.value))"
         style="flex:1;accent-color:#ff69b4;height:4px;cursor:pointer;">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
+      <span style="color:#666;white-space:nowrap;width:26px;">SFX</span>
+      <input id="sfx-vol-slider" type="range" min="0" max="1" step="0.01" value="0.35"
+        oninput="setSfxVolume(parseFloat(this.value))"
+        style="flex:1;accent-color:#00ffcc;height:4px;cursor:pointer;">
     </div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()"
@@ -5024,103 +5030,119 @@ function _getThrustNoiseBuf(){
   for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
   return _thrustNoiseBuf;
 }
-let _thrustLayers = []; // active layers for crossfading
-const THRUST_FADE_SEC = 0.35;
+// Persistent thrust engine — single chain, params morph smoothly between modes
+let _thrustEngine = null;
+let _thrustSfxVol = 0.35; // user-adjustable SFX volume for thrust layer
+const THRUST_TC = 0.12;   // 120ms time constant for param ramps
+const THRUST_TC_FAST = 0.04; // faster for fade out
 
-function _buildThrustSFX(p){
+function setSfxVolume(v){
+  _thrustSfxVol = Math.max(0, Math.min(1, v));
+  if(_thrustEngine && _thrustEngine.currentMode && audioCtx){
+    const p = THRUST_PRESETS[_thrustEngine.currentMode];
+    if(p) _thrustEngine.out.gain.setTargetAtTime(p.masterGain * _thrustSfxVol, audioCtx.currentTime, THRUST_TC);
+  }
+}
+
+function _ensureThrustEngine(){
+  if(_thrustEngine || !audioCtx) return _thrustEngine;
   const out = audioCtx.createGain();
   out.gain.value = 0.0001;
   out.connect(sfxGainNode || audioCtx.destination);
-  // Tremolo stage (applied to harmonics only, not rumble/hiss)
-  const tremG = audioCtx.createGain();
-  tremG.gain.value = 1 - p.tremDepth / 2;
+
+  // Tremolo stage (applied to harmonics only)
+  const tremG = audioCtx.createGain(); tremG.gain.value = 0.5;
   const tremLfo = audioCtx.createOscillator();
-  tremLfo.type = 'sine';
-  tremLfo.frequency.value = p.tremRate;
-  const tremAmp = audioCtx.createGain();
-  tremAmp.gain.value = p.tremDepth / 2;
+  tremLfo.type = 'sine'; tremLfo.frequency.value = 20;
+  const tremAmp = audioCtx.createGain(); tremAmp.gain.value = 0.25;
   tremLfo.connect(tremAmp); tremAmp.connect(tremG.gain);
   tremG.connect(out);
-  function makeHarm(freq, gain, lfoMult){
+
+  function makeHarm(){
     const osc = audioCtx.createOscillator();
-    osc.type = 'triangle';
-    osc.frequency.value = freq;
+    osc.type = 'triangle'; osc.frequency.value = 150;
     const wlfo = audioCtx.createOscillator();
-    wlfo.frequency.value = p.wobRate * lfoMult;
-    const wg = audioCtx.createGain();
-    wg.gain.value = p.wobDepth;
+    wlfo.frequency.value = 10;
+    const wg = audioCtx.createGain(); wg.gain.value = 5;
     wlfo.connect(wg); wg.connect(osc.frequency);
-    const g = audioCtx.createGain(); g.gain.value = gain;
+    const g = audioCtx.createGain(); g.gain.value = 0;
     osc.connect(g); g.connect(tremG);
-    return [osc, wlfo];
+    return { osc, wlfo, wg, g };
   }
-  const sources = [tremLfo];
-  sources.push(...makeHarm(p.pitch, 0.18, 1.0));
-  sources.push(...makeHarm(p.pitch * p.harmSpread, 0.18 * p.harm2, 1.1));
-  sources.push(...makeHarm(p.pitch * p.harmSpread * 1.5, 0.18 * p.harm3, 1.2));
-  // Sub rumble (bypass tremolo, slow drift)
-  const rOsc = audioCtx.createOscillator();
-  rOsc.type = 'sine'; rOsc.frequency.value = p.rumFreq;
-  const rDrift = audioCtx.createOscillator();
-  rDrift.frequency.value = 0.4;
-  const rDg = audioCtx.createGain(); rDg.gain.value = 2;
-  rDrift.connect(rDg); rDg.connect(rOsc.frequency);
-  const rG = audioCtx.createGain(); rG.gain.value = p.rumGain;
-  rOsc.connect(rG); rG.connect(out);
-  sources.push(rOsc, rDrift);
-  // Hiss (highpass noise) if gain > 0
-  if(p.hissGain > 0){
-    const buf = _getThrustNoiseBuf();
-    if(buf){
-      const n = audioCtx.createBufferSource();
-      n.buffer = buf; n.loop = true;
-      const hp = audioCtx.createBiquadFilter();
-      hp.type = 'highpass'; hp.frequency.value = p.hissCut; hp.Q.value = 0.5;
-      const hg = audioCtx.createGain(); hg.gain.value = p.hissGain;
-      n.connect(hp); hp.connect(hg); hg.connect(out);
-      sources.push(n);
-    }
-  }
-  return { sources, out };
+  const h1 = makeHarm();
+  const h2 = makeHarm();
+  const h3 = makeHarm();
+
+  // Rumble (bypasses tremolo, slow drift)
+  const rumOsc = audioCtx.createOscillator();
+  rumOsc.type = 'sine'; rumOsc.frequency.value = 50;
+  const rumDrift = audioCtx.createOscillator();
+  rumDrift.frequency.value = 0.4;
+  const rumDg = audioCtx.createGain(); rumDg.gain.value = 2;
+  rumDrift.connect(rumDg); rumDg.connect(rumOsc.frequency);
+  const rumG = audioCtx.createGain(); rumG.gain.value = 0;
+  rumOsc.connect(rumG); rumG.connect(out);
+
+  // Hiss (bypasses tremolo)
+  const buf = _getThrustNoiseBuf();
+  const nSrc = audioCtx.createBufferSource();
+  nSrc.buffer = buf; nSrc.loop = true;
+  const hiss = audioCtx.createBiquadFilter();
+  hiss.type = 'highpass'; hiss.frequency.value = 3500; hiss.Q.value = 0.5;
+  const hissG = audioCtx.createGain(); hissG.gain.value = 0;
+  nSrc.connect(hiss); hiss.connect(hissG); hissG.connect(out);
+
+  const t = audioCtx.currentTime;
+  [tremLfo, h1.osc, h1.wlfo, h2.osc, h2.wlfo, h3.osc, h3.wlfo, rumOsc, rumDrift, nSrc].forEach(s => {
+    try { s.start(t); } catch(e){}
+  });
+
+  _thrustEngine = { out, tremG, tremLfo, tremAmp, h1, h2, h3, rumOsc, rumG, hiss, hissG, currentMode: null };
+  return _thrustEngine;
 }
 
-function _fadeOutThrustLayer(layer){
-  if(!layer || layer._fading) return;
-  layer._fading = true;
-  const t = audioCtx.currentTime;
-  const fadeSec = THRUST_FADE_SEC;
-  try {
-    layer.out.gain.cancelScheduledValues(t);
-    layer.out.gain.setValueAtTime(Math.max(layer.out.gain.value, 0.0001), t);
-    layer.out.gain.exponentialRampToValueAtTime(0.0001, t + fadeSec);
-  } catch(e){}
-  setTimeout(() => {
-    layer.sources.forEach(s => { try { s.stop(); } catch(e){} });
-    try { layer.out.disconnect(); } catch(e){}
-    const i = _thrustLayers.indexOf(layer);
-    if(i >= 0) _thrustLayers.splice(i, 1);
-  }, (fadeSec * 1000) + 60);
+function _applyThrustPreset(p, tc){
+  const e = _thrustEngine;
+  if(!e || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  e.h1.osc.frequency.setTargetAtTime(p.pitch, now, tc);
+  e.h2.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread, now, tc);
+  e.h3.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread * 1.5, now, tc);
+  e.h1.g.gain.setTargetAtTime(0.18, now, tc);
+  e.h2.g.gain.setTargetAtTime(0.18 * p.harm2, now, tc);
+  e.h3.g.gain.setTargetAtTime(0.18 * p.harm3, now, tc);
+  e.h1.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h2.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h3.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h1.wlfo.frequency.setTargetAtTime(p.wobRate, now, tc);
+  e.h2.wlfo.frequency.setTargetAtTime(p.wobRate * 1.1, now, tc);
+  e.h3.wlfo.frequency.setTargetAtTime(p.wobRate * 1.2, now, tc);
+  e.tremLfo.frequency.setTargetAtTime(p.tremRate, now, tc);
+  e.tremAmp.gain.setTargetAtTime(p.tremDepth / 2, now, tc);
+  e.tremG.gain.setTargetAtTime(1 - p.tremDepth / 2, now, tc);
+  e.rumOsc.frequency.setTargetAtTime(p.rumFreq, now, tc);
+  e.rumG.gain.setTargetAtTime(p.rumGain, now, tc);
+  e.hiss.frequency.setTargetAtTime(p.hissCut, now, tc);
+  e.hissG.gain.setTargetAtTime(p.hissGain, now, tc);
+  e.out.gain.setTargetAtTime(p.masterGain * _thrustSfxVol, now, tc);
 }
 
 function _updateThrustSFX(newMode){
-  // Current top-of-stack layer (non-fading)
-  const current = _thrustLayers.find(l => !l._fading);
-  const currentMode = current ? current.mode : null;
-  if(currentMode === newMode) return;
-
-  // Fade out any active layers
-  _thrustLayers.forEach(l => { if(!l._fading) _fadeOutThrustLayer(l); });
-
-  if(!newMode || !audioCtx || state.sfxMuted) return;
-  const preset = THRUST_PRESETS[newMode];
-  if(!preset) return;
-  const built = _buildThrustSFX(preset);
-  const t = audioCtx.currentTime;
-  const target = preset.masterGain || 0.5;
-  built.out.gain.setValueAtTime(0.0001, t);
-  built.out.gain.exponentialRampToValueAtTime(target, t + THRUST_FADE_SEC);
-  built.sources.forEach(s => { try { s.start(t); } catch(e){} });
-  _thrustLayers.push({ mode: newMode, sources: built.sources, out: built.out, _fading: false });
+  if(!audioCtx) return;
+  if(!newMode || state.sfxMuted){
+    if(_thrustEngine){
+      _thrustEngine.out.gain.setTargetAtTime(0.0001, audioCtx.currentTime, THRUST_TC_FAST);
+      _thrustEngine.currentMode = null;
+    }
+    return;
+  }
+  _ensureThrustEngine();
+  if(!_thrustEngine) return;
+  if(_thrustEngine.currentMode === newMode) return;
+  const p = THRUST_PRESETS[newMode];
+  if(!p) return;
+  _applyThrustPreset(p, THRUST_TC);
+  _thrustEngine.currentMode = newMode;
 }
 
 function _computeThrustMode(){
