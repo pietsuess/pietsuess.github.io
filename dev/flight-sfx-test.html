@@ -1,0 +1,370 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NAVIGATOR — Flight SFX Test</title>
+<style>
+  body { background:#0a0a14; color:#00ffcc; font-family:'Press Start 2P',monospace,sans-serif; margin:0; padding:24px; font-size:11px; }
+  h1 { color:#ffe000; font-size:14px; text-shadow:0 0 10px #ffe000; margin:0 0 8px; }
+  .sub { color:#888; font-size:9px; margin-bottom:20px; line-height:1.6; }
+  .master { display:flex; align-items:center; gap:14px; margin-bottom:24px; padding:12px 16px; background:rgba(0,255,204,0.05); border:1px solid #00ffcc55; }
+  .master label { color:#00ffcc; }
+  .master input[type=range] { flex:1; max-width:260px; accent-color:#00ffcc; }
+  .master button { background:#550000; color:#ff5555; border:1px solid #ff5555; padding:8px 14px; font-family:inherit; font-size:10px; cursor:pointer; }
+  .master button:hover { background:#770000; }
+  .grid { display:grid; grid-template-columns:repeat(3, 1fr); gap:20px; }
+  .col { background:rgba(0,0,0,0.4); border:1px solid #00ffcc44; padding:18px; }
+  .col h2 { color:#ffe000; font-size:12px; margin:0 0 6px; }
+  .col .desc { color:#888; font-size:8px; line-height:1.6; margin-bottom:14px; min-height:48px; }
+  .btn {
+    display:block; width:100%; margin-bottom:10px; padding:14px 10px;
+    background:rgba(0,255,204,0.08); color:#00ffcc;
+    border:2px solid #00ffcc66; font-family:inherit; font-size:10px;
+    cursor:pointer; user-select:none; -webkit-user-select:none;
+    text-align:left; letter-spacing:1px;
+    transition:all 0.1s;
+  }
+  .btn .label { display:block; color:#fff; margin-bottom:4px; font-size:10px; }
+  .btn .hint { display:block; color:#00ffcc88; font-size:7px; }
+  .btn:hover { background:rgba(0,255,204,0.14); border-color:#00ffcc; }
+  .btn.active { background:rgba(255,224,0,0.22); border-color:#ffe000; color:#ffe000; box-shadow:0 0 18px rgba(255,224,0,0.4); }
+  .btn.active .label { color:#ffe000; }
+  .btn.active .hint { color:#ffe00099; }
+  .instructions { margin-top:24px; padding:12px 16px; background:rgba(255,224,0,0.05); border:1px dashed #ffe00055; color:#cccccc; font-size:8px; line-height:1.8; }
+</style>
+</head>
+<body>
+
+<h1>NAVIGATOR — Flight SFX Test</h1>
+<div class="sub">Press and hold each button to hear the sound loop. Release to stop. Pick the style that feels right.</div>
+
+<div class="master">
+  <label>MASTER VOL</label>
+  <input id="master" type="range" min="0" max="100" value="60">
+  <span id="volval">60%</span>
+  <button onclick="stopAll()">STOP ALL</button>
+</div>
+
+<div class="grid">
+
+  <div class="col">
+    <h2>STYLE A — ROCKET RUMBLE</h2>
+    <div class="desc">Filtered noise only. Low rumble base, bright reverse, layered harmonics on boost.</div>
+    <button class="btn" data-style="A" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">low bandpass noise 80-200Hz</span></button>
+    <button class="btn" data-style="A" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">bright bandpass noise 200-600Hz</span></button>
+    <button class="btn" data-style="A" data-mode="boost"><span class="label">BOOST</span><span class="hint">rumble + sawtooth mid harmonic</span></button>
+    <button class="btn" data-style="A" data-mode="boost2x"><span class="label">BOOST X2</span><span class="hint">rumble + harmonic + high whine</span></button>
+  </div>
+
+  <div class="col">
+    <h2>STYLE B — RETRO SYNTH</h2>
+    <div class="desc">Pure oscillators pitched per stage with LFO/FM modulation. Arcade feel.</div>
+    <button class="btn" data-style="B" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">square 80Hz + slow LFO</span></button>
+    <button class="btn" data-style="B" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">triangle 60Hz (different shape)</span></button>
+    <button class="btn" data-style="B" data-mode="boost"><span class="label">BOOST</span><span class="hint">square 160Hz + FM mod</span></button>
+    <button class="btn" data-style="B" data-mode="boost2x"><span class="label">BOOST X2</span><span class="hint">saw 240Hz + FM + fast LFO</span></button>
+  </div>
+
+  <div class="col">
+    <h2>STYLE C — HYBRID (NOISE+TONE)</h2>
+    <div class="desc">Filtered noise layered with sine tone. Matches rock-break SFX aesthetic.</div>
+    <button class="btn" data-style="C" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">lowpass noise + 90Hz sine</span></button>
+    <button class="btn" data-style="C" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">highpass noise + 70Hz sine (inverted)</span></button>
+    <button class="btn" data-style="C" data-mode="boost"><span class="label">BOOST</span><span class="hint">wider noise + 140Hz sine + saw</span></button>
+    <button class="btn" data-style="C" data-mode="boost2x"><span class="label">BOOST X2</span><span class="hint">full noise + 220Hz sine + saw + shimmer</span></button>
+  </div>
+
+</div>
+
+<div class="instructions">
+  Tip: Try holding a base button and then triggering boost on the same style to hear the transition feel.<br>
+  Ramp-in 15ms, ramp-out 120ms on all sounds to avoid clicks.<br>
+  Once you pick a winner, tell Claude which style (A, B, or C) and it'll integrate into NAVIGATOR.
+</div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterGain = audioCtx.createGain();
+masterGain.gain.value = 0.6;
+masterGain.connect(audioCtx.destination);
+
+const masterSlider = document.getElementById('master');
+const volVal = document.getElementById('volval');
+masterSlider.addEventListener('input', e => {
+  const v = parseInt(e.target.value, 10) / 100;
+  masterGain.gain.setTargetAtTime(v, audioCtx.currentTime, 0.02);
+  volVal.textContent = e.target.value + '%';
+});
+
+// Create a long noise buffer for looping noise sources (2 seconds, looped)
+function makeNoiseBuffer(duration = 2){
+  const len = Math.floor(audioCtx.sampleRate * duration);
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+}
+const noiseBuffer = makeNoiseBuffer(2);
+
+// Active sound instances: buttonEl -> { nodes:[...], gain }
+const active = new Map();
+
+function makeNoiseSource(){
+  const src = audioCtx.createBufferSource();
+  src.buffer = noiseBuffer;
+  src.loop = true;
+  return src;
+}
+
+// Each style builds a node chain returning { nodes:[sources], gain:finalGain }
+// finalGain is what we ramp up/down; sources are the things that need .start()/.stop()
+function buildStyleA(mode){
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(masterGain);
+  const sources = [];
+
+  if(mode === 'base'){
+    const n = makeNoiseSource();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 120; bp.Q.value = 0.8;
+    const g = audioCtx.createGain(); g.gain.value = 0.9;
+    n.connect(bp); bp.connect(g); g.connect(out);
+    sources.push(n);
+  } else if(mode === 'reverse'){
+    const n = makeNoiseSource();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 400; bp.Q.value = 1.2;
+    const g = audioCtx.createGain(); g.gain.value = 0.7;
+    n.connect(bp); bp.connect(g); g.connect(out);
+    sources.push(n);
+  } else if(mode === 'boost'){
+    // Rumble + sawtooth mid layer
+    const n = makeNoiseSource();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 160; bp.Q.value = 0.9;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.85;
+    n.connect(bp); bp.connect(gN); gN.connect(out);
+    sources.push(n);
+    const saw = audioCtx.createOscillator();
+    saw.type = 'sawtooth'; saw.frequency.value = 120;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.12;
+    saw.connect(gS); gS.connect(out);
+    sources.push(saw);
+  } else if(mode === 'boost2x'){
+    // Rumble + harmonic + high whine with vibrato
+    const n = makeNoiseSource();
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.frequency.value = 200; bp.Q.value = 0.9;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.95;
+    n.connect(bp); bp.connect(gN); gN.connect(out);
+    sources.push(n);
+    const saw = audioCtx.createOscillator();
+    saw.type = 'sawtooth'; saw.frequency.value = 150;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.14;
+    saw.connect(gS); gS.connect(out);
+    sources.push(saw);
+    const whine = audioCtx.createOscillator();
+    whine.type = 'sine'; whine.frequency.value = 780;
+    // Vibrato LFO
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 7;
+    const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 18;
+    lfo.connect(lfoGain); lfoGain.connect(whine.frequency);
+    const gW = audioCtx.createGain(); gW.gain.value = 0.06;
+    whine.connect(gW); gW.connect(out);
+    sources.push(whine, lfo);
+  }
+  return { sources, gain: out };
+}
+
+function buildStyleB(mode){
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(masterGain);
+  const sources = [];
+
+  if(mode === 'base'){
+    const sq = audioCtx.createOscillator();
+    sq.type = 'square'; sq.frequency.value = 80;
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 3;
+    const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 4;
+    lfo.connect(lfoGain); lfoGain.connect(sq.frequency);
+    const g = audioCtx.createGain(); g.gain.value = 0.14;
+    // Low-pass to soften harshness
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1200;
+    sq.connect(lp); lp.connect(g); g.connect(out);
+    sources.push(sq, lfo);
+  } else if(mode === 'reverse'){
+    const tri = audioCtx.createOscillator();
+    tri.type = 'triangle'; tri.frequency.value = 60;
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 5;
+    const lfoGain = audioCtx.createGain(); lfoGain.gain.value = 8;
+    lfo.connect(lfoGain); lfoGain.connect(tri.frequency);
+    const g = audioCtx.createGain(); g.gain.value = 0.22;
+    tri.connect(g); g.connect(out);
+    sources.push(tri, lfo);
+  } else if(mode === 'boost'){
+    const sq = audioCtx.createOscillator();
+    sq.type = 'square'; sq.frequency.value = 160;
+    // FM modulator
+    const mod = audioCtx.createOscillator();
+    mod.frequency.value = 40;
+    const modGain = audioCtx.createGain(); modGain.gain.value = 20;
+    mod.connect(modGain); modGain.connect(sq.frequency);
+    const g = audioCtx.createGain(); g.gain.value = 0.12;
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1800;
+    sq.connect(lp); lp.connect(g); g.connect(out);
+    sources.push(sq, mod);
+  } else if(mode === 'boost2x'){
+    const saw = audioCtx.createOscillator();
+    saw.type = 'sawtooth'; saw.frequency.value = 240;
+    // FM modulator
+    const mod = audioCtx.createOscillator();
+    mod.frequency.value = 80;
+    const modGain = audioCtx.createGain(); modGain.gain.value = 40;
+    mod.connect(modGain); modGain.connect(saw.frequency);
+    // Fast LFO on amplitude
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 9;
+    const lfoG = audioCtx.createGain(); lfoG.gain.value = 0.04;
+    const trem = audioCtx.createGain(); trem.gain.value = 0.10;
+    lfo.connect(lfoG); lfoG.connect(trem.gain);
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 2400;
+    saw.connect(lp); lp.connect(trem); trem.connect(out);
+    sources.push(saw, mod, lfo);
+  }
+  return { sources, gain: out };
+}
+
+function buildStyleC(mode){
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(masterGain);
+  const sources = [];
+
+  if(mode === 'base'){
+    const n = makeNoiseSource();
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 300; lp.Q.value = 0.5;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.5;
+    n.connect(lp); lp.connect(gN); gN.connect(out);
+    const sine = audioCtx.createOscillator();
+    sine.type = 'sine'; sine.frequency.value = 90;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.16;
+    sine.connect(gS); gS.connect(out);
+    sources.push(n, sine);
+  } else if(mode === 'reverse'){
+    const n = makeNoiseSource();
+    const hp = audioCtx.createBiquadFilter();
+    hp.type = 'highpass'; hp.frequency.value = 400; hp.Q.value = 0.5;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.35;
+    n.connect(hp); hp.connect(gN); gN.connect(out);
+    const sine = audioCtx.createOscillator();
+    sine.type = 'sine'; sine.frequency.value = 70;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.20;
+    sine.connect(gS); gS.connect(out);
+    sources.push(n, sine);
+  } else if(mode === 'boost'){
+    const n = makeNoiseSource();
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 600; lp.Q.value = 0.6;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.6;
+    n.connect(lp); lp.connect(gN); gN.connect(out);
+    const sine = audioCtx.createOscillator();
+    sine.type = 'sine'; sine.frequency.value = 140;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.18;
+    sine.connect(gS); gS.connect(out);
+    const saw = audioCtx.createOscillator();
+    saw.type = 'sawtooth'; saw.frequency.value = 105;
+    const gSaw = audioCtx.createGain(); gSaw.gain.value = 0.06;
+    saw.connect(gSaw); gSaw.connect(out);
+    sources.push(n, sine, saw);
+  } else if(mode === 'boost2x'){
+    const n = makeNoiseSource();
+    const lp = audioCtx.createBiquadFilter();
+    lp.type = 'lowpass'; lp.frequency.value = 1200; lp.Q.value = 0.6;
+    const gN = audioCtx.createGain(); gN.gain.value = 0.7;
+    n.connect(lp); lp.connect(gN); gN.connect(out);
+    const sine = audioCtx.createOscillator();
+    sine.type = 'sine'; sine.frequency.value = 220;
+    const gS = audioCtx.createGain(); gS.gain.value = 0.20;
+    sine.connect(gS); gS.connect(out);
+    const saw = audioCtx.createOscillator();
+    saw.type = 'sawtooth'; saw.frequency.value = 165;
+    const gSaw = audioCtx.createGain(); gSaw.gain.value = 0.09;
+    saw.connect(gSaw); gSaw.connect(out);
+    const shimmer = audioCtx.createOscillator();
+    shimmer.type = 'sine'; shimmer.frequency.value = 880;
+    const lfo = audioCtx.createOscillator();
+    lfo.frequency.value = 6;
+    const lfoG = audioCtx.createGain(); lfoG.gain.value = 12;
+    lfo.connect(lfoG); lfoG.connect(shimmer.frequency);
+    const gSh = audioCtx.createGain(); gSh.gain.value = 0.04;
+    shimmer.connect(gSh); gSh.connect(out);
+    sources.push(n, sine, saw, shimmer, lfo);
+  }
+  return { sources, gain: out };
+}
+
+function startSound(btn){
+  if(active.has(btn)) return;
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  const style = btn.dataset.style;
+  const mode = btn.dataset.mode;
+  let built;
+  if(style === 'A') built = buildStyleA(mode);
+  else if(style === 'B') built = buildStyleB(mode);
+  else built = buildStyleC(mode);
+
+  const now = audioCtx.currentTime;
+  built.gain.gain.setValueAtTime(0.0001, now);
+  built.gain.gain.exponentialRampToValueAtTime(1.0, now + 0.015);
+  built.sources.forEach(s => { try { s.start(now); } catch(e){} });
+  active.set(btn, built);
+  btn.classList.add('active');
+}
+
+function stopSound(btn){
+  const built = active.get(btn);
+  if(!built) return;
+  const now = audioCtx.currentTime;
+  try {
+    built.gain.gain.cancelScheduledValues(now);
+    built.gain.gain.setValueAtTime(built.gain.gain.value, now);
+    built.gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+  } catch(e){}
+  setTimeout(() => {
+    built.sources.forEach(s => { try { s.stop(); } catch(e){} });
+    try { built.gain.disconnect(); } catch(e){}
+  }, 180);
+  active.delete(btn);
+  btn.classList.remove('active');
+}
+
+function stopAll(){
+  Array.from(active.keys()).forEach(stopSound);
+}
+
+document.querySelectorAll('.btn').forEach(btn => {
+  const down = e => { e.preventDefault(); startSound(btn); };
+  const up = e => { e.preventDefault(); stopSound(btn); };
+  btn.addEventListener('mousedown', down);
+  btn.addEventListener('mouseup', up);
+  btn.addEventListener('mouseleave', up);
+  btn.addEventListener('touchstart', down, { passive: false });
+  btn.addEventListener('touchend', up, { passive: false });
+  btn.addEventListener('touchcancel', up);
+});
+
+// Stop all on window blur (tab switch)
+window.addEventListener('blur', stopAll);
+</script>
+
+</body>
+</html>
