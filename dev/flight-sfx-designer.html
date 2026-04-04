@@ -1,0 +1,385 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NAVIGATOR — Flight SFX Designer</title>
+<style>
+  body { background:#0a0a14; color:#00ffcc; font-family:'Press Start 2P',monospace,sans-serif; margin:0; padding:24px; font-size:10px; }
+  h1 { color:#ffe000; font-size:14px; text-shadow:0 0 10px #ffe000; margin:0 0 6px; }
+  .sub { color:#888; font-size:9px; margin-bottom:20px; line-height:1.6; }
+  .layout { display:grid; grid-template-columns:1fr 420px; gap:24px; }
+  .panel { background:rgba(0,0,0,0.5); border:1px solid #00ffcc44; padding:20px; }
+  .panel h2 { color:#ffe000; font-size:12px; margin:0 0 14px; border-bottom:1px solid #ffe00033; padding-bottom:8px; }
+  .group { margin-bottom:22px; }
+  .group .grouplabel { color:#ff69b4; font-size:9px; letter-spacing:2px; margin-bottom:10px; text-transform:uppercase; }
+  .slider-row { display:grid; grid-template-columns:130px 1fr 60px; align-items:center; gap:12px; margin-bottom:10px; }
+  .slider-row label { color:#00ffcc; font-size:9px; }
+  .slider-row input[type=range] { accent-color:#00ffcc; width:100%; }
+  .slider-row .val { color:#ffe000; font-size:9px; text-align:right; }
+  .controls { display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap; }
+  .controls button {
+    padding:12px 18px; background:rgba(0,255,204,0.1); color:#00ffcc;
+    border:2px solid #00ffcc; font-family:inherit; font-size:10px;
+    cursor:pointer; letter-spacing:1px;
+  }
+  .controls button:hover { background:rgba(0,255,204,0.22); }
+  .controls button.play { background:rgba(0,255,0,0.14); border-color:#00ff66; color:#00ff66; }
+  .controls button.play.active { background:rgba(255,224,0,0.26); border-color:#ffe000; color:#ffe000; }
+  .controls button.stop { background:rgba(255,0,0,0.14); border-color:#ff4444; color:#ff4444; }
+  .saved { background:rgba(255,105,180,0.06); border:1px solid #ff69b455; padding:14px; margin-top:14px; }
+  .saved h3 { color:#ff69b4; font-size:10px; margin:0 0 10px; }
+  .preset-item { display:flex; align-items:center; gap:8px; padding:6px 10px; margin-bottom:6px; background:rgba(0,0,0,0.4); border:1px solid #ff69b433; }
+  .preset-item .pname { flex:1; color:#ffe000; font-size:9px; }
+  .preset-item button { padding:5px 9px; font-size:8px; font-family:inherit; border:1px solid #00ffcc66; background:transparent; color:#00ffcc; cursor:pointer; }
+  .preset-item button:hover { background:rgba(0,255,204,0.12); }
+  .preset-item button.del { border-color:#ff444466; color:#ff6666; }
+  .json-out {
+    margin-top:14px; background:#000; border:1px solid #00ffcc44;
+    padding:12px; font-family:'Courier New',monospace; font-size:9px;
+    color:#88ffcc; max-height:280px; overflow-y:auto; white-space:pre-wrap;
+    user-select:all;
+  }
+  .name-input {
+    flex:1; min-width:180px; padding:10px; background:rgba(255,105,180,0.08);
+    color:#ffe000; border:1px solid #ff69b488; font-family:inherit;
+    font-size:10px; letter-spacing:1px;
+  }
+  .name-input:focus { outline:none; border-color:#ffe000; }
+  .copy-hint { color:#888; font-size:8px; margin-top:6px; }
+</style>
+</head>
+<body>
+
+<h1>NAVIGATOR — Flight SFX Designer</h1>
+<div class="sub">Dial in the sound with live sliders. Save named presets. Copy the JSON at the bottom when done.</div>
+
+<div class="layout">
+
+  <div class="panel">
+    <h2>PARAMETERS</h2>
+
+    <div class="controls">
+      <button id="playBtn" class="play">PLAY / STOP</button>
+      <input id="presetName" class="name-input" type="text" placeholder="preset name (e.g. base-thrust)">
+      <button id="saveBtn">SAVE PRESET</button>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ PITCH / HARMONIC STACK</div>
+      <div class="slider-row"><label>fundamental Hz</label><input id="pitch" type="range" min="20" max="300" step="1" value="48"><span class="val" id="pitchV">48</span></div>
+      <div class="slider-row"><label>harmonic spread</label><input id="harmSpread" type="range" min="1.0" max="3.0" step="0.05" value="1.5"><span class="val" id="harmSpreadV">1.50</span></div>
+      <div class="slider-row"><label>harmonic 2 gain</label><input id="harm2" type="range" min="0" max="1" step="0.01" value="0.55"><span class="val" id="harm2V">0.55</span></div>
+      <div class="slider-row"><label>harmonic 3 gain</label><input id="harm3" type="range" min="0" max="1" step="0.01" value="0.40"><span class="val" id="harm3V">0.40</span></div>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ TREMOLO (amplitude wobble)</div>
+      <div class="slider-row"><label>rate Hz</label><input id="tremRate" type="range" min="0" max="40" step="0.5" value="20"><span class="val" id="tremRateV">20</span></div>
+      <div class="slider-row"><label>depth %</label><input id="tremDepth" type="range" min="0" max="100" step="1" value="55"><span class="val" id="tremDepthV">55</span></div>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ PITCH WOBBLE (freq LFO)</div>
+      <div class="slider-row"><label>rate Hz</label><input id="wobRate" type="range" min="0" max="20" step="0.1" value="8"><span class="val" id="wobRateV">8.0</span></div>
+      <div class="slider-row"><label>depth Hz</label><input id="wobDepth" type="range" min="0" max="30" step="0.5" value="4"><span class="val" id="wobDepthV">4.0</span></div>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ SUB RUMBLE</div>
+      <div class="slider-row"><label>freq Hz</label><input id="rumFreq" type="range" min="15" max="100" step="1" value="28"><span class="val" id="rumFreqV">28</span></div>
+      <div class="slider-row"><label>gain</label><input id="rumGain" type="range" min="0" max="1" step="0.01" value="0.12"><span class="val" id="rumGainV">0.12</span></div>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ HISS (highpass noise)</div>
+      <div class="slider-row"><label>cutoff Hz</label><input id="hissCut" type="range" min="500" max="8000" step="50" value="3500"><span class="val" id="hissCutV">3500</span></div>
+      <div class="slider-row"><label>gain</label><input id="hissGain" type="range" min="0" max="0.2" step="0.005" value="0.025"><span class="val" id="hissGainV">0.025</span></div>
+    </div>
+
+    <div class="group">
+      <div class="grouplabel">◆ MASTER</div>
+      <div class="slider-row"><label>output gain</label><input id="masterGain" type="range" min="0" max="1" step="0.01" value="0.6"><span class="val" id="masterGainV">0.60</span></div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>SAVED PRESETS</h2>
+    <div id="presetList"></div>
+    <div class="copy-hint">Click a preset name to reload its params. Click × to delete.</div>
+    <h2 style="margin-top:20px">JSON EXPORT</h2>
+    <div class="json-out" id="jsonOut">[]</div>
+    <div class="copy-hint">Select all + copy when done. Send JSON to Claude for integration.</div>
+  </div>
+
+</div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterOut = audioCtx.createGain();
+masterOut.gain.value = 0.6;
+masterOut.connect(audioCtx.destination);
+
+// ── Sliders ─────────────────────────────────────────────────────────
+const ids = ['pitch','harmSpread','harm2','harm3','tremRate','tremDepth','wobRate','wobDepth','rumFreq','rumGain','hissCut','hissGain','masterGain'];
+const sliders = {};
+ids.forEach(id => {
+  const el = document.getElementById(id);
+  const val = document.getElementById(id + 'V');
+  sliders[id] = el;
+  const fmt = v => {
+    const n = parseFloat(v);
+    if(id === 'harmSpread' || id === 'harm2' || id === 'harm3' || id === 'masterGain' || id === 'rumGain') return n.toFixed(2);
+    if(id === 'hissGain') return n.toFixed(3);
+    if(id === 'wobRate' || id === 'wobDepth') return n.toFixed(1);
+    return n.toString();
+  };
+  val.textContent = fmt(el.value);
+  el.addEventListener('input', () => {
+    val.textContent = fmt(el.value);
+    updateLive();
+  });
+});
+
+function getParams(){
+  return {
+    pitch: parseFloat(sliders.pitch.value),
+    harmSpread: parseFloat(sliders.harmSpread.value),
+    harm2: parseFloat(sliders.harm2.value),
+    harm3: parseFloat(sliders.harm3.value),
+    tremRate: parseFloat(sliders.tremRate.value),
+    tremDepth: parseFloat(sliders.tremDepth.value) / 100,
+    wobRate: parseFloat(sliders.wobRate.value),
+    wobDepth: parseFloat(sliders.wobDepth.value),
+    rumFreq: parseFloat(sliders.rumFreq.value),
+    rumGain: parseFloat(sliders.rumGain.value),
+    hissCut: parseFloat(sliders.hissCut.value),
+    hissGain: parseFloat(sliders.hissGain.value),
+    masterGain: parseFloat(sliders.masterGain.value),
+  };
+}
+
+function setParams(p){
+  if(p.pitch !== undefined) sliders.pitch.value = p.pitch;
+  if(p.harmSpread !== undefined) sliders.harmSpread.value = p.harmSpread;
+  if(p.harm2 !== undefined) sliders.harm2.value = p.harm2;
+  if(p.harm3 !== undefined) sliders.harm3.value = p.harm3;
+  if(p.tremRate !== undefined) sliders.tremRate.value = p.tremRate;
+  if(p.tremDepth !== undefined) sliders.tremDepth.value = p.tremDepth * 100;
+  if(p.wobRate !== undefined) sliders.wobRate.value = p.wobRate;
+  if(p.wobDepth !== undefined) sliders.wobDepth.value = p.wobDepth;
+  if(p.rumFreq !== undefined) sliders.rumFreq.value = p.rumFreq;
+  if(p.rumGain !== undefined) sliders.rumGain.value = p.rumGain;
+  if(p.hissCut !== undefined) sliders.hissCut.value = p.hissCut;
+  if(p.hissGain !== undefined) sliders.hissGain.value = p.hissGain;
+  if(p.masterGain !== undefined) sliders.masterGain.value = p.masterGain;
+  ids.forEach(id => sliders[id].dispatchEvent(new Event('input')));
+}
+
+// ── Noise buffer ────────────────────────────────────────────────────
+const noiseBuffer = (function(){
+  const len = Math.floor(audioCtx.sampleRate * 2);
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = buf.getChannelData(0);
+  for(let i = 0; i < len; i++) d[i] = Math.random() * 2 - 1;
+  return buf;
+})();
+
+// ── Live sound engine ───────────────────────────────────────────────
+let live = null; // { nodes:{...}, out, playing }
+
+function buildLive(){
+  const p = getParams();
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(masterOut);
+
+  // Tremolo node
+  const tremG = audioCtx.createGain();
+  tremG.gain.value = 1 - p.tremDepth / 2;
+  const tremLfo = audioCtx.createOscillator();
+  tremLfo.type = 'sine';
+  tremLfo.frequency.value = p.tremRate;
+  const tremLfoAmp = audioCtx.createGain();
+  tremLfoAmp.gain.value = p.tremDepth / 2;
+  tremLfo.connect(tremLfoAmp); tremLfoAmp.connect(tremG.gain);
+  tremG.connect(out);
+
+  // Three harmonics: 1, harmSpread, harmSpread*2 (roughly octave+half)
+  function makeHarm(freq, gain, wobRate, wobDepth){
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const wobLfo = audioCtx.createOscillator();
+    wobLfo.frequency.value = wobRate;
+    const wobG = audioCtx.createGain();
+    wobG.gain.value = wobDepth;
+    wobLfo.connect(wobG); wobG.connect(osc.frequency);
+    const g = audioCtx.createGain();
+    g.gain.value = gain;
+    osc.connect(g); g.connect(tremG);
+    return { osc, lfo: wobLfo, gain: g };
+  }
+
+  const h1 = makeHarm(p.pitch, 0.18, p.wobRate, p.wobDepth);
+  const h2 = makeHarm(p.pitch * p.harmSpread, 0.18 * p.harm2, p.wobRate * 1.1, p.wobDepth);
+  const h3 = makeHarm(p.pitch * p.harmSpread * 1.5, 0.18 * p.harm3, p.wobRate * 1.2, p.wobDepth);
+
+  // Rumble (sub sine with slow drift) — bypass tremolo
+  const rumOsc = audioCtx.createOscillator();
+  rumOsc.type = 'sine';
+  rumOsc.frequency.value = p.rumFreq;
+  const rumDrift = audioCtx.createOscillator();
+  rumDrift.frequency.value = 0.4;
+  const rumDriftG = audioCtx.createGain();
+  rumDriftG.gain.value = 2;
+  rumDrift.connect(rumDriftG); rumDriftG.connect(rumOsc.frequency);
+  const rumG = audioCtx.createGain();
+  rumG.gain.value = p.rumGain;
+  rumOsc.connect(rumG); rumG.connect(out);
+
+  // Hiss — highpass noise, bypass tremolo
+  const nSrc = audioCtx.createBufferSource();
+  nSrc.buffer = noiseBuffer; nSrc.loop = true;
+  const hiss = audioCtx.createBiquadFilter();
+  hiss.type = 'highpass';
+  hiss.frequency.value = p.hissCut;
+  hiss.Q.value = 0.5;
+  const hissG = audioCtx.createGain();
+  hissG.gain.value = p.hissGain;
+  nSrc.connect(hiss); hiss.connect(hissG); hissG.connect(out);
+
+  const sources = [tremLfo, h1.osc, h1.lfo, h2.osc, h2.lfo, h3.osc, h3.lfo, rumOsc, rumDrift, nSrc];
+  return {
+    sources, out,
+    nodes: { tremG, tremLfo, tremLfoAmp, h1, h2, h3, rumOsc, rumG, hiss, hissG },
+    playing: false
+  };
+}
+
+function updateLive(){
+  // Update master gain always
+  const p = getParams();
+  masterOut.gain.setTargetAtTime(p.masterGain, audioCtx.currentTime, 0.02);
+  if(!live || !live.playing) return;
+  const now = audioCtx.currentTime;
+  const t = 0.03;
+  const { nodes } = live;
+  // Harmonic freqs
+  nodes.h1.osc.frequency.setTargetAtTime(p.pitch, now, t);
+  nodes.h2.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread, now, t);
+  nodes.h3.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread * 1.5, now, t);
+  // Harmonic gains
+  nodes.h1.gain.gain.setTargetAtTime(0.18, now, t);
+  nodes.h2.gain.gain.setTargetAtTime(0.18 * p.harm2, now, t);
+  nodes.h3.gain.gain.setTargetAtTime(0.18 * p.harm3, now, t);
+  // Tremolo
+  nodes.tremLfo.frequency.setTargetAtTime(p.tremRate, now, t);
+  nodes.tremLfoAmp.gain.setTargetAtTime(p.tremDepth / 2, now, t);
+  nodes.tremG.gain.setTargetAtTime(1 - p.tremDepth / 2, now, t);
+  // Pitch wobble
+  nodes.h1.lfo.frequency.setTargetAtTime(p.wobRate, now, t);
+  nodes.h2.lfo.frequency.setTargetAtTime(p.wobRate * 1.1, now, t);
+  nodes.h3.lfo.frequency.setTargetAtTime(p.wobRate * 1.2, now, t);
+  // Wobble depth — hard to change mid-flight without recreating LFO gain, just set new target
+  // Note: we stored the lfo nodes but not their gain. Skip for now (recreate to change).
+  // Rumble
+  nodes.rumOsc.frequency.setTargetAtTime(p.rumFreq, now, t);
+  nodes.rumG.gain.setTargetAtTime(p.rumGain, now, t);
+  // Hiss
+  nodes.hiss.frequency.setTargetAtTime(p.hissCut, now, t);
+  nodes.hissG.gain.setTargetAtTime(p.hissGain, now, t);
+}
+
+function startPlay(){
+  if(live && live.playing) return;
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  live = buildLive();
+  const now = audioCtx.currentTime;
+  live.out.gain.setValueAtTime(0.0001, now);
+  live.out.gain.exponentialRampToValueAtTime(1.0, now + 0.03);
+  live.sources.forEach(s => { try { s.start(now); } catch(e){} });
+  live.playing = true;
+  document.getElementById('playBtn').classList.add('active');
+}
+
+function stopPlay(){
+  if(!live || !live.playing) return;
+  const now = audioCtx.currentTime;
+  try {
+    live.out.gain.cancelScheduledValues(now);
+    live.out.gain.setValueAtTime(live.out.gain.value, now);
+    live.out.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+  } catch(e){}
+  const toStop = live.sources;
+  const toKill = live.out;
+  setTimeout(() => {
+    toStop.forEach(s => { try { s.stop(); } catch(e){} });
+    try { toKill.disconnect(); } catch(e){}
+  }, 220);
+  live.playing = false;
+  live = null;
+  document.getElementById('playBtn').classList.remove('active');
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  if(live && live.playing) stopPlay();
+  else startPlay();
+});
+
+// ── Presets ─────────────────────────────────────────────────────────
+let presets = JSON.parse(localStorage.getItem('sfxPresets') || '[]');
+
+function renderPresets(){
+  const list = document.getElementById('presetList');
+  list.innerHTML = '';
+  presets.forEach((p, i) => {
+    const div = document.createElement('div');
+    div.className = 'preset-item';
+    const name = document.createElement('span');
+    name.className = 'pname';
+    name.textContent = p.name;
+    const loadBtn = document.createElement('button');
+    loadBtn.textContent = 'LOAD';
+    loadBtn.addEventListener('click', () => {
+      setParams(p.params);
+      document.getElementById('presetName').value = p.name;
+    });
+    const delBtn = document.createElement('button');
+    delBtn.className = 'del';
+    delBtn.textContent = '×';
+    delBtn.addEventListener('click', () => {
+      presets.splice(i, 1);
+      savePresets();
+      renderPresets();
+    });
+    div.appendChild(name); div.appendChild(loadBtn); div.appendChild(delBtn);
+    list.appendChild(div);
+  });
+  document.getElementById('jsonOut').textContent = JSON.stringify(presets, null, 2);
+}
+
+function savePresets(){
+  localStorage.setItem('sfxPresets', JSON.stringify(presets));
+}
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const nameInput = document.getElementById('presetName');
+  const name = nameInput.value.trim();
+  if(!name){ nameInput.focus(); return; }
+  const params = getParams();
+  // If name exists, overwrite
+  const idx = presets.findIndex(p => p.name === name);
+  const entry = { name, params };
+  if(idx >= 0) presets[idx] = entry;
+  else presets.push(entry);
+  savePresets();
+  renderPresets();
+});
+
+renderPresets();
+
+window.addEventListener('blur', stopPlay);
+</script>
+
+</body>
+</html>
