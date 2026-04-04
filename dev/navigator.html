@@ -4320,10 +4320,10 @@ let masterGain=null, musicGainNode=null, sfxGainNode=null, reverbIn=null;
 function initAudioGraph(){
   // Master output gain
   masterGain=audioCtx.createGain();
-  masterGain.gain.value=0.82;
+  masterGain.gain.value=1.0;
   masterGain.connect(audioCtx.destination);
-  musicGainNode=audioCtx.createGain();musicGainNode.gain.value=1.0;musicGainNode.connect(masterGain);
-  sfxGainNode=audioCtx.createGain();sfxGainNode.gain.value=1.0;sfxGainNode.connect(masterGain);
+  musicGainNode=audioCtx.createGain();musicGainNode.gain.value=0.82;musicGainNode.connect(masterGain);
+  sfxGainNode=audioCtx.createGain();sfxGainNode.gain.value=0.35;sfxGainNode.connect(masterGain);
 
   // Reverb via chained delays — simulates large hall
   const d1=audioCtx.createDelay(4.0), d2=audioCtx.createDelay(4.0), d3=audioCtx.createDelay(4.0);
@@ -5032,17 +5032,8 @@ function _getThrustNoiseBuf(){
 }
 // Persistent thrust engine — single chain, params morph smoothly between modes
 let _thrustEngine = null;
-let _thrustSfxVol = 0.35; // user-adjustable SFX volume for thrust layer
 const THRUST_TC = 0.12;   // 120ms time constant for param ramps
 const THRUST_TC_FAST = 0.04; // faster for fade out
-
-function setSfxVolume(v){
-  _thrustSfxVol = Math.max(0, Math.min(1, v));
-  if(_thrustEngine && _thrustEngine.currentMode && audioCtx){
-    const p = THRUST_PRESETS[_thrustEngine.currentMode];
-    if(p) _thrustEngine.out.gain.setTargetAtTime(p.masterGain * _thrustSfxVol, audioCtx.currentTime, THRUST_TC);
-  }
-}
 
 function _ensureThrustEngine(){
   if(_thrustEngine || !audioCtx) return _thrustEngine;
@@ -5124,7 +5115,7 @@ function _applyThrustPreset(p, tc){
   e.rumG.gain.setTargetAtTime(p.rumGain, now, tc);
   e.hiss.frequency.setTargetAtTime(p.hissCut, now, tc);
   e.hissG.gain.setTargetAtTime(p.hissGain, now, tc);
-  e.out.gain.setTargetAtTime(p.masterGain * _thrustSfxVol, now, tc);
+  e.out.gain.setTargetAtTime(p.masterGain, now, tc);
 }
 
 function _updateThrustSFX(newMode){
@@ -5230,15 +5221,18 @@ function toggleMute(){
   } else {
     // Both muted (or sfx-only muted) → all on
     state.musicMuted=false;state.sfxMuted=false;
-    if(musicGainNode)musicGainNode.gain.value=1;
-    if(sfxGainNode)sfxGainNode.gain.value=1;
+    if(musicGainNode)musicGainNode.gain.value=_musicVolume;
+    if(sfxGainNode)sfxGainNode.gain.value=_sfxVolume;
     playSong(state.songIndex);
   }
   _updateMuteUI();
 }
-function toggleMusicMute(){state.musicMuted=!state.musicMuted;if(musicGainNode)musicGainNode.gain.value=state.musicMuted?0:1;state.musicMuted?stopMusic():playSong(state.songIndex);_updateMuteUI();_trackAction('music:'+(state.musicMuted?'off':'on'));}
-function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNode.gain.value=state.sfxMuted?0:1;_updateMuteUI();_trackAction('sfx:'+(state.sfxMuted?'off':'on'));}
-function setVolume(v){state.volume=v;if(masterGain)masterGain.gain.value=v;}
+let _musicVolume = 0.82;
+let _sfxVolume = 0.35;
+function toggleMusicMute(){state.musicMuted=!state.musicMuted;if(musicGainNode)musicGainNode.gain.value=state.musicMuted?0:_musicVolume;state.musicMuted?stopMusic():playSong(state.songIndex);_updateMuteUI();_trackAction('music:'+(state.musicMuted?'off':'on'));}
+function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNode.gain.value=state.sfxMuted?0:_sfxVolume;_updateMuteUI();_trackAction('sfx:'+(state.sfxMuted?'off':'on'));}
+function setVolume(v){state.volume=v;_musicVolume=v;if(musicGainNode && !state.musicMuted)musicGainNode.gain.value=v;}
+function setSfxVolume(v){_sfxVolume=Math.max(0,Math.min(1,v));if(sfxGainNode && !state.sfxMuted)sfxGainNode.gain.value=_sfxVolume;}
 function _updateMuteUI(){
   const mb=document.getElementById('music-mute-btn'),sb=document.getElementById('sfx-mute-btn');
   if(mb){mb.textContent=state.musicMuted?'♫ OFF':'♫ ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
