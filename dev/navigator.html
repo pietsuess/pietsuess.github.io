@@ -5006,6 +5006,129 @@ function playSFX(freq,start,dur,type='square',gain=0.08){
   osc.connect(g);g.connect(sfxGainNode);osc.start(start);osc.stop(end+0.05);
 }
 
+// ── Thrust SFX engine (procedural, looping) ──────────────────────
+const THRUST_PRESETS = {
+  base:    { pitch:170, harmSpread:1.0,  harm2:0.47, harm3:0.41, tremRate:40, tremDepth:0.74, wobRate:0,  wobDepth:30,   rumFreq:66, rumGain:0.25, hissCut:500,  hissGain:0.0    },
+  reverse: { pitch:127, harmSpread:1.0,  harm2:0.03, harm3:0.63, tremRate:23, tremDepth:0.83, wobRate:0,  wobDepth:30,   rumFreq:47, rumGain:0.15, hissCut:500,  hissGain:0.0    },
+  boost:   { pitch:245, harmSpread:2.1,  harm2:0.61, harm3:0.18, tremRate:40, tremDepth:0.71, wobRate:20, wobDepth:0,    rumFreq:76, rumGain:0.21, hissCut:500,  hissGain:0.0    },
+  boost2x: { pitch:300, harmSpread:1.85, harm2:0.31, harm3:0.55, tremRate:40, tremDepth:0.75, wobRate:20, wobDepth:24.5, rumFreq:92, rumGain:0.25, hissCut:8000, hissGain:0.0025 }
+};
+// Shared 2s noise buffer for thrust hiss (lazy-created when audioCtx ready)
+let _thrustNoiseBuf = null;
+function _getThrustNoiseBuf(){
+  if(_thrustNoiseBuf || !audioCtx) return _thrustNoiseBuf;
+  const len = Math.floor(audioCtx.sampleRate * 2);
+  _thrustNoiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = _thrustNoiseBuf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+  return _thrustNoiseBuf;
+}
+let _thrustSFX = { mode: null, sources: null, out: null };
+
+function _buildThrustSFX(p){
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(sfxGainNode || audioCtx.destination);
+  // Tremolo stage (applied to harmonics only, not rumble/hiss)
+  const tremG = audioCtx.createGain();
+  tremG.gain.value = 1 - p.tremDepth / 2;
+  const tremLfo = audioCtx.createOscillator();
+  tremLfo.type = 'sine';
+  tremLfo.frequency.value = p.tremRate;
+  const tremAmp = audioCtx.createGain();
+  tremAmp.gain.value = p.tremDepth / 2;
+  tremLfo.connect(tremAmp); tremAmp.connect(tremG.gain);
+  tremG.connect(out);
+  function makeHarm(freq, gain, lfoMult){
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle';
+    osc.frequency.value = freq;
+    const wlfo = audioCtx.createOscillator();
+    wlfo.frequency.value = p.wobRate * lfoMult;
+    const wg = audioCtx.createGain();
+    wg.gain.value = p.wobDepth;
+    wlfo.connect(wg); wg.connect(osc.frequency);
+    const g = audioCtx.createGain(); g.gain.value = gain;
+    osc.connect(g); g.connect(tremG);
+    return [osc, wlfo];
+  }
+  const sources = [tremLfo];
+  sources.push(...makeHarm(p.pitch, 0.18, 1.0));
+  sources.push(...makeHarm(p.pitch * p.harmSpread, 0.18 * p.harm2, 1.1));
+  sources.push(...makeHarm(p.pitch * p.harmSpread * 1.5, 0.18 * p.harm3, 1.2));
+  // Sub rumble (bypass tremolo, slow drift)
+  const rOsc = audioCtx.createOscillator();
+  rOsc.type = 'sine'; rOsc.frequency.value = p.rumFreq;
+  const rDrift = audioCtx.createOscillator();
+  rDrift.frequency.value = 0.4;
+  const rDg = audioCtx.createGain(); rDg.gain.value = 2;
+  rDrift.connect(rDg); rDg.connect(rOsc.frequency);
+  const rG = audioCtx.createGain(); rG.gain.value = p.rumGain;
+  rOsc.connect(rG); rG.connect(out);
+  sources.push(rOsc, rDrift);
+  // Hiss (highpass noise) if gain > 0
+  if(p.hissGain > 0){
+    const buf = _getThrustNoiseBuf();
+    if(buf){
+      const n = audioCtx.createBufferSource();
+      n.buffer = buf; n.loop = true;
+      const hp = audioCtx.createBiquadFilter();
+      hp.type = 'highpass'; hp.frequency.value = p.hissCut; hp.Q.value = 0.5;
+      const hg = audioCtx.createGain(); hg.gain.value = p.hissGain;
+      n.connect(hp); hp.connect(hg); hg.connect(out);
+      sources.push(n);
+    }
+  }
+  return { sources, out };
+}
+
+function _startThrustSFX(mode){
+  const preset = THRUST_PRESETS[mode];
+  if(!preset || !audioCtx) return;
+  const built = _buildThrustSFX(preset);
+  const t = audioCtx.currentTime;
+  built.out.gain.setValueAtTime(0.0001, t);
+  built.out.gain.exponentialRampToValueAtTime(1.0, t + 0.04);
+  built.sources.forEach(s => { try { s.start(t); } catch(e){} });
+  _thrustSFX = { mode, sources: built.sources, out: built.out };
+}
+
+function _stopThrustSFX(){
+  if(!_thrustSFX.out) return;
+  const t = audioCtx.currentTime;
+  const out = _thrustSFX.out;
+  const srcs = _thrustSFX.sources;
+  try {
+    out.gain.cancelScheduledValues(t);
+    out.gain.setValueAtTime(out.gain.value, t);
+    out.gain.exponentialRampToValueAtTime(0.0001, t + 0.15);
+  } catch(e){}
+  setTimeout(() => {
+    srcs.forEach(s => { try { s.stop(); } catch(e){} });
+    try { out.disconnect(); } catch(e){}
+  }, 220);
+  _thrustSFX = { mode: null, sources: null, out: null };
+}
+
+function _updateThrustSFX(newMode){
+  if(_thrustSFX.mode === newMode) return;
+  if(_thrustSFX.mode) _stopThrustSFX();
+  if(newMode && audioCtx && !state.sfxMuted) _startThrustSFX(newMode);
+}
+
+function _computeThrustMode(){
+  if(!audioCtx || state.sfxMuted) return null;
+  if(!state.started || state.gameOver || state.paused || state.contentOpen || state.menuOpen) return null;
+  if(state._victoryPhase || state._driftingDead || state._implodeTimer || state._debrisKill) return null;
+  if(wormholeTransition || state.fuel <= 0) return null;
+  if(state.hyperspace && state.fireMode !== 'wave'){
+    return state.fireMode === 'boost2x' ? 'boost2x' : 'boost';
+  }
+  if(state.keys && state.keys['ArrowUp']) return 'base';
+  if(state.keys && state.keys['ArrowDown']) return 'reverse';
+  return null;
+}
+
 //  MUSIC ENGINE — simple, user-controlled
 // VORTEX (track 3) plays at game start and stays.
 // Only the user can switch tracks via the music drawer.
@@ -13004,6 +13127,7 @@ function loop(timestamp) {
   try{update();}catch(e){console.error('update error:',e);}
   const _pDraw=performance.now();
   try{drawGame();}catch(e){console.error('drawGame error:',e);}
+  try{_updateThrustSFX(_computeThrustMode());}catch(e){console.error('thrust sfx error:',e);}
   const _pEnd=performance.now();
   // Frame profiler — rolling average, update display every 30 frames
   if(!_fpAvg) _fpAvg={bg:0,upd:0,draw:0,total:0,n:0,dRocks:0,dObjs:0,dPenB:0,uRockP:0,uGrid:0};
