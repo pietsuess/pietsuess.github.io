@@ -1214,6 +1214,12 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
         oninput="setSfxVolume(parseFloat(this.value))"
         style="flex:1;accent-color:#00ffcc;height:4px;cursor:pointer;">
     </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
+      <span style="color:#666;white-space:nowrap;width:26px;">SHIP</span>
+      <input id="ship-vol-slider" type="range" min="0" max="1" step="0.01" value="0.6"
+        oninput="setShipVolume(parseFloat(this.value))"
+        style="flex:1;accent-color:#ffe000;height:4px;cursor:pointer;">
+    </div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()"
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">♫ ON</div>
@@ -4315,7 +4321,7 @@ let audioCtx=null, musicNodes=[], songTimeout=null;
 let musicBarCount=0;
 
 // Audio routing nodes
-let masterGain=null, musicGainNode=null, sfxGainNode=null, reverbIn=null;
+let masterGain=null, musicGainNode=null, sfxGainNode=null, shipGainNode=null, reverbIn=null;
 
 function initAudioGraph(){
   // Master output gain
@@ -4324,6 +4330,7 @@ function initAudioGraph(){
   masterGain.connect(audioCtx.destination);
   musicGainNode=audioCtx.createGain();musicGainNode.gain.value=0.82;musicGainNode.connect(masterGain);
   sfxGainNode=audioCtx.createGain();sfxGainNode.gain.value=0.35;sfxGainNode.connect(masterGain);
+  shipGainNode=audioCtx.createGain();shipGainNode.gain.value=0.6;shipGainNode.connect(sfxGainNode);
 
   // Reverb via chained delays — simulates large hall
   const d1=audioCtx.createDelay(4.0), d2=audioCtx.createDelay(4.0), d3=audioCtx.createDelay(4.0);
@@ -5039,7 +5046,7 @@ function _ensureThrustEngine(){
   if(_thrustEngine || !audioCtx) return _thrustEngine;
   const out = audioCtx.createGain();
   out.gain.value = 0.0001;
-  out.connect(sfxGainNode || audioCtx.destination);
+  out.connect(shipGainNode || sfxGainNode || audioCtx.destination);
 
   // Tremolo stage (applied to harmonics only)
   const tremG = audioCtx.createGain(); tremG.gain.value = 0.5;
@@ -5233,6 +5240,8 @@ function toggleMusicMute(){state.musicMuted=!state.musicMuted;if(musicGainNode)m
 function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNode.gain.value=state.sfxMuted?0:_sfxVolume;_updateMuteUI();_trackAction('sfx:'+(state.sfxMuted?'off':'on'));}
 function setVolume(v){state.volume=v;_musicVolume=v;if(musicGainNode && !state.musicMuted)musicGainNode.gain.value=v;}
 function setSfxVolume(v){_sfxVolume=Math.max(0,Math.min(1,v));if(sfxGainNode && !state.sfxMuted)sfxGainNode.gain.value=_sfxVolume;}
+let _shipVolume = 0.6;
+function setShipVolume(v){_shipVolume=Math.max(0,Math.min(1,v));if(shipGainNode)shipGainNode.gain.value=_shipVolume;}
 function _updateMuteUI(){
   const mb=document.getElementById('music-mute-btn'),sb=document.getElementById('sfx-mute-btn');
   if(mb){mb.textContent=state.musicMuted?'♫ OFF':'♫ ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
