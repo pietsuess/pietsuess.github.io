@@ -62,9 +62,9 @@
 <div class="grid">
 
   <div class="col">
-    <h2>STYLE G — ROCKET LAUNCH</h2>
-    <div class="src">from jci21-rocket-launch-sfx</div>
-    <div class="desc">Sine triad 48/72/96Hz (real rocket peaks) + heavy 52% amplitude tremolo @ 12Hz. Deep, pounding.</div>
+    <h2>STYLE G — ROCKET LAUNCH ★</h2>
+    <div class="src">from jci21 — LIGHTSPEED target</div>
+    <div class="desc">Triad 48/72/96Hz + fast tremolo 20-28Hz + sub rumble + hiss. G boost x2 = your lightspeed pick.</div>
     <button class="btn" data-style="G" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">48/72/96Hz triad + tremolo</span></button>
     <button class="btn" data-style="G" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">40/60/80Hz triad + slower tremolo</span></button>
     <button class="btn" data-style="G" data-mode="boost"><span class="label">BOOST</span><span class="hint">72/108/144Hz triad + faster tremolo</span></button>
@@ -74,7 +74,7 @@
   <div class="col">
     <h2>STYLE H — ALIEN ENGINE</h2>
     <div class="src">from kuzu420-alien-spaceship-engine</div>
-    <div class="desc">79% sub-bass. Triad 45/88/110Hz with 58% tremolo @ 10Hz. Deepest, most cinematic.</div>
+    <div class="desc">Triad 45/88/110Hz + tighter tremolo 18-26Hz + sub rumble + hiss. Deepest character.</div>
     <button class="btn" data-style="H" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">45/88/110Hz triad + sub tremolo</span></button>
     <button class="btn" data-style="H" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">38/74/93Hz triad</span></button>
     <button class="btn" data-style="H" data-mode="boost"><span class="label">BOOST</span><span class="hint">68/132/165Hz triad</span></button>
@@ -84,7 +84,7 @@
   <div class="col">
     <h2>STYLE I — CINEMATIC</h2>
     <div class="src">from idoberg-cinematic-spaceship</div>
-    <div class="desc">Sub 24/32Hz + mid 158/169Hz detune. 33% tremolo. Wide spectrum, dramatic.</div>
+    <div class="desc">Sub 32Hz + mid 158/169Hz detune pair + tremolo 16-24Hz + rumble + hiss. Widest spectrum.</div>
     <button class="btn" data-style="I" data-mode="base"><span class="label">BASE THRUST</span><span class="hint">sub 32Hz + 158/169Hz detune pair</span></button>
     <button class="btn" data-style="I" data-mode="reverse"><span class="label">REVERSE</span><span class="hint">sub 26Hz + 130/141Hz pair</span></button>
     <button class="btn" data-style="I" data-mode="boost"><span class="label">BOOST</span><span class="hint">sub 48Hz + 237/253Hz pair</span></button>
@@ -109,7 +109,41 @@ masterSlider.addEventListener('input', e => {
 
 const active = new Map();
 
-// Helper: oscillator with slight pitch wobble
+// Shared 2s noise buffer for hiss/rumble layers
+const noiseBuffer = (function(){
+  const len = Math.floor(audioCtx.sampleRate * 2);
+  const buf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const data = buf.getChannelData(0);
+  for(let i = 0; i < len; i++) data[i] = Math.random() * 2 - 1;
+  return buf;
+})();
+function makeNoise(){
+  const s = audioCtx.createBufferSource();
+  s.buffer = noiseBuffer; s.loop = true;
+  return s;
+}
+
+// Add sub rumble + hiss to an output gain. Returns array of sources to .start().
+function addRumbleAndHiss(outGain, rumbleFreq, rumbleGain, hissGain){
+  // Sub rumble — sine with slow wobble
+  const rOsc = audioCtx.createOscillator();
+  rOsc.type = 'sine'; rOsc.frequency.value = rumbleFreq;
+  const rLfo = audioCtx.createOscillator();
+  rLfo.frequency.value = 0.4;
+  const rLfoG = audioCtx.createGain(); rLfoG.gain.value = 2;
+  rLfo.connect(rLfoG); rLfoG.connect(rOsc.frequency);
+  const rG = audioCtx.createGain(); rG.gain.value = rumbleGain;
+  rOsc.connect(rG); rG.connect(outGain);
+  // Hiss — highpass filtered noise
+  const nSrc = makeNoise();
+  const hp = audioCtx.createBiquadFilter();
+  hp.type = 'highpass'; hp.frequency.value = 3500; hp.Q.value = 0.5;
+  const nG = audioCtx.createGain(); nG.gain.value = hissGain;
+  nSrc.connect(hp); hp.connect(nG); nG.connect(outGain);
+  return [rOsc, rLfo, nSrc];
+}
+
+// Helper: oscillator with pitch wobble (tighter = faster wobble)
 function oscWithWobble(type, freq, wobbleRate, wobbleDepth){
   const osc = audioCtx.createOscillator();
   osc.type = type;
@@ -146,7 +180,7 @@ function buildRef(){
 }
 
 // Generic triad builder
-function buildTriad(freqs, tremRate, tremDepth, gains, wobble){
+function buildTriad(freqs, tremRate, tremDepth, gains, wobble, rumbleFreq, rumbleGain, hissGain){
   const out = audioCtx.createGain(); out.gain.value = 0.0001; out.connect(masterGain);
   const trem = tremolo(tremRate, tremDepth);
   trem.node.connect(out);
@@ -157,10 +191,12 @@ function buildTriad(freqs, tremRate, tremDepth, gains, wobble){
     osc.connect(g); g.connect(trem.node);
     sources.push(osc, lfo);
   });
+  // Rumble + hiss (bypass tremolo for stable underbed)
+  sources.push(...addRumbleAndHiss(out, rumbleFreq, rumbleGain, hissGain));
   return { sources, gain: out };
 }
 
-// ── STYLE G — rocket launch triad 48/72/96Hz ──
+// ── STYLE G — rocket launch triad (jci21 inspired — LIGHTSPEED target) ──
 function buildStyleG(mode){
   const freqs = {
     base:    [48, 72, 96],
@@ -169,12 +205,16 @@ function buildStyleG(mode){
     boost2x: [96, 144, 192],
   }[mode];
   const gains = mode === 'boost2x' ? [0.14, 0.10, 0.08] : [0.16, 0.11, 0.09];
-  const tremRate = mode === 'reverse' ? 9 : (mode === 'boost' ? 14 : (mode === 'boost2x' ? 16 : 12));
+  // Tighter/faster tremolo — shorter waves
+  const tremRate = mode === 'reverse' ? 18 : (mode === 'boost' ? 24 : (mode === 'boost2x' ? 28 : 20));
   const tremDepth = 0.55;
-  const built = buildTriad(freqs, tremRate, tremDepth, gains, { rate: 4, depth: 5 });
+  // Faster wobble on carriers too
+  const built = buildTriad(freqs, tremRate, tremDepth, gains,
+    { rate: 8, depth: 4 },
+    28, 0.12, 0.025
+  );
   if(mode === 'boost2x'){
-    // Add 288Hz shimmer (4x base 48)
-    const { osc, lfo } = oscWithWobble('sine', 288, 6, 10);
+    const { osc, lfo } = oscWithWobble('sine', 288, 10, 10);
     const g = audioCtx.createGain(); g.gain.value = 0.04;
     osc.connect(g); g.connect(built.gain);
     built.sources.push(osc, lfo);
@@ -191,11 +231,14 @@ function buildStyleH(mode){
     boost2x: [90, 176, 220],
   }[mode];
   const gains = [0.18, 0.10, 0.08];
-  const tremRate = mode === 'reverse' ? 8 : (mode === 'boost' ? 12 : (mode === 'boost2x' ? 14 : 10));
+  const tremRate = mode === 'reverse' ? 16 : (mode === 'boost' ? 22 : (mode === 'boost2x' ? 26 : 18));
   const tremDepth = 0.60;
-  const built = buildTriad(freqs, tremRate, tremDepth, gains, { rate: 4.5, depth: 4 });
+  const built = buildTriad(freqs, tremRate, tremDepth, gains,
+    { rate: 9, depth: 3 },
+    22, 0.14, 0.022
+  );
   if(mode === 'boost2x'){
-    const { osc, lfo } = oscWithWobble('sine', 440, 7, 14);
+    const { osc, lfo } = oscWithWobble('sine', 440, 12, 14);
     const g = audioCtx.createGain(); g.gain.value = 0.05;
     osc.connect(g); g.connect(built.gain);
     built.sources.push(osc, lfo);
@@ -211,26 +254,28 @@ function buildStyleI(mode){
     boost:   { sub: 48, mid1: 237, mid2: 253 },
     boost2x: { sub: 64, mid1: 316, mid2: 338 },
   }[mode];
-  const tremRate = mode === 'reverse' ? 7 : (mode === 'boost' ? 11 : (mode === 'boost2x' ? 13 : 9));
-  const tremDepth = 0.38;
+  const tremRate = mode === 'reverse' ? 14 : (mode === 'boost' ? 20 : (mode === 'boost2x' ? 24 : 16));
+  const tremDepth = 0.42;
   const out = audioCtx.createGain(); out.gain.value = 0.0001; out.connect(masterGain);
   const trem = tremolo(tremRate, tremDepth);
   trem.node.connect(out);
   const sources = [trem.lfo];
-  // Sub sine
+  // Sub sine (tremolo'd)
   const sub = audioCtx.createOscillator();
   sub.type = 'sine'; sub.frequency.value = cfg.sub;
-  const subG = audioCtx.createGain(); subG.gain.value = 0.24;
+  const subG = audioCtx.createGain(); subG.gain.value = 0.20;
   sub.connect(subG); subG.connect(trem.node);
   sources.push(sub);
-  // Mid detune pair (triangles)
-  const { osc: m1, lfo: l1 } = oscWithWobble('triangle', cfg.mid1, 4, 6);
-  const { osc: m2, lfo: l2 } = oscWithWobble('triangle', cfg.mid2, 4.3, 6);
+  // Mid detune pair (triangles) — tighter wobble
+  const { osc: m1, lfo: l1 } = oscWithWobble('triangle', cfg.mid1, 9, 5);
+  const { osc: m2, lfo: l2 } = oscWithWobble('triangle', cfg.mid2, 9.5, 5);
   const mG = audioCtx.createGain(); mG.gain.value = 0.08;
   m1.connect(mG); m2.connect(mG); mG.connect(trem.node);
   sources.push(m1, m2, l1, l2);
+  // Stable rumble + hiss bypass tremolo
+  sources.push(...addRumbleAndHiss(out, cfg.sub * 0.7, 0.10, 0.020));
   if(mode === 'boost2x'){
-    const { osc, lfo } = oscWithWobble('sine', 676, 8, 20);
+    const { osc, lfo } = oscWithWobble('sine', 676, 14, 20);
     const g = audioCtx.createGain(); g.gain.value = 0.05;
     osc.connect(g); g.connect(trem.node);
     sources.push(osc, lfo);
