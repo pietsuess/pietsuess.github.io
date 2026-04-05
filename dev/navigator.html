@@ -5221,21 +5221,20 @@ function resumeMusic(){
 }
 
 function toggleMute(){
-  // Cycle: all on → music muted → both muted → all on
-  if(!state.musicMuted && !state.sfxMuted){
-    // All on → mute music only
+  // Cycle: all on → music muted → all muted (music+sfx+ship) → all on
+  if(!state.musicMuted && !state.sfxMuted && !state.shipMuted){
     state.musicMuted=true;
     if(musicGainNode)musicGainNode.gain.value=0;
     stopMusic();
-  } else if(state.musicMuted && !state.sfxMuted){
-    // Music muted → mute both
-    state.sfxMuted=true;
+  } else if(state.musicMuted && (!state.sfxMuted || !state.shipMuted)){
+    state.sfxMuted=true; state.shipMuted=true;
     if(sfxGainNode)sfxGainNode.gain.value=0;
+    if(shipGainNode)shipGainNode.gain.value=0;
   } else {
-    // Both muted (or sfx-only muted) → all on
-    state.musicMuted=false;state.sfxMuted=false;
+    state.musicMuted=false;state.sfxMuted=false;state.shipMuted=false;
     if(musicGainNode)musicGainNode.gain.value=_musicVolume;
     if(sfxGainNode)sfxGainNode.gain.value=_sfxVolume;
+    if(shipGainNode)shipGainNode.gain.value=_shipVolume;
     playSong(state.songIndex);
   }
   _updateMuteUI();
@@ -5257,10 +5256,12 @@ function _updateMuteUI(){
   if(shb){shb.textContent=state.shipMuted?'SHIP OFF':'SHIP ON';shb.style.color=state.shipMuted?'#444':'#ffe000';}
   const btn=document.getElementById('mute-btn');
   if(btn){
-    btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted);
-    btn.classList.toggle('sfx-muted', state.sfxMuted && !state.musicMuted);
-    btn.classList.toggle('both-muted', state.musicMuted && state.sfxMuted);
-    btn.textContent=(!state.musicMuted&&!state.sfxMuted)?'🔊':(state.musicMuted&&state.sfxMuted)?'🔇':'🔉';
+    const allMuted = state.musicMuted && state.sfxMuted && state.shipMuted;
+    const anyMuted = state.musicMuted || state.sfxMuted || state.shipMuted;
+    btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted && !state.shipMuted);
+    btn.classList.toggle('sfx-muted', (state.sfxMuted || state.shipMuted) && !state.musicMuted);
+    btn.classList.toggle('both-muted', allMuted);
+    btn.textContent = !anyMuted ? '🔊' : allMuted ? '🔇' : '🔉';
   }
 }
 
