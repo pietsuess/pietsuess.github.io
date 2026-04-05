@@ -58,7 +58,11 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     font-display: swap;
   }
   /* Body fallback chain: Press Start 2P -> embedded Liberation Mono Bold -> monospace */
-  body { background:#000; overflow:hidden; font-family:'Press Start 2P','PxFallback',monospace; cursor:default; }
+  html, body {
+    cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='%23cc44ff' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23ff69b4'/%3E%3C/svg%3E") 12 12, crosshair;
+  }
+  body { background:#000; overflow:hidden; font-family:'Press Start 2P','PxFallback',monospace; }
+  body.game-cursor, body.game-cursor * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='%23cc44ff' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23ff69b4'/%3E%3C/svg%3E") 12 12, crosshair !important; }
   /* Force font load for canvas */
   body::before {
     content: 'PIET SUESS 0123456789';
@@ -1199,16 +1203,30 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
   </div>
   <div id="music-drawer-controls" style="padding:8px 14px 4px;display:flex;flex-direction:column;gap:6px;">
     <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
-      <span style="color:#666;white-space:nowrap;">VOL</span>
+      <span style="color:#666;white-space:nowrap;width:32px;">MUSIC</span>
       <input id="vol-slider" type="range" min="0" max="1" step="0.01" value="0.82"
         oninput="setVolume(parseFloat(this.value))"
         style="flex:1;accent-color:#ff69b4;height:4px;cursor:pointer;">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
+      <span style="color:#666;white-space:nowrap;width:32px;">SFX</span>
+      <input id="sfx-vol-slider" type="range" min="0" max="1" step="0.01" value="0.35"
+        oninput="setSfxVolume(parseFloat(this.value))"
+        style="flex:1;accent-color:#00ffcc;height:4px;cursor:pointer;">
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;font-size:7px;font-family:'Press Start 2P',monospace;">
+      <span style="color:#666;white-space:nowrap;width:32px;">SHIP</span>
+      <input id="ship-vol-slider" type="range" min="0" max="1" step="0.01" value="0.6"
+        oninput="setShipVolume(parseFloat(this.value))"
+        style="flex:1;accent-color:#ffe000;height:4px;cursor:pointer;">
     </div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()"
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">♫ ON</div>
       <div id="sfx-mute-btn" onclick="toggleSfxMute();event.stopPropagation()"
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#00ffcc;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SFX ON</div>
+      <div id="ship-mute-btn" onclick="toggleShipMute();event.stopPropagation()"
+        style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ffe000;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SHIP ON</div>
     </div>
   </div>
   <div id="music-track-list"></div>
@@ -2933,7 +2951,7 @@ let state = {
   hasWaveBeam:false,
   fireMode:'boost',
   collectedItems:[],
-  musicPaused:false, musicMuted:false, sfxMuted:false, volume:0.82,
+  musicPaused:false, musicMuted:false, sfxMuted:false, shipMuted:false, volume:0.82,
   bubbleDeforms:[],
   honeyHexCount:1,
   honeySplitTimer:0,
@@ -3124,8 +3142,9 @@ document.addEventListener('mousemove', function(e){
   }
   state._hudHoverItem = found ? {x:found.x, y:found.y, r:found.r, title:found.item.title, collected:found.collected} : null;
   // Hide cursor while playing, show pointer on HUD hover or when paused/menu/content open
-  const _cursorVisible = found || state.paused || state.menuOpen || state.contentOpen || state.gameOver || !state.started || state._victoryPhase;
-  document.body.style.cursor = found ? 'pointer' : (_cursorVisible ? '' : 'none');
+  // Toggle game cursor class — force custom cursor on all elements during active gameplay
+  const _inGame = state.started && !state.paused && !state.menuOpen && !state.contentOpen && !state.gameOver && !state._victoryPhase;
+  if(_inGame) document.body.classList.add('game-cursor'); else document.body.classList.remove('game-cursor');
 });
 document.addEventListener('click', function(e){
   if(!state.started || state.gameOver) return;
@@ -4304,15 +4323,16 @@ let audioCtx=null, musicNodes=[], songTimeout=null;
 let musicBarCount=0;
 
 // Audio routing nodes
-let masterGain=null, musicGainNode=null, sfxGainNode=null, reverbIn=null;
+let masterGain=null, musicGainNode=null, sfxGainNode=null, shipGainNode=null, reverbIn=null;
 
 function initAudioGraph(){
   // Master output gain
   masterGain=audioCtx.createGain();
-  masterGain.gain.value=0.82;
+  masterGain.gain.value=1.0;
   masterGain.connect(audioCtx.destination);
-  musicGainNode=audioCtx.createGain();musicGainNode.gain.value=1.0;musicGainNode.connect(masterGain);
-  sfxGainNode=audioCtx.createGain();sfxGainNode.gain.value=1.0;sfxGainNode.connect(masterGain);
+  musicGainNode=audioCtx.createGain();musicGainNode.gain.value=0.82;musicGainNode.connect(masterGain);
+  sfxGainNode=audioCtx.createGain();sfxGainNode.gain.value=0.35;sfxGainNode.connect(masterGain);
+  shipGainNode=audioCtx.createGain();shipGainNode.gain.value=0.6;shipGainNode.connect(masterGain);
 
   // Reverb via chained delays — simulates large hall
   const d1=audioCtx.createDelay(4.0), d2=audioCtx.createDelay(4.0), d3=audioCtx.createDelay(4.0);
@@ -5001,6 +5021,147 @@ function playSFX(freq,start,dur,type='square',gain=0.08){
   osc.connect(g);g.connect(sfxGainNode);osc.start(start);osc.stop(end+0.05);
 }
 
+// ── Thrust SFX engine (procedural, looping) ──────────────────────
+const THRUST_PRESETS = {
+  idle:    { pitch:112, harmSpread:2.8,  harm2:0.0,  harm3:0.0,  tremRate:19.5, tremDepth:0.11, wobRate:10.8, wobDepth:30,   rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.40 },
+  base:    { pitch:181, harmSpread:1.4,  harm2:0.34, harm3:0.28, tremRate:40,   tremDepth:0.52, wobRate:14.3, wobDepth:27.5, rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.45 },
+  reverse: { pitch:109, harmSpread:2.1,  harm2:0.39, harm3:0.02, tremRate:40,   tremDepth:0.52, wobRate:20,   wobDepth:27.5, rumFreq:45,  rumGain:0.18, hissCut:500,  hissGain:0.0,    masterGain:0.45 },
+  boost:   { pitch:257, harmSpread:2.2,  harm2:0.07, harm3:0.13, tremRate:23.5, tremDepth:0.26, wobRate:18.9, wobDepth:27.5, rumFreq:100, rumGain:0.25, hissCut:600,  hissGain:0.0025, masterGain:0.45 },
+  boost2x: { pitch:300, harmSpread:1.9,  harm2:0.31, harm3:0.55, tremRate:31,   tremDepth:0.75, wobRate:20,   wobDepth:24.5, rumFreq:68,  rumGain:0.40, hissCut:8000, hissGain:0.0025, masterGain:0.60 }
+};
+// Shared 2s noise buffer for thrust hiss (lazy-created when audioCtx ready)
+let _thrustNoiseBuf = null;
+function _getThrustNoiseBuf(){
+  if(_thrustNoiseBuf || !audioCtx) return _thrustNoiseBuf;
+  const len = Math.floor(audioCtx.sampleRate * 2);
+  _thrustNoiseBuf = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const d = _thrustNoiseBuf.getChannelData(0);
+  for(let i=0;i<len;i++) d[i] = Math.random()*2 - 1;
+  return _thrustNoiseBuf;
+}
+// Persistent thrust engine — single chain, params morph smoothly between modes
+let _thrustEngine = null;
+const THRUST_TC = 0.12;   // 120ms time constant for param ramps
+const THRUST_TC_FAST = 0.04; // faster for fade out
+
+function _ensureThrustEngine(){
+  if(_thrustEngine || !audioCtx) return _thrustEngine;
+  const out = audioCtx.createGain();
+  out.gain.value = 0.0001;
+  out.connect(shipGainNode || sfxGainNode || audioCtx.destination);
+
+  // Tremolo stage (applied to harmonics only)
+  const tremG = audioCtx.createGain(); tremG.gain.value = 0.5;
+  const tremLfo = audioCtx.createOscillator();
+  tremLfo.type = 'sine'; tremLfo.frequency.value = 20;
+  const tremAmp = audioCtx.createGain(); tremAmp.gain.value = 0.25;
+  tremLfo.connect(tremAmp); tremAmp.connect(tremG.gain);
+  tremG.connect(out);
+
+  function makeHarm(){
+    const osc = audioCtx.createOscillator();
+    osc.type = 'triangle'; osc.frequency.value = 150;
+    const wlfo = audioCtx.createOscillator();
+    wlfo.frequency.value = 10;
+    const wg = audioCtx.createGain(); wg.gain.value = 5;
+    wlfo.connect(wg); wg.connect(osc.frequency);
+    const g = audioCtx.createGain(); g.gain.value = 0;
+    osc.connect(g); g.connect(tremG);
+    return { osc, wlfo, wg, g };
+  }
+  const h1 = makeHarm();
+  const h2 = makeHarm();
+  const h3 = makeHarm();
+
+  // Rumble (bypasses tremolo, slow drift)
+  const rumOsc = audioCtx.createOscillator();
+  rumOsc.type = 'sine'; rumOsc.frequency.value = 50;
+  const rumDrift = audioCtx.createOscillator();
+  rumDrift.frequency.value = 0.4;
+  const rumDg = audioCtx.createGain(); rumDg.gain.value = 2;
+  rumDrift.connect(rumDg); rumDg.connect(rumOsc.frequency);
+  const rumG = audioCtx.createGain(); rumG.gain.value = 0;
+  rumOsc.connect(rumG); rumG.connect(out);
+
+  // Hiss (bypasses tremolo)
+  const buf = _getThrustNoiseBuf();
+  const nSrc = audioCtx.createBufferSource();
+  nSrc.buffer = buf; nSrc.loop = true;
+  const hiss = audioCtx.createBiquadFilter();
+  hiss.type = 'highpass'; hiss.frequency.value = 3500; hiss.Q.value = 0.5;
+  const hissG = audioCtx.createGain(); hissG.gain.value = 0;
+  nSrc.connect(hiss); hiss.connect(hissG); hissG.connect(out);
+
+  const t = audioCtx.currentTime;
+  [tremLfo, h1.osc, h1.wlfo, h2.osc, h2.wlfo, h3.osc, h3.wlfo, rumOsc, rumDrift, nSrc].forEach(s => {
+    try { s.start(t); } catch(e){}
+  });
+
+  _thrustEngine = { out, tremG, tremLfo, tremAmp, h1, h2, h3, rumOsc, rumG, hiss, hissG, currentMode: null };
+  return _thrustEngine;
+}
+
+function _applyThrustPreset(p, tc){
+  const e = _thrustEngine;
+  if(!e || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  e.h1.osc.frequency.setTargetAtTime(p.pitch, now, tc);
+  e.h2.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread, now, tc);
+  e.h3.osc.frequency.setTargetAtTime(p.pitch * p.harmSpread * 1.5, now, tc);
+  e.h1.g.gain.setTargetAtTime(0.18, now, tc);
+  e.h2.g.gain.setTargetAtTime(0.18 * p.harm2, now, tc);
+  e.h3.g.gain.setTargetAtTime(0.18 * p.harm3, now, tc);
+  e.h1.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h2.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h3.wg.gain.setTargetAtTime(p.wobDepth, now, tc);
+  e.h1.wlfo.frequency.setTargetAtTime(p.wobRate, now, tc);
+  e.h2.wlfo.frequency.setTargetAtTime(p.wobRate * 1.1, now, tc);
+  e.h3.wlfo.frequency.setTargetAtTime(p.wobRate * 1.2, now, tc);
+  e.tremLfo.frequency.setTargetAtTime(p.tremRate, now, tc);
+  e.tremAmp.gain.setTargetAtTime(p.tremDepth / 2, now, tc);
+  e.tremG.gain.setTargetAtTime(1 - p.tremDepth / 2, now, tc);
+  e.rumOsc.frequency.setTargetAtTime(p.rumFreq, now, tc);
+  e.rumG.gain.setTargetAtTime(p.rumGain, now, tc);
+  e.hiss.frequency.setTargetAtTime(p.hissCut, now, tc);
+  e.hissG.gain.setTargetAtTime(p.hissGain, now, tc);
+  e.out.gain.setTargetAtTime(p.masterGain, now, tc);
+}
+
+function _updateThrustSFX(newMode){
+  if(!audioCtx) return;
+  if(!newMode || state.shipMuted){
+    if(_thrustEngine){
+      _thrustEngine.out.gain.setTargetAtTime(0.0001, audioCtx.currentTime, THRUST_TC_FAST);
+      _thrustEngine.currentMode = null;
+    }
+    return;
+  }
+  _ensureThrustEngine();
+  if(!_thrustEngine) return;
+  if(_thrustEngine.currentMode === newMode) return;
+  const p = THRUST_PRESETS[newMode];
+  if(!p) return;
+  _applyThrustPreset(p, THRUST_TC);
+  _thrustEngine.currentMode = newMode;
+}
+
+let _shipInputSeen = false;
+function _computeThrustMode(){
+  if(!audioCtx || state.shipMuted) return null;
+  if(!state.started || state.gameOver || state.paused || state.contentOpen || state.menuOpen) return null;
+  if(state._victoryPhase || state._driftingDead || state._implodeTimer || state._debrisKill) return null;
+  if(wormholeTransition || state.fuel <= 0) return null;
+  const isBoost = state.hyperspace && state.fireMode !== 'wave';
+  const isUp = state.keys && state.keys['ArrowUp'];
+  const isDown = state.keys && state.keys['ArrowDown'];
+  if(isBoost || isUp || isDown) _shipInputSeen = true;
+  if(!_shipInputSeen) return null;
+  if(isBoost) return state.fireMode === 'boost2x' ? 'boost2x' : 'boost';
+  if(isUp) return 'base';
+  if(isDown) return 'reverse';
+  return 'idle';
+}
+
 //  MUSIC ENGINE — simple, user-controlled
 // VORTEX (track 3) plays at game start and stays.
 // Only the user can switch tracks via the music drawer.
@@ -5073,19 +5234,27 @@ function toggleMute(){
   } else {
     // Both muted (or sfx-only muted) → all on
     state.musicMuted=false;state.sfxMuted=false;
-    if(musicGainNode)musicGainNode.gain.value=1;
-    if(sfxGainNode)sfxGainNode.gain.value=1;
+    if(musicGainNode)musicGainNode.gain.value=_musicVolume;
+    if(sfxGainNode)sfxGainNode.gain.value=_sfxVolume;
     playSong(state.songIndex);
   }
   _updateMuteUI();
 }
-function toggleMusicMute(){state.musicMuted=!state.musicMuted;if(musicGainNode)musicGainNode.gain.value=state.musicMuted?0:1;state.musicMuted?stopMusic():playSong(state.songIndex);_updateMuteUI();_trackAction('music:'+(state.musicMuted?'off':'on'));}
-function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNode.gain.value=state.sfxMuted?0:1;_updateMuteUI();_trackAction('sfx:'+(state.sfxMuted?'off':'on'));}
-function setVolume(v){state.volume=v;if(masterGain)masterGain.gain.value=v;}
+let _musicVolume = 0.82;
+let _sfxVolume = 0.35;
+function toggleMusicMute(){state.musicMuted=!state.musicMuted;if(musicGainNode)musicGainNode.gain.value=state.musicMuted?0:_musicVolume;state.musicMuted?stopMusic():playSong(state.songIndex);_updateMuteUI();_trackAction('music:'+(state.musicMuted?'off':'on'));}
+function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNode.gain.value=state.sfxMuted?0:_sfxVolume;_updateMuteUI();_trackAction('sfx:'+(state.sfxMuted?'off':'on'));}
+function setVolume(v){state.volume=v;_musicVolume=v;if(musicGainNode && !state.musicMuted)musicGainNode.gain.value=v;}
+function setSfxVolume(v){_sfxVolume=Math.max(0,Math.min(1,v));if(sfxGainNode && !state.sfxMuted)sfxGainNode.gain.value=_sfxVolume;}
+let _shipVolume = 0.6;
+function setShipVolume(v){_shipVolume=Math.max(0,Math.min(1,v));if(shipGainNode && !state.shipMuted)shipGainNode.gain.value=_shipVolume;}
+function toggleShipMute(){state.shipMuted=!state.shipMuted;if(shipGainNode)shipGainNode.gain.value=state.shipMuted?0:_shipVolume;_updateMuteUI();_trackAction('ship:'+(state.shipMuted?'off':'on'));}
 function _updateMuteUI(){
   const mb=document.getElementById('music-mute-btn'),sb=document.getElementById('sfx-mute-btn');
   if(mb){mb.textContent=state.musicMuted?'♫ OFF':'♫ ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
   if(sb){sb.textContent=state.sfxMuted?'SFX OFF':'SFX ON';sb.style.color=state.sfxMuted?'#444':'#00ffcc';}
+  const shb=document.getElementById('ship-mute-btn');
+  if(shb){shb.textContent=state.shipMuted?'SHIP OFF':'SHIP ON';shb.style.color=state.shipMuted?'#444':'#ffe000';}
   const btn=document.getElementById('mute-btn');
   if(btn){
     btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted);
@@ -6123,7 +6292,7 @@ function update(){
   // ── Zone crossing detection — virtual barrier, no impedance ──
   if(!state.inSecretLevel){
     // Outer zones: OUTER BARRIER (outside belt) and HOMEWARD (past launchpad)
-    const _inHomeward = state.x > HOMEWARD_THRESHOLD;
+    const _inHomeward = state.x > HOMEWARD_THRESHOLD || !!state._outerLaunchpadRefuelled;
     const _inOuterBarrier = state.outsideBarrier && !_inHomeward;
     // Delay outer barrier zone text until player exits the tube passage
     const _inTubePassage = state.x >= BELT_OUTER && state.x <= BELT_OUTER + 300 && Math.abs(state.y) <= BARRIER_GAP_WIDTH;
@@ -7892,7 +8061,7 @@ function hardRestart(){
   _dismissBubblePopup();
   _dismissWavePopup();
   // Reset first-collection animation state
-  _firstCollectAnimDone = false; _firstFuelAnimDone = false;
+  _firstCollectAnimDone = false; _firstFuelAnimDone = false; _shipInputSeen = false;
   _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
   _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
   _lastCollectedObj = null;
@@ -10420,8 +10589,8 @@ function drawGame(){
 
   }
 
-  // Earth indicator — visible whenever player is past the launchpad heading toward Earth
-  const _showEarthIndicator = !state.inSecretLevel && !state._victoryPhase && state.x > HOMEWARD_THRESHOLD;
+  // Earth indicator — visible once fuel collected at launchpad (or past launchpad threshold)
+  const _showEarthIndicator = !state.inSecretLevel && !state._victoryPhase && (state._outerLaunchpadRefuelled || state.x > HOMEWARD_THRESHOLD);
   if(_showEarthIndicator){
     const _etx = EARTH_WX - state.x + cx;
     const _ety = EARTH_WY - state.y + cy;
@@ -12908,7 +13077,7 @@ function startGame(){
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = true;
   // Reset first-collection animation state
-  _firstCollectAnimDone = false; _firstFuelAnimDone = false;
+  _firstCollectAnimDone = false; _firstFuelAnimDone = false; _shipInputSeen = false;
   _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
   _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
   _lastCollectedObj = null;
@@ -12999,6 +13168,7 @@ function loop(timestamp) {
   try{update();}catch(e){console.error('update error:',e);}
   const _pDraw=performance.now();
   try{drawGame();}catch(e){console.error('drawGame error:',e);}
+  try{_updateThrustSFX(_computeThrustMode());}catch(e){console.error('thrust sfx error:',e);}
   const _pEnd=performance.now();
   // Frame profiler — rolling average, update display every 30 frames
   if(!_fpAvg) _fpAvg={bg:0,upd:0,draw:0,total:0,n:0,dRocks:0,dObjs:0,dPenB:0,uRockP:0,uGrid:0};
