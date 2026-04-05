@@ -1222,7 +1222,7 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
     </div>
     <div style="display:flex;gap:8px;justify-content:center;">
       <div id="music-mute-btn" onclick="toggleMusicMute();event.stopPropagation()"
-        style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">♫ ON</div>
+        style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">MUSIC ON</div>
       <div id="sfx-mute-btn" onclick="toggleSfxMute();event.stopPropagation()"
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#00ffcc;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SFX ON</div>
       <div id="ship-mute-btn" onclick="toggleShipMute();event.stopPropagation()"
@@ -5221,21 +5221,20 @@ function resumeMusic(){
 }
 
 function toggleMute(){
-  // Cycle: all on → music muted → both muted → all on
-  if(!state.musicMuted && !state.sfxMuted){
-    // All on → mute music only
+  // Cycle: all on → music muted → all muted (music+sfx+ship) → all on
+  if(!state.musicMuted && !state.sfxMuted && !state.shipMuted){
     state.musicMuted=true;
     if(musicGainNode)musicGainNode.gain.value=0;
     stopMusic();
-  } else if(state.musicMuted && !state.sfxMuted){
-    // Music muted → mute both
-    state.sfxMuted=true;
+  } else if(state.musicMuted && (!state.sfxMuted || !state.shipMuted)){
+    state.sfxMuted=true; state.shipMuted=true;
     if(sfxGainNode)sfxGainNode.gain.value=0;
+    if(shipGainNode)shipGainNode.gain.value=0;
   } else {
-    // Both muted (or sfx-only muted) → all on
-    state.musicMuted=false;state.sfxMuted=false;
+    state.musicMuted=false;state.sfxMuted=false;state.shipMuted=false;
     if(musicGainNode)musicGainNode.gain.value=_musicVolume;
     if(sfxGainNode)sfxGainNode.gain.value=_sfxVolume;
+    if(shipGainNode)shipGainNode.gain.value=_shipVolume;
     playSong(state.songIndex);
   }
   _updateMuteUI();
@@ -5251,16 +5250,18 @@ function setShipVolume(v){_shipVolume=Math.max(0,Math.min(1,v));if(shipGainNode 
 function toggleShipMute(){state.shipMuted=!state.shipMuted;if(shipGainNode)shipGainNode.gain.value=state.shipMuted?0:_shipVolume;_updateMuteUI();_trackAction('ship:'+(state.shipMuted?'off':'on'));}
 function _updateMuteUI(){
   const mb=document.getElementById('music-mute-btn'),sb=document.getElementById('sfx-mute-btn');
-  if(mb){mb.textContent=state.musicMuted?'♫ OFF':'♫ ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
+  if(mb){mb.textContent=state.musicMuted?'MUSIC OFF':'MUSIC ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
   if(sb){sb.textContent=state.sfxMuted?'SFX OFF':'SFX ON';sb.style.color=state.sfxMuted?'#444':'#00ffcc';}
   const shb=document.getElementById('ship-mute-btn');
   if(shb){shb.textContent=state.shipMuted?'SHIP OFF':'SHIP ON';shb.style.color=state.shipMuted?'#444':'#ffe000';}
   const btn=document.getElementById('mute-btn');
   if(btn){
-    btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted);
-    btn.classList.toggle('sfx-muted', state.sfxMuted && !state.musicMuted);
-    btn.classList.toggle('both-muted', state.musicMuted && state.sfxMuted);
-    btn.textContent=(!state.musicMuted&&!state.sfxMuted)?'🔊':(state.musicMuted&&state.sfxMuted)?'🔇':'🔉';
+    const allMuted = state.musicMuted && state.sfxMuted && state.shipMuted;
+    const anyMuted = state.musicMuted || state.sfxMuted || state.shipMuted;
+    btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted && !state.shipMuted);
+    btn.classList.toggle('sfx-muted', (state.sfxMuted || state.shipMuted) && !state.musicMuted);
+    btn.classList.toggle('both-muted', allMuted);
+    btn.textContent = !anyMuted ? '🔊' : allMuted ? '🔇' : '🔉';
   }
 }
 
@@ -11913,6 +11914,7 @@ function openContent(item, replay=false){
       state.collectedItems.push(item);
       persistCollect(item);
       _spawnHudFlyAnim(item.title);
+      _pendingFlyTitle = null; // consumed — prevent closeContent from replaying
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
     if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,4,7,12,16].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.07,0.14,'square',0.055));}
