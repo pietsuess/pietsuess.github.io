@@ -1225,6 +1225,8 @@ if(('ontouchstart' in window)||navigator.maxTouchPoints>0){
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ff69b4;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">♫ ON</div>
       <div id="sfx-mute-btn" onclick="toggleSfxMute();event.stopPropagation()"
         style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#00ffcc;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SFX ON</div>
+      <div id="ship-mute-btn" onclick="toggleShipMute();event.stopPropagation()"
+        style="cursor:pointer;font-size:7px;font-family:'Press Start 2P',monospace;color:#ffe000;padding:4px 8px;border:1px solid #333;border-radius:3px;user-select:none;">SHIP ON</div>
     </div>
   </div>
   <div id="music-track-list"></div>
@@ -2949,7 +2951,7 @@ let state = {
   hasWaveBeam:false,
   fireMode:'boost',
   collectedItems:[],
-  musicPaused:false, musicMuted:true, sfxMuted:true, volume:0.82,
+  musicPaused:false, musicMuted:true, sfxMuted:true, shipMuted:false, volume:0.82,
   bubbleDeforms:[],
   honeyHexCount:1,
   honeySplitTimer:0,
@@ -5127,7 +5129,7 @@ function _applyThrustPreset(p, tc){
 
 function _updateThrustSFX(newMode){
   if(!audioCtx) return;
-  if(!newMode || state.sfxMuted){
+  if(!newMode || state.shipMuted){
     if(_thrustEngine){
       _thrustEngine.out.gain.setTargetAtTime(0.0001, audioCtx.currentTime, THRUST_TC_FAST);
       _thrustEngine.currentMode = null;
@@ -5144,7 +5146,7 @@ function _updateThrustSFX(newMode){
 }
 
 function _computeThrustMode(){
-  if(!audioCtx || state.sfxMuted) return null;
+  if(!audioCtx || state.shipMuted) return null;
   if(!state.started || state.gameOver || state.paused || state.contentOpen || state.menuOpen) return null;
   if(state._victoryPhase || state._driftingDead || state._implodeTimer || state._debrisKill) return null;
   if(wormholeTransition || state.fuel <= 0) return null;
@@ -5241,11 +5243,14 @@ function toggleSfxMute(){state.sfxMuted=!state.sfxMuted;if(sfxGainNode)sfxGainNo
 function setVolume(v){state.volume=v;_musicVolume=v;if(musicGainNode && !state.musicMuted)musicGainNode.gain.value=v;}
 function setSfxVolume(v){_sfxVolume=Math.max(0,Math.min(1,v));if(sfxGainNode && !state.sfxMuted)sfxGainNode.gain.value=_sfxVolume;}
 let _shipVolume = 0.6;
-function setShipVolume(v){_shipVolume=Math.max(0,Math.min(1,v));if(shipGainNode)shipGainNode.gain.value=_shipVolume;}
+function setShipVolume(v){_shipVolume=Math.max(0,Math.min(1,v));if(shipGainNode && !state.shipMuted)shipGainNode.gain.value=_shipVolume;}
+function toggleShipMute(){state.shipMuted=!state.shipMuted;if(shipGainNode)shipGainNode.gain.value=state.shipMuted?0:_shipVolume;_updateMuteUI();_trackAction('ship:'+(state.shipMuted?'off':'on'));}
 function _updateMuteUI(){
   const mb=document.getElementById('music-mute-btn'),sb=document.getElementById('sfx-mute-btn');
   if(mb){mb.textContent=state.musicMuted?'♫ OFF':'♫ ON';mb.style.color=state.musicMuted?'#444':'#ff69b4';}
   if(sb){sb.textContent=state.sfxMuted?'SFX OFF':'SFX ON';sb.style.color=state.sfxMuted?'#444':'#00ffcc';}
+  const shb=document.getElementById('ship-mute-btn');
+  if(shb){shb.textContent=state.shipMuted?'SHIP OFF':'SHIP ON';shb.style.color=state.shipMuted?'#444':'#ffe000';}
   const btn=document.getElementById('mute-btn');
   if(btn){
     btn.classList.toggle('music-muted', state.musicMuted && !state.sfxMuted);
