@@ -34,6 +34,7 @@
   .module.gen { border-color:#ff69b444; background:rgba(40,10,20,0.6); }
   .module.fx { border-color:#00ffcc33; background:rgba(0,0,0,0.6); }
   .module.out { border-color:#ffe00044; background:rgba(30,25,0,0.6); }
+  .module.out .knob-row { flex-wrap:nowrap; }
   .module.selected { outline:2px solid #ffe000; outline-offset:2px; }
   #selectBox { position:absolute; border:1px solid #ffe000; background:rgba(255,224,0,0.08); pointer-events:none; z-index:50; display:none; }
   .module .mod-title { font-size:12px; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px; position:relative; padding-right:20px; }
@@ -51,10 +52,10 @@
   .module.out .mod-title { color:#ffe000; }
   /* Jacks — left edge (inputs) and right edge (outputs) */
   .jack-row { display:flex; flex-direction:column; position:absolute; top:0; bottom:0; justify-content:space-around; z-index:10; }
-  .jack-row.inputs { left:-9px; }
-  .jack-row.outputs { right:-9px; }
+  .jack-row.inputs { left:-14px; }
+  .jack-row.outputs { right:-14px; }
   .jack {
-    width:8px; height:10px; border-radius:1px; border:1px solid #555;
+    width:16px; height:18px; border-radius:2px; border:1px solid #555;
     background:#111; cursor:pointer;
   }
   .jack:hover { border-color:#ffe000; background:#222; }
@@ -81,6 +82,11 @@
 
 
   #waveCanvas { border:1px solid #00ffcc33; display:block; width:100%; height:50px; }
+  .preset-item { display:flex; align-items:center; padding:4px 8px; cursor:pointer; font-family:inherit; font-size:9px; color:#ffe000; letter-spacing:1px; }
+  .preset-item:hover { background:rgba(255,224,0,0.1); }
+  .preset-item .preset-name { flex:1; }
+  .preset-item .preset-del { color:#ff4444; font-size:12px; padding:0 4px; cursor:pointer; opacity:0.5; }
+  .preset-item .preset-del:hover { opacity:1; }
 </style>
 </head>
 <body>
@@ -91,8 +97,10 @@
 <div class="top-bar">
   <input id="presetName" class="name-input" type="text" placeholder="preset name" style="min-width:100px;max-width:160px;">
   <button id="saveBtn">SAVE</button>
-  <select id="presetDropdown" style="background:#111;color:#ffe000;border:1px solid #ff69b488;font-family:inherit;font-size:9px;padding:5px 8px;cursor:pointer;"><option value="">PRESETS</option></select>
-  <button id="delPresetBtn" style="border-color:#ff444466;color:#ff6666;">DEL</button>
+  <div id="presetMenu" style="position:relative;display:inline-block;">
+    <button id="presetToggle" style="background:rgba(255,105,180,0.08);color:#ffe000;border:1px solid #ff69b488;font-family:inherit;font-size:9px;padding:5px 12px;cursor:pointer;letter-spacing:1px;">PRESETS</button>
+    <div id="presetList" style="display:none;position:absolute;top:100%;left:0;background:#111;border:1px solid #ff69b488;min-width:200px;max-height:300px;overflow-y:auto;z-index:100;"></div>
+  </div>
   <select id="jsonDropdown" style="background:#111;color:#88ffcc;border:1px solid #00ffcc44;font-family:inherit;font-size:8px;padding:5px 8px;cursor:pointer;max-width:300px;"><option value="">JSON</option></select>
   <button id="copyJsonBtn">COPY JSON</button>
   <button id="autoPatchBtn">AUTO PATCH</button>
@@ -225,11 +233,19 @@
     </div>
 
     <!-- OUTPUT (yellow) — full width bottom row -->
-    <div class="module out" data-no-outputs="true" style="flex:1 1 100%;display:flex;gap:16px;align-items:stretch;">
-      <div style="flex:0 0 auto;">
-        <div class="mod-title">OUTPUT</div>
-        <div class="knob-row">
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="masterGain" width="72" height="72"></canvas><div class="knob-val" id="masterGainV">0.60</div><div class="knob-label">MASTER</div></div>
+    <div class="module out" data-no-outputs="true" style="flex:1 1 100%;display:flex;flex-direction:column;gap:0;align-items:stretch;">
+      <!-- Grab bar for dragging -->
+      <div class="mod-title" style="height:10px;margin-bottom:0;cursor:grab;background:linear-gradient(180deg,rgba(255,224,0,0.06) 0%,transparent 100%);"></div>
+      <div style="display:flex;gap:0;align-items:stretch;flex:1;">
+      <!-- PLAY button — attached left side -->
+      <div id="playBtn" style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;cursor:pointer;background:rgba(0,255,102,0.06);border-right:1px solid #ffe00033;user-select:none;font-family:inherit;font-size:9px;letter-spacing:2px;gap:6px;" title="Play / Stop">
+        <svg id="playIcon" width="24" height="24" viewBox="0 0 32 32"><polygon points="8,4 28,16 8,28" fill="#00ff66"/></svg>
+        <svg id="stopIcon" width="24" height="24" viewBox="0 0 32 32" style="display:none;"><rect x="6" y="6" width="20" height="20" rx="2" fill="#ff4444"/></svg>
+        <span id="playLabel" style="color:#00ff66;font-size:8px;">PLAY</span>
+      </div>
+      <!-- Main output area -->
+      <div style="flex:1;display:flex;gap:12px;align-items:center;padding:0 10px;">
+        <div class="knob-row" style="flex:1;">
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl0" width="72" height="72"></canvas><div class="knob-val" id="inLvl0V">1.00</div><div class="knob-label">IN 1</div></div>
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl1" width="72" height="72"></canvas><div class="knob-val" id="inLvl1V">1.00</div><div class="knob-label">IN 2</div></div>
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl2" width="72" height="72"></canvas><div class="knob-val" id="inLvl2V">1.00</div><div class="knob-label">IN 3</div></div>
@@ -239,18 +255,23 @@
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl6" width="72" height="72"></canvas><div class="knob-val" id="inLvl6V">1.00</div><div class="knob-label">IN 7</div></div>
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl7" width="72" height="72"></canvas><div class="knob-val" id="inLvl7V">1.00</div><div class="knob-label">IN 8</div></div>
         </div>
-        <div id="playBtn" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:80px;height:40px;border:2px solid #00ff66;cursor:pointer;background:rgba(0,255,102,0.08);user-select:none;font-family:inherit;font-size:10px;letter-spacing:2px;" title="Play / Stop">
-          <svg id="playIcon" width="20" height="20" viewBox="0 0 32 32" style="margin-right:6px;"><polygon points="8,4 28,16 8,28" fill="#00ff66"/></svg>
-          <svg id="stopIcon" width="20" height="20" viewBox="0 0 32 32" style="display:none;margin-right:6px;"><rect x="6" y="6" width="20" height="20" rx="2" fill="#ff4444"/></svg>
-          <span id="playLabel" style="color:#00ff66;">PLAY</span>
+        <!-- Waveform + Spectrum with collapse arrow -->
+        <div style="flex:0 0 auto;display:flex;align-items:center;">
+          <div id="vizToggle" style="cursor:pointer;color:#ffe00066;font-size:14px;padding:0 4px;user-select:none;" title="Toggle visualizers">&#9654;</div>
+        </div>
+        <div id="vizPanel" style="flex:0 1 300px;display:flex;flex-direction:column;gap:4px;min-width:160px;justify-content:center;">
+          <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">WAVEFORM</div>
+          <canvas id="waveCanvas" width="300" height="45" style="width:100%;height:45px;border:1px solid #ffe00033;"></canvas>
+          <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">SPECTRUM</div>
+          <canvas id="specCanvas" width="300" height="45" style="width:100%;height:45px;border:1px solid #ffe00033;"></canvas>
+        </div>
+        <!-- MASTER on far right with OUTPUT title above -->
+        <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1px solid #ffe00033;padding-left:12px;">
+          <div class="mod-title" style="margin-bottom:2px;">OUTPUT</div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="masterGain" width="72" height="72"></canvas><div class="knob-val" id="masterGainV">0.60</div><div class="knob-label">MASTER</div></div>
         </div>
       </div>
-      <div style="flex:0 1 360px;display:flex;flex-direction:column;gap:4px;min-width:200px;">
-        <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">WAVEFORM</div>
-        <canvas id="waveCanvas" width="360" height="50" style="width:100%;height:50px;border:1px solid #ffe00033;"></canvas>
-        <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">SPECTRUM</div>
-        <canvas id="specCanvas" width="360" height="50" style="width:100%;height:50px;border:1px solid #ffe00033;"></canvas>
-      </div>
+      </div><!-- close inner flex row -->
     </div>
 
   </div>
@@ -614,11 +635,17 @@ let waveAnimId = null;
 // Module names map to DOM order (data-mod-idx)
 
 const MOD_NAMES = []; // filled on init
-document.querySelectorAll('.module .mod-title').forEach(el => {
-  // Get only direct text, not child element text (selects inside title)
+document.querySelectorAll('.module').forEach(mod => {
+  // Get text from all mod-titles in this module, use first non-empty one
   let name = '';
-  el.childNodes.forEach(n => { if(n.nodeType === 3) name += n.textContent; });
-  MOD_NAMES.push(name.trim());
+  mod.querySelectorAll('.mod-title').forEach(el => {
+    if(name) return;
+    let t = '';
+    el.childNodes.forEach(n => { if(n.nodeType === 3) t += n.textContent; });
+    t = t.trim();
+    if(t) name = t;
+  });
+  MOD_NAMES.push(name);
 });
 
 let audioModules = []; // built per play session
@@ -923,14 +950,37 @@ function startWaveform(){
 let presets = JSON.parse(localStorage.getItem('sfxPresets') || '[]');
 
 function renderPresets(){
-  // Preset dropdown
-  const dd = document.getElementById('presetDropdown');
-  dd.innerHTML = '<option value="">PRESETS (' + presets.length + ')</option>';
+  // Preset toggle button
+  document.getElementById('presetToggle').textContent = 'PRESETS (' + presets.length + ')';
+  // Preset list
+  const pl = document.getElementById('presetList');
+  pl.innerHTML = '';
   presets.forEach((p, i) => {
-    const opt = document.createElement('option');
-    opt.value = i; opt.textContent = p.name;
-    dd.appendChild(opt);
+    const item = document.createElement('div');
+    item.className = 'preset-item';
+    const name = document.createElement('span');
+    name.className = 'preset-name';
+    name.textContent = p.name;
+    name.addEventListener('click', () => { loadPreset(i); pl.style.display = 'none'; });
+    const del = document.createElement('span');
+    del.className = 'preset-del';
+    del.textContent = '\u2715';
+    del.title = 'Delete';
+    del.addEventListener('click', e => {
+      e.stopPropagation();
+      presets.splice(i, 1);
+      savePresets(); renderPresets();
+    });
+    item.appendChild(name);
+    item.appendChild(del);
+    pl.appendChild(item);
   });
+  if(presets.length === 0){
+    const empty = document.createElement('div');
+    empty.style.cssText = 'padding:8px;color:#666;font-size:8px;font-family:inherit;letter-spacing:1px;';
+    empty.textContent = 'No presets saved';
+    pl.appendChild(empty);
+  }
   // JSON dropdown
   const jd = document.getElementById('jsonDropdown');
   const jsonStr = JSON.stringify(presets, null, 2);
@@ -940,6 +990,18 @@ function renderPresets(){
   jd.appendChild(opt);
   jd.dataset.fullJson = jsonStr;
 }
+
+// Toggle preset list
+document.getElementById('presetToggle').addEventListener('click', () => {
+  const pl = document.getElementById('presetList');
+  pl.style.display = pl.style.display === 'none' ? 'block' : 'none';
+});
+// Close preset list when clicking outside
+document.addEventListener('click', e => {
+  if(!e.target.closest('#presetMenu')){
+    document.getElementById('presetList').style.display = 'none';
+  }
+});
 
 function savePresets(){ localStorage.setItem('sfxPresets', JSON.stringify(presets)); }
 
@@ -956,14 +1018,10 @@ document.getElementById('saveBtn').addEventListener('click', () => {
 
 renderPresets();
 
-// Preset dropdown: load on select
-document.getElementById('presetDropdown').addEventListener('change', e => {
-  const idx = parseInt(e.target.value);
-  if(isNaN(idx)) return;
+function loadPreset(idx){
   const p = presets[idx];
   if(!p) return;
   setParams(p.params);
-  // Restore cables
   if(p.cables){
     pushUndo();
     cables.length = 0;
@@ -977,7 +1035,6 @@ document.getElementById('presetDropdown').addEventListener('change', e => {
     });
     drawAllCables();
   }
-  // Restore layout
   if(p.layout){
     const mods = document.querySelectorAll('.module');
     p.layout.forEach((pos, i) => {
@@ -987,17 +1044,7 @@ document.getElementById('presetDropdown').addEventListener('change', e => {
   }
   document.getElementById('presetName').value = p.name;
   if(live && live.playing) rebuildIfPlaying();
-  e.target.value = '';
-});
-
-// Delete selected preset
-document.getElementById('delPresetBtn').addEventListener('click', () => {
-  const dd = document.getElementById('presetDropdown');
-  const idx = parseInt(dd.value);
-  if(isNaN(idx)) return;
-  presets.splice(idx, 1);
-  savePresets(); renderPresets();
-});
+}
 
 // Copy JSON
 document.getElementById('copyJsonBtn').addEventListener('click', () => {
@@ -1010,6 +1057,19 @@ document.getElementById('copyJsonBtn').addEventListener('click', () => {
 });
 
 window.addEventListener('blur', stopPlay);
+
+// Visualizer collapse toggle — shrinks the whole output module
+document.getElementById('vizToggle').addEventListener('click', () => {
+  const panel = document.getElementById('vizPanel');
+  const arrow = document.getElementById('vizToggle');
+  const outMod = document.querySelector('.module.out');
+  const hidden = panel.style.display === 'none';
+  panel.style.display = hidden ? '' : 'none';
+  arrow.innerHTML = hidden ? '&#9654;' : '&#9664;';
+  // Resize module width to fit
+  outMod.style.width = hidden ? '' : 'auto';
+  setTimeout(drawAllCables, 50);
+});
 
 // ── PATCH BAY: Jacks + Cables ───────────────────────────────────────
 const cables = []; // { fromMod, fromIdx, toMod, toIdx, color }
@@ -1066,7 +1126,7 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
           j.dataset.jackIdx = jackIdx;
           j.dataset.jackType = 'input';
           j.title = `IN ${jackIdx+1}`;
-          j.style.cssText = 'width:10px;height:8px;margin:0 auto 2px;';
+          j.style.cssText = 'width:16px;height:14px;margin:-14px auto 2px;';
           kw.insertBefore(j, kw.firstChild);
           jackIdx++;
         }
@@ -1371,7 +1431,7 @@ requestAnimationFrame(() => {
     {left:"1080px",top:"142px", w:"266px"},  // 11 PHASER
     {left:"1080px",top:"98px",  w:"266px"},  // 12 DELAY
     {left:"998px", top:"186px", w:"348px"},  // 13 ENVELOPE
-    {left:"100px", top:"280px", w:"1100px"}  // 14 OUTPUT
+    {left:"10px", top:"280px", w:"1200px"}  // 14 OUTPUT
   ];
 
   // Selection state
@@ -1408,8 +1468,12 @@ requestAnimationFrame(() => {
     title.style.cursor = 'grab';
     title.style.userSelect = 'none';
 
-    // Drag by title (moves all selected if this module is selected)
-    title.addEventListener('mousedown', e => {
+    // For OUTPUT module, the whole panel is draggable (excluding interactive elements)
+    const dragTarget = mod.classList.contains('out') ? mod : title;
+    if(mod.classList.contains('out')) mod.style.cursor = 'grab';
+
+    dragTarget.addEventListener('mousedown', e => {
+      if(e.target.closest('.knob-canvas') || e.target.closest('.jack') || e.target.closest('select') || e.target.closest('input') || e.target.closest('#playBtn') || e.target.closest('#vizToggle') || e.target.closest('.bypass-btn')) return;
       if(e.target.tagName === 'SELECT') return;
       e.preventDefault();
       e.stopPropagation();
@@ -1481,14 +1545,17 @@ requestAnimationFrame(() => {
   const selectBox = document.getElementById('selectBox');
   let boxDrag = null;
 
-  container.addEventListener('mousedown', e => {
-    // Only start box select on empty space (not on modules, jacks, knobs, buttons, etc.)
-    if(e.target.closest('.module') || e.target.closest('.jack') || e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+  // Box select uses page-level coordinates converted to container-relative
+  // so dragging from anywhere (above, beside modules) works correctly
+  document.addEventListener('mousedown', e => {
+    if(e.target.closest('.module') || e.target.closest('.jack') || e.target.closest('button') || e.target.closest('select') || e.target.closest('input') || e.target.closest('.top-bar') || e.target.closest('.bypass-btn')) return;
+    // Only start if clicking in the layout/container area
+    if(!e.target.closest('.layout') && e.target !== document.body) return;
     e.preventDefault();
     const contR = container.getBoundingClientRect();
-    const sx = e.clientX - contR.left + container.scrollLeft;
-    const sy = e.clientY - contR.top + container.scrollTop;
-    boxDrag = { sx, sy };
+    const sx = e.clientX - contR.left;
+    const sy = e.clientY - contR.top;
+    boxDrag = { sx, sy, startShift: e.shiftKey };
     selectBox.style.left = sx + 'px';
     selectBox.style.top = sy + 'px';
     selectBox.style.width = '0px';
@@ -1500,8 +1567,8 @@ requestAnimationFrame(() => {
   document.addEventListener('mousemove', e => {
     if(!boxDrag) return;
     const contR = container.getBoundingClientRect();
-    const cx = e.clientX - contR.left + container.scrollLeft;
-    const cy = e.clientY - contR.top + container.scrollTop;
+    const cx = e.clientX - contR.left;
+    const cy = e.clientY - contR.top;
     const x = Math.min(boxDrag.sx, cx);
     const y = Math.min(boxDrag.sy, cy);
     const w = Math.abs(cx - boxDrag.sx);
@@ -1517,10 +1584,9 @@ requestAnimationFrame(() => {
       const mt = parseFloat(mod.style.top);
       const mr = ml + mod.offsetWidth;
       const mb = mt + mod.offsetHeight;
-      // Rectangle overlap test
       if(ml < x + w && mr > x && mt < y + h && mb > y){
         selectMod(mod);
-      } else if(!e.shiftKey) {
+      } else if(!boxDrag.startShift) {
         deselectMod(mod);
       }
     });
