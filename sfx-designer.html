@@ -1,0 +1,1563 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>NAVIGATOR — Sound Effects Designer</title>
+<style>
+  html, body { height:100%; }
+  body { background:#0a0a14; color:#00ffcc; font-family:'Press Start 2P',monospace,sans-serif; margin:0; padding:0; font-size:10px; display:flex; flex-direction:column; min-height:100vh; box-sizing:border-box; }
+  h1 { color:#ffe000; font-size:12px; text-shadow:0 0 10px #ffe000; margin:0; padding:8px 12px 0; }
+  .sub { color:#888; font-size:7px; margin:0; padding:2px 12px 4px; line-height:1.4; }
+  .top-bar { display:flex; gap:6px; padding:4px 12px 6px; flex-wrap:wrap; align-items:center; }
+  .top-bar button {
+    padding:6px 12px; background:rgba(0,255,204,0.1); color:#00ffcc;
+    border:1px solid #00ffcc; font-family:inherit; font-size:9px;
+    cursor:pointer; letter-spacing:1px;
+  }
+  .top-bar button:hover { background:rgba(0,255,204,0.22); }
+  .top-bar button.play { background:rgba(0,255,0,0.14); border-color:#00ff66; color:#00ff66; }
+  .top-bar button.play.active { background:rgba(255,224,0,0.26); border-color:#ffe000; color:#ffe000; }
+  .name-input {
+    flex:1; min-width:120px; padding:5px 8px; background:rgba(255,105,180,0.08);
+    color:#ffe000; border:1px solid #ff69b488; font-family:inherit; font-size:9px; letter-spacing:1px;
+  }
+  .name-input:focus { outline:none; border-color:#ffe000; }
+
+  .layout { display:flex; flex-direction:column; flex:1; padding:0 12px 12px; box-sizing:border-box; }
+
+  .modules { display:flex; flex-wrap:wrap; align-items:start; align-content:space-between; justify-content:space-between; height:100%; gap:16px; }
+  .module {
+    background:rgba(0,0,0,0.6); border:1px solid #00ffcc33;
+    padding:6px 10px 6px 10px;
+    min-width:120px; flex:0 0 auto; position:relative;
+  }
+  .module.gen { border-color:#ff69b444; background:rgba(40,10,20,0.6); }
+  .module.fx { border-color:#00ffcc33; background:rgba(0,0,0,0.6); }
+  .module.out { border-color:#ffe00044; background:rgba(30,25,0,0.6); }
+  .module.selected { outline:2px solid #ffe000; outline-offset:2px; }
+  #selectBox { position:absolute; border:1px solid #ffe000; background:rgba(255,224,0,0.08); pointer-events:none; z-index:50; display:none; }
+  .module .mod-title { font-size:12px; letter-spacing:2px; text-transform:uppercase; margin-bottom:6px; position:relative; padding-right:20px; }
+  .bypass-btn {
+    position:absolute; right:0; top:0; width:14px; height:14px; border-radius:7px;
+    border:1px solid #00ffcc66; background:#00ffcc22; cursor:pointer; z-index:5;
+    font-size:0; line-height:14px; text-align:center; box-sizing:border-box;
+  }
+  .bypass-btn:hover { border-color:#ffe000; }
+  .bypass-btn.active { border-color:#ff4444; background:#ff444444; }
+  .module.bypassed { opacity:0.35; }
+  .module.bypassed .mod-title { text-decoration:line-through; }
+  .module.gen .mod-title { color:#ff69b4; }
+  .module.fx .mod-title { color:#00ffcc; }
+  .module.out .mod-title { color:#ffe000; }
+  /* Jacks — left edge (inputs) and right edge (outputs) */
+  .jack-row { display:flex; flex-direction:column; position:absolute; top:0; bottom:0; justify-content:space-around; z-index:10; }
+  .jack-row.inputs { left:-9px; }
+  .jack-row.outputs { right:-9px; }
+  .jack {
+    width:8px; height:10px; border-radius:1px; border:1px solid #555;
+    background:#111; cursor:pointer;
+  }
+  .jack:hover { border-color:#ffe000; background:#222; }
+  .jack.input { border-color:#00ffcc55; }
+  .jack.output { border-color:#ff69b455; }
+  .jack.connected { background:#00ffcc44; border-color:#00ffcc; }
+  .jack.output.connected { background:#ff69b444; border-color:#ff69b4; }
+  .jack.dragging { border-color:#ffe000; box-shadow:0 0 6px #ffe000; }
+  /* Cable overlay */
+  #cableCanvas { position:fixed; top:0; left:0; width:100vw; height:100vh; pointer-events:none; z-index:0; opacity:0.25; }
+  .out-sel-row { display:flex; gap:3px; margin-bottom:4px; justify-content:center; }
+  .out-sel-btn { width:20px; height:16px; border:1px solid #555; background:#111; color:#888; font-family:inherit; font-size:8px; cursor:pointer; text-align:center; line-height:16px; }
+  .out-sel-btn.active { border-color:#ffe000; color:#ffe000; background:rgba(255,224,0,0.15); }
+  .out-sel-btn:hover { border-color:#ffe000; }
+  .knob-row { display:flex; flex-wrap:wrap; gap:2px; justify-content:center; }
+  .knob-wrap { display:flex; flex-direction:column; align-items:center; gap:2px; width:80px; }
+  .knob-label { color:#00ffcc; font-size:10px; text-align:center; white-space:nowrap; }
+  .knob-val { color:#ffe000; font-size:12px; text-align:center; height:16px; }
+  .knob-canvas { cursor:pointer; }
+  .knob-wrap select {
+    background:#111; color:#ffe000; border:1px solid #00ffcc66; font-family:inherit;
+    font-size:10px; padding:4px 6px; cursor:pointer; width:100%; text-align:center;
+  }
+
+
+  #waveCanvas { border:1px solid #00ffcc33; display:block; width:100%; height:50px; }
+</style>
+</head>
+<body>
+
+
+<h1>NAVIGATOR — Sound Effects Designer</h1>
+
+<div class="top-bar">
+  <input id="presetName" class="name-input" type="text" placeholder="preset name" style="min-width:100px;max-width:160px;">
+  <button id="saveBtn">SAVE</button>
+  <select id="presetDropdown" style="background:#111;color:#ffe000;border:1px solid #ff69b488;font-family:inherit;font-size:9px;padding:5px 8px;cursor:pointer;"><option value="">PRESETS</option></select>
+  <button id="delPresetBtn" style="border-color:#ff444466;color:#ff6666;">DEL</button>
+  <select id="jsonDropdown" style="background:#111;color:#88ffcc;border:1px solid #00ffcc44;font-family:inherit;font-size:8px;padding:5px 8px;cursor:pointer;max-width:300px;"><option value="">JSON</option></select>
+  <button id="copyJsonBtn">COPY JSON</button>
+  <button id="autoPatchBtn">AUTO PATCH</button>
+  <button id="clearPatchBtn" style="border-color:#ff4444;color:#ff4444;">CLEAR</button>
+  <button id="undoBtn">UNDO</button>
+  <button id="fsBtn" onclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">FULLSCREEN</button>
+</div>
+
+<canvas id="cableCanvas"></canvas>
+<div class="layout">
+  <div class="modules" id="moduleContainer">
+    <div id="selectBox"></div>
+
+    <!-- GENERATORS (pink) -->
+    <div class="module gen" data-no-inputs="true">
+      <div class="mod-title" style="display:flex;align-items:center;gap:8px;">OSCILLATOR <select id="waveform" style="margin-left:auto;"><option value="triangle">TRI</option><option value="sine">SIN</option><option value="square">SQR</option><option value="sawtooth">SAW</option></select></div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="pitch" width="72" height="72"></canvas><div class="knob-val" id="pitchV">48</div><div class="knob-label">PITCH Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="harmSpread" width="72" height="72"></canvas><div class="knob-val" id="harmSpreadV">1.50</div><div class="knob-label">H.SPREAD</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="harm2" width="72" height="72"></canvas><div class="knob-val" id="harm2V">0.55</div><div class="knob-label">HARM 2</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="harm3" width="72" height="72"></canvas><div class="knob-val" id="harm3V">0.40</div><div class="knob-label">HARM 3</div></div>
+      </div>
+    </div>
+
+    <div class="module gen" data-no-inputs="true">
+      <div class="mod-title">SUB OCTAVE</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="subGain" width="72" height="72"></canvas><div class="knob-val" id="subGainV">0.00</div><div class="knob-label">GAIN</div></div>
+      </div>
+    </div>
+
+    <div class="module gen" data-no-inputs="true">
+      <div class="mod-title">SUB RUMBLE</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="rumFreq" width="72" height="72"></canvas><div class="knob-val" id="rumFreqV">28</div><div class="knob-label">FREQ Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="rumGain" width="72" height="72"></canvas><div class="knob-val" id="rumGainV">0.12</div><div class="knob-label">GAIN</div></div>
+      </div>
+    </div>
+
+    <div class="module gen" data-no-inputs="true">
+      <div class="mod-title" style="display:flex;align-items:center;gap:8px;">NOISE GEN <select id="noiseType" style="margin-left:auto;"><option value="white">WHT</option><option value="pink">PNK</option><option value="brown">BRN</option></select></div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="noiseGain" width="72" height="72"></canvas><div class="knob-val" id="noiseGainV">0.00</div><div class="knob-label">GAIN</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="noiseFilt" width="72" height="72"></canvas><div class="knob-val" id="noiseFiltV">2000</div><div class="knob-label">LP FREQ</div></div>
+      </div>
+    </div>
+
+    <div class="module gen" data-no-inputs="true">
+      <div class="mod-title">FM OSC</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="fmFreq" width="72" height="72"></canvas><div class="knob-val" id="fmFreqV">0</div><div class="knob-label">FREQ Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="fmDepth" width="72" height="72"></canvas><div class="knob-val" id="fmDepthV">0</div><div class="knob-label">DEPTH</div></div>
+      </div>
+    </div>
+
+    <!-- EFFECTS (cyan) -->
+    <div class="module fx">
+      <div class="mod-title" style="display:flex;align-items:center;gap:8px;">TREMOLO <select id="tremShape" style="margin-left:auto;"><option value="sine">SIN</option><option value="square">SQR</option><option value="sawtooth">SAW</option></select></div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="tremRate" width="72" height="72"></canvas><div class="knob-val" id="tremRateV">20</div><div class="knob-label">RATE Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="tremDepth" width="72" height="72"></canvas><div class="knob-val" id="tremDepthV">55</div><div class="knob-label">DEPTH %</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">PITCH WOBBLE</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="wobRate" width="72" height="72"></canvas><div class="knob-val" id="wobRateV">8.0</div><div class="knob-label">RATE Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="wobDepth" width="72" height="72"></canvas><div class="knob-val" id="wobDepthV">4.0</div><div class="knob-label">DEPTH Hz</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">RING MOD</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="ringFreq" width="72" height="72"></canvas><div class="knob-val" id="ringFreqV">0</div><div class="knob-label">FREQ Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="ringMix" width="72" height="72"></canvas><div class="knob-val" id="ringMixV">0.00</div><div class="knob-label">MIX</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">DISTORTION</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="distDrive" width="72" height="72"></canvas><div class="knob-val" id="distDriveV">0</div><div class="knob-label">DRIVE</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title" style="display:flex;align-items:center;gap:8px;">FILTER <select id="filtType" style="margin-left:auto;"><option value="lowpass">LP</option><option value="highpass">HP</option><option value="bandpass">BP</option><option value="notch">NOTCH</option></select></div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="filtCut" width="72" height="72"></canvas><div class="knob-val" id="filtCutV">8000</div><div class="knob-label">CUTOFF</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="filtQ" width="72" height="72"></canvas><div class="knob-val" id="filtQV">0.7</div><div class="knob-label">RESO Q</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">DETUNE / CHORUS</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="detune" width="72" height="72"></canvas><div class="knob-val" id="detuneV">0</div><div class="knob-label">CENTS</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="stereoPan" width="72" height="72"></canvas><div class="knob-val" id="stereoPanV">0.00</div><div class="knob-label">STEREO</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">PHASER</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="phRate" width="72" height="72"></canvas><div class="knob-val" id="phRateV">0.0</div><div class="knob-label">RATE Hz</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="phDepth" width="72" height="72"></canvas><div class="knob-val" id="phDepthV">0</div><div class="knob-label">DEPTH</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="phMix" width="72" height="72"></canvas><div class="knob-val" id="phMixV">0.00</div><div class="knob-label">MIX</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">DELAY</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="delTime" width="72" height="72"></canvas><div class="knob-val" id="delTimeV">0.00</div><div class="knob-label">TIME s</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="delFeed" width="72" height="72"></canvas><div class="knob-val" id="delFeedV">0.00</div><div class="knob-label">FDBK</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="delMix" width="72" height="72"></canvas><div class="knob-val" id="delMixV">0.00</div><div class="knob-label">MIX</div></div>
+      </div>
+    </div>
+
+    <div class="module fx">
+      <div class="mod-title">ENVELOPE</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="envAtk" width="72" height="72"></canvas><div class="knob-val" id="envAtkV">0.01</div><div class="knob-label">ATK</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="envDec" width="72" height="72"></canvas><div class="knob-val" id="envDecV">0.10</div><div class="knob-label">DEC</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="envSus" width="72" height="72"></canvas><div class="knob-val" id="envSusV">1.00</div><div class="knob-label">SUS</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="envRel" width="72" height="72"></canvas><div class="knob-val" id="envRelV">0.15</div><div class="knob-label">REL</div></div>
+      </div>
+    </div>
+
+    <!-- OUTPUT (yellow) — full width bottom row -->
+    <div class="module out" data-no-outputs="true" style="flex:1 1 100%;display:flex;gap:16px;align-items:stretch;">
+      <div style="flex:0 0 auto;">
+        <div class="mod-title">OUTPUT</div>
+        <div class="knob-row">
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="masterGain" width="72" height="72"></canvas><div class="knob-val" id="masterGainV">0.60</div><div class="knob-label">MASTER</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl0" width="72" height="72"></canvas><div class="knob-val" id="inLvl0V">1.00</div><div class="knob-label">IN 1</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl1" width="72" height="72"></canvas><div class="knob-val" id="inLvl1V">1.00</div><div class="knob-label">IN 2</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl2" width="72" height="72"></canvas><div class="knob-val" id="inLvl2V">1.00</div><div class="knob-label">IN 3</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl3" width="72" height="72"></canvas><div class="knob-val" id="inLvl3V">1.00</div><div class="knob-label">IN 4</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl4" width="72" height="72"></canvas><div class="knob-val" id="inLvl4V">1.00</div><div class="knob-label">IN 5</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl5" width="72" height="72"></canvas><div class="knob-val" id="inLvl5V">1.00</div><div class="knob-label">IN 6</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl6" width="72" height="72"></canvas><div class="knob-val" id="inLvl6V">1.00</div><div class="knob-label">IN 7</div></div>
+          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl7" width="72" height="72"></canvas><div class="knob-val" id="inLvl7V">1.00</div><div class="knob-label">IN 8</div></div>
+        </div>
+        <div id="playBtn" style="margin-top:8px;display:flex;align-items:center;justify-content:center;width:80px;height:40px;border:2px solid #00ff66;cursor:pointer;background:rgba(0,255,102,0.08);user-select:none;font-family:inherit;font-size:10px;letter-spacing:2px;" title="Play / Stop">
+          <svg id="playIcon" width="20" height="20" viewBox="0 0 32 32" style="margin-right:6px;"><polygon points="8,4 28,16 8,28" fill="#00ff66"/></svg>
+          <svg id="stopIcon" width="20" height="20" viewBox="0 0 32 32" style="display:none;margin-right:6px;"><rect x="6" y="6" width="20" height="20" rx="2" fill="#ff4444"/></svg>
+          <span id="playLabel" style="color:#00ff66;">PLAY</span>
+        </div>
+      </div>
+      <div style="flex:0 1 360px;display:flex;flex-direction:column;gap:4px;min-width:200px;">
+        <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">WAVEFORM</div>
+        <canvas id="waveCanvas" width="360" height="50" style="width:100%;height:50px;border:1px solid #ffe00033;"></canvas>
+        <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">SPECTRUM</div>
+        <canvas id="specCanvas" width="360" height="50" style="width:100%;height:50px;border:1px solid #ffe00033;"></canvas>
+      </div>
+    </div>
+
+  </div>
+
+</div>
+
+<script>
+const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+const masterOut = audioCtx.createGain();
+masterOut.gain.value = 0.6;
+masterOut.connect(audioCtx.destination);
+
+// ── Knob definitions ────────────────────────────────────────────────
+const KNOB_DEFS = {
+  pitch:      { min:20,   max:300,  step:1,    val:48,    fmt:v=>v.toString() },
+  harmSpread: { min:1.0,  max:3.0,  step:0.05, val:1.5,   fmt:v=>v.toFixed(2) },
+  harm2:      { min:0,    max:1,    step:0.01, val:0.55,  fmt:v=>v.toFixed(2) },
+  harm3:      { min:0,    max:1,    step:0.01, val:0.40,  fmt:v=>v.toFixed(2) },
+  subGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  tremRate:   { min:0,    max:40,   step:0.5,  val:20,    fmt:v=>v.toString() },
+  tremDepth:  { min:0,    max:100,  step:1,    val:55,    fmt:v=>v.toString() },
+  wobRate:    { min:0,    max:20,   step:0.1,  val:8,     fmt:v=>v.toFixed(1) },
+  wobDepth:   { min:0,    max:30,   step:0.5,  val:4,     fmt:v=>v.toFixed(1) },
+  rumFreq:    { min:15,   max:200,  step:1,    val:28,    fmt:v=>v.toString() },
+  rumGain:    { min:0,    max:1,    step:0.01, val:0.12,  fmt:v=>v.toFixed(2) },
+  hissCut:    { min:500,  max:8000, step:50,   val:3500,  fmt:v=>v.toString() },
+  hissGain:   { min:0,    max:0.2,  step:0.005,val:0.025, fmt:v=>v.toFixed(3) },
+  distDrive:  { min:0,    max:100,  step:1,    val:0,     fmt:v=>v.toString() },
+  filtCut:    { min:100,  max:8000, step:10,   val:8000,  fmt:v=>v.toString() },
+  filtQ:      { min:0.1,  max:20,   step:0.1,  val:0.7,   fmt:v=>v.toFixed(1) },
+  detune:     { min:0,    max:50,   step:1,    val:0,     fmt:v=>v.toString() },
+  stereoPan:  { min:0,    max:1,    step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  ringFreq:   { min:0,    max:500,  step:1,    val:0,     fmt:v=>v.toString() },
+  ringMix:    { min:0,    max:1,    step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  noiseGain:  { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  noiseFilt:  { min:100,  max:8000, step:50,   val:2000,  fmt:v=>v.toString() },
+  fmFreq:     { min:0,    max:500,  step:1,    val:0,     fmt:v=>v.toString() },
+  fmDepth:    { min:0,    max:500,  step:1,    val:0,     fmt:v=>v.toString() },
+  envAtk:     { min:0.001,max:2,    step:0.01, val:0.01,  fmt:v=>v.toFixed(2) },
+  envDec:     { min:0.01, max:2,    step:0.01, val:0.10,  fmt:v=>v.toFixed(2) },
+  envSus:     { min:0,    max:1,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
+  envRel:     { min:0.01, max:3,    step:0.01, val:0.15,  fmt:v=>v.toFixed(2) },
+  delTime:    { min:0,    max:1,    step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  delFeed:    { min:0,    max:0.95, step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  delMix:     { min:0,    max:1,    step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  phRate:     { min:0,    max:20,   step:0.1,  val:0,     fmt:v=>v.toFixed(1) },
+  phDepth:    { min:0,    max:2000, step:10,   val:0,     fmt:v=>v.toString() },
+  phMix:      { min:0,    max:1,    step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  masterGain: { min:0,    max:1,    step:0.01, val:0.6,   fmt:v=>v.toFixed(2) },
+  inLvl0: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl1: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl2: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl3: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl4: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl5: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl6: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+  inLvl7: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
+};
+// Global knob state (shared across all outputs for now — per-output state below)
+const knobState = {};
+Object.keys(KNOB_DEFS).forEach(id => { knobState[id] = KNOB_DEFS[id].val; });
+
+// Per-module per-output state: modOutputState[modIdx][outIdx] = {paramId: val, ...}
+// Each module's knobs are identified by which data-id knobs live inside that module DOM
+const modOutputState = []; // filled after DOM scan
+const selectedOutput = []; // which output (0-3) each module is editing
+const modKnobIds = []; // which knob data-ids belong to each module
+
+// Map knobs to modules after DOM ready
+document.querySelectorAll('.module').forEach((mod, modIdx) => {
+  const ids = [];
+  mod.querySelectorAll('.knob-canvas').forEach(c => ids.push(c.dataset.id));
+  modKnobIds.push(ids);
+  selectedOutput.push(0);
+  // Init 4 output states with defaults
+  const outputs = [];
+  for(let o = 0; o < 4; o++){
+    const s = {};
+    ids.forEach(id => { s[id] = KNOB_DEFS[id] ? KNOB_DEFS[id].val : 0; });
+    outputs.push(s);
+  }
+  modOutputState.push(outputs);
+
+  // Add output selector buttons (skip OUTPUT module)
+  if(!mod.dataset.noOutputs){
+    const row = document.createElement('div');
+    row.className = 'out-sel-row';
+    for(let o = 0; o < 4; o++){
+      const btn = document.createElement('div');
+      btn.className = 'out-sel-btn' + (o === 0 ? ' active' : '');
+      btn.textContent = (o + 1);
+      btn.dataset.modIdx = modIdx;
+      btn.dataset.outIdx = o;
+      btn.addEventListener('click', () => {
+        // Save current knob values + dropdown to current output
+        const curOut = selectedOutput[modIdx];
+        modKnobIds[modIdx].forEach(id => { modOutputState[modIdx][curOut][id] = knobState[id]; });
+        // Save dropdowns for this module
+        Object.keys(dropdownModMap).forEach(did => {
+          if(dropdownModMap[did] === modIdx){
+            modOutputState[modIdx][curOut]['_'+did] = dropdowns[did];
+          }
+        });
+        // Switch
+        selectedOutput[modIdx] = o;
+        // Load new output values into knobs
+        modKnobIds[modIdx].forEach(id => {
+          knobState[id] = modOutputState[modIdx][o][id];
+          updateKnobDisplay(id);
+        });
+        // Load dropdowns for this output
+        Object.keys(dropdownModMap).forEach(did => {
+          if(dropdownModMap[did] === modIdx){
+            const val = modOutputState[modIdx][o]['_'+did];
+            if(val){ dropdowns[did] = val; const el = document.getElementById(did); if(el) el.value = val; }
+          }
+        });
+        // Update button styles
+        row.querySelectorAll('.out-sel-btn').forEach((b, bi) => b.classList.toggle('active', bi === o));
+      });
+      row.appendChild(btn);
+    }
+    // Insert after mod-title
+    const title = mod.querySelector('.mod-title');
+    if(title && title.nextSibling) mod.insertBefore(row, title.nextSibling);
+    else mod.appendChild(row);
+  }
+});
+
+// ── Knob rendering + interaction ────────────────────────────────────
+const KNOB_R = 28, KNOB_CX = 36, KNOB_CY = 36;
+const ARC_START = Math.PI * 0.75, ARC_END = Math.PI * 2.25;
+
+function drawKnob(canvas, id){
+  const ctx = canvas.getContext('2d');
+  const def = KNOB_DEFS[id];
+  const t = (knobState[id] - def.min) / (def.max - def.min);
+  const ang = ARC_START + t * (ARC_END - ARC_START);
+  ctx.clearRect(0, 0, 72, 72);
+  // Track
+  ctx.beginPath();
+  ctx.arc(KNOB_CX, KNOB_CY, KNOB_R, ARC_START, ARC_END);
+  ctx.strokeStyle = '#222'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+  // Fill
+  ctx.beginPath();
+  ctx.arc(KNOB_CX, KNOB_CY, KNOB_R, ARC_START, ang);
+  ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 5; ctx.lineCap = 'round'; ctx.stroke();
+  // Pointer
+  const px = KNOB_CX + Math.cos(ang) * (KNOB_R - 8);
+  const py = KNOB_CY + Math.sin(ang) * (KNOB_R - 8);
+  ctx.beginPath();
+  ctx.arc(px, py, 4, 0, Math.PI * 2);
+  ctx.fillStyle = '#ffe000'; ctx.fill();
+  // Center dot
+  ctx.beginPath();
+  ctx.arc(KNOB_CX, KNOB_CY, 8, 0, Math.PI * 2);
+  ctx.fillStyle = '#111'; ctx.fill();
+  ctx.strokeStyle = '#00ffcc44'; ctx.lineWidth = 1; ctx.stroke();
+}
+
+function updateKnobDisplay(id){
+  const def = KNOB_DEFS[id];
+  const valEl = document.getElementById(id + 'V');
+  if(valEl) valEl.textContent = def.fmt(knobState[id]);
+  const canvas = document.querySelector(`canvas[data-id="${id}"]`);
+  if(canvas) drawKnob(canvas, id);
+}
+
+// Init all knobs
+document.querySelectorAll('.knob-canvas').forEach(canvas => {
+  const id = canvas.dataset.id;
+  drawKnob(canvas, id);
+
+  let dragging = false, startY = 0, startVal = 0;
+  canvas.addEventListener('mousedown', e => {
+    e.preventDefault();
+    dragging = true; startY = e.clientY; startVal = knobState[id];
+    const onMove = e2 => {
+      if(!dragging) return;
+      const def = KNOB_DEFS[id];
+      const range = def.max - def.min;
+      const sensitivity = e2.shiftKey ? 600 : 150;
+      const delta = (startY - e2.clientY) / sensitivity * range;
+      knobState[id] = Math.max(def.min, Math.min(def.max, startVal + delta));
+      // Snap to step
+      knobState[id] = Math.round(knobState[id] / def.step) * def.step;
+      updateKnobDisplay(id);
+      updateLive();
+    };
+    const onUp = () => { dragging = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  });
+  // Double-click reset
+  canvas.addEventListener('dblclick', () => {
+    knobState[id] = KNOB_DEFS[id].val;
+    updateKnobDisplay(id);
+    updateLive();
+  });
+});
+
+// Click center of dial to mute/unmute input level knobs
+const _mutedLevels = {};
+for(let i=0;i<8;i++){
+  const id = 'inLvl'+i;
+  const canvas = document.querySelector(`canvas[data-id="${id}"]`);
+  if(!canvas) continue;
+  canvas.addEventListener('click', e => {
+    // Only trigger if click is near center (within 10px of knob center)
+    const r = canvas.getBoundingClientRect();
+    const cx = e.clientX - r.left, cy = e.clientY - r.top;
+    const dx = cx - 36, dy = cy - 36; // KNOB_CX/CY = 36
+    if(dx*dx + dy*dy > 100) return; // outside center circle
+    const label = document.getElementById(id+'V');
+    const knobLabel = canvas.parentElement.querySelector('.knob-label');
+    if(_mutedLevels[id]){
+      knobState[id] = _mutedLevels[id]; delete _mutedLevels[id];
+      if(label) label.style.textDecoration = '';
+      if(knobLabel) knobLabel.style.color = '#00ffcc';
+    } else {
+      _mutedLevels[id] = knobState[id] || 1;
+      knobState[id] = 0;
+      if(label) label.style.textDecoration = 'line-through';
+      if(knobLabel) knobLabel.style.color = '#ff4444';
+    }
+    updateKnobDisplay(id);
+    updateLive();
+  });
+}
+
+// Dropdowns — stored per-output in modOutputState
+const dropdowns = { waveform: 'triangle', tremShape: 'sine', noiseType: 'white', filtType: 'lowpass' };
+// Map each dropdown to its parent module index
+const dropdownModMap = {};
+['waveform','tremShape','noiseType','filtType'].forEach(id => {
+  const el = document.getElementById(id);
+  if(!el) return;
+  const mod = el.closest('.module');
+  if(mod) dropdownModMap[id] = parseInt(mod.dataset.modIdx || Array.from(document.querySelectorAll('.module')).indexOf(mod));
+  el.addEventListener('change', () => {
+    dropdowns[id] = el.value;
+    // Save to current output's state
+    const modIdx = dropdownModMap[id];
+    if(modIdx !== undefined){
+      const o = selectedOutput[modIdx];
+      if(modOutputState[modIdx] && modOutputState[modIdx][o]) modOutputState[modIdx][o]['_'+id] = el.value;
+    }
+    rebuildIfPlaying();
+  });
+});
+
+function getParams(){
+  // Save current knobs to their module's selected output first
+  modKnobIds.forEach((ids, modIdx) => {
+    const o = selectedOutput[modIdx];
+    ids.forEach(id => { modOutputState[modIdx][o][id] = knobState[id]; });
+  });
+  const p = {};
+  Object.keys(KNOB_DEFS).forEach(id => { p[id] = knobState[id]; });
+  if(KNOB_DEFS.tremDepth) p.tremDepth = knobState.tremDepth / 100;
+  p.waveform = dropdowns.waveform;
+  p.tremShape = dropdowns.tremShape;
+  p.noiseType = dropdowns.noiseType;
+  p.filtType = dropdowns.filtType;
+  p.modOutputState = JSON.parse(JSON.stringify(modOutputState));
+  return p;
+}
+
+// Get params for a specific module + output index
+function getModOutParams(modIdx, outIdx){
+  const s = modOutputState[modIdx][outIdx];
+  const p = {};
+  Object.keys(KNOB_DEFS).forEach(id => { p[id] = s[id] !== undefined ? s[id] : KNOB_DEFS[id].val; });
+  if(KNOB_DEFS.tremDepth) p.tremDepth = (s.tremDepth !== undefined ? s.tremDepth : KNOB_DEFS.tremDepth.val) / 100;
+  p.waveform = s._waveform || dropdowns.waveform;
+  p.tremShape = s._tremShape || dropdowns.tremShape;
+  p.noiseType = s._noiseType || dropdowns.noiseType;
+  p.filtType = s._filtType || dropdowns.filtType;
+  return p;
+}
+
+function setParams(p){
+  Object.keys(KNOB_DEFS).forEach(id => {
+    if(p[id] !== undefined){
+      let v = p[id];
+      if(id === 'tremDepth') v = v * 100;
+      knobState[id] = v;
+      updateKnobDisplay(id);
+    }
+  });
+  if(p.waveform){ dropdowns.waveform = p.waveform; document.getElementById('waveform').value = p.waveform; }
+  if(p.tremShape){ dropdowns.tremShape = p.tremShape; document.getElementById('tremShape').value = p.tremShape; }
+  if(p.noiseType){ dropdowns.noiseType = p.noiseType; const nt=document.getElementById('noiseType'); if(nt) nt.value = p.noiseType; }
+  if(p.filtType){ dropdowns.filtType = p.filtType; const ft=document.getElementById('filtType'); if(ft) ft.value = p.filtType; }
+  // Restore per-output state if present
+  if(p.modOutputState){
+    for(let m = 0; m < p.modOutputState.length && m < modOutputState.length; m++){
+      for(let o = 0; o < 4; o++){
+        if(p.modOutputState[m][o]) Object.assign(modOutputState[m][o], p.modOutputState[m][o]);
+      }
+    }
+    // Reload currently selected outputs into knobs
+    modKnobIds.forEach((ids, modIdx) => {
+      const o = selectedOutput[modIdx];
+      ids.forEach(id => {
+        knobState[id] = modOutputState[modIdx][o][id];
+        updateKnobDisplay(id);
+      });
+    });
+  }
+}
+
+// ── Noise buffers (white, pink, brown) ──────────────────────────────
+const noiseBufs = {};
+(function(){
+  const len = Math.floor(audioCtx.sampleRate * 2);
+  // White
+  const wb = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const wd = wb.getChannelData(0);
+  for(let i=0;i<len;i++) wd[i] = Math.random()*2-1;
+  noiseBufs.white = wb;
+  // Pink (Voss-McCartney)
+  const pb = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const pd = pb.getChannelData(0);
+  let b0=0,b1=0,b2=0,b3=0,b4=0,b5=0,b6=0;
+  for(let i=0;i<len;i++){
+    const w=Math.random()*2-1;
+    b0=0.99886*b0+w*0.0555179;b1=0.99332*b1+w*0.0750759;b2=0.96900*b2+w*0.1538520;
+    b3=0.86650*b3+w*0.3104856;b4=0.55000*b4+w*0.5329522;b5=-0.7616*b5-w*0.0168980;
+    pd[i]=(b0+b1+b2+b3+b4+b5+b6+w*0.5362)*0.11;b6=w*0.115926;
+  }
+  noiseBufs.pink = pb;
+  // Brown
+  const bb = audioCtx.createBuffer(1, len, audioCtx.sampleRate);
+  const bd = bb.getChannelData(0);
+  let last=0;
+  for(let i=0;i<len;i++){ last=(last+(Math.random()*2-1)*0.02); if(last>1)last=1; if(last<-1)last=-1; bd[i]=last*3.5; }
+  noiseBufs.brown = bb;
+})();
+const noiseBuffer = noiseBufs.white;
+
+// ── Distortion curve ────────────────────────────────────────────────
+function makeDistCurve(amount){
+  const k = Math.max(0, amount);
+  const n = 256;
+  const curve = new Float32Array(n);
+  for(let i = 0; i < n; i++){
+    const x = (i * 2) / n - 1;
+    curve[i] = k === 0 ? x : (Math.PI + k) * x / (Math.PI + k * Math.abs(x));
+  }
+  return curve;
+}
+
+// ── Live sound engine ───────────────────────────────────────────────
+let live = null;
+let analyser = null;
+let waveAnimId = null;
+
+// ── Modular audio engine: each module = { inputs:[GainNode x4], outputs:[GainNode x4], sources:[], internals:{} }
+// Cables connect moduleX.outputs[j] -> moduleY.inputs[k]
+// Module names map to DOM order (data-mod-idx)
+
+const MOD_NAMES = []; // filled on init
+document.querySelectorAll('.module .mod-title').forEach(el => {
+  // Get only direct text, not child element text (selects inside title)
+  let name = '';
+  el.childNodes.forEach(n => { if(n.nodeType === 3) name += n.textContent; });
+  MOD_NAMES.push(name.trim());
+});
+
+let audioModules = []; // built per play session
+
+// Build one processing chain for a module, connecting to a single outGain node
+function buildChain(name, p, inGain, outGain){
+  const sources = [];
+  // Limiter for feedback safety
+  const limiter = audioCtx.createDynamicsCompressor();
+  limiter.threshold.value=-6;limiter.knee.value=3;limiter.ratio.value=20;limiter.attack.value=0.001;limiter.release.value=0.05;
+  const safe = audioCtx.createGain(); safe.gain.value=0.7;
+  inGain.connect(limiter); limiter.connect(safe);
+
+  if(name === 'OSCILLATOR'){
+    const o1=audioCtx.createOscillator();o1.type=p.waveform;o1.frequency.value=p.pitch;
+    const o2=audioCtx.createOscillator();o2.type=p.waveform;o2.frequency.value=p.pitch*p.harmSpread;
+    const o3=audioCtx.createOscillator();o3.type=p.waveform;o3.frequency.value=p.pitch*p.harmSpread*1.5;
+    const g1=audioCtx.createGain();g1.gain.value=0.18;
+    const g2=audioCtx.createGain();g2.gain.value=0.18*p.harm2;
+    const g3=audioCtx.createGain();g3.gain.value=0.18*p.harm3;
+    const wl=audioCtx.createOscillator();wl.frequency.value=p.wobRate;
+    const wg=audioCtx.createGain();wg.gain.value=p.wobDepth;
+    wl.connect(wg);wg.connect(o1.frequency);wg.connect(o2.frequency);wg.connect(o3.frequency);
+    o1.connect(g1);o2.connect(g2);o3.connect(g3);
+    g1.connect(outGain);g2.connect(outGain);g3.connect(outGain);
+    if(p.detune>0){
+      const d1=audioCtx.createOscillator();d1.type=p.waveform;d1.frequency.value=p.pitch;d1.detune.value=p.detune;
+      const d2=audioCtx.createOscillator();d2.type=p.waveform;d2.frequency.value=p.pitch*p.harmSpread;d2.detune.value=p.detune;
+      const d3=audioCtx.createOscillator();d3.type=p.waveform;d3.frequency.value=p.pitch*p.harmSpread*1.5;d3.detune.value=p.detune;
+      d1.connect(g1);d2.connect(g2);d3.connect(g3);sources.push(d1,d2,d3);
+    }
+    sources.push(o1,o2,o3,wl);
+  }
+  else if(name==='SUB OCTAVE'){
+    const s=audioCtx.createOscillator();s.type=p.waveform;s.frequency.value=p.pitch/2;
+    const g=audioCtx.createGain();g.gain.value=p.subGain;
+    safe.connect(g);s.connect(g);g.connect(outGain);sources.push(s);
+  }
+  else if(name==='TREMOLO'){
+    const tg=audioCtx.createGain();tg.gain.value=1-p.tremDepth/2;
+    const lfo=audioCtx.createOscillator();lfo.type=p.tremShape;lfo.frequency.value=p.tremRate;
+    const la=audioCtx.createGain();la.gain.value=p.tremDepth/2;
+    lfo.connect(la);la.connect(tg.gain);safe.connect(tg);tg.connect(outGain);sources.push(lfo);
+  }
+  else if(name==='PITCH WOBBLE'){
+    safe.connect(outGain);
+    const lfo=audioCtx.createOscillator();lfo.frequency.value=p.wobRate;
+    const lg=audioCtx.createGain();lg.gain.value=p.wobDepth;
+    lfo.connect(lg);lg.connect(outGain);sources.push(lfo);
+  }
+  else if(name==='SUB RUMBLE'){
+    const r=audioCtx.createOscillator();r.type='sine';r.frequency.value=p.rumFreq;
+    const dr=audioCtx.createOscillator();dr.frequency.value=0.4;
+    const dg=audioCtx.createGain();dg.gain.value=2;dr.connect(dg);dg.connect(r.frequency);
+    const rg=audioCtx.createGain();rg.gain.value=p.rumGain;
+    safe.connect(rg);r.connect(rg);rg.connect(outGain);sources.push(r,dr);
+  }
+  else if(name==='DISTORTION'){
+    const d=audioCtx.createWaveShaper();d.curve=makeDistCurve(p.distDrive);d.oversample='4x';
+    safe.connect(d);d.connect(outGain);
+  }
+  else if(name.startsWith('FILTER')){
+    const f=audioCtx.createBiquadFilter();f.type=p.filtType||'lowpass';f.frequency.value=p.filtCut;f.Q.value=p.filtQ;
+    safe.connect(f);f.connect(outGain);
+  }
+  else if(name.startsWith('DETUNE')){
+    const pL=audioCtx.createStereoPanner();pL.pan.value=-p.stereoPan;
+    const pR=audioCtx.createStereoPanner();pR.pan.value=p.stereoPan;
+    safe.connect(pL);safe.connect(pR);pL.connect(outGain);pR.connect(outGain);
+  }
+  else if(name==='RING MOD'){
+    const ro=audioCtx.createOscillator();ro.type='sine';ro.frequency.value=p.ringFreq;
+    const rg=audioCtx.createGain();rg.gain.value=0;ro.connect(rg.gain);
+    const dry=audioCtx.createGain();dry.gain.value=1-p.ringMix;
+    const wet=audioCtx.createGain();wet.gain.value=p.ringMix;
+    safe.connect(dry);dry.connect(outGain);
+    safe.connect(rg);rg.connect(wet);wet.connect(outGain);sources.push(ro);
+  }
+  else if(name==='NOISE GEN'){
+    const ns=audioCtx.createBufferSource();
+    ns.buffer=noiseBufs[p.noiseType]||noiseBufs.white;ns.loop=true;
+    const nf=audioCtx.createBiquadFilter();nf.type='lowpass';nf.frequency.value=p.noiseFilt;nf.Q.value=0.5;
+    const ng=audioCtx.createGain();ng.gain.value=p.noiseGain;
+    ns.connect(nf);nf.connect(ng);ng.connect(outGain);sources.push(ns);
+  }
+  else if(name==='FM OSC'){
+    const fm=audioCtx.createOscillator();fm.type='sine';fm.frequency.value=p.fmFreq;
+    const fg=audioCtx.createGain();fg.gain.value=p.fmDepth;
+    fm.connect(fg);fg.connect(outGain);sources.push(fm);
+  }
+  else if(name==='ENVELOPE'){
+    const eg=audioCtx.createGain();eg.gain.value=p.envSus;
+    safe.connect(eg);eg.connect(outGain);
+  }
+  else if(name==='DELAY'){
+    const dl=audioCtx.createDelay(2.0);dl.delayTime.value=p.delTime;
+    const fb=audioCtx.createGain();fb.gain.value=p.delFeed;
+    dl.connect(fb);fb.connect(dl);
+    const dry=audioCtx.createGain();dry.gain.value=1;
+    const wet=audioCtx.createGain();wet.gain.value=p.delMix;
+    safe.connect(dry);dry.connect(outGain);
+    safe.connect(dl);dl.connect(wet);wet.connect(outGain);
+  }
+  else if(name==='PHASER'){
+    const st=[];
+    for(let i=0;i<4;i++){const ap=audioCtx.createBiquadFilter();ap.type='allpass';ap.frequency.value=1000+i*500;ap.Q.value=0.5;st.push(ap);}
+    for(let i=1;i<st.length;i++)st[i-1].connect(st[i]);
+    const pl=audioCtx.createOscillator();pl.frequency.value=p.phRate;
+    const pg=audioCtx.createGain();pg.gain.value=p.phDepth;
+    pl.connect(pg);st.forEach(ap=>pg.connect(ap.frequency));
+    const dry=audioCtx.createGain();dry.gain.value=1-p.phMix;
+    const wet=audioCtx.createGain();wet.gain.value=p.phMix;
+    safe.connect(dry);dry.connect(outGain);
+    safe.connect(st[0]);st[st.length-1].connect(wet);wet.connect(outGain);sources.push(pl);
+  }
+  else { safe.connect(outGain); } // pass-through
+  return sources;
+}
+
+// Check if a module is bypassed/muted
+function isModBypassed(modIdx){
+  const mod = document.querySelectorAll('.module')[modIdx];
+  return mod && mod.classList.contains('bypassed');
+}
+
+// Build a full module with 4 independent output chains (or 8 inputs for OUTPUT)
+function buildModule(name, modIdx){
+  const isOut = (name === 'OUTPUT');
+  const isGen = document.querySelectorAll('.module')[modIdx]?.classList.contains('gen');
+  const bypassed = isModBypassed(modIdx);
+  const inCount = isOut ? 8 : 4;
+  const ins = []; for(let i=0;i<inCount;i++){ const g=audioCtx.createGain(); g.gain.value=1; ins.push(g); }
+  const outs = []; for(let i=0;i<4;i++){ const g=audioCtx.createGain(); g.gain.value=1; outs.push(g); }
+  const allSources = [];
+
+  // Bypassed effect: pass input straight to output. Muted generator: produce nothing.
+  if(bypassed && !isOut){
+    if(!isGen){
+      // Effect bypass: wire inputs to outputs directly
+      for(let o=0;o<4;o++){
+        if(o === 0){ ins.forEach(inp => inp.connect(outs[o])); }
+        else { if(ins[o]) ins[o].connect(outs[o]); }
+      }
+    }
+    // Muted generator: no sources, no connections
+    return { ins, outs, sources: allSources };
+  }
+
+  if(isOut){
+    // OUTPUT: 8 inputs with per-input level control -> analyser -> master
+    analyser=audioCtx.createAnalyser();analyser.fftSize=512;
+    const p = getModOutParams(modIdx, 0);
+    const merge = audioCtx.createGain(); merge.gain.value = p.masterGain;
+    for(let i=0;i<8;i++){
+      const lvl = audioCtx.createGain();
+      lvl.gain.value = p['inLvl'+i] !== undefined ? p['inLvl'+i] : 1;
+      ins[i].connect(lvl); lvl.connect(merge);
+    }
+    merge.connect(analyser); analyser.connect(masterOut);
+  } else {
+    // 4 independent chains: out[0] = mix of all inputs, out[1-3] = matched input only
+    for(let o=0;o<4;o++){
+      const p = getModOutParams(modIdx, o);
+      const chainIn = audioCtx.createGain(); chainIn.gain.value=1;
+      if(o === 0){
+        // Output 0: all inputs mixed
+        ins.forEach(inp => inp.connect(chainIn));
+      } else {
+        // Output 1-3: only matching input
+        if(ins[o]) ins[o].connect(chainIn);
+      }
+      const srcs = buildChain(name, p, chainIn, outs[o]);
+      allSources.push(...srcs);
+    }
+  }
+  return { ins, outs, sources: allSources };
+}
+
+function buildLive(){
+  const p = getParams();
+  // masterGain set via ramp in startPlay, not here
+
+  audioModules = MOD_NAMES.map((name, i) => buildModule(name, i));
+
+  // Wire cables
+  cables.forEach(c => {
+    const from = audioModules[c.fromMod];
+    const to = audioModules[c.toMod];
+    if(from && to && from.outs[c.fromIdx] && to.ins[c.toIdx]){
+      try { from.outs[c.fromIdx].connect(to.ins[c.toIdx]); } catch(e){}
+    }
+  });
+
+  const allSources = [];
+  audioModules.forEach(m => allSources.push(...m.sources));
+
+  return { sources: allSources, out: masterOut, nodes: {}, playing: false };
+}
+
+let _rebuildTimer = null;
+function updateLive(){
+  masterOut.gain.setTargetAtTime(knobState.masterGain, audioCtx.currentTime, 0.02);
+  if(!live || !live.playing) return;
+  if(_rebuildTimer) clearTimeout(_rebuildTimer);
+  _rebuildTimer = setTimeout(() => { _rebuildTimer=null; rebuildIfPlaying(); }, 100);
+}
+
+function startPlay(){
+  if(live && live.playing) return;
+  if(audioCtx.state === 'suspended') audioCtx.resume();
+  live = buildLive();
+  const now = audioCtx.currentTime;
+  const targetGain = knobState.masterGain || 0.6;
+  live.out.gain.setValueAtTime(0.0001, now);
+  live.out.gain.exponentialRampToValueAtTime(targetGain, now + 0.03);
+  console.log('play: sources:', live.sources.length, 'cables:', cables.length);
+  live.sources.forEach(s => { try { s.start(now); } catch(e){ console.error('start fail:', e); } });
+  live.playing = true;
+  document.getElementById('playIcon').style.display='none';
+  document.getElementById('stopIcon').style.display='';
+  document.getElementById('playLabel').textContent='STOP';
+  document.getElementById('playLabel').style.color='#ff4444';
+  const pb=document.getElementById('playBtn');
+  pb.style.borderColor='#ff4444';pb.style.background='rgba(255,68,68,0.12)';
+  startWaveform();
+}
+
+function stopPlay(){
+  if(!live || !live.playing) return;
+  const now = audioCtx.currentTime;
+  try {
+    live.out.gain.cancelScheduledValues(now);
+    live.out.gain.setValueAtTime(live.out.gain.value, now);
+    live.out.gain.exponentialRampToValueAtTime(0.0001, now + 0.15);
+  } catch(e){}
+  const toStop = live.sources;
+  setTimeout(() => {
+    toStop.forEach(s => { try { s.stop(); } catch(e){} });
+    // Don't disconnect masterOut -- it's permanent. Just stop sources.
+  }, 220);
+  live.playing = false;
+  live = null;
+  analyser = null;
+  document.getElementById('playIcon').style.display='';
+  document.getElementById('stopIcon').style.display='none';
+  document.getElementById('playLabel').textContent='PLAY';
+  document.getElementById('playLabel').style.color='#00ff66';
+  const pb=document.getElementById('playBtn');
+  pb.style.borderColor='#00ff66';pb.style.background='rgba(0,255,102,0.08)';
+  if(waveAnimId){ cancelAnimationFrame(waveAnimId); waveAnimId = null; }
+}
+
+function rebuildIfPlaying(){
+  if(live && live.playing){ stopPlay(); setTimeout(startPlay, 250); }
+}
+
+document.getElementById('playBtn').addEventListener('click', () => {
+  if(live && live.playing) stopPlay(); else startPlay();
+});
+
+// ── Waveform display ────────────────────────────────────────────────
+function startWaveform(){
+  const wc = document.getElementById('waveCanvas');
+  const wctx = wc.getContext('2d');
+  const sc = document.getElementById('specCanvas');
+  const sctx = sc.getContext('2d');
+  const timeBuf = new Float32Array(analyser ? analyser.fftSize : 512);
+  const freqBuf = new Uint8Array(analyser ? analyser.frequencyBinCount : 256);
+  function draw(){
+    waveAnimId = requestAnimationFrame(draw);
+    if(!analyser) return;
+    // Waveform
+    analyser.getFloatTimeDomainData(timeBuf);
+    wctx.clearRect(0, 0, wc.width, wc.height);
+    wctx.strokeStyle = '#ffe000';
+    wctx.lineWidth = 1.5;
+    wctx.beginPath();
+    const wStep = wc.width / timeBuf.length;
+    for(let i = 0; i < timeBuf.length; i++){
+      const x = i * wStep;
+      const y = (1 - timeBuf[i]) * wc.height / 2;
+      i === 0 ? wctx.moveTo(x, y) : wctx.lineTo(x, y);
+    }
+    wctx.stroke();
+    // Spectrum
+    analyser.getByteFrequencyData(freqBuf);
+    sctx.clearRect(0, 0, sc.width, sc.height);
+    const bars = freqBuf.length;
+    const barW = sc.width / bars;
+    for(let i = 0; i < bars; i++){
+      const v = freqBuf[i] / 255;
+      const h = v * sc.height;
+      const hue = 180 - v * 180; // cyan -> red
+      sctx.fillStyle = `hsl(${hue},100%,${40+v*30}%)`;
+      sctx.fillRect(i * barW, sc.height - h, Math.max(1, barW - 0.5), h);
+    }
+  }
+  draw();
+}
+
+// ── Presets ──────────────────────────────────────────────────────────
+let presets = JSON.parse(localStorage.getItem('sfxPresets') || '[]');
+
+function renderPresets(){
+  // Preset dropdown
+  const dd = document.getElementById('presetDropdown');
+  dd.innerHTML = '<option value="">PRESETS (' + presets.length + ')</option>';
+  presets.forEach((p, i) => {
+    const opt = document.createElement('option');
+    opt.value = i; opt.textContent = p.name;
+    dd.appendChild(opt);
+  });
+  // JSON dropdown
+  const jd = document.getElementById('jsonDropdown');
+  const jsonStr = JSON.stringify(presets, null, 2);
+  jd.innerHTML = '<option value="">JSON (' + presets.length + ' presets)</option>';
+  const opt = document.createElement('option');
+  opt.value = 'json'; opt.textContent = jsonStr.substring(0, 80) + '...';
+  jd.appendChild(opt);
+  jd.dataset.fullJson = jsonStr;
+}
+
+function savePresets(){ localStorage.setItem('sfxPresets', JSON.stringify(presets)); }
+
+document.getElementById('saveBtn').addEventListener('click', () => {
+  const nameInput = document.getElementById('presetName');
+  const name = nameInput.value.trim();
+  if(!name){ nameInput.focus(); return; }
+  const params = getParams();
+  const idx = presets.findIndex(p => p.name === name);
+  const entry = { name, params, cables: JSON.parse(JSON.stringify(cables)), layout: getModPositions() };
+  if(idx >= 0) presets[idx] = entry; else presets.push(entry);
+  savePresets(); renderPresets();
+});
+
+renderPresets();
+
+// Preset dropdown: load on select
+document.getElementById('presetDropdown').addEventListener('change', e => {
+  const idx = parseInt(e.target.value);
+  if(isNaN(idx)) return;
+  const p = presets[idx];
+  if(!p) return;
+  setParams(p.params);
+  // Restore cables
+  if(p.cables){
+    pushUndo();
+    cables.length = 0;
+    p.cables.forEach(c => cables.push(c));
+    document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
+    cables.forEach(c => {
+      const fe = findJackEl(c.fromMod, c.fromIdx, 'output');
+      const te = findJackEl(c.toMod, c.toIdx, 'input');
+      if(fe) fe.classList.add('connected');
+      if(te) te.classList.add('connected');
+    });
+    drawAllCables();
+  }
+  // Restore layout
+  if(p.layout){
+    const mods = document.querySelectorAll('.module');
+    p.layout.forEach((pos, i) => {
+      if(mods[i]){ mods[i].style.left = pos.left; mods[i].style.top = pos.top; mods[i].style.width = pos.w; }
+    });
+    drawAllCables();
+  }
+  document.getElementById('presetName').value = p.name;
+  if(live && live.playing) rebuildIfPlaying();
+  e.target.value = '';
+});
+
+// Delete selected preset
+document.getElementById('delPresetBtn').addEventListener('click', () => {
+  const dd = document.getElementById('presetDropdown');
+  const idx = parseInt(dd.value);
+  if(isNaN(idx)) return;
+  presets.splice(idx, 1);
+  savePresets(); renderPresets();
+});
+
+// Copy JSON
+document.getElementById('copyJsonBtn').addEventListener('click', () => {
+  const jd = document.getElementById('jsonDropdown');
+  const json = jd.dataset.fullJson || JSON.stringify(presets, null, 2);
+  navigator.clipboard.writeText(json).then(() => {
+    const btn = document.getElementById('copyJsonBtn');
+    btn.textContent = 'COPIED'; setTimeout(() => { btn.textContent = 'COPY JSON'; }, 1200);
+  });
+});
+
+window.addEventListener('blur', stopPlay);
+
+// ── PATCH BAY: Jacks + Cables ───────────────────────────────────────
+const cables = []; // { fromMod, fromIdx, toMod, toIdx, color }
+let dragCable = null; // { fromJack, mx, my }
+const CABLE_COLORS = ['#ff69b4','#00ffcc','#ffe000','#ff4444','#44aaff','#aa44ff','#ff8800','#88ff44'];
+let cableColorIdx = 0;
+
+// Undo stack (5 levels) — saves cables + module positions
+const undoStack = [];
+function getModPositions(){
+  return Array.from(document.querySelectorAll('.module')).map(m => ({left:m.style.left, top:m.style.top, w:m.style.width}));
+}
+function pushUndo(){
+  undoStack.push({ cables: JSON.parse(JSON.stringify(cables)), positions: getModPositions() });
+  if(undoStack.length > 5) undoStack.shift();
+}
+function popUndo(){
+  if(!undoStack.length) return;
+  const prev = undoStack.pop();
+  // Restore cables
+  cables.length = 0;
+  prev.cables.forEach(c => cables.push(c));
+  document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
+  cables.forEach(c => {
+    const fe = findJackEl(c.fromMod, c.fromIdx, 'output');
+    const te = findJackEl(c.toMod, c.toIdx, 'input');
+    if(fe) fe.classList.add('connected');
+    if(te) te.classList.add('connected');
+  });
+  // Restore positions
+  const mods = document.querySelectorAll('.module');
+  prev.positions.forEach((p, i) => {
+    if(mods[i]){ mods[i].style.left = p.left; mods[i].style.top = p.top; mods[i].style.width = p.w; }
+  });
+  drawAllCables();
+  rebuildIfPlaying();
+}
+
+// Add jack rows to every module
+document.querySelectorAll('.module').forEach((mod, modIdx) => {
+  mod.dataset.modIdx = modIdx;
+  // Inputs — skip for generators
+  if(!mod.dataset.noInputs){
+    if(mod.dataset.noOutputs){
+      // OUTPUT module: place jacks inline above each IN knob-wrap
+      const knobWraps = mod.querySelectorAll('.knob-wrap');
+      let jackIdx = 0;
+      knobWraps.forEach(kw => {
+        const label = kw.querySelector('.knob-label');
+        if(label && label.textContent.startsWith('IN ') && jackIdx < 8){
+          const j = document.createElement('div');
+          j.className = 'jack input';
+          j.dataset.modIdx = modIdx;
+          j.dataset.jackIdx = jackIdx;
+          j.dataset.jackType = 'input';
+          j.title = `IN ${jackIdx+1}`;
+          j.style.cssText = 'width:10px;height:8px;margin:0 auto 2px;';
+          kw.insertBefore(j, kw.firstChild);
+          jackIdx++;
+        }
+      });
+    } else {
+      // Normal modules: left edge jack row
+      const inRow = document.createElement('div');
+      inRow.className = 'jack-row inputs';
+      for(let i=0;i<4;i++){
+        const j = document.createElement('div');
+        j.className = 'jack input';
+        j.dataset.modIdx = modIdx;
+        j.dataset.jackIdx = i;
+        j.dataset.jackType = 'input';
+        j.title = `IN ${i+1}`;
+        inRow.appendChild(j);
+      }
+      mod.appendChild(inRow);
+    }
+  }
+
+  // Outputs (right edge) — skip for output module
+  if(!mod.dataset.noOutputs){
+    const outRow = document.createElement('div');
+    outRow.className = 'jack-row outputs';
+    for(let i=0;i<4;i++){
+      const j = document.createElement('div');
+      j.className = 'jack output';
+      j.dataset.modIdx = modIdx;
+      j.dataset.jackIdx = i;
+      j.dataset.jackType = 'output';
+      j.title = `OUT ${i+1}`;
+      outRow.appendChild(j);
+    }
+    mod.appendChild(outRow);
+  }
+
+  // Add bypass (effects) or mute (generators) button — skip OUTPUT
+  if(!mod.classList.contains('out')){
+    const btn = document.createElement('div');
+    btn.className = 'bypass-btn';
+    btn.title = mod.classList.contains('gen') ? 'MUTE' : 'BYPASS';
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      mod.classList.toggle('bypassed');
+      btn.classList.toggle('active');
+      rebuildIfPlaying();
+    });
+    const title = mod.querySelector('.mod-title');
+    title.appendChild(btn);
+  }
+});
+
+// Cable canvas
+const cableCanvas = document.getElementById('cableCanvas');
+const cableCtx = cableCanvas.getContext('2d');
+function resizeCableCanvas(){
+  cableCanvas.width = window.innerWidth;
+  cableCanvas.height = window.innerHeight;
+}
+resizeCableCanvas();
+window.addEventListener('resize', resizeCableCanvas);
+
+function getJackCenter(jackEl){
+  const r = jackEl.getBoundingClientRect();
+  return { x: r.left + r.width/2, y: r.top + r.height/2 };
+}
+
+function findJackEl(modIdx, jackIdx, type){
+  return document.querySelector(`.jack[data-mod-idx="${modIdx}"][data-jack-idx="${jackIdx}"][data-jack-type="${type}"]`);
+}
+
+function drawCatenary(ctx, x1, y1, x2, y2, color){
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 3;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  // Sag proportional to horizontal distance
+  const dx = x2 - x1, dy = y2 - y1;
+  const dist = Math.sqrt(dx*dx + dy*dy);
+  const sag = Math.min(80, dist * 0.3 + 20);
+  const mx = (x1 + x2) / 2;
+  const my = (y1 + y2) / 2 + sag;
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(mx, my, x2, y2);
+  ctx.stroke();
+  // Glow
+  ctx.strokeStyle = color + '44';
+  ctx.lineWidth = 8;
+  ctx.beginPath();
+  ctx.moveTo(x1, y1);
+  ctx.quadraticCurveTo(mx, my, x2, y2);
+  ctx.stroke();
+}
+
+function drawAllCables(){
+  cableCtx.clearRect(0, 0, cableCanvas.width, cableCanvas.height);
+  cables.forEach(c => {
+    const fromEl = findJackEl(c.fromMod, c.fromIdx, 'output');
+    const toEl = findJackEl(c.toMod, c.toIdx, 'input');
+    if(!fromEl || !toEl) return;
+    const from = getJackCenter(fromEl);
+    const to = getJackCenter(toEl);
+    drawCatenary(cableCtx, from.x, from.y, to.x, to.y, c.color);
+  });
+  // Draw drag cable
+  if(dragCable){
+    const from = getJackCenter(dragCable.fromJack);
+    drawCatenary(cableCtx, from.x, from.y, dragCable.mx, dragCable.my, '#ffe000');
+  }
+}
+
+// Drag interaction
+document.addEventListener('mousedown', e => {
+  // Don't hijack knob drags or selects
+  if(e.target.closest('.knob-canvas') || e.target.closest('select') || e.target.closest('input') || e.target.closest('button')) return;
+
+  const jack = e.target.closest('.jack');
+  if(jack){
+    e.preventDefault();
+    if(jack.dataset.jackType === 'output'){
+      dragCable = { fromJack: jack, mx: e.clientX, my: e.clientY, startX: e.clientX, startY: e.clientY };
+      jack.classList.add('dragging');
+    } else {
+      // Clicked input — remove cable if connected
+      const modIdx = parseInt(jack.dataset.modIdx);
+      const jackIdx = parseInt(jack.dataset.jackIdx);
+      const idx = cables.findIndex(c => c.toMod === modIdx && c.toIdx === jackIdx);
+      if(idx >= 0){
+        pushUndo();
+        const c = cables[idx];
+        cables.splice(idx, 1);
+        const fromEl = findJackEl(c.fromMod, c.fromIdx, 'output');
+        if(fromEl && !cables.some(cc => cc.fromMod===c.fromMod && cc.fromIdx===c.fromIdx)) fromEl.classList.remove('connected');
+        jack.classList.remove('connected');
+        drawAllCables();
+        rebuildIfPlaying();
+      }
+    }
+    return;
+  }
+
+  // Click on module body (not jack, not knob) — start cable from next free output
+  const mod = e.target.closest('.module');
+  if(mod){
+    const modIdx = parseInt(mod.dataset.modIdx);
+    for(let i = 0; i < 4; i++){
+      if(!cables.some(c => c.fromMod === modIdx && c.fromIdx === i)){
+        const outJack = findJackEl(modIdx, i, 'output');
+        if(outJack){
+          e.preventDefault();
+          dragCable = { fromJack: outJack, mx: e.clientX, my: e.clientY, startX: e.clientX, startY: e.clientY };
+          outJack.classList.add('dragging');
+          break;
+        }
+      }
+    }
+  }
+});
+
+document.addEventListener('mousemove', e => {
+  if(!dragCable) return;
+  dragCable.mx = e.clientX;
+  dragCable.my = e.clientY;
+  drawAllCables();
+});
+
+document.addEventListener('mouseup', e => {
+  if(!dragCable) return;
+  dragCable.fromJack.classList.remove('dragging');
+
+  // Require minimum drag distance (prevent accidental self-patch on click)
+  const dx = e.clientX - dragCable.startX, dy = e.clientY - dragCable.startY;
+  if(Math.sqrt(dx*dx+dy*dy) < 10){ dragCable=null; drawAllCables(); return; }
+
+  // Check if released on a module (anywhere in the panel) or a specific input jack
+  const target = document.elementFromPoint(e.clientX, e.clientY);
+  const jack = target && target.closest('.jack.input');
+  const mod = target && target.closest('.module');
+
+  let toMod = -1, toIdx = -1;
+
+  if(jack){
+    // Dropped on a specific jack
+    toMod = parseInt(jack.dataset.modIdx);
+    toIdx = parseInt(jack.dataset.jackIdx);
+  } else if(mod){
+    // Dropped anywhere on a module — find next free input
+    toMod = parseInt(mod.dataset.modIdx);
+    for(let i = 0; i < 4; i++){
+      if(!cables.some(c => c.toMod === toMod && c.toIdx === i)){ toIdx = i; break; }
+    }
+  }
+
+  if(toMod >= 0 && toIdx >= 0){
+    const fromMod = parseInt(dragCable.fromJack.dataset.modIdx);
+    const fromIdx = parseInt(dragCable.fromJack.dataset.jackIdx);
+    if(!cables.some(c => c.toMod === toMod && c.toIdx === toIdx)){
+      pushUndo();
+      const color = CABLE_COLORS[cableColorIdx % CABLE_COLORS.length];
+      cableColorIdx++;
+      cables.push({ fromMod, fromIdx, toMod, toIdx, color });
+      dragCable.fromJack.classList.add('connected');
+      const toJackEl = findJackEl(toMod, toIdx, 'input');
+      if(toJackEl) toJackEl.classList.add('connected');
+      rebuildIfPlaying();
+    }
+  }
+  dragCable = null;
+  drawAllCables();
+});
+
+// Redraw on scroll/resize
+window.addEventListener('scroll', drawAllCables, true);
+window.addEventListener('resize', () => { resizeCableCanvas(); drawAllCables(); });
+
+// Right-click on cable to delete (by clicking near it)
+cableCanvas.style.pointerEvents = 'none'; // cables don't block interaction
+
+document.getElementById('undoBtn').addEventListener('click', popUndo);
+document.addEventListener('keydown', e => {
+  if((e.metaKey || e.ctrlKey) && e.key === 'z'){ e.preventDefault(); popUndo(); }
+});
+
+// Auto-patch: sources -> effect chain -> output
+document.getElementById('autoPatchBtn').addEventListener('click', () => {
+  pushUndo();
+  cables.length = 0;
+  document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
+  cableColorIdx = 0;
+
+  const byName = {};
+  MOD_NAMES.forEach((n, i) => { byName[n] = i; });
+
+  // Effect chain order
+  const effectChain = ['TREMOLO','RING MOD','DISTORTION','FILTER','PHASER','DELAY','DETUNE / CHORUS','ENVELOPE','OUTPUT'];
+  // Sources all feed into first effect
+  const sources = ['OSCILLATOR','SUB OCTAVE','SUB RUMBLE','NOISE GEN','FM OSC'];
+  const firstEffect = effectChain[0];
+  const firstIdx = byName[firstEffect];
+
+  function addCable(from, fromOut, to, toIn){
+    if(from === undefined || to === undefined) return;
+    const color = CABLE_COLORS[cableColorIdx % CABLE_COLORS.length];
+    cableColorIdx++;
+    cables.push({ fromMod: from, fromIdx: fromOut, toMod: to, toIdx: toIn, color });
+    const fe = findJackEl(from, fromOut, 'output');
+    const te = findJackEl(to, toIn, 'input');
+    if(fe) fe.classList.add('connected');
+    if(te) te.classList.add('connected');
+  }
+
+  // Wire sources to first effect (each on a different input)
+  sources.forEach((name, i) => {
+    if(byName[name] !== undefined && firstIdx !== undefined){
+      addCable(byName[name], 0, firstIdx, Math.min(i, 3));
+    }
+  });
+
+  // Chain effects in order
+  for(let i = 0; i < effectChain.length - 1; i++){
+    const from = byName[effectChain[i]];
+    const to = byName[effectChain[i + 1]];
+    if(from !== undefined && to !== undefined) addCable(from, 0, to, 0);
+  }
+
+  drawAllCables();
+  rebuildIfPlaying();
+});
+
+// Clear all cables
+document.getElementById('clearPatchBtn').addEventListener('click', () => {
+  pushUndo();
+  cables.length = 0;
+  cableColorIdx = 0;
+  document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
+  drawAllCables();
+  rebuildIfPlaying();
+});
+
+// ── DRAG + COLLAPSE ────────────────────────────────────────────────
+// After flex layout is computed, snapshot positions and switch to absolute
+// so modules become draggable while keeping the correct initial layout.
+requestAnimationFrame(() => {
+  const container = document.getElementById('moduleContainer');
+  const cr = container.getBoundingClientRect();
+  const mods = Array.from(document.querySelectorAll('.module'));
+
+  // Snapshot each module's flex-computed position
+  const rects = mods.map(m => m.getBoundingClientRect());
+
+  // Switch container to relative positioning context
+  container.style.position = 'relative';
+  // Calculate needed height from the bottom-most module
+  let maxBottom = 0;
+  rects.forEach(r => { const b = r.bottom - cr.top; if(b > maxBottom) maxBottom = b; });
+  container.style.minHeight = maxBottom + 'px';
+  container.style.display = 'block';
+
+  // Saved layout positions
+  // Left column: generators, left-aligned at 10px
+  // Middle column: effects group 1, left-aligned at 636px
+  // Right column: effects group 2, right-aligned to 1346px
+  // Vertical spacing: 44px between tops
+  const savedLayout = [
+    {left:"10px",  top:"186px", w:"348px"},  // 0  OSCILLATOR
+    {left:"10px",  top:"10px",  w:"142px"},  // 1  SUB OCTAVE
+    {left:"10px",  top:"54px",  w:"184px"},  // 2  SUB RUMBLE
+    {left:"10px",  top:"98px",  w:"184px"},  // 3  NOISE GEN
+    {left:"10px",  top:"142px", w:"184px"},  // 4  FM OSC
+    {left:"1162px",top:"54px",  w:"184px"},  // 5  TREMOLO
+    {left:"636px", top:"10px",  w:"184px"},  // 6  PITCH WOBBLE
+    {left:"636px", top:"54px",  w:"184px"},  // 7  RING MOD
+    {left:"1204px",top:"10px",  w:"142px"},  // 8  DISTORTION
+    {left:"636px", top:"98px",  w:"184px"},  // 9  FILTER
+    {left:"636px", top:"142px", w:"184px"},  // 10 DETUNE / CHORUS
+    {left:"1080px",top:"142px", w:"266px"},  // 11 PHASER
+    {left:"1080px",top:"98px",  w:"266px"},  // 12 DELAY
+    {left:"998px", top:"186px", w:"348px"},  // 13 ENVELOPE
+    {left:"100px", top:"280px", w:"1100px"}  // 14 OUTPUT
+  ];
+
+  // Selection state
+  const selected = new Set();
+  function clearSelection(){
+    selected.forEach(m => m.classList.remove('selected'));
+    selected.clear();
+  }
+  function selectMod(mod){
+    mod.classList.add('selected');
+    selected.add(mod);
+  }
+  function deselectMod(mod){
+    mod.classList.remove('selected');
+    selected.delete(mod);
+  }
+
+  // Place each module at saved position (or flex-computed fallback)
+  mods.forEach((mod, i) => {
+    mod.style.position = 'absolute';
+    if(savedLayout[i]){
+      mod.style.left = savedLayout[i].left;
+      mod.style.top = savedLayout[i].top;
+      mod.style.width = savedLayout[i].w;
+    } else {
+      mod.style.left = (rects[i].left - cr.left) + 'px';
+      mod.style.top = (rects[i].top - cr.top) + 'px';
+      mod.style.width = rects[i].width + 'px';
+    }
+    mod.style.zIndex = 2;
+
+    const title = mod.querySelector('.mod-title');
+    if(!title) return;
+    title.style.cursor = 'grab';
+    title.style.userSelect = 'none';
+
+    // Drag by title (moves all selected if this module is selected)
+    title.addEventListener('mousedown', e => {
+      if(e.target.tagName === 'SELECT') return;
+      e.preventDefault();
+      e.stopPropagation();
+
+      // Shift-click: toggle selection
+      if(e.shiftKey){
+        if(selected.has(mod)) deselectMod(mod);
+        else selectMod(mod);
+        return;
+      }
+
+      // If clicking an unselected module without shift, select only it
+      if(!selected.has(mod)){
+        clearSelection();
+        selectMod(mod);
+      }
+
+      // Save state for undo before moving
+      pushUndo();
+      // Gather drag group: all selected modules
+      const group = Array.from(selected);
+      const startPositions = group.map(m => ({
+        mod: m,
+        left: parseFloat(m.style.left),
+        top: parseFloat(m.style.top)
+      }));
+      const startX = e.clientX;
+      const startY = e.clientY;
+      group.forEach(m => { m.style.zIndex = 20; });
+      title.style.cursor = 'grabbing';
+
+      const onMove = e2 => {
+        const dx = e2.clientX - startX;
+        const dy = e2.clientY - startY;
+        startPositions.forEach(sp => {
+          sp.mod.style.left = (sp.left + dx) + 'px';
+          sp.mod.style.top = (sp.top + dy) + 'px';
+        });
+        drawAllCables();
+      };
+      const onUp = () => {
+        group.forEach(m => { m.style.zIndex = m.classList.contains('out') ? 2 : (m.querySelectorAll('.knob-row')[0]?.style.display === 'none' ? 2 : 10); });
+        title.style.cursor = 'grab';
+        document.removeEventListener('mousemove', onMove);
+        document.removeEventListener('mouseup', onUp);
+        drawAllCables();
+      };
+      document.addEventListener('mousemove', onMove);
+      document.addEventListener('mouseup', onUp);
+    });
+
+    // Double-click title to collapse/expand (skip OUTPUT module)
+    if(!mod.classList.contains('out')){
+      // Start collapsed
+      mod.querySelectorAll('.knob-row, .out-sel-row').forEach(k => { k.style.display = 'none'; });
+
+      title.addEventListener('dblclick', e => {
+        e.preventDefault();
+        const knobs = mod.querySelectorAll('.knob-row, .out-sel-row');
+        const isHidden = knobs[0] && knobs[0].style.display === 'none';
+        knobs.forEach(k => { k.style.display = isHidden ? '' : 'none'; });
+        mod.style.zIndex = isHidden ? 10 : 2;
+        setTimeout(drawAllCables, 50);
+      });
+    }
+  });
+
+  // Box select: drag on empty space in the container
+  const selectBox = document.getElementById('selectBox');
+  let boxDrag = null;
+
+  container.addEventListener('mousedown', e => {
+    // Only start box select on empty space (not on modules, jacks, knobs, buttons, etc.)
+    if(e.target.closest('.module') || e.target.closest('.jack') || e.target.closest('button') || e.target.closest('select') || e.target.closest('input')) return;
+    e.preventDefault();
+    const contR = container.getBoundingClientRect();
+    const sx = e.clientX - contR.left + container.scrollLeft;
+    const sy = e.clientY - contR.top + container.scrollTop;
+    boxDrag = { sx, sy };
+    selectBox.style.left = sx + 'px';
+    selectBox.style.top = sy + 'px';
+    selectBox.style.width = '0px';
+    selectBox.style.height = '0px';
+    selectBox.style.display = 'block';
+    if(!e.shiftKey) clearSelection();
+  });
+
+  document.addEventListener('mousemove', e => {
+    if(!boxDrag) return;
+    const contR = container.getBoundingClientRect();
+    const cx = e.clientX - contR.left + container.scrollLeft;
+    const cy = e.clientY - contR.top + container.scrollTop;
+    const x = Math.min(boxDrag.sx, cx);
+    const y = Math.min(boxDrag.sy, cy);
+    const w = Math.abs(cx - boxDrag.sx);
+    const h = Math.abs(cy - boxDrag.sy);
+    selectBox.style.left = x + 'px';
+    selectBox.style.top = y + 'px';
+    selectBox.style.width = w + 'px';
+    selectBox.style.height = h + 'px';
+
+    // Live highlight: select any module the box overlaps
+    mods.forEach(mod => {
+      const ml = parseFloat(mod.style.left);
+      const mt = parseFloat(mod.style.top);
+      const mr = ml + mod.offsetWidth;
+      const mb = mt + mod.offsetHeight;
+      // Rectangle overlap test
+      if(ml < x + w && mr > x && mt < y + h && mb > y){
+        selectMod(mod);
+      } else if(!e.shiftKey) {
+        deselectMod(mod);
+      }
+    });
+  });
+
+  document.addEventListener('mouseup', e => {
+    if(!boxDrag) return;
+    selectBox.style.display = 'none';
+    boxDrag = null;
+  });
+
+  // Click empty space without shift to deselect all
+  container.addEventListener('click', e => {
+    if(!e.target.closest('.module') && !e.shiftKey){
+      clearSelection();
+    }
+  });
+
+  drawAllCables();
+});
+
+</script>
+
+</body>
+</html>
