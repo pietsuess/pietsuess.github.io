@@ -119,11 +119,13 @@
   </div>
   <select id="jsonDropdown" style="background:#111;color:#88ffcc;border:1px solid #00ffcc44;font-family:inherit;font-size:8px;padding:5px 8px;cursor:pointer;max-width:300px;"><option value="">JSON</option></select>
   <button id="copyJsonBtn">COPY JSON</button>
+  <button id="importJsonBtn">IMPORT JSON</button>
   <button id="autoPatchBtn">AUTO PATCH</button>
   <select id="cableStyle" style="background:#111;color:#ffe000;border:1px solid #ffe00044;font-family:inherit;font-size:8px;padding:5px 6px;cursor:pointer;"><option value="bezier">BEZIER</option><option value="catenary">CATENARY</option><option value="straight">STRAIGHT</option><option value="step" selected>STEP</option><option value="arc">ARC</option></select>
   <button id="clearPatchBtn" style="border-color:#ff4444;color:#ff4444;">CLEAR</button>
   <button id="undoBtn">UNDO</button>
   <button id="fsBtn" onclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">FULLSCREEN</button>
+  <button id="blurMuteBtn" style="border-color:#00ffcc44;color:#00ffcc;font-size:8px;">BLUR: MUTE</button>
 </div>
 
 <canvas id="cableCanvas"></canvas>
@@ -1798,7 +1800,63 @@ document.getElementById('copyJsonBtn').addEventListener('click', () => {
   });
 });
 
-window.addEventListener('blur', stopPlay);
+// Import presets from JSON
+document.getElementById('importJsonBtn').addEventListener('click', () => {
+  const overlay = document.createElement('div');
+  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
+  const box = document.createElement('div');
+  box.style.cssText = 'background:#111;border:1px solid #00ffcc;padding:16px;width:500px;max-width:90vw;font-family:inherit;';
+  box.innerHTML = '<div style="color:#ffe000;font-size:10px;margin-bottom:8px;letter-spacing:1px;">PASTE PRESET JSON</div>';
+  const ta = document.createElement('textarea');
+  ta.style.cssText = 'width:100%;height:200px;background:#0a0a14;color:#00ffcc;border:1px solid #00ffcc33;font-family:inherit;font-size:9px;padding:8px;resize:vertical;';
+  ta.placeholder = 'Paste preset JSON array here...';
+  box.appendChild(ta);
+  const btnRow = document.createElement('div');
+  btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
+  const loadBtn = document.createElement('button');
+  loadBtn.style.cssText = 'padding:6px 16px;background:rgba(0,255,204,0.1);color:#00ffcc;border:1px solid #00ffcc;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;';
+  loadBtn.textContent = 'LOAD';
+  const mergeBtn = document.createElement('button');
+  mergeBtn.style.cssText = 'padding:6px 16px;background:rgba(255,224,0,0.1);color:#ffe000;border:1px solid #ffe000;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;';
+  mergeBtn.textContent = 'MERGE';
+  const cancelBtn = document.createElement('button');
+  cancelBtn.style.cssText = 'padding:6px 16px;background:rgba(255,68,68,0.1);color:#ff4444;border:1px solid #ff4444;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;margin-left:auto;';
+  cancelBtn.textContent = 'CANCEL';
+  btnRow.appendChild(loadBtn);
+  btnRow.appendChild(mergeBtn);
+  btnRow.appendChild(cancelBtn);
+  box.appendChild(btnRow);
+  overlay.appendChild(box);
+  document.body.appendChild(overlay);
+  ta.focus();
+  function doImport(replace){
+    try {
+      const data = JSON.parse(ta.value.trim());
+      if(!Array.isArray(data)) throw new Error('Not an array');
+      if(replace) presets.length = 0;
+      data.forEach(p => {
+        const idx = presets.findIndex(e => e.name === p.name);
+        if(idx >= 0) presets[idx] = p; else presets.push(p);
+      });
+      savePresets(); renderPresets();
+      overlay.remove();
+    } catch(e){ ta.style.borderColor = '#ff4444'; ta.placeholder = 'Invalid JSON: ' + e.message; }
+  }
+  loadBtn.addEventListener('click', () => doImport(true));
+  mergeBtn.addEventListener('click', () => doImport(false));
+  cancelBtn.addEventListener('click', () => overlay.remove());
+  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+});
+
+let blurMuteEnabled = true;
+window.addEventListener('blur', () => { if(blurMuteEnabled) stopPlay(); });
+document.getElementById('blurMuteBtn').addEventListener('click', () => {
+  blurMuteEnabled = !blurMuteEnabled;
+  const btn = document.getElementById('blurMuteBtn');
+  btn.textContent = blurMuteEnabled ? 'BLUR: MUTE' : 'BLUR: PLAY';
+  btn.style.color = blurMuteEnabled ? '#00ffcc' : '#ff6666';
+  btn.style.borderColor = blurMuteEnabled ? '#00ffcc44' : '#ff666644';
+});
 
 // Visualizer collapse toggle — shrinks the whole output module
 document.getElementById('vizToggle').addEventListener('click', () => {
