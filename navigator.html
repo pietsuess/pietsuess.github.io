@@ -1833,10 +1833,7 @@ const ZONE_PALETTE = {
 };
 
 // Content pop-ups preference — persisted in localStorage
-let _contentPopupsOn = (() => {
-  try { const v = localStorage.getItem('contentPopupsOn'); return v === null ? false : v === 'true'; }
-  catch(e) { return false; }
-})();
+let _contentPopupsOn = true;
 let _firstPopupShown = false;
 let _firstFuelPopupShown = false;
 let _fuelAnimId = null;
@@ -3058,6 +3055,8 @@ function _sendAnalytics(event, extra){
   if(_dp && _dp.style.display !== 'none') return;
   if(_geoData.isOwner) return;
   if(location.pathname.includes('/dev/')) return;
+  // Cull Keating, BC (owner home area — always Piet)
+  if(_geoData.city && _geoData.city.toLowerCase() === 'keating') return;
   // Skip heartbeat if nothing changed since last one
   if(event === 'heartbeat'){
     const p = _analyticsPayload(event, extra);
@@ -6025,6 +6024,7 @@ function updateBossHP(){
     // Show HP bar on first proximity — stays visible until boss dies or exit secret level
     if(dist < 800 && !state._bossHPSeen){
       state._bossHPSeen = true;
+      _sendAnalytics('arrived_at_boss', { bossType: boss === state.secretBoss ? 'secret' : 'main' });
       // Hide toggle hint arrows — boss fight takes priority
       ['wave-unlock-hint','x2-unlock-hint'].forEach(id=>{
         const el=document.getElementById(id); if(el) el.style.display='none';
@@ -14713,6 +14713,7 @@ function enterSecretLevel(){
   if(state._bossInMainWorld) return;
   state.inSecretLevel = true;
   state.paused = false;
+  _sendAnalytics('black_hole_transit');
   // Force-close menu and backdrop so they can't block the wave toggle
   if(state.menuOpen){
     state.menuOpen=false;
