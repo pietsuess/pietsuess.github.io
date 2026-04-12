@@ -47,9 +47,23 @@
   .bypass-btn.active { border-color:#ff4444; background:#ff444444; }
   .module.bypassed { opacity:0.35; }
   .module.bypassed .mod-title { text-decoration:line-through; }
+  .module.through { min-width:20px !important; width:20px; height:20px; padding:0 !important; border:1px solid #00ffcc55; background:#00ffcc22; cursor:grab; }
+  .module.through .mod-title { display:none; }
+  .module.through .jack-row { display:none; }
+  .module.through .bypass-btn { display:none; }
+  .module.through .orient-btn { display:none; }
   .module.gen .mod-title { color:#ff69b4; }
   .module.fx .mod-title { color:#00ffcc; }
   .module.out .mod-title { color:#ffe000; }
+  .module.pat { border-color:#aa66ff44; background:rgba(25,10,40,0.6); }
+  .module.pat .mod-title { color:#aa66ff; }
+  .module.mix { border-color:#ff994444; background:rgba(40,20,10,0.6); }
+  .module.mix .mod-title { color:#ff9944; }
+  .pat-grid { display:grid; grid-template-columns:repeat(4,1fr); gap:2px; width:68px; }
+  .pat-step { width:15px; height:15px; border:1px solid #aa66ff55; background:#aa66ff11; cursor:pointer; border-radius:2px; }
+  .pat-step.on { background:#aa66ff; border-color:#aa66ff; }
+  .pat-step:hover { border-color:#aa66ff; }
+  .pat-step.current { box-shadow:0 0 6px #ffe000; border-color:#ffe000; }
   /* Jacks — left edge (inputs) and right edge (outputs) */
   .jack-row { display:flex; flex-direction:column; position:absolute; top:0; bottom:0; justify-content:space-around; z-index:10; }
   .jack-row.inputs { left:-9px; }
@@ -117,15 +131,63 @@
     <button id="presetToggle" style="background:rgba(255,105,180,0.08);color:#ffe000;border:1px solid #ff69b488;font-family:inherit;font-size:9px;padding:5px 12px;cursor:pointer;letter-spacing:1px;">PRESETS</button>
     <div id="presetList" style="display:none;position:absolute;top:100%;left:0;background:#111;border:1px solid #ff69b488;min-width:200px;max-height:300px;overflow-y:auto;z-index:100;"></div>
   </div>
-  <select id="jsonDropdown" style="background:#111;color:#88ffcc;border:1px solid #00ffcc44;font-family:inherit;font-size:8px;padding:5px 8px;cursor:pointer;max-width:300px;"><option value="">JSON</option></select>
-  <button id="copyJsonBtn">COPY JSON</button>
-  <button id="importJsonBtn">IMPORT JSON</button>
+  <button id="exportFileBtn">EXPORT</button>
+  <button id="importFileBtn">IMPORT</button>
   <button id="autoPatchBtn">AUTO PATCH</button>
   <select id="cableStyle" style="background:#111;color:#ffe000;border:1px solid #ffe00044;font-family:inherit;font-size:8px;padding:5px 6px;cursor:pointer;"><option value="bezier">BEZIER</option><option value="catenary">CATENARY</option><option value="straight">STRAIGHT</option><option value="step" selected>STEP</option><option value="arc">ARC</option></select>
   <button id="clearPatchBtn" style="border-color:#ff4444;color:#ff4444;">CLEAR</button>
   <button id="undoBtn">UNDO</button>
   <button id="fsBtn" onclick="document.fullscreenElement?document.exitFullscreen():document.documentElement.requestFullscreen()">FULLSCREEN</button>
   <button id="blurMuteBtn" style="border-color:#00ffcc44;color:#00ffcc;font-size:8px;">BLUR: MUTE</button>
+  <button id="helpBtn" style="border-color:#ffe00044;color:#ffe000;font-size:8px;">?</button>
+</div>
+<div id="helpOverlay" style="display:none;position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.85);z-index:10000;overflow-y:auto;padding:40px;font-family:inherit;color:#ccc;font-size:11px;letter-spacing:0.5px;line-height:1.6;">
+  <div style="max-width:700px;margin:0 auto;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:20px;">
+      <span style="color:#ffe000;font-size:14px;letter-spacing:2px;">CONTROLS</span>
+      <span id="helpClose" style="color:#ff4444;cursor:pointer;font-size:18px;">X</span>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:20px;">
+      <div>
+        <div style="color:#ff69b4;margin-bottom:6px;letter-spacing:1px;">MODULES</div>
+        <div>Drag title bar to move</div>
+        <div>Double-click title to expand/collapse knobs</div>
+        <div>Click module to bring to front</div>
+        <div>Shift-click to multi-select, drag to move group</div>
+        <div>Drag empty space to box-select</div>
+        <div style="color:#00ffcc;margin:10px 0 6px;letter-spacing:1px;">CABLES</div>
+        <div>Drag from output jack to start cable</div>
+        <div>Drop on module or input jack to connect</div>
+        <div>Click input jack to disconnect</div>
+        <div>Cable style selector in top bar</div>
+        <div style="color:#ff9944;margin:10px 0 6px;letter-spacing:1px;">OUTPUT SELECTOR (1 2 3 4)</div>
+        <div>Each module has 4 independent outputs</div>
+        <div>Click 1/2/3/4 to switch which output's knobs you edit</div>
+        <div>Output 1 mixes all inputs, 2-4 match their input</div>
+        <div>Drag from specific output jacks on right edge</div>
+      </div>
+      <div>
+        <div style="color:#00ffcc;margin-bottom:6px;letter-spacing:1px;">THROUGH NODES</div>
+        <div>Drag onto a cable to insert inline</div>
+        <div>Alt+drag to start cable from output</div>
+        <div>Ctrl/Cmd+click to pop off (reconnects cable)</div>
+        <div>Double-click to toggle horizontal/vertical</div>
+        <div style="color:#aa66ff;margin:10px 0 6px;letter-spacing:1px;">PATTERN BOARDS</div>
+        <div>4x4 grid = 16-step sequencer</div>
+        <div>Click squares to toggle steps on/off</div>
+        <div>Each output (1/2/3/4) has its own pattern + BPM</div>
+        <div>As effect: Generator > Pattern > Mix (gates audio)</div>
+        <div>As trigger: Pattern out > Generator in (triggers hits)</div>
+        <div>Set generator RATE to OFF when using pattern trigger</div>
+        <div style="color:#ffe000;margin:10px 0 6px;letter-spacing:1px;">KNOBS</div>
+        <div>Drag up/down to adjust value</div>
+        <div>Click yellow number to type exact value</div>
+        <div style="color:#ffe000;margin:10px 0 6px;letter-spacing:1px;">PLAYBACK</div>
+        <div>Spacebar or PLAY button to toggle play/stop</div>
+        <div>BLUR: MUTE stops playback when tab loses focus</div>
+      </div>
+    </div>
+  </div>
 </div>
 
 <canvas id="cableCanvas"></canvas>
@@ -134,7 +196,7 @@
     <div id="selectBox"></div>
 
     <!-- GENERATORS (pink) -->
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title" style="display:flex;align-items:center;gap:8px;">OSCILLATOR <select id="waveform" style="margin-left:auto;"><option value="triangle">TRI</option><option value="sine">SIN</option><option value="square">SQR</option><option value="sawtooth">SAW</option></select></div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="pitch" width="72" height="72"></canvas><div class="knob-val" id="pitchV">48</div><div class="knob-label">PITCH Hz</div></div>
@@ -144,7 +206,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title" style="display:flex;align-items:center;gap:8px;">SUB OCTAVE <select id="subOct" style="margin-left:auto;"><option value="0.5">-1 OCT</option><option value="0.25">-2 OCT</option><option value="0.125">-3 OCT</option><option value="2">+1 OCT</option><option value="4">+2 OCT</option></select></div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="subFreq" width="72" height="72"></canvas><div class="knob-val" id="subFreqV">24</div><div class="knob-label">FREQ Hz</div></div>
@@ -152,7 +214,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">SUB RUMBLE</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="rumFreq" width="72" height="72"></canvas><div class="knob-val" id="rumFreqV">28</div><div class="knob-label">FREQ Hz</div></div>
@@ -160,7 +222,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title" style="display:flex;align-items:center;gap:8px;">NOISE GEN <select id="noiseType" style="margin-left:auto;"><option value="white">WHT</option><option value="pink">PNK</option><option value="brown">BRN</option></select></div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="noiseGain" width="72" height="72"></canvas><div class="knob-val" id="noiseGainV">0.00</div><div class="knob-label">GAIN</div></div>
@@ -168,7 +230,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">FM OSC</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="fmFreq" width="72" height="72"></canvas><div class="knob-val" id="fmFreqV">0</div><div class="knob-label">FREQ Hz</div></div>
@@ -176,7 +238,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title" style="display:flex;align-items:center;gap:8px;">PWM OSC <select id="pwmWave" style="margin-left:auto;"><option value="square">SQR</option><option value="sawtooth">SAW</option></select></div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="pwmFreq" width="72" height="72"></canvas><div class="knob-val" id="pwmFreqV">80</div><div class="knob-label">FREQ Hz</div></div>
@@ -185,7 +247,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">IMPACT</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="impFreq" width="72" height="72"></canvas><div class="knob-val" id="impFreqV">200</div><div class="knob-label">FREQ Hz</div></div>
@@ -196,7 +258,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">CRACKLE</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="crkDensity" width="72" height="72"></canvas><div class="knob-val" id="crkDensityV">10</div><div class="knob-label">DENSITY</div></div>
@@ -205,7 +267,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">METALLIC</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="metFreq" width="72" height="72"></canvas><div class="knob-val" id="metFreqV">800</div><div class="knob-label">FREQ Hz</div></div>
@@ -216,7 +278,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title" style="display:flex;align-items:center;gap:8px;">FORMANT <select id="formVowel" style="margin-left:auto;"><option value="a">A</option><option value="e">E</option><option value="i">I</option><option value="o">O</option><option value="u">U</option></select></div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="formFreq" width="72" height="72"></canvas><div class="knob-val" id="formFreqV">120</div><div class="knob-label">FREQ Hz</div></div>
@@ -224,7 +286,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">DRONE</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="drnFreq" width="72" height="72"></canvas><div class="knob-val" id="drnFreqV">60</div><div class="knob-label">FREQ Hz</div></div>
@@ -234,7 +296,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">WIND</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="wndCut" width="72" height="72"></canvas><div class="knob-val" id="wndCutV">1000</div><div class="knob-label">FREQ Hz</div></div>
@@ -244,7 +306,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">PLUCK</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="plkFreq" width="72" height="72"></canvas><div class="knob-val" id="plkFreqV">440</div><div class="knob-label">FREQ Hz</div></div>
@@ -255,7 +317,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">BELL</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="belFreq" width="72" height="72"></canvas><div class="knob-val" id="belFreqV">800</div><div class="knob-label">FREQ Hz</div></div>
@@ -265,7 +327,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">MALLET</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="malFreq" width="72" height="72"></canvas><div class="knob-val" id="malFreqV">520</div><div class="knob-label">FREQ Hz</div></div>
@@ -276,7 +338,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">SWEEP</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="swpFrom" width="72" height="72"></canvas><div class="knob-val" id="swpFromV">200</div><div class="knob-label">FROM Hz</div></div>
@@ -287,7 +349,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">ARPEGGIO</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="arpRoot" width="72" height="72"></canvas><div class="knob-val" id="arpRootV">220</div><div class="knob-label">ROOT Hz</div></div>
@@ -297,7 +359,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">SHIMMER</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="shmFreq" width="72" height="72"></canvas><div class="knob-val" id="shmFreqV">300</div><div class="knob-label">FREQ Hz</div></div>
@@ -307,7 +369,7 @@
       </div>
     </div>
 
-    <div class="module gen" data-no-inputs="true">
+    <div class="module gen">
       <div class="mod-title">BOW</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="bowFreq" width="72" height="72"></canvas><div class="knob-val" id="bowFreqV">220</div><div class="knob-label">FREQ Hz</div></div>
@@ -457,7 +519,7 @@
       </div>
     </div>
 
-    <div class="module fx">
+    <div class="module fx mix">
       <div class="mod-title">MIX 1</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="mixLevel" width="72" height="72"></canvas><div class="knob-val" id="mixLevelV">1.00</div><div class="knob-label">LEVEL</div></div>
@@ -465,7 +527,7 @@
       </div>
     </div>
 
-    <div class="module fx">
+    <div class="module fx mix">
       <div class="mod-title">MIX 2</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix2Level" width="72" height="72"></canvas><div class="knob-val" id="mix2LevelV">1.00</div><div class="knob-label">LEVEL</div></div>
@@ -473,7 +535,7 @@
       </div>
     </div>
 
-    <div class="module fx">
+    <div class="module fx mix">
       <div class="mod-title">MIX 3</div>
       <div class="knob-row">
         <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix3Level" width="72" height="72"></canvas><div class="knob-val" id="mix3LevelV">1.00</div><div class="knob-label">LEVEL</div></div>
@@ -481,30 +543,87 @@
       </div>
     </div>
 
-    <!-- OUTPUT (yellow) — full width bottom row -->
+    <div class="module fx through">
+      <div class="mod-title">T1</div>
+    </div>
+
+    <div class="module fx through">
+      <div class="mod-title">T2</div>
+    </div>
+
+    <div class="module fx through">
+      <div class="mod-title">T3</div>
+    </div>
+
+    <div class="module fx through">
+      <div class="mod-title">T4</div>
+    </div>
+
+    <div class="module fx mix">
+      <div class="mod-title">MIX 4</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix4Level" width="72" height="72"></canvas><div class="knob-val" id="mix4LevelV">1.00</div><div class="knob-label">LEVEL</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix4Amp" width="72" height="72"></canvas><div class="knob-val" id="mix4AmpV">1.00</div><div class="knob-label">AMP</div></div>
+      </div>
+    </div>
+
+    <div class="module fx mix">
+      <div class="mod-title">MIX 5</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix5Level" width="72" height="72"></canvas><div class="knob-val" id="mix5LevelV">1.00</div><div class="knob-label">LEVEL</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="mix5Amp" width="72" height="72"></canvas><div class="knob-val" id="mix5AmpV">1.00</div><div class="knob-label">AMP</div></div>
+      </div>
+    </div>
+
+    <div class="module fx pat">
+      <div class="mod-title">PATTERN 1</div>
+      <div class="knob-row">
+        <div class="pat-grid" id="patGrid1"></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="pat1Bpm" width="72" height="72"></canvas><div class="knob-val" id="pat1BpmV">120</div><div class="knob-label">BPM</div></div>
+      </div>
+    </div>
+
+    <div class="module fx pat">
+      <div class="mod-title">PATTERN 2</div>
+      <div class="knob-row">
+        <div class="pat-grid" id="patGrid2"></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="pat2Bpm" width="72" height="72"></canvas><div class="knob-val" id="pat2BpmV">120</div><div class="knob-label">BPM</div></div>
+      </div>
+    </div>
+
+    <div class="module fx pat">
+      <div class="mod-title">PATTERN 3</div>
+      <div class="knob-row">
+        <div class="pat-grid" id="patGrid3"></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="pat3Bpm" width="72" height="72"></canvas><div class="knob-val" id="pat3BpmV">120</div><div class="knob-label">BPM</div></div>
+      </div>
+    </div>
+
+    <!-- INPUT MIX (yellow) — 8 inputs, 1 output -->
+    <div class="module out" style="display:flex;flex-direction:column;gap:0;align-items:stretch;">
+      <div class="mod-title" style="height:6px;margin-bottom:0;cursor:grab;font-size:0;overflow:hidden;">INPUT MIX</div>
+      <div class="knob-row">
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl0" width="72" height="72"></canvas><div class="knob-val" id="inLvl0V">1.00</div><div class="knob-label">IN 1</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl1" width="72" height="72"></canvas><div class="knob-val" id="inLvl1V">1.00</div><div class="knob-label">IN 2</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl2" width="72" height="72"></canvas><div class="knob-val" id="inLvl2V">1.00</div><div class="knob-label">IN 3</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl3" width="72" height="72"></canvas><div class="knob-val" id="inLvl3V">1.00</div><div class="knob-label">IN 4</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl4" width="72" height="72"></canvas><div class="knob-val" id="inLvl4V">1.00</div><div class="knob-label">IN 5</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl5" width="72" height="72"></canvas><div class="knob-val" id="inLvl5V">1.00</div><div class="knob-label">IN 6</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl6" width="72" height="72"></canvas><div class="knob-val" id="inLvl6V">1.00</div><div class="knob-label">IN 7</div></div>
+        <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl7" width="72" height="72"></canvas><div class="knob-val" id="inLvl7V">1.00</div><div class="knob-label">IN 8</div></div>
+      </div>
+    </div>
+
+    <!-- MASTER (yellow) — 1 input, final to speakers -->
     <div class="module out" data-no-outputs="true" style="flex:1 1 100%;display:flex;flex-direction:column;gap:0;align-items:stretch;">
-      <!-- Grab bar for dragging -->
       <div class="mod-title" style="height:10px;margin-bottom:0;cursor:grab;background:linear-gradient(180deg,rgba(255,224,0,0.06) 0%,transparent 100%);"></div>
       <div style="display:flex;gap:0;align-items:stretch;flex:1;">
-      <!-- PLAY button — attached left side -->
       <div id="playBtn" style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;width:60px;cursor:pointer;background:rgba(0,255,102,0.06);border-right:1px solid #ffe00033;user-select:none;font-family:inherit;font-size:9px;letter-spacing:2px;gap:6px;" title="Play / Stop">
         <svg id="playIcon" width="24" height="24" viewBox="0 0 32 32"><polygon points="8,4 28,16 8,28" fill="#00ff66"/></svg>
         <svg id="stopIcon" width="24" height="24" viewBox="0 0 32 32" style="display:none;"><rect x="6" y="6" width="20" height="20" rx="2" fill="#ff4444"/></svg>
         <span id="playLabel" style="color:#00ff66;font-size:8px;">PLAY</span>
       </div>
-      <!-- Main output area -->
       <div style="flex:1;display:flex;gap:12px;align-items:center;padding:0 10px;">
-        <div class="knob-row" style="flex:1;">
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl0" width="72" height="72"></canvas><div class="knob-val" id="inLvl0V">1.00</div><div class="knob-label">IN 1</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl1" width="72" height="72"></canvas><div class="knob-val" id="inLvl1V">1.00</div><div class="knob-label">IN 2</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl2" width="72" height="72"></canvas><div class="knob-val" id="inLvl2V">1.00</div><div class="knob-label">IN 3</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl3" width="72" height="72"></canvas><div class="knob-val" id="inLvl3V">1.00</div><div class="knob-label">IN 4</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl4" width="72" height="72"></canvas><div class="knob-val" id="inLvl4V">1.00</div><div class="knob-label">IN 5</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl5" width="72" height="72"></canvas><div class="knob-val" id="inLvl5V">1.00</div><div class="knob-label">IN 6</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl6" width="72" height="72"></canvas><div class="knob-val" id="inLvl6V">1.00</div><div class="knob-label">IN 7</div></div>
-          <div class="knob-wrap"><canvas class="knob-canvas" data-id="inLvl7" width="72" height="72"></canvas><div class="knob-val" id="inLvl7V">1.00</div><div class="knob-label">IN 8</div></div>
-        </div>
-        <!-- Waveform + Spectrum with collapse arrow -->
         <div style="flex:0 0 auto;display:flex;align-items:center;">
           <div id="vizToggle" style="cursor:pointer;color:#ffe00066;font-size:14px;padding:0 4px;user-select:none;" title="Toggle visualizers">&#9654;</div>
         </div>
@@ -514,13 +633,12 @@
           <div style="color:#ffe00088;font-size:8px;letter-spacing:1px;">SPECTRUM</div>
           <canvas id="specCanvas" width="300" height="45" style="width:100%;height:45px;border:1px solid #ffe00033;"></canvas>
         </div>
-        <!-- MASTER on far right with OUTPUT title above -->
         <div style="flex:0 0 auto;display:flex;flex-direction:column;align-items:center;justify-content:center;border-left:1px solid #ffe00033;padding-left:12px;">
-          <div class="mod-title" style="margin-bottom:2px;">OUTPUT</div>
+          <div class="mod-title" style="margin-bottom:2px;">MASTER</div>
           <div class="knob-wrap"><canvas class="knob-canvas" data-id="masterGain" width="72" height="72"></canvas><div class="knob-val" id="masterGainV">0.60</div><div class="knob-label">MASTER</div></div>
         </div>
       </div>
-      </div><!-- close inner flex row -->
+      </div>
     </div>
 
   </div>
@@ -568,7 +686,7 @@ const KNOB_DEFS = {
   impFreq:    { min:40,   max:2000, step:5,    val:200,   fmt:v=>v.toString() },
   impSweep:   { min:0,    max:1,    step:0.01, val:0.8,   fmt:v=>v.toFixed(2) },
   impDecay:   { min:0.02, max:2,    step:0.01, val:0.3,   fmt:v=>v.toFixed(2) },
-  impRate:    { min:0.2,  max:20,   step:0.1,  val:2.0,   fmt:v=>v.toFixed(1) },
+  impRate:    { min:0,    max:20,   step:0.1,  val:2.0,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   impGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // CRACKLE
   crkDensity: { min:1,    max:100,  step:1,    val:10,    fmt:v=>v.toString() },
@@ -578,7 +696,7 @@ const KNOB_DEFS = {
   metFreq:    { min:100,  max:5000, step:10,   val:800,   fmt:v=>v.toString() },
   metInharm:  { min:1.0,  max:3.0,  step:0.01, val:1.41,  fmt:v=>v.toFixed(2) },
   metDecay:   { min:0.05, max:3,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
-  metRate:    { min:0.2,  max:10,   step:0.1,  val:1.0,   fmt:v=>v.toFixed(1) },
+  metRate:    { min:0,    max:10,   step:0.1,  val:1.0,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   metGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // FORMANT
   formFreq:   { min:40,   max:500,  step:1,    val:120,   fmt:v=>v.toString() },
@@ -636,29 +754,29 @@ const KNOB_DEFS = {
   plkFreq:    { min:60,   max:2000, step:1,    val:440,   fmt:v=>v.toString() },
   plkDecay:   { min:0.1,  max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
   plkBright:  { min:0,    max:1,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
-  plkRate:    { min:0.2,  max:20,   step:0.1,  val:1.0,   fmt:v=>v.toFixed(1) },
+  plkRate:    { min:0,    max:20,   step:0.1,  val:1.0,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   plkGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // BELL
   belFreq:    { min:100,  max:4000, step:1,    val:800,   fmt:v=>v.toString() },
   belDecay:   { min:0.2,  max:8,    step:0.01, val:2.0,   fmt:v=>v.toFixed(2) },
-  belRate:    { min:0.1,  max:10,   step:0.1,  val:0.5,   fmt:v=>v.toFixed(1) },
+  belRate:    { min:0,    max:10,   step:0.1,  val:0.5,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   belGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // MALLET
   malFreq:    { min:60,   max:3000, step:1,    val:520,   fmt:v=>v.toString() },
   malHard:    { min:0,    max:1,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
   malDecay:   { min:0.05, max:3,    step:0.01, val:0.8,   fmt:v=>v.toFixed(2) },
-  malRate:    { min:0.2,  max:20,   step:0.1,  val:1.0,   fmt:v=>v.toFixed(1) },
+  malRate:    { min:0,    max:20,   step:0.1,  val:1.0,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   malGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // SWEEP
   swpFrom:    { min:20,   max:4000, step:1,    val:200,   fmt:v=>v.toString() },
   swpTo:      { min:20,   max:8000, step:1,    val:2000,  fmt:v=>v.toString() },
   swpTime:    { min:0.1,  max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
-  swpRate:    { min:0.1,  max:10,   step:0.1,  val:0.5,   fmt:v=>v.toFixed(1) },
+  swpRate:    { min:0,    max:10,   step:0.1,  val:0.5,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   swpGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // ARPEGGIO
   arpRoot:    { min:40,   max:2000, step:1,    val:220,   fmt:v=>v.toString() },
   arpSteps:   { min:2,    max:8,    step:1,    val:4,     fmt:v=>v.toString() },
-  arpRate:    { min:0.5,  max:20,   step:0.1,  val:4.0,   fmt:v=>v.toFixed(1) },
+  arpRate:    { min:0,    max:20,   step:0.1,  val:4.0,   fmt:v=>v===0?'OFF':v.toFixed(1) },
   arpGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
   // SHIMMER
   shmFreq:    { min:40,   max:2000, step:1,    val:300,   fmt:v=>v.toString() },
@@ -670,6 +788,10 @@ const KNOB_DEFS = {
   bowPress:   { min:0,    max:1,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
   bowBright:  { min:0,    max:1,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
   bowGain:    { min:0,    max:0.5,  step:0.01, val:0,     fmt:v=>v.toFixed(2) },
+  // PATTERN
+  pat1Bpm:    { min:30,   max:300,  step:1,    val:120,   fmt:v=>v.toString() },
+  pat2Bpm:    { min:30,   max:300,  step:1,    val:120,   fmt:v=>v.toString() },
+  pat3Bpm:    { min:30,   max:300,  step:1,    val:120,   fmt:v=>v.toString() },
   // MIX
   mixBlend:   { min:0,    max:1,    step:0.01, val:0.5,   fmt:v=>v.toFixed(2) },
   mixLevel:   { min:0,    max:2,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
@@ -678,6 +800,10 @@ const KNOB_DEFS = {
   mix2Amp:    { min:0,    max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
   mix3Level:  { min:0,    max:2,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
   mix3Amp:    { min:0,    max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
+  mix4Level:  { min:0,    max:2,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
+  mix4Amp:    { min:0,    max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
+  mix5Level:  { min:0,    max:2,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
+  mix5Amp:    { min:0,    max:5,    step:0.01, val:1.0,   fmt:v=>v.toFixed(2) },
   masterGain: { min:0,    max:1,    step:0.01, val:0.6,   fmt:v=>v.toFixed(2) },
   inLvl0: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
   inLvl1: { min:0, max:1, step:0.01, val:1.0, fmt:v=>v.toFixed(2) },
@@ -713,8 +839,8 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
   }
   modOutputState.push(outputs);
 
-  // Add output selector buttons (skip OUTPUT module)
-  if(!mod.dataset.noOutputs){
+  // Add output selector buttons (skip OUTPUT, THROUGH, and OUT-class modules)
+  if(!mod.dataset.noOutputs && !mod.classList.contains('through') && !mod.classList.contains('out')){
     const row = document.createElement('div');
     row.className = 'out-sel-row';
     for(let o = 0; o < 4; o++){
@@ -1052,10 +1178,73 @@ document.querySelectorAll('.module').forEach(mod => {
   MOD_NAMES.push(name);
 });
 
+// Pattern grids: state + UI
+const patternStates = {}; // { 'patGrid1': [0,0,0,0, 0,0,0,0, 0,0,0,0, 0,0,0,0] }
+document.querySelectorAll('.pat-grid').forEach(grid => {
+  const id = grid.id;
+  // 4 outputs, each with 16 steps = 64 steps total
+  patternStates[id] = [
+    new Array(16).fill(0),
+    new Array(16).fill(0),
+    new Array(16).fill(0),
+    new Array(16).fill(0)
+  ];
+  grid.dataset.activeOut = '0';
+  for(let i = 0; i < 16; i++){
+    const btn = document.createElement('div');
+    btn.className = 'pat-step';
+    btn.dataset.step = i;
+    btn.addEventListener('click', e => {
+      e.stopPropagation();
+      const out = parseInt(grid.dataset.activeOut) || 0;
+      patternStates[id][out][i] = patternStates[id][out][i] ? 0 : 1;
+      btn.classList.toggle('on', !!patternStates[id][out][i]);
+      rebuildIfPlaying();
+    });
+    grid.appendChild(btn);
+  }
+  // Hook into output selector to swap displayed pattern
+  const mod = grid.closest('.module');
+  if(mod){
+    const observer = new MutationObserver(() => {
+      const activeBtn = mod.querySelector('.out-sel-btn.active');
+      if(!activeBtn) return;
+      const out = parseInt(activeBtn.dataset.outIdx) || 0;
+      grid.dataset.activeOut = out;
+      const steps = grid.querySelectorAll('.pat-step');
+      steps.forEach((s, i) => s.classList.toggle('on', !!patternStates[id][out][i]));
+    });
+    observer.observe(mod, { subtree: true, attributes: true, attributeFilter: ['class'] });
+  }
+});
+
+let patternIntervals = []; // cleared on stop
 let audioModules = []; // built per play session
 
+// Build trigger times: either from pattern steps or from RATE knob
+// Returns array of seconds from now, or null if no triggers (continuous sound)
+function getTriggerTimes(rate, patternInfo, duration){
+  if(patternInfo){
+    // Pattern-driven triggers
+    const { pattern, stepDur } = patternInfo;
+    const times = [];
+    const loopDur = stepDur * 16;
+    for(let t = 0; t < duration; t += loopDur){
+      for(let s = 0; s < 16; s++){
+        if(pattern[s]) times.push(t + s * stepDur);
+      }
+    }
+    return times.length ? times : null;
+  }
+  if(rate <= 0) return null; // rate off = no triggers
+  const interval = 1 / Math.max(0.2, rate);
+  const times = [];
+  for(let t = 0; t < duration; t += interval) times.push(t);
+  return times;
+}
+
 // Build one processing chain for a module, connecting to a single outGain node
-function buildChain(name, p, inGain, outGain){
+function buildChain(name, p, inGain, outGain, triggerTimes){
   const sources = [];
   // Limiter for feedback safety
   const limiter = audioCtx.createDynamicsCompressor();
@@ -1167,8 +1356,8 @@ function buildChain(name, p, inGain, outGain){
     osc.connect(eg);eg.connect(outGain);
     ns.connect(nf);nf.connect(ng);ng.connect(outGain);
     const startF=p.impFreq;const endF=Math.max(20,startF*(1-p.impSweep)+20*p.impSweep);
-    const interval=1/Math.max(0.2,p.impRate);const now=audioCtx.currentTime;
-    for(let t=0;t<60;t+=interval){
+    const times=triggerTimes||getTriggerTimes(p.impRate,null,600);const now=audioCtx.currentTime;
+    if(times) for(const t of times){
       const at=now+t;
       osc.frequency.setValueAtTime(startF,at);
       osc.frequency.exponentialRampToValueAtTime(endF,at+p.impDecay);
@@ -1197,15 +1386,15 @@ function buildChain(name, p, inGain, outGain){
     // Repeating inharmonic partials that ring like metal
     const ratios=[1, p.metInharm, p.metInharm*p.metInharm, p.metInharm*1.67, p.metInharm*2.1];
     const now=audioCtx.currentTime;
-    const interval=1/Math.max(0.2,p.metRate);
+    const times=triggerTimes||getTriggerTimes(p.metRate,null,600);
     ratios.forEach((r,i) => {
       const o=audioCtx.createOscillator();o.type='sine';o.frequency.value=p.metFreq*r;
       const g=audioCtx.createGain();g.gain.value=0;
-      for(let t=0;t<60;t+=interval){
+      if(times) for(const t of times){
         const at=now+t;
         const decay=p.metDecay*(1+i*0.3);
         g.gain.setValueAtTime(p.metGain/(i+1),at);
-        g.gain.exponentialRampToValueAtTime(0.001,at+Math.min(decay,interval*0.95));
+        g.gain.exponentialRampToValueAtTime(0.001,at+Math.min(decay,(times[1]||1)*0.95));
       }
       o.connect(g);g.connect(outGain);sources.push(o);
     });
@@ -1246,7 +1435,7 @@ function buildChain(name, p, inGain, outGain){
   else if(name==='PLUCK'){
     // Plucked string: noise burst excitation + tuned delay line feedback
     const now=audioCtx.currentTime;
-    const interval=1/Math.max(0.2,p.plkRate);
+    const times=triggerTimes||getTriggerTimes(p.plkRate,null,600);
     // Fundamental + harmonics with fast decay on upper partials
     const harmonics=[1, 2, 3, 4, 5];
     harmonics.forEach((h,hi) => {
@@ -1255,7 +1444,7 @@ function buildChain(name, p, inGain, outGain){
       o.frequency.value=p.plkFreq*h;
       const g=audioCtx.createGain();g.gain.value=0;
       const ampBase=p.plkGain/(h*(1+(1-p.plkBright)*hi));
-      for(let t=0;t<60;t+=interval){
+      if(times) for(const t of times){
         const at=now+t;
         const decay=p.plkDecay/(1+hi*0.5);
         g.gain.setValueAtTime(ampBase,at);
@@ -1267,7 +1456,7 @@ function buildChain(name, p, inGain, outGain){
     const ns=audioCtx.createBufferSource();ns.buffer=noiseBufs.white;ns.loop=true;
     const nf=audioCtx.createBiquadFilter();nf.type='bandpass';nf.frequency.value=p.plkFreq*3;nf.Q.value=2;
     const ng=audioCtx.createGain();ng.gain.value=0;
-    for(let t=0;t<60;t+=interval){
+    if(times) for(const t of times){
       ng.gain.setValueAtTime(p.plkGain*p.plkBright*0.3,now+t);
       ng.gain.exponentialRampToValueAtTime(0.001,now+t+0.008);
     }
@@ -1278,11 +1467,11 @@ function buildChain(name, p, inGain, outGain){
     const ratios=[1, 2.0, 3.0, 4.2, 5.4, 6.8];
     const amps=[1, 0.6, 0.4, 0.25, 0.15, 0.1];
     const now=audioCtx.currentTime;
-    const interval=1/Math.max(0.1,p.belRate);
+    const times=triggerTimes||getTriggerTimes(p.belRate,null,600);
     ratios.forEach((r,ri) => {
       const o=audioCtx.createOscillator();o.type='sine';o.frequency.value=p.belFreq*r;
       const g=audioCtx.createGain();g.gain.value=0;
-      for(let t=0;t<60;t+=interval){
+      if(times) for(const t of times){
         const at=now+t;
         const decay=p.belDecay*(1-ri*0.1);
         g.gain.setValueAtTime(p.belGain*amps[ri],at);
@@ -1294,12 +1483,12 @@ function buildChain(name, p, inGain, outGain){
   else if(name==='MALLET'){
     // Struck bar: fundamental + decaying harmonics, noise click attack
     const now=audioCtx.currentTime;
-    const interval=1/Math.max(0.2,p.malRate);
+    const times=triggerTimes||getTriggerTimes(p.malRate,null,600);
     const ratios=[1, 2.76, 5.40, 8.93]; // bar mode ratios
     ratios.forEach((r,ri) => {
       const o=audioCtx.createOscillator();o.type='sine';o.frequency.value=p.malFreq*r;
       const g=audioCtx.createGain();g.gain.value=0;
-      for(let t=0;t<60;t+=interval){
+      if(times) for(const t of times){
         const at=now+t;
         const amp=p.malGain/(ri+1)*(ri===0?1:p.malHard);
         const decay=p.malDecay/(1+ri*0.8);
@@ -1312,7 +1501,7 @@ function buildChain(name, p, inGain, outGain){
     const ns=audioCtx.createBufferSource();ns.buffer=noiseBufs.white;ns.loop=true;
     const nf=audioCtx.createBiquadFilter();nf.type='highpass';nf.frequency.value=2000+p.malHard*6000;
     const ng=audioCtx.createGain();ng.gain.value=0;
-    for(let t=0;t<60;t+=interval){
+    if(times) for(const t of times){
       ng.gain.setValueAtTime(p.malGain*p.malHard*0.3,now+t);
       ng.gain.exponentialRampToValueAtTime(0.001,now+t+0.01);
     }
@@ -1321,10 +1510,10 @@ function buildChain(name, p, inGain, outGain){
   else if(name==='SWEEP'){
     // Pitch sweep oscillator
     const now=audioCtx.currentTime;
-    const interval=1/Math.max(0.1,p.swpRate);
+    const times=triggerTimes||getTriggerTimes(p.swpRate,null,600);
     const osc=audioCtx.createOscillator();osc.type='sawtooth';
-    const g=audioCtx.createGain();g.gain.value=p.swpGain;
-    for(let t=0;t<60;t+=interval){
+    const g=audioCtx.createGain();g.gain.value=0;
+    if(times) for(const t of times){
       const at=now+t;
       osc.frequency.setValueAtTime(Math.max(20,p.swpFrom),at);
       osc.frequency.exponentialRampToValueAtTime(Math.max(20,p.swpTo),at+p.swpTime);
@@ -1338,14 +1527,14 @@ function buildChain(name, p, inGain, outGain){
     const steps=Math.max(2,Math.round(p.arpSteps));
     const ratios=[1, 1.25, 1.5, 1.667, 2, 2.5, 3, 4]; // major scale-ish
     const now=audioCtx.currentTime;
-    const stepDur=1/Math.max(0.5,p.arpRate);
+    const times=triggerTimes||getTriggerTimes(p.arpRate,null,600);
     const osc=audioCtx.createOscillator();osc.type='triangle';
     const g=audioCtx.createGain();g.gain.value=p.arpGain;
-    for(let t=0;t<60;t+=stepDur){
-      const step=Math.floor(t/stepDur)%steps;
+    if(times) times.forEach((t,i) => {
+      const step=i%steps;
       const freq=p.arpRoot*ratios[step%ratios.length];
       osc.frequency.setValueAtTime(freq,now+t);
-    }
+    });
     osc.connect(g);g.connect(outGain);sources.push(osc);
   }
   else if(name==='SHIMMER'){
@@ -1497,13 +1686,15 @@ function isModBypassed(modIdx){
 }
 
 // Build a full module with 4 independent output chains (or 8 inputs for OUTPUT)
-function buildModule(name, modIdx){
-  const isOut = (name === 'OUTPUT');
+function buildModule(name, modIdx, patternInfo){
+  const isInputMix = (name === 'INPUT MIX');
+  const isMaster = (name === 'MASTER');
+  const isOut = isInputMix || isMaster;
   const isGen = document.querySelectorAll('.module')[modIdx]?.classList.contains('gen');
   const bypassed = isModBypassed(modIdx);
   const modEl = document.querySelectorAll('.module')[modIdx];
   const soloInput = modEl?.dataset.soloInput !== undefined ? parseInt(modEl.dataset.soloInput) : -1;
-  const inCount = isOut ? 8 : 4;
+  const inCount = isInputMix ? 8 : (isMaster ? 1 : 4);
   const ins = []; for(let i=0;i<inCount;i++){
     const g=audioCtx.createGain();
     // If solo is active, mute all inputs except the soloed one
@@ -1526,30 +1717,80 @@ function buildModule(name, modIdx){
     return { ins, outs, sources: allSources };
   }
 
+  if(name.startsWith('PATTERN')){
+    // Pattern effect: each output has its own 16-step pattern and BPM
+    const gridId = 'patGrid' + name.split(' ')[1];
+    const patterns = patternStates[gridId] || [new Array(16).fill(0),new Array(16).fill(0),new Array(16).fill(0),new Array(16).fill(0)];
+    const bpmKey = 'pat' + name.split(' ')[1] + 'Bpm';
+    const now = audioCtx.currentTime;
+
+    for(let o = 0; o < 4; o++){
+      const pat = patterns[o];
+      const op = getModOutParams(modIdx, o);
+      const bpm = op[bpmKey] || 120;
+      const stepDur = 60 / bpm / 4;
+      const loopDur = stepDur * 16;
+      const gate = audioCtx.createGain();
+      gate.gain.value = 0;
+      for(let t = 0; t < 600; t += loopDur){
+        for(let s = 0; s < 16; s++){
+          gate.gain.setValueAtTime(pat[s] ? 1 : 0, now + t + s * stepDur);
+        }
+      }
+      if(o === 0){
+        ins.forEach(inp => inp.connect(gate));
+      } else {
+        if(ins[o]) ins[o].connect(gate);
+      }
+      gate.connect(outs[o]);
+    }
+
+    return { ins, outs, sources: allSources, isPattern: true, gridId };
+  }
+
+  if(name.startsWith('T1') || name.startsWith('T2') || name.startsWith('THROUGH')){
+    // Pass-through: 1 in -> 1 out, no processing
+    ins.forEach(inp => inp.connect(outs[0]));
+    return { ins, outs, sources: allSources };
+  }
+
   if(name.startsWith('MIX')){
     // Simple mixer: all 4 inputs sum, level + amp control gain
     const p = getModOutParams(modIdx, 0);
     // Find the right knob IDs based on module name
-    const prefix = name==='MIX 1' ? 'mix' : name==='MIX 2' ? 'mix2' : 'mix3';
-    const lvl=audioCtx.createGain();lvl.gain.value=p[prefix+'Level']||1;
-    const amp=audioCtx.createGain();amp.gain.value=p[prefix+'Amp']||1;
+    const prefixMap = {'MIX 1':'mix','MIX 2':'mix2','MIX 3':'mix3','MIX 4':'mix4','MIX 5':'mix5'};
+    const prefix = prefixMap[name] || 'mix';
+    const lvl=audioCtx.createGain();lvl.gain.value=p[prefix+'Level']!==undefined?p[prefix+'Level']:1;
+    const amp=audioCtx.createGain();amp.gain.value=p[prefix+'Amp']!==undefined?p[prefix+'Amp']:1;
     ins.forEach(inp => inp.connect(lvl));
     lvl.connect(amp);amp.connect(outs[0]);
     return { ins, outs, sources: allSources };
   }
 
-  if(isOut){
-    // OUTPUT: 8 inputs with per-input level control -> analyser -> master
-    analyser=audioCtx.createAnalyser();analyser.fftSize=512;
+  if(isInputMix){
+    // INPUT MIX: 8 inputs with per-input level control -> single output
     const p = getModOutParams(modIdx, 0);
-    const merge = audioCtx.createGain(); merge.gain.value = p.masterGain;
+    const merge = audioCtx.createGain(); merge.gain.value = 1;
     for(let i=0;i<8;i++){
       const lvl = audioCtx.createGain();
       lvl.gain.value = p['inLvl'+i] !== undefined ? p['inLvl'+i] : 1;
       ins[i].connect(lvl); lvl.connect(merge);
     }
-    merge.connect(analyser); analyser.connect(masterOut);
-  } else {
+    merge.connect(outs[0]);
+    return { ins, outs, sources: allSources };
+  }
+
+  if(isMaster){
+    // MASTER: 1 input -> master gain -> analyser -> speakers
+    analyser=audioCtx.createAnalyser();analyser.fftSize=512;
+    const p = getModOutParams(modIdx, 0);
+    const gain = audioCtx.createGain(); gain.gain.value = p.masterGain || 0.6;
+    ins[0].connect(gain);
+    gain.connect(analyser); analyser.connect(masterOut);
+    return { ins, outs, sources: allSources };
+  }
+
+  {
     // 4 independent chains: out[0] = mix of all inputs, out[1-3] = matched input only
     for(let o=0;o<4;o++){
       const p = getModOutParams(modIdx, o);
@@ -1561,7 +1802,10 @@ function buildModule(name, modIdx){
         // Output 1-3: only matching input
         if(ins[o]) ins[o].connect(chainIn);
       }
-      const srcs = buildChain(name, p, chainIn, outs[o]);
+      // Per-output pattern trigger: out[o] uses input[o]'s pattern only
+      const pi = patternInfo ? patternInfo[o] : null;
+      const tt = pi ? getTriggerTimes(0, pi, 600) : null;
+      const srcs = buildChain(name, p, chainIn, outs[o], tt);
       allSources.push(...srcs);
     }
   }
@@ -1572,7 +1816,26 @@ function buildLive(){
   const p = getParams();
   // masterGain set via ramp in startPlay, not here
 
-  audioModules = MOD_NAMES.map((name, i) => buildModule(name, i));
+  // Pre-scan cables for pattern -> generator trigger connections (per-input)
+  const patternInfoMap = {}; // modIdx -> [input0, input1, input2, input3] each null or {pattern, stepDur}
+  const modEls = document.querySelectorAll('.module');
+  cables.forEach(c => {
+    const srcName = MOD_NAMES[c.fromMod];
+    if(!srcName || !srcName.startsWith('PATTERN')) return;
+    if(!modEls[c.toMod]?.classList.contains('gen')) return;
+    const gridId = 'patGrid' + srcName.split(' ')[1];
+    const patterns = patternStates[gridId];
+    if(!patterns) return;
+    const pat = patterns[c.fromIdx] || new Array(16).fill(0);
+    const outParams = getModOutParams(c.fromMod, c.fromIdx);
+    const bpmKey = 'pat' + srcName.split(' ')[1] + 'Bpm';
+    const bpm = outParams[bpmKey] || knobState[bpmKey] || 120;
+    const stepDur = 60 / bpm / 4;
+    if(!patternInfoMap[c.toMod]) patternInfoMap[c.toMod] = [null, null, null, null];
+    patternInfoMap[c.toMod][c.toIdx] = { pattern: pat, stepDur };
+  });
+
+  audioModules = MOD_NAMES.map((name, i) => buildModule(name, i, patternInfoMap[i] || null));
 
   // Wire cables
   cables.forEach(c => {
@@ -1615,6 +1878,27 @@ function startPlay(){
   const pb=document.getElementById('playBtn');
   pb.style.borderColor='#ff4444';pb.style.background='rgba(255,68,68,0.12)';
   startWaveform();
+  // Start pattern step indicators
+  patternIntervals.forEach(clearInterval);
+  patternIntervals = [];
+  audioModules.forEach(m => {
+    if(!m.isPattern) return;
+    const grid = document.getElementById(m.gridId);
+    if(!grid) return;
+    const steps = grid.querySelectorAll('.pat-step');
+    const patNum = m.gridId.replace('patGrid','');
+    const activeOut = parseInt(grid.dataset.activeOut) || 0;
+    const outP = getModOutParams(MOD_NAMES.indexOf('PATTERN ' + patNum), activeOut);
+    const bpm = outP['pat' + patNum + 'Bpm'] || knobState['pat' + patNum + 'Bpm'] || 120;
+    const stepMs = (60 / bpm / 4) * 1000;
+    let step = 0;
+    const iv = setInterval(() => {
+      steps.forEach(s => s.classList.remove('current'));
+      steps[step]?.classList.add('current');
+      step = (step + 1) % 16;
+    }, stepMs);
+    patternIntervals.push(iv);
+  });
 }
 
 function stopPlay(){
@@ -1633,6 +1917,10 @@ function stopPlay(){
   live.playing = false;
   live = null;
   analyser = null;
+  // Clear pattern step indicators
+  patternIntervals.forEach(clearInterval);
+  patternIntervals = [];
+  document.querySelectorAll('.pat-step.current').forEach(s => s.classList.remove('current'));
   document.getElementById('playIcon').style.display='';
   document.getElementById('stopIcon').style.display='none';
   document.getElementById('playLabel').textContent='PLAY';
@@ -1693,6 +1981,14 @@ function startWaveform(){
 // ── Presets ──────────────────────────────────────────────────────────
 let presets = JSON.parse(localStorage.getItem('sfxPresets') || '[]');
 
+// ── Hardcoded sample presets ────────────────────────────────────────
+const SAMPLE_PRESETS = [
+{"name":"distant patterns","params":{"pitch":48,"harmSpread":1.5,"harm2":0.55,"harm3":0.4,"subFreq":24,"subGain":0,"tremRate":0.5,"tremDepth":1,"wobRate":3.8,"wobDepth":0,"rumFreq":28,"rumGain":0.12,"hissCut":3500,"hissGain":0.025,"distDrive":0,"filtCut":8000,"filtQ":0.7,"detune":0,"stereoPan":0,"ringFreq":0,"ringMix":0,"noiseGain":0,"noiseFilt":2000,"fmFreq":0,"fmDepth":0,"pwmFreq":80,"pwmRate":2,"pwmGain":0,"impFreq":200,"impSweep":0.8,"impDecay":0.3,"impRate":2,"impGain":0,"crkDensity":5,"crkTone":1450,"crkGain":0.2,"metFreq":300,"metInharm":1.94,"metDecay":1.88,"metRate":0,"metGain":0.14,"formFreq":120,"formGain":0,"drnFreq":130,"drnLayers":7,"drnSpread":27,"drnGain":0.28,"wndCut":1000,"wndMod":2,"wndDepth":500,"wndGain":0,"envAtk":0.01,"envDec":0.1,"envSus":1,"envRel":0.15,"delTime":0,"delFeed":0,"delMix":0,"phRate":0,"phDepth":0,"phMix":0,"rvbSize":0.5,"rvbDecay":2,"rvbDamp":3000,"rvbMix":0.3,"cmpThresh":-24,"cmpRatio":4,"cmpAtk":0.01,"cmpRel":0.1,"eqFreq":16000,"eqGainDb":0,"eqQ":20,"bcBits":8,"bcRate":0.5,"flRate":0.5,"flDepth":0.003,"flFeed":0.5,"flMix":0.5,"gtThresh":0.01,"gtRate":4,"gtSmooth":0.01,"panRate":1,"panWidth":1,"plkFreq":440,"plkDecay":1,"plkBright":0.5,"plkRate":1,"plkGain":0,"belFreq":254,"belDecay":4.91,"belRate":0,"belGain":0.11,"malFreq":89,"malHard":1,"malDecay":2.63,"malRate":0,"malGain":0.13,"swpFrom":545,"swpTo":511,"swpTime":3.32,"swpRate":0,"swpGain":0.09,"arpRoot":951,"arpSteps":4,"arpRate":0,"arpGain":0.04,"shmFreq":352,"shmLayers":3,"shmDrift":5.3,"shmGain":0.17,"bowFreq":220,"bowPress":0.5,"bowBright":0.5,"bowGain":0,"pat1Bpm":60,"pat2Bpm":120,"pat3Bpm":90,"mixBlend":0.5,"mixLevel":1.01,"mixAmp":1,"mix2Level":1,"mix2Amp":1,"mix3Level":1,"mix3Amp":1,"mix4Level":1,"mix4Amp":1,"mix5Level":1,"mix5Amp":1,"masterGain":0.74,"inLvl0":0.68,"inLvl1":1,"inLvl2":0.97,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"waveform":"triangle","tremShape":"sine","noiseType":"white","filtType":"lowpass","pwmWave":"square","formVowel":"a","subOct":"0.5","eqType":"peaking","modOutputState":[[{"pitch":48,"harmSpread":1.5,"harm2":0.55,"harm3":0.4,"_waveform":"sine"},{"pitch":48,"harmSpread":1.5,"harm2":0.55,"harm3":0.4},{"pitch":48,"harmSpread":1.5,"harm2":0.55,"harm3":0.4},{"pitch":48,"harmSpread":1.5,"harm2":0.55,"harm3":0.4}],[{"subFreq":24,"subGain":0},{"subFreq":24,"subGain":0},{"subFreq":24,"subGain":0},{"subFreq":24,"subGain":0}],[{"rumFreq":28,"rumGain":0.12},{"rumFreq":28,"rumGain":0.12},{"rumFreq":28,"rumGain":0.12},{"rumFreq":28,"rumGain":0.12}],[{"noiseGain":0,"noiseFilt":2000},{"noiseGain":0,"noiseFilt":2000},{"noiseGain":0,"noiseFilt":2000},{"noiseGain":0,"noiseFilt":2000}],[{"fmFreq":0,"fmDepth":0},{"fmFreq":0,"fmDepth":0},{"fmFreq":0,"fmDepth":0},{"fmFreq":0,"fmDepth":0}],[{"pwmFreq":80,"pwmRate":2,"pwmGain":0},{"pwmFreq":80,"pwmRate":2,"pwmGain":0},{"pwmFreq":80,"pwmRate":2,"pwmGain":0},{"pwmFreq":80,"pwmRate":2,"pwmGain":0}],[{"impFreq":200,"impSweep":0.8,"impDecay":0.3,"impRate":2,"impGain":0},{"impFreq":200,"impSweep":0.8,"impDecay":0.3,"impRate":2,"impGain":0},{"impFreq":200,"impSweep":0.8,"impDecay":0.3,"impRate":2,"impGain":0},{"impFreq":200,"impSweep":0.8,"impDecay":0.3,"impRate":2,"impGain":0}],[{"crkDensity":5,"crkTone":1450,"crkGain":0.2},{"crkDensity":10,"crkTone":4000,"crkGain":0},{"crkDensity":10,"crkTone":4000,"crkGain":0},{"crkDensity":10,"crkTone":4000,"crkGain":0}],[{"metFreq":300,"metInharm":1.94,"metDecay":1.88,"metRate":0,"metGain":0.14},{"metFreq":180,"metInharm":2.93,"metDecay":1.63,"metRate":0,"metGain":0.11},{"metFreq":800,"metInharm":1.41,"metDecay":0.5,"metRate":1,"metGain":0},{"metFreq":800,"metInharm":1.41,"metDecay":0.5,"metRate":1,"metGain":0}],[{"formFreq":120,"formGain":0},{"formFreq":120,"formGain":0},{"formFreq":120,"formGain":0},{"formFreq":120,"formGain":0}],[{"drnFreq":130,"drnLayers":7,"drnSpread":27,"drnGain":0.28},{"drnFreq":60,"drnLayers":4,"drnSpread":5,"drnGain":0},{"drnFreq":60,"drnLayers":4,"drnSpread":5,"drnGain":0},{"drnFreq":60,"drnLayers":4,"drnSpread":5,"drnGain":0}],[{"wndCut":1000,"wndMod":2,"wndDepth":500,"wndGain":0},{"wndCut":1000,"wndMod":2,"wndDepth":500,"wndGain":0},{"wndCut":1000,"wndMod":2,"wndDepth":500,"wndGain":0},{"wndCut":1000,"wndMod":2,"wndDepth":500,"wndGain":0}],[{"plkFreq":440,"plkDecay":1,"plkBright":0.5,"plkRate":1,"plkGain":0},{"plkFreq":440,"plkDecay":1,"plkBright":0.5,"plkRate":1,"plkGain":0},{"plkFreq":440,"plkDecay":1,"plkBright":0.5,"plkRate":1,"plkGain":0},{"plkFreq":440,"plkDecay":1,"plkBright":0.5,"plkRate":1,"plkGain":0}],[{"belFreq":254,"belDecay":4.91,"belRate":0,"belGain":0.11},{"belFreq":878,"belDecay":2,"belRate":0,"belGain":0.1},{"belFreq":774,"belDecay":5.59,"belRate":0,"belGain":0.09},{"belFreq":800,"belDecay":2,"belRate":0.5,"belGain":0}],[{"malFreq":89,"malHard":1,"malDecay":2.63,"malRate":0,"malGain":0.13},{"malFreq":70,"malHard":0.33,"malDecay":3,"malRate":0,"malGain":0.22},{"malFreq":108,"malHard":0.89,"malDecay":2.9,"malRate":0,"malGain":0.14},{"malFreq":520,"malHard":0.5,"malDecay":0.8,"malRate":1,"malGain":0}],[{"swpFrom":545,"swpTo":511,"swpTime":3.32,"swpRate":0,"swpGain":0.09},{"swpFrom":438,"swpTo":244,"swpTime":0.28,"swpRate":0,"swpGain":0.05},{"swpFrom":200,"swpTo":2000,"swpTime":1,"swpRate":0.5,"swpGain":0},{"swpFrom":200,"swpTo":2000,"swpTime":1,"swpRate":0.5,"swpGain":0}],[{"arpRoot":951,"arpSteps":4,"arpRate":0,"arpGain":0.04},{"arpRoot":220,"arpSteps":4,"arpRate":4,"arpGain":0},{"arpRoot":220,"arpSteps":4,"arpRate":4,"arpGain":0},{"arpRoot":220,"arpSteps":4,"arpRate":4,"arpGain":0}],[{"shmFreq":352,"shmLayers":3,"shmDrift":5.3,"shmGain":0.17},{"shmFreq":300,"shmLayers":5,"shmDrift":3,"shmGain":0},{"shmFreq":300,"shmLayers":5,"shmDrift":3,"shmGain":0},{"shmFreq":300,"shmLayers":5,"shmDrift":3,"shmGain":0}],[{"bowFreq":220,"bowPress":0.5,"bowBright":0.5,"bowGain":0},{"bowFreq":220,"bowPress":0.5,"bowBright":0.5,"bowGain":0},{"bowFreq":220,"bowPress":0.5,"bowBright":0.5,"bowGain":0},{"bowFreq":220,"bowPress":0.5,"bowBright":0.5,"bowGain":0}],[{"tremRate":0.5,"tremDepth":100,"_tremShape":"sine"},{"tremRate":20,"tremDepth":55,"_tremShape":"sine"},{"tremRate":20,"tremDepth":55},{"tremRate":20,"tremDepth":55}],[{"wobRate":3.8,"wobDepth":0},{"wobRate":1.2,"wobDepth":13.5},{"wobRate":1.6,"wobDepth":2},{"wobRate":8,"wobDepth":4}],[{"ringFreq":0,"ringMix":0},{"ringFreq":0,"ringMix":0},{"ringFreq":0,"ringMix":0},{"ringFreq":0,"ringMix":0}],[{"distDrive":0},{"distDrive":0},{"distDrive":0},{"distDrive":0}],[{"filtCut":8000,"filtQ":0.7},{"filtCut":8000,"filtQ":0.7},{"filtCut":8000,"filtQ":0.7},{"filtCut":8000,"filtQ":0.7}],[{"detune":0,"stereoPan":0},{"detune":0,"stereoPan":0},{"detune":0,"stereoPan":0},{"detune":0,"stereoPan":0}],[{"phRate":0,"phDepth":0,"phMix":0},{"phRate":0,"phDepth":0,"phMix":0},{"phRate":0,"phDepth":0,"phMix":0},{"phRate":0,"phDepth":0,"phMix":0}],[{"delTime":0,"delFeed":0,"delMix":0},{"delTime":0,"delFeed":0,"delMix":0},{"delTime":0,"delFeed":0,"delMix":0},{"delTime":0,"delFeed":0,"delMix":0}],[{"envAtk":0.01,"envDec":0.1,"envSus":1,"envRel":0.15},{"envAtk":0.01,"envDec":0.1,"envSus":1,"envRel":0.15},{"envAtk":0.01,"envDec":0.1,"envSus":1,"envRel":0.15},{"envAtk":0.01,"envDec":0.1,"envSus":1,"envRel":0.15}],[{"rvbSize":0.5,"rvbDecay":2,"rvbDamp":3000,"rvbMix":0.3},{"rvbSize":0.5,"rvbDecay":2,"rvbDamp":3000,"rvbMix":0.3},{"rvbSize":0.5,"rvbDecay":2,"rvbDamp":3000,"rvbMix":0.3},{"rvbSize":0.5,"rvbDecay":2,"rvbDamp":3000,"rvbMix":0.3}],[{"cmpThresh":-24,"cmpRatio":4,"cmpAtk":0.01,"cmpRel":0.1},{"cmpThresh":-24,"cmpRatio":4,"cmpAtk":0.01,"cmpRel":0.1},{"cmpThresh":-24,"cmpRatio":4,"cmpAtk":0.01,"cmpRel":0.1},{"cmpThresh":-24,"cmpRatio":4,"cmpAtk":0.01,"cmpRel":0.1}],[{"eqFreq":16000,"eqGainDb":0,"eqQ":20,"_eqType":"lowshelf"},{"eqFreq":80,"eqGainDb":-20.5,"eqQ":4.3,"_eqType":"lowshelf"},{"eqFreq":3340,"eqGainDb":-20.5,"eqQ":5.1,"_eqType":"highshelf"},{"eqFreq":6430,"eqGainDb":-19.5,"eqQ":2.9,"_eqType":"peaking"}],[{"bcBits":8,"bcRate":0.5},{"bcBits":8,"bcRate":0.5},{"bcBits":8,"bcRate":0.5},{"bcBits":8,"bcRate":0.5}],[{"flRate":0.5,"flDepth":0.003,"flFeed":0.5,"flMix":0.5},{"flRate":0.5,"flDepth":0.003,"flFeed":0.5,"flMix":0.5},{"flRate":0.5,"flDepth":0.003,"flFeed":0.5,"flMix":0.5},{"flRate":0.5,"flDepth":0.003,"flFeed":0.5,"flMix":0.5}],[{"gtThresh":0.01,"gtRate":4,"gtSmooth":0.01},{"gtThresh":0.01,"gtRate":4,"gtSmooth":0.01},{"gtThresh":0.01,"gtRate":4,"gtSmooth":0.01},{"gtThresh":0.01,"gtRate":4,"gtSmooth":0.01}],[{"panRate":1,"panWidth":1},{"panRate":1,"panWidth":1},{"panRate":1,"panWidth":1},{"panRate":1,"panWidth":1}],[{"mixLevel":1.01,"mixAmp":1},{"mixLevel":0.63,"mixAmp":1},{"mixLevel":0.65,"mixAmp":1},{"mixLevel":0.68,"mixAmp":1}],[{"mix2Level":1,"mix2Amp":1},{"mix2Level":1,"mix2Amp":1},{"mix2Level":1,"mix2Amp":1},{"mix2Level":1,"mix2Amp":1}],[{"mix3Level":1,"mix3Amp":1},{"mix3Level":1,"mix3Amp":1},{"mix3Level":1,"mix3Amp":1},{"mix3Level":1,"mix3Amp":1}],[{"inLvl0":0,"inLvl1":1,"inLvl2":0,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":0.48,"inLvl7":1,"masterGain":0.6},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6}],[{},{},{},{}],[{"mix4Level":1,"mix4Amp":1},{"mix4Level":1,"mix4Amp":1},{"mix4Level":1,"mix4Amp":1},{"mix4Level":1,"mix4Amp":1}],[{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1}],[{"mix4Level":1,"mix4Amp":1,"inLvl0":1,"inLvl1":0.67,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.35},{"mix4Level":1,"mix4Amp":1,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6},{"mix4Level":1,"mix4Amp":1,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6},{"mix4Level":1,"mix4Amp":1,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1,"masterGain":0.6}],[{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1},{"mix5Level":1,"mix5Amp":1}],[{"pat1Bpm":60},{"pat1Bpm":60},{"pat1Bpm":60},{"pat1Bpm":60}],[{"pat2Bpm":120,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":0.67,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"pat2Bpm":120,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"pat2Bpm":120,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"pat2Bpm":120,"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1}],[{"pat3Bpm":90,"masterGain":0.44},{"pat3Bpm":120,"masterGain":0.6},{"pat3Bpm":120,"masterGain":0.6},{"pat3Bpm":120,"masterGain":0.6}],[{"inLvl0":0.68,"inLvl1":1,"inLvl2":0.97,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1},{"inLvl0":1,"inLvl1":1,"inLvl2":1,"inLvl3":1,"inLvl4":1,"inLvl5":1,"inLvl6":1,"inLvl7":1}],[{"masterGain":0.74},{"masterGain":0.6},{"masterGain":0.6},{"masterGain":0.6}]]},"cables":[{"fromMod":14,"fromIdx":0,"toMod":37,"toIdx":0,"color":"#ff4444"},{"fromMod":44,"fromIdx":1,"toMod":14,"toIdx":1,"color":"#44aaff"},{"fromMod":14,"fromIdx":1,"toMod":37,"toIdx":1,"color":"#aa44ff"},{"fromMod":44,"fromIdx":0,"toMod":14,"toIdx":0,"color":"#ff8800"},{"fromMod":44,"fromIdx":2,"toMod":14,"toIdx":2,"color":"#88ff44"},{"fromMod":14,"fromIdx":2,"toMod":37,"toIdx":2,"color":"#ff69b4"},{"fromMod":44,"fromIdx":1,"toMod":8,"toIdx":0,"color":"#ff69b4"},{"fromMod":44,"fromIdx":1,"toMod":8,"toIdx":1,"color":"#00ffcc"},{"fromMod":8,"fromIdx":0,"toMod":36,"toIdx":0,"color":"#44aaff"},{"fromMod":8,"fromIdx":1,"toMod":36,"toIdx":1,"color":"#aa44ff"},{"fromMod":8,"fromIdx":2,"toMod":36,"toIdx":2,"color":"#ff8800"},{"fromMod":17,"fromIdx":0,"toMod":44,"toIdx":3,"color":"#44aaff"},{"fromMod":44,"fromIdx":3,"toMod":45,"toIdx":6,"color":"#aa44ff"},{"fromMod":37,"fromIdx":0,"toMod":45,"toIdx":5,"color":"#ff8800"},{"fromMod":36,"fromIdx":0,"toMod":45,"toIdx":7,"color":"#88ff44"},{"fromMod":16,"fromIdx":0,"toMod":35,"toIdx":0,"color":"#ff69b4"},{"fromMod":44,"fromIdx":0,"toMod":16,"toIdx":0,"color":"#ffe000"},{"fromMod":10,"fromIdx":0,"toMod":19,"toIdx":0,"color":"#ffe000"},{"fromMod":19,"fromIdx":0,"toMod":20,"toIdx":0,"color":"#ff69b4"},{"fromMod":20,"fromIdx":0,"toMod":45,"toIdx":4,"color":"#00ffcc"},{"fromMod":44,"fromIdx":0,"toMod":13,"toIdx":0,"color":"#44aaff"},{"fromMod":44,"fromIdx":1,"toMod":13,"toIdx":1,"color":"#ff8800"},{"fromMod":44,"fromIdx":2,"toMod":13,"toIdx":2,"color":"#88ff44"},{"fromMod":13,"fromIdx":0,"toMod":35,"toIdx":1,"color":"#ff69b4"},{"fromMod":13,"fromIdx":1,"toMod":35,"toIdx":2,"color":"#00ffcc"},{"fromMod":13,"fromIdx":2,"toMod":35,"toIdx":3,"color":"#ffe000"},{"fromMod":30,"fromIdx":1,"toMod":30,"toIdx":2,"color":"#ff69b4"},{"fromMod":30,"fromIdx":2,"toMod":30,"toIdx":3,"color":"#00ffcc"},{"fromMod":30,"fromIdx":3,"toMod":48,"toIdx":0,"color":"#88ff44"},{"fromMod":47,"fromIdx":0,"toMod":30,"toIdx":1,"color":"#ff69b4"},{"fromMod":35,"fromIdx":0,"toMod":47,"toIdx":0,"color":"#00ffcc"},{"fromMod":20,"fromIdx":0,"toMod":47,"toIdx":7,"color":"#44aaff"},{"fromMod":36,"fromIdx":0,"toMod":47,"toIdx":1,"color":"#aa44ff"},{"fromMod":37,"fromIdx":0,"toMod":47,"toIdx":2,"color":"#ff8800"}],"layout":[{"left":"32px","top":"38px","w":"184px","tb":0},{"left":"32px","top":"84px","w":"184px","tb":0},{"left":"37px","top":"190px","w":"184px","tb":0},{"left":"36px","top":"144px","w":"184px","tb":0},{"left":"33px","top":"234px","w":"184px","tb":0},{"left":"261px","top":"41px","w":"184px","tb":0},{"left":"263px","top":"225px","w":"184px","tb":0},{"left":"265px","top":"174px","w":"184px","tb":0},{"left":"881px","top":"950px","w":"184px","tb":1},{"left":"262px","top":"88px","w":"184px","tb":0},{"left":"1146px","top":"1045px","w":"184px","tb":1},{"left":"261px","top":"271px","w":"184px","tb":0},{"left":"495px","top":"41px","w":"184px","tb":0},{"left":"261px","top":"972px","w":"184px","tb":1},{"left":"517px","top":"938px","w":"184px","tb":1},{"left":"72px","top":"470px","w":"184px","tb":0},{"left":"30px","top":"913px","w":"184px","tb":1},{"left":"543px","top":"646px","w":"184px","tb":1},{"left":"33px","top":"326px","w":"184px","tb":0},{"left":"1145px","top":"1154px","w":"184px","tb":1},{"left":"1145px","top":"1301px","w":"184px","tb":1},{"left":"780px","top":"130px","w":"184px","tb":0},{"left":"780px","top":"176px","w":"142px","tb":0},{"left":"780px","top":"222px","w":"184px","tb":0},{"left":"780px","top":"268px","w":"184px","tb":0},{"left":"1100px","top":"38px","w":"266px","tb":0},{"left":"1100px","top":"84px","w":"266px","tb":0},{"left":"1020px","top":"130px","w":"348px","tb":0},{"left":"1020px","top":"176px","w":"184px","tb":0},{"left":"1020px","top":"222px","w":"184px","tb":0},{"left":"692px","top":"1683px","w":"184px","tb":1},{"left":"1020px","top":"314px","w":"184px","tb":0},{"left":"780px","top":"314px","w":"184px","tb":0},{"left":"780px","top":"360px","w":"184px","tb":0},{"left":"1020px","top":"360px","w":"184px","tb":0},{"left":"59px","top":"1122px","w":"184px","tb":1},{"left":"881px","top":"1153px","w":"184px","tb":1},{"left":"517px","top":"1100px","w":"184px","tb":1},{"left":"78px","top":"372px","w":"","tb":0},{"left":"37px","top":"372px","w":"","tb":0},{"left":"120px","top":"372px","w":"","tb":0},{"left":"160px","top":"372px","w":"","tb":0},{"left":"1219px","top":"446px","w":"184px","tb":1},{"left":"1218px","top":"497px","w":"184px","tb":1},{"left":"405px","top":"767px","w":"184px","tb":1},{"left":"1470px","top":"432px","w":"","tb":1},{"left":"1469px","top":"509px","w":"","tb":1},{"left":"380px","top":"1477px","w":"","tb":1},{"left":"596px","top":"1825px","w":"","tb":1}],"patterns":{"patGrid1":[[1,0,0,0,0,0,0,0,0,1,0,0,0,0,1,0],[0,0,0,0,0,1,0,0,0,0,0,0,1,0,0,0],[0,0,0,1,1,0,0,0,0,1,0,0,0,0,0,1],[0,1,0,0,1,0,1,0,0,1,0,0,1,0,1,0]],"patGrid2":[[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]],"patGrid3":[[1,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,1,0,0,0,0,0,0,0,1,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],[0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]]}}
+];
+// Merge samples into presets if not already present
+SAMPLE_PRESETS.forEach(sp => { if(!presets.find(p => p.name === sp.name)) presets.push(sp); });
+savePresets();
+
 function renderPresets(){
   // Preset toggle button
   document.getElementById('presetToggle').textContent = 'PRESETS (' + presets.length + ')';
@@ -1715,7 +2011,19 @@ function renderPresets(){
       presets.splice(i, 1);
       savePresets(); renderPresets();
     });
+    const exp = document.createElement('span');
+    exp.className = 'preset-del';
+    exp.style.color = '#00ffcc';
+    exp.textContent = '\u2197';
+    exp.title = 'Export this preset';
+    exp.addEventListener('click', e => {
+      e.stopPropagation();
+      navigator.clipboard.writeText(JSON.stringify(p, null, 2)).then(() => {
+        exp.textContent = '\u2713'; setTimeout(() => { exp.textContent = '\u2197'; }, 1000);
+      });
+    });
     item.appendChild(name);
+    item.appendChild(exp);
     item.appendChild(del);
     pl.appendChild(item);
   });
@@ -1725,14 +2033,6 @@ function renderPresets(){
     empty.textContent = 'No presets saved';
     pl.appendChild(empty);
   }
-  // JSON dropdown
-  const jd = document.getElementById('jsonDropdown');
-  const jsonStr = JSON.stringify(presets, null, 2);
-  jd.innerHTML = '<option value="">JSON (' + presets.length + ' presets)</option>';
-  const opt = document.createElement('option');
-  opt.value = 'json'; opt.textContent = jsonStr.substring(0, 80) + '...';
-  jd.appendChild(opt);
-  jd.dataset.fullJson = jsonStr;
 }
 
 // Toggle preset list
@@ -1755,7 +2055,7 @@ document.getElementById('saveBtn').addEventListener('click', () => {
   if(!name){ nameInput.focus(); return; }
   const params = getParams();
   const idx = presets.findIndex(p => p.name === name);
-  const entry = { name, params, cables: JSON.parse(JSON.stringify(cables)), layout: getModPositions() };
+  const entry = { name, params, cables: JSON.parse(JSON.stringify(cables)), layout: getModPositions(), patterns: JSON.parse(JSON.stringify(patternStates)) };
   if(idx >= 0) presets[idx] = entry; else presets.push(entry);
   savePresets(); renderPresets();
 });
@@ -1782,70 +2082,77 @@ function loadPreset(idx){
   if(p.layout){
     const mods = document.querySelectorAll('.module');
     p.layout.forEach((pos, i) => {
-      if(mods[i]){ mods[i].style.left = pos.left; mods[i].style.top = pos.top; mods[i].style.width = pos.w; }
+      if(mods[i]){ mods[i].style.left = pos.left; mods[i].style.top = pos.top; mods[i].style.width = pos.w; if(pos.tb!==undefined) mods[i].classList.toggle('jacks-tb',!!pos.tb); }
     });
     drawAllCables();
+  }
+  // Restore pattern states
+  if(p.patterns){
+    Object.keys(p.patterns).forEach(gridId => {
+      patternStates[gridId] = p.patterns[gridId];
+      const grid = document.getElementById(gridId);
+      if(grid){
+        const activeOut = parseInt(grid.dataset.activeOut) || 0;
+        const steps = grid.querySelectorAll('.pat-step');
+        steps.forEach((s, i) => s.classList.toggle('on', !!patternStates[gridId][activeOut][i]));
+      }
+    });
   }
   document.getElementById('presetName').value = p.name;
   if(live && live.playing) rebuildIfPlaying();
 }
 
-// Copy JSON
-document.getElementById('copyJsonBtn').addEventListener('click', () => {
-  const jd = document.getElementById('jsonDropdown');
-  const json = jd.dataset.fullJson || JSON.stringify(presets, null, 2);
-  navigator.clipboard.writeText(json).then(() => {
-    const btn = document.getElementById('copyJsonBtn');
-    btn.textContent = 'COPIED'; setTimeout(() => { btn.textContent = 'COPY JSON'; }, 1200);
-  });
+// Export current preset as downloadable .json file
+document.getElementById('exportFileBtn').addEventListener('click', () => {
+  const nameInput = document.getElementById('presetName');
+  const name = nameInput.value.trim() || 'sfx-preset';
+  const params = getParams();
+  const entry = { name, params, cables: JSON.parse(JSON.stringify(cables)), layout: getModPositions(), patterns: JSON.parse(JSON.stringify(patternStates)) };
+  const blob = new Blob([JSON.stringify(entry, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = name.replace(/[^a-z0-9_-]/gi, '-') + '.json';
+  document.body.appendChild(a); a.click(); a.remove();
+  URL.revokeObjectURL(url);
+  const btn = document.getElementById('exportFileBtn');
+  btn.textContent = 'SAVED'; setTimeout(() => { btn.textContent = 'EXPORT'; }, 1200);
 });
 
-// Import presets from JSON
-document.getElementById('importJsonBtn').addEventListener('click', () => {
-  const overlay = document.createElement('div');
-  overlay.style.cssText = 'position:fixed;top:0;left:0;right:0;bottom:0;background:rgba(0,0,0,0.8);z-index:10000;display:flex;align-items:center;justify-content:center;';
-  const box = document.createElement('div');
-  box.style.cssText = 'background:#111;border:1px solid #00ffcc;padding:16px;width:500px;max-width:90vw;font-family:inherit;';
-  box.innerHTML = '<div style="color:#ffe000;font-size:10px;margin-bottom:8px;letter-spacing:1px;">PASTE PRESET JSON</div>';
-  const ta = document.createElement('textarea');
-  ta.style.cssText = 'width:100%;height:200px;background:#0a0a14;color:#00ffcc;border:1px solid #00ffcc33;font-family:inherit;font-size:9px;padding:8px;resize:vertical;';
-  ta.placeholder = 'Paste preset JSON array here...';
-  box.appendChild(ta);
-  const btnRow = document.createElement('div');
-  btnRow.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
-  const loadBtn = document.createElement('button');
-  loadBtn.style.cssText = 'padding:6px 16px;background:rgba(0,255,204,0.1);color:#00ffcc;border:1px solid #00ffcc;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;';
-  loadBtn.textContent = 'LOAD';
-  const mergeBtn = document.createElement('button');
-  mergeBtn.style.cssText = 'padding:6px 16px;background:rgba(255,224,0,0.1);color:#ffe000;border:1px solid #ffe000;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;';
-  mergeBtn.textContent = 'MERGE';
-  const cancelBtn = document.createElement('button');
-  cancelBtn.style.cssText = 'padding:6px 16px;background:rgba(255,68,68,0.1);color:#ff4444;border:1px solid #ff4444;font-family:inherit;font-size:9px;cursor:pointer;letter-spacing:1px;margin-left:auto;';
-  cancelBtn.textContent = 'CANCEL';
-  btnRow.appendChild(loadBtn);
-  btnRow.appendChild(mergeBtn);
-  btnRow.appendChild(cancelBtn);
-  box.appendChild(btnRow);
-  overlay.appendChild(box);
-  document.body.appendChild(overlay);
-  ta.focus();
-  function doImport(replace){
-    try {
-      const data = JSON.parse(ta.value.trim());
-      if(!Array.isArray(data)) throw new Error('Not an array');
-      if(replace) presets.length = 0;
-      data.forEach(p => {
-        const idx = presets.findIndex(e => e.name === p.name);
-        if(idx >= 0) presets[idx] = p; else presets.push(p);
-      });
-      savePresets(); renderPresets();
-      overlay.remove();
-    } catch(e){ ta.style.borderColor = '#ff4444'; ta.placeholder = 'Invalid JSON: ' + e.message; }
-  }
-  loadBtn.addEventListener('click', () => doImport(true));
-  mergeBtn.addEventListener('click', () => doImport(false));
-  cancelBtn.addEventListener('click', () => overlay.remove());
-  overlay.addEventListener('click', e => { if(e.target === overlay) overlay.remove(); });
+// Import preset from .json file
+document.getElementById('importFileBtn').addEventListener('click', () => {
+  const input = document.createElement('input');
+  input.type = 'file'; input.accept = '.json';
+  input.addEventListener('change', () => {
+    const file = input.files[0];
+    if(!file) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      try {
+        const data = JSON.parse(reader.result);
+        // Support single preset or array of presets
+        const items = Array.isArray(data) ? data : [data];
+        items.forEach(p => {
+          if(!p.name || !p.params) return;
+          const idx = presets.findIndex(e => e.name === p.name);
+          if(idx >= 0) presets[idx] = p; else presets.push(p);
+        });
+        savePresets(); renderPresets();
+        // Auto-load the first imported preset
+        if(items.length === 1 && items[0].name){
+          const li = presets.findIndex(e => e.name === items[0].name);
+          if(li >= 0) loadPreset(li);
+        }
+        const btn = document.getElementById('importFileBtn');
+        btn.textContent = 'LOADED'; setTimeout(() => { btn.textContent = 'IMPORT'; }, 1200);
+      } catch(e){
+        const btn = document.getElementById('importFileBtn');
+        btn.textContent = 'ERROR'; btn.style.color = '#ff4444';
+        setTimeout(() => { btn.textContent = 'IMPORT'; btn.style.color = ''; }, 2000);
+      }
+    };
+    reader.readAsText(file);
+  });
+  input.click();
 });
 
 let blurMuteEnabled = true;
@@ -1858,25 +2165,37 @@ document.getElementById('blurMuteBtn').addEventListener('click', () => {
   btn.style.borderColor = blurMuteEnabled ? '#00ffcc44' : '#ff666644';
 });
 
+// Help overlay
+document.getElementById('helpBtn').addEventListener('click', () => {
+  document.getElementById('helpOverlay').style.display = '';
+});
+document.getElementById('helpClose').addEventListener('click', () => {
+  document.getElementById('helpOverlay').style.display = 'none';
+});
+document.getElementById('helpOverlay').addEventListener('click', e => {
+  if(e.target.id === 'helpOverlay') e.target.style.display = 'none';
+});
+
 // Visualizer collapse toggle — shrinks the whole output module
 document.getElementById('vizToggle').addEventListener('click', () => {
   const panel = document.getElementById('vizPanel');
   const arrow = document.getElementById('vizToggle');
-  const outMod = document.querySelector('.module.out');
+  const masterMod = document.getElementById('vizToggle').closest('.module');
   const hidden = panel.style.display === 'none';
   panel.style.display = hidden ? '' : 'none';
   arrow.innerHTML = hidden ? '&#9654;' : '&#9664;';
   // Resize module width to fit
-  outMod.style.width = hidden ? '' : 'auto';
+  masterMod.style.width = hidden ? '' : 'auto';
   setTimeout(drawAllCables, 50);
 });
 
 // ── PATCH BAY: Jacks + Cables ───────────────────────────────────────
 // Default cables: MIX 1/2/3 -> OUTPUT IN 1/2/3
 const cables = [
-  {fromMod:35, fromIdx:0, toMod:38, toIdx:0, color:'#ff69b4'},
-  {fromMod:36, fromIdx:0, toMod:38, toIdx:1, color:'#00ffcc'},
-  {fromMod:37, fromIdx:0, toMod:38, toIdx:2, color:'#ffe000'}
+  {fromMod:35, fromIdx:0, toMod:47, toIdx:0, color:'#ff69b4'},
+  {fromMod:36, fromIdx:0, toMod:47, toIdx:1, color:'#00ffcc'},
+  {fromMod:37, fromIdx:0, toMod:47, toIdx:2, color:'#ffe000'},
+  {fromMod:47, fromIdx:0, toMod:48, toIdx:0, color:'#ffe000'}
 ];
 let dragCable = null; // { fromJack, mx, my }
 const CABLE_COLORS = ['#ff69b4','#00ffcc','#ffe000','#ff4444','#44aaff','#aa44ff','#ff8800','#88ff44'];
@@ -1885,7 +2204,7 @@ let cableColorIdx = 0;
 // Undo stack (5 levels) — saves cables + module positions
 const undoStack = [];
 function getModPositions(){
-  return Array.from(document.querySelectorAll('.module')).map(m => ({left:m.style.left, top:m.style.top, w:m.style.width}));
+  return Array.from(document.querySelectorAll('.module')).map(m => ({left:m.style.left, top:m.style.top, w:m.style.width, tb:m.classList.contains('jacks-tb')?1:0}));
 }
 function pushUndo(){
   undoStack.push({
@@ -1947,30 +2266,71 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
   mod.dataset.modIdx = modIdx;
   // Inputs — skip for generators
   if(!mod.dataset.noInputs){
-    if(mod.dataset.noOutputs){
-      // OUTPUT module: place jacks inline above each IN knob-wrap
+    if(mod.classList.contains('out')){
+      // OUT-class modules: place jacks inline above each IN knob-wrap
       const knobWraps = mod.querySelectorAll('.knob-wrap');
       let jackIdx = 0;
       knobWraps.forEach(kw => {
         const label = kw.querySelector('.knob-label');
         if(label && label.textContent.startsWith('IN ') && jackIdx < 8){
+          const ji = jackIdx; // capture for closure
           const j = document.createElement('div');
           j.className = 'jack input';
           j.dataset.modIdx = modIdx;
-          j.dataset.jackIdx = jackIdx;
+          j.dataset.jackIdx = ji;
           j.dataset.jackType = 'input';
-          j.title = `IN ${jackIdx+1}`;
+          j.title = `IN ${ji+1}`;
           j.style.cssText = 'width:10px;height:8px;margin:-10px auto 2px;';
           kw.insertBefore(j, kw.firstChild);
+          // Solo button
+          const s = document.createElement('div');
+          s.className = 'solo-btn';
+          s.textContent = 'S';
+          s.title = `Solo IN ${ji+1}`;
+          s.dataset.modIdx = modIdx;
+          s.dataset.jackIdx = ji;
+          s.style.cssText = 'position:absolute;top:-2px;right:-2px;';
+          s.addEventListener('mousedown', e => { e.stopPropagation(); e.preventDefault(); });
+          s.addEventListener('click', e => {
+            e.stopPropagation();
+            const wasActive = s.classList.contains('active');
+            mod.querySelectorAll('.solo-btn').forEach(sb => sb.classList.remove('active'));
+            mod.querySelectorAll('.jack.input').forEach(jk => jk.classList.remove('soloed'));
+            if(!wasActive){
+              s.classList.add('active');
+              j.classList.add('soloed');
+              mod.dataset.soloInput = ji;
+            } else {
+              delete mod.dataset.soloInput;
+            }
+            rebuildIfPlaying();
+          });
+          kw.style.position = 'relative';
+          kw.appendChild(s);
           jackIdx++;
         }
       });
+      // If no IN knobs found (e.g. MASTER), add a single input jack
+      if(jackIdx === 0){
+        const inRow = document.createElement('div');
+        inRow.className = 'jack-row inputs';
+        const j = document.createElement('div');
+        j.className = 'jack input';
+        j.dataset.modIdx = modIdx;
+        j.dataset.jackIdx = 0;
+        j.dataset.jackType = 'input';
+        j.title = 'IN 1';
+        inRow.appendChild(j);
+        mod.appendChild(inRow);
+      }
     } else {
       // Normal modules: left edge jack row with solo buttons for effects
       const inRow = document.createElement('div');
       inRow.className = 'jack-row inputs';
       const isFx = mod.classList.contains('fx');
-      for(let i=0;i<4;i++){
+      const isThrough = mod.classList.contains('through');
+      const inCount = isThrough ? 1 : 4;
+      for(let i=0;i<inCount;i++){
         const j = document.createElement('div');
         j.className = 'jack input';
         j.dataset.modIdx = modIdx;
@@ -1978,7 +2338,7 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
         j.dataset.jackType = 'input';
         j.title = `IN ${i+1}`;
         inRow.appendChild(j);
-        if(isFx){
+        if(isFx && !isThrough){
           const s = document.createElement('div');
           s.className = 'solo-btn';
           s.textContent = 'S';
@@ -2013,7 +2373,8 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
     const title = mod.querySelector('.mod-title');
     let titleText = '';
     if(title) title.childNodes.forEach(n => { if(n.nodeType === 3) titleText += n.textContent; });
-    const outCount = titleText.trim().startsWith('MIX') ? 1 : 4;
+    const tn = titleText.trim();
+    const outCount = (tn.startsWith('MIX') || tn.startsWith('INPUT MIX') || mod.classList.contains('through') || mod.classList.contains('out')) ? 1 : 4;
     const outRow = document.createElement('div');
     outRow.className = 'jack-row outputs';
     for(let i=0;i<outCount;i++){
@@ -2028,8 +2389,8 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
     mod.appendChild(outRow);
   }
 
-  // Add bypass (effects) or mute (generators) button — skip OUTPUT
-  if(!mod.classList.contains('out')){
+  // Add bypass (effects) or mute (generators) button — skip OUTPUT and THROUGH
+  if(!mod.classList.contains('out') && !mod.classList.contains('through')){
     const btn = document.createElement('div');
     btn.className = 'bypass-btn';
     btn.title = mod.classList.contains('gen') ? 'MUTE' : 'BYPASS';
@@ -2043,8 +2404,8 @@ document.querySelectorAll('.module').forEach((mod, modIdx) => {
     title.appendChild(btn);
   }
 
-  // Orientation toggle (all non-output modules)
-  if(!mod.classList.contains('out')){
+  // Orientation toggle — skip OUTPUT and THROUGH
+  if(!mod.classList.contains('out') && !mod.classList.contains('through')){
     const orient = document.createElement('button');
     orient.className = 'orient-btn';
     orient.innerHTML = '&#8645;';
@@ -2069,6 +2430,12 @@ resizeCableCanvas();
 window.addEventListener('resize', resizeCableCanvas);
 
 function getJackCenter(jackEl){
+  // For THROUGH modules, use module center since jacks are hidden
+  const mod = jackEl.closest('.module');
+  if(mod && mod.classList.contains('through')){
+    const r = mod.getBoundingClientRect();
+    return { x: r.left + r.width/2, y: r.top + r.height/2 };
+  }
   const r = jackEl.getBoundingClientRect();
   return { x: r.left + r.width/2, y: r.top + r.height/2 };
 }
@@ -2277,7 +2644,8 @@ document.addEventListener('mouseup', e => {
   } else if(mod){
     // Dropped anywhere on a module — find next free input
     toMod = parseInt(mod.dataset.modIdx);
-    for(let i = 0; i < 4; i++){
+    const maxIn = mod.querySelectorAll('.jack[data-jack-type="input"]').length || 4;
+    for(let i = 0; i < maxIn; i++){
       if(!cables.some(c => c.toMod === toMod && c.toIdx === i)){ toIdx = i; break; }
     }
   }
@@ -2293,6 +2661,26 @@ document.addEventListener('mouseup', e => {
       dragCable.fromJack.classList.add('connected');
       const toJackEl = findJackEl(toMod, toIdx, 'input');
       if(toJackEl) toJackEl.classList.add('connected');
+      // Auto-set RATE to OFF when pattern connects to a generator with rate
+      const srcName = MOD_NAMES[fromMod];
+      const tgtName = MOD_NAMES[toMod];
+      if(srcName && srcName.startsWith('PATTERN')){
+        const rateMap = {'IMPACT':'impRate','METALLIC':'metRate','PLUCK':'plkRate','BELL':'belRate','MALLET':'malRate','SWEEP':'swpRate','ARPEGGIO':'arpRate'};
+        const rateKey = rateMap[tgtName];
+        if(rateKey){
+          // Set rate to 0 on the specific output matching the input
+          if(modOutputState[toMod] && modOutputState[toMod][toIdx]){
+            modOutputState[toMod][toIdx][rateKey] = 0;
+          }
+          // If this is the currently selected output, update the display too
+          if(selectedOutput[toMod] === toIdx){
+            knobState[rateKey] = 0;
+            updateKnobDisplay(rateKey);
+            const canvas = document.querySelector(`.knob-canvas[data-id="${rateKey}"]`);
+            if(canvas) drawKnob(canvas, rateKey);
+          }
+        }
+      }
       rebuildIfPlaying();
     }
   }
@@ -2320,19 +2708,35 @@ document.addEventListener('keydown', e => {
 // Auto-patch: sources -> effect chain -> output
 document.getElementById('autoPatchBtn').addEventListener('click', () => {
   pushUndo();
-  cables.length = 0;
+
+  // Spatial auto-patch: column-aware chaining
+  // Only modules below MIX 5's Y position are "deployed" to the workspace
+  const mods = document.querySelectorAll('.module');
+  const mix5Idx = MOD_NAMES.indexOf('MIX 5');
+  const mix5Top = mix5Idx >= 0 ? parseFloat(mods[mix5Idx].style.top) || 600 : 600;
+  const deployed = [];
+  mods.forEach((mod, i) => {
+    if(mod.classList.contains('through') || mod.classList.contains('out')) return;
+    const top = parseFloat(mod.style.top);
+    const left = parseFloat(mod.style.left);
+    if(isNaN(top) || isNaN(left) || top <= mix5Top) return;
+    deployed.push({ idx: i, top, left, name: MOD_NAMES[i] });
+  });
+
+  // Remove only cables between deployed modules, leave everything else
+  const deployedSet = new Set(deployed.map(d => d.idx));
+  for(let i = cables.length - 1; i >= 0; i--){
+    if(deployedSet.has(cables[i].fromMod) && deployedSet.has(cables[i].toMod)){
+      cables.splice(i, 1);
+    }
+  }
   document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
-  cableColorIdx = 0;
-
-  const byName = {};
-  MOD_NAMES.forEach((n, i) => { byName[n] = i; });
-
-  // Effect chain order
-  const effectChain = ['TREMOLO','RING MOD','DISTORTION','FILTER','PHASER','DELAY','DETUNE / CHORUS','ENVELOPE','OUTPUT'];
-  // Sources all feed into first effect
-  const sources = ['OSCILLATOR','SUB OCTAVE','SUB RUMBLE','NOISE GEN','FM OSC','PWM OSC','IMPACT','CRACKLE','METALLIC','FORMANT','DRONE','WIND','PLUCK','BELL','MALLET','SWEEP','ARPEGGIO','SHIMMER','BOW'];
-  const firstEffect = effectChain[0];
-  const firstIdx = byName[firstEffect];
+  cables.forEach(c => {
+    const fe = findJackEl(c.fromMod, c.fromIdx, 'output');
+    const te = findJackEl(c.toMod, c.toIdx, 'input');
+    if(fe) fe.classList.add('connected');
+    if(te) te.classList.add('connected');
+  });
 
   function addCable(from, fromOut, to, toIn){
     if(from === undefined || to === undefined) return;
@@ -2345,19 +2749,31 @@ document.getElementById('autoPatchBtn').addEventListener('click', () => {
     if(te) te.classList.add('connected');
   }
 
-  // Wire sources to first effect (each on a different input)
-  sources.forEach((name, i) => {
-    if(byName[name] !== undefined && firstIdx !== undefined){
-      addCable(byName[name], 0, firstIdx, Math.min(i, 3));
+  // Cluster deployed modules into columns by X proximity (92px = half module width)
+  const COL_THRESH = 92;
+  deployed.sort((a, b) => a.left - b.left);
+  const columns = [];
+  deployed.forEach(m => {
+    let best = null, bestDist = Infinity;
+    for(const col of columns){
+      const dist = Math.abs(col.avgX - m.left);
+      if(dist < COL_THRESH && dist < bestDist){ best = col; bestDist = dist; }
+    }
+    if(best){
+      best.mods.push(m);
+      best.avgX = best.mods.reduce((s, c) => s + c.left, 0) / best.mods.length;
+    } else {
+      columns.push({ mods: [m], avgX: m.left });
     }
   });
 
-  // Chain effects in order
-  for(let i = 0; i < effectChain.length - 1; i++){
-    const from = byName[effectChain[i]];
-    const to = byName[effectChain[i + 1]];
-    if(from !== undefined && to !== undefined) addCable(from, 0, to, 0);
-  }
+  // Chain each column top-to-bottom: out 0 -> in 0
+  columns.forEach(col => {
+    col.mods.sort((a, b) => a.top - b.top);
+    for(let i = 0; i < col.mods.length - 1; i++){
+      addCable(col.mods[i].idx, 0, col.mods[i + 1].idx, 0);
+    }
+  });
 
   drawAllCables();
   rebuildIfPlaying();
@@ -2399,45 +2815,55 @@ requestAnimationFrame(() => {
   // FX col 2 (right-aligned 1346): DISTORTION, DELAY, PHASER, ENVELOPE
   // Vertical spacing: 44px
   const savedLayout = [
-    {left:"32px",  top:"38px",  w:"184px"},  // 0  OSCILLATOR
-    {left:"32px",  top:"84px",  w:"184px"},  // 1  SUB OCTAVE
-    {left:"32px",  top:"130px", w:"184px"},  // 2  SUB RUMBLE
-    {left:"32px",  top:"176px", w:"184px"},  // 3  NOISE GEN
-    {left:"32px",  top:"222px", w:"184px"},  // 4  FM OSC
-    {left:"240px", top:"38px",  w:"184px"},  // 5  PWM OSC
-    {left:"240px", top:"84px",  w:"184px"},  // 6  IMPACT
-    {left:"240px", top:"130px", w:"184px"},  // 7  CRACKLE
-    {left:"240px", top:"176px", w:"184px"},  // 8  METALLIC
-    {left:"240px", top:"222px", w:"184px"},  // 9  FORMANT
-    {left:"32px",  top:"268px", w:"184px"},  // 10 DRONE
-    {left:"240px", top:"268px", w:"184px"},  // 11 WIND
-    {left:"448px", top:"38px",  w:"184px"},  // 12 PLUCK
-    {left:"448px", top:"84px",  w:"184px"},  // 13 BELL
-    {left:"448px", top:"130px", w:"184px"},  // 14 MALLET
-    {left:"448px", top:"176px", w:"184px"},  // 15 SWEEP
-    {left:"448px", top:"222px", w:"184px"},  // 16 ARPEGGIO
-    {left:"448px", top:"268px", w:"184px"},  // 17 SHIMMER
-    {left:"32px",  top:"314px", w:"184px"},  // 18 BOW
-    {left:"780px", top:"38px",  w:"184px"},  // 19 TREMOLO
-    {left:"780px", top:"84px",  w:"184px"},  // 20 PITCH WOBBLE
-    {left:"780px", top:"130px", w:"184px"},  // 21 RING MOD
-    {left:"780px", top:"176px", w:"142px"},  // 22 DISTORTION
-    {left:"780px", top:"222px", w:"184px"},  // 23 FILTER
-    {left:"780px", top:"268px", w:"184px"},  // 24 DETUNE / CHORUS
-    {left:"1100px",top:"38px",  w:"266px"},  // 25 PHASER
-    {left:"1100px",top:"84px",  w:"266px"},  // 26 DELAY
-    {left:"1020px",top:"130px", w:"348px"},  // 27 ENVELOPE
-    {left:"1020px",top:"176px", w:"184px"},  // 28 REVERB
-    {left:"1020px",top:"222px", w:"184px"},  // 29 COMPRESSOR
-    {left:"1020px",top:"268px", w:"184px"},  // 30 EQ
-    {left:"1020px",top:"314px", w:"184px"},  // 31 BITCRUSHER
-    {left:"780px", top:"314px", w:"184px"},  // 32 FLANGER
-    {left:"780px", top:"360px", w:"184px"},  // 33 GATE
-    {left:"1020px",top:"360px", w:"184px"},  // 34 PANNER
-    {left:"47px",  top:"460px", w:"184px"},  // 35 MIX 1
-    {left:"119px", top:"525px", w:"184px"},  // 36 MIX 2
-    {left:"345px", top:"480px", w:"184px"},  // 37 MIX 3
-    {left:"80px",  top:"620px", w:"1200px"}  // 38 OUTPUT
+    {left:"32px",  top:"38px",  w:"184px",  tb:0},  // 0  OSCILLATOR
+    {left:"32px",  top:"84px",  w:"184px",  tb:0},  // 1  SUB OCTAVE
+    {left:"25px",  top:"192px", w:"184px",  tb:0},  // 2  SUB RUMBLE
+    {left:"30px",  top:"143px", w:"184px",  tb:0},  // 3  NOISE GEN
+    {left:"29px",  top:"235px", w:"184px",  tb:0},  // 4  FM OSC
+    {left:"261px", top:"41px",  w:"184px",  tb:0},  // 5  PWM OSC
+    {left:"263px", top:"225px", w:"184px",  tb:0},  // 6  IMPACT
+    {left:"261px", top:"133px", w:"184px",  tb:0},  // 7  CRACKLE
+    {left:"261px", top:"179px", w:"184px",  tb:0},  // 8  METALLIC
+    {left:"262px", top:"88px",  w:"184px",  tb:0},  // 9  FORMANT
+    {left:"33px",  top:"280px", w:"184px",  tb:0},  // 10 DRONE
+    {left:"261px", top:"271px", w:"184px",  tb:0},  // 11 WIND
+    {left:"495px", top:"41px",  w:"184px",  tb:0},  // 12 PLUCK
+    {left:"495px", top:"87px",  w:"184px",  tb:0},  // 13 BELL
+    {left:"495px", top:"133px", w:"184px",  tb:0},  // 14 MALLET
+    {left:"495px", top:"179px", w:"184px",  tb:0},  // 15 SWEEP
+    {left:"495px", top:"225px", w:"184px",  tb:0},  // 16 ARPEGGIO
+    {left:"495px", top:"271px", w:"184px",  tb:0},  // 17 SHIMMER
+    {left:"33px",  top:"326px", w:"184px",  tb:0},  // 18 BOW
+    {left:"780px", top:"38px",  w:"184px",  tb:0},  // 19 TREMOLO
+    {left:"779px", top:"222px", w:"184px",  tb:0},  // 20 PITCH WOBBLE
+    {left:"780px", top:"130px", w:"184px",  tb:0},  // 21 RING MOD
+    {left:"780px", top:"176px", w:"142px",  tb:0},  // 22 DISTORTION
+    {left:"779px", top:"83px",  w:"184px",  tb:0},  // 23 FILTER
+    {left:"780px", top:"268px", w:"184px",  tb:0},  // 24 DETUNE / CHORUS
+    {left:"1100px",top:"38px",  w:"266px",  tb:0},  // 25 PHASER
+    {left:"1100px",top:"84px",  w:"266px",  tb:0},  // 26 DELAY
+    {left:"1020px",top:"130px", w:"348px",  tb:0},  // 27 ENVELOPE
+    {left:"1020px",top:"176px", w:"184px",  tb:0},  // 28 REVERB
+    {left:"1020px",top:"222px", w:"184px",  tb:0},  // 29 COMPRESSOR
+    {left:"1023px",top:"356px", w:"184px",  tb:0},  // 30 EQ
+    {left:"1021px",top:"265px", w:"184px",  tb:0},  // 31 BITCRUSHER
+    {left:"780px", top:"314px", w:"184px",  tb:0},  // 32 FLANGER
+    {left:"780px", top:"360px", w:"184px",  tb:0},  // 33 GATE
+    {left:"1021px",top:"311px", w:"184px",  tb:0},  // 34 PANNER
+    {left:"202px", top:"690px", w:"184px",  tb:1},  // 35 MIX 1
+    {left:"370px", top:"638px", w:"184px",  tb:1},  // 36 MIX 2
+    {left:"538px", top:"582px", w:"184px",  tb:1},  // 37 MIX 3
+    {left:"96px",  top:"391px", w:"",       tb:0},  // 38 THROUGH 1
+    {left:"55px",  top:"391px", w:"",       tb:0},  // 39 THROUGH 2
+    {left:"138px", top:"391px", w:"",       tb:0},  // 40 THROUGH 3
+    {left:"178px", top:"391px", w:"",       tb:0},  // 41 THROUGH 4
+    {left:"914px", top:"515px", w:"184px",  tb:0},  // 42 MIX 4
+    {left:"913px", top:"566px", w:"184px",  tb:0},  // 43 MIX 5
+    {left:"314px", top:"362px", w:"184px",  tb:0},  // 44 PATTERN 1
+    {left:"422px", top:"413px", w:"184px",  tb:0},  // 45 PATTERN 2
+    {left:"539px", top:"464px", w:"184px",  tb:0},  // 46 PATTERN 3
+    {left:"304px", top:"796px", w:"",       tb:1},  // 47 INPUT MIX
+    {left:"604px", top:"1023px",w:"",       tb:1}   // 48 MASTER
   ];
 
   // Selection state
@@ -2461,7 +2887,8 @@ requestAnimationFrame(() => {
     if(savedLayout[i]){
       mod.style.left = savedLayout[i].left;
       mod.style.top = savedLayout[i].top;
-      mod.style.width = savedLayout[i].w;
+      if(!mod.classList.contains('through')) mod.style.width = savedLayout[i].w;
+      if(savedLayout[i].tb) mod.classList.add('jacks-tb');
     } else {
       mod.style.left = (rects[i].left - cr.left) + 'px';
       mod.style.top = (rects[i].top - cr.top) + 'px';
@@ -2474,15 +2901,67 @@ requestAnimationFrame(() => {
     title.style.cursor = 'grab';
     title.style.userSelect = 'none';
 
-    // For OUTPUT module, the whole panel is draggable (excluding interactive elements)
-    const dragTarget = mod.classList.contains('out') ? mod : title;
-    if(mod.classList.contains('out')) mod.style.cursor = 'grab';
+    // For OUTPUT and THROUGH modules, the whole panel is draggable
+    const dragTarget = (mod.classList.contains('out') || mod.classList.contains('through')) ? mod : title;
+    if(mod.classList.contains('out') || mod.classList.contains('through')) mod.style.cursor = 'grab';
+
+    // THROUGH: ctrl-click to pop off a line
+    if(mod.classList.contains('through')){
+      mod.addEventListener('click', e => {
+        if(!e.ctrlKey && !e.metaKey) return;
+        e.stopPropagation();
+        const modIdx = parseInt(mod.dataset.modIdx);
+        // Find cable coming IN and cable going OUT
+        const inCable = cables.find(c => c.toMod === modIdx);
+        const outCable = cables.find(c => c.fromMod === modIdx);
+        if(inCable && outCable){
+          // Reconnect: source of inCable -> destination of outCable
+          pushUndo();
+          const newCable = {fromMod:inCable.fromMod, fromIdx:inCable.fromIdx, toMod:outCable.toMod, toIdx:outCable.toIdx, color:inCable.color};
+          cables.splice(cables.indexOf(inCable), 1);
+          const oi = cables.indexOf(outCable);
+          if(oi >= 0) cables.splice(oi, 1);
+          cables.push(newCable);
+        } else {
+          // Only one side connected, just remove cables
+          pushUndo();
+          for(let i=cables.length-1;i>=0;i--){
+            if(cables[i].toMod===modIdx || cables[i].fromMod===modIdx) cables.splice(i,1);
+          }
+        }
+        // Update jack UI
+        document.querySelectorAll('.jack').forEach(j => j.classList.remove('connected'));
+        cables.forEach(c => {
+          const fe=findJackEl(c.fromMod,c.fromIdx,'output'), te=findJackEl(c.toMod,c.toIdx,'input');
+          if(fe) fe.classList.add('connected');
+          if(te) te.classList.add('connected');
+        });
+        drawAllCables();
+        rebuildIfPlaying();
+      });
+    }
+
+    // Any click on the module brings it to front
+    mod.addEventListener('mousedown', () => {
+      mods.forEach(m => { if(m !== mod && !m.classList.contains('out')) m.style.zIndex = m.querySelectorAll('.knob-row')[0]?.style.display==='none' ? 2 : 5; });
+      if(!mod.classList.contains('out')) mod.style.zIndex = 15;
+    }, true);
 
     dragTarget.addEventListener('mousedown', e => {
       if(e.target.closest('.knob-canvas') || e.target.closest('.jack') || e.target.closest('select') || e.target.closest('input') || e.target.closest('#playBtn') || e.target.closest('#vizToggle') || e.target.closest('.bypass-btn')) return;
       if(e.target.tagName === 'SELECT') return;
       e.preventDefault();
       e.stopPropagation();
+
+      // THROUGH: Alt+drag starts cable from output
+      if(mod.classList.contains('through') && e.altKey){
+        const outJack = mod.querySelector('.jack[data-jack-type="output"]');
+        if(outJack){
+          dragCable = { fromJack: outJack, mx: e.clientX, my: e.clientY, startX: e.clientX, startY: e.clientY };
+          outJack.classList.add('dragging');
+          return;
+        }
+      }
 
       // Shift-click: toggle selection
       if(e.shiftKey){
@@ -2525,14 +3004,47 @@ requestAnimationFrame(() => {
         title.style.cursor = 'grab';
         document.removeEventListener('mousemove', onMove);
         document.removeEventListener('mouseup', onUp);
+        // THROUGH: check if dropped on a cable and insert
+        if(mod.classList.contains('through') && group.length === 1){
+          const modIdx = parseInt(mod.dataset.modIdx);
+          const mr = mod.getBoundingClientRect();
+          const mcx = mr.left + mr.width/2, mcy = mr.top + mr.height/2;
+          for(let ci=0; ci<cables.length; ci++){
+            const c = cables[ci];
+            const fromEl = findJackEl(c.fromMod, c.fromIdx, 'output');
+            const toEl = findJackEl(c.toMod, c.toIdx, 'input');
+            if(!fromEl || !toEl) continue;
+            const f = getJackCenter(fromEl), t = getJackCenter(toEl);
+            // Check proximity to cable line (within 20px)
+            const dx=t.x-f.x, dy=t.y-f.y, len=Math.sqrt(dx*dx+dy*dy);
+            if(len<1) continue;
+            const proj=((mcx-f.x)*dx+(mcy-f.y)*dy)/(len*len);
+            if(proj<0.05||proj>0.95) continue;
+            const px=f.x+proj*dx, py=f.y+proj*dy;
+            const dist=Math.sqrt((mcx-px)*(mcx-px)+(mcy-py)*(mcy-py));
+            if(dist<25){
+              // Insert THROUGH: replace cable with two cables (keep same color)
+              pushUndo();
+              const orig = cables.splice(ci, 1)[0];
+              cables.push({fromMod:orig.fromMod, fromIdx:orig.fromIdx, toMod:modIdx, toIdx:0, color:orig.color});
+              cables.push({fromMod:modIdx, fromIdx:0, toMod:orig.toMod, toIdx:orig.toIdx, color:orig.color});
+              // Mark jacks connected
+              const inJ=findJackEl(modIdx,0,'input'), outJ=findJackEl(modIdx,0,'output');
+              if(inJ) inJ.classList.add('connected');
+              if(outJ) outJ.classList.add('connected');
+              rebuildIfPlaying();
+              break;
+            }
+          }
+        }
         drawAllCables();
       };
       document.addEventListener('mousemove', onMove);
       document.addEventListener('mouseup', onUp);
     });
 
-    // Double-click title to collapse/expand (skip OUTPUT module)
-    if(!mod.classList.contains('out')){
+    // Double-click title to collapse/expand (skip OUTPUT and THROUGH)
+    if(!mod.classList.contains('out') && !mod.classList.contains('through')){
       // Start collapsed
       mod.querySelectorAll('.knob-row, .out-sel-row').forEach(k => { k.style.display = 'none'; });
       mod.classList.add('collapsed-knobs');
@@ -2548,6 +3060,15 @@ requestAnimationFrame(() => {
         knobs.forEach(k => { k.style.display = isHidden ? '' : 'none'; });
         mod.classList.toggle('collapsed-knobs', !isHidden);
         mod.style.zIndex = isHidden ? 10 : 2;
+        setTimeout(drawAllCables, 50);
+      });
+    }
+
+    // THROUGH: double-click to toggle horizontal/vertical
+    if(mod.classList.contains('through')){
+      mod.addEventListener('dblclick', e => {
+        e.preventDefault();
+        mod.classList.toggle('jacks-tb');
         setTimeout(drawAllCables, 50);
       });
     }
