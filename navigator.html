@@ -3951,13 +3951,15 @@ function initObjects() {
   _bioZones.forEach(({lvlIdx, wx, wy, ang, r})=>{
     const lvlName = LEVELS[lvlIdx];
     if(!LEVEL_BIOS[lvlName]) return;
+    const bioTitle = lvlName+' // ABOUT';
+    if((state.collectedItems||[]).some(c=>c.title===bioTitle)) return;
     const bx = wx !== undefined ? wx : Math.cos(ang)*r;
     const by = wy !== undefined ? wy : Math.sin(ang)*r;
     state.objects.push({
       wx: bx, wy: by,
       size:52, shape:'square', rotSpeed:0.004,
       pulsePhase: lvlIdx*0.9, colorIndex: (lvlIdx*5)%11,
-      content:{title:lvlName+' // ABOUT',text:LEVEL_BIOS[lvlName],vimeoId:null,youtubeId:null,duration:30,isBio:true},
+      content:{title:bioTitle,text:LEVEL_BIOS[lvlName],vimeoId:null,youtubeId:null,duration:30,isBio:true},
       collected: false, _permanent: true, _bio: true
     });
   });
@@ -4072,10 +4074,28 @@ function finishHullImplosion(){
     var _hwIdx = (typeof MOODS!=='undefined') ? MOODS.findIndex(function(m){ return m.name==='HOMEWARD'; }) : -1;
     if(_hwIdx>=0){ state.songIndex=_hwIdx; playSong(_hwIdx); } else { resumeMusic(); }
   } else {
-    // Auto-respawn at EDIT zone centre (launchpad), no choice screen
-    state.x=0; state.y=0; state.vx=0; state.vy=0; resetEnclosure();
-    state.fuel=1.0; state.outsideBarrier=false; state._committedInside=true;
-    state._prevX=0; state._prevY=0;
+    // Tiered respawn: east-of-barrier -> space station, other outside -> near hatch, else edit centre
+    const _impX = state._implosionRingWx, _impY = state._implosionRingWy;
+    const _outside = (_impX*_impX + _impY*_impY) > BELT_OUTER*BELT_OUTER;
+    const _eastOfBarrier = _outside && _impX > 0;
+    if(_eastOfBarrier){
+      state.x=OUTER_TARGET_WX; state.y=OUTER_TARGET_WY;
+      state.outsideBarrier=true; state._committedInside=false;
+      state.currentLevel=-99; state._outerZoneKey='OUTER BARRIER';
+    } else if(_outside){
+      state.x=BELT_OUTER-600; state.y=0;
+      state.outsideBarrier=false; state._committedInside=true;
+      state.currentLevel=1;
+      updateLevelDisplay(LEVELS[1]);
+    } else {
+      state.x=0; state.y=0; resetEnclosure();
+      state.outsideBarrier=false; state._committedInside=true;
+      state.currentLevel=1;
+      updateLevelDisplay(LEVELS[1]);
+    }
+    state.vx=0; state.vy=0;
+    state.fuel=1.0;
+    state._prevX=state.x; state._prevY=state.y;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -4084,12 +4104,11 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-title').textContent='⚠ FUEL CRITICAL';
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
-    state.currentLevel=1;
     populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
-    updateLevelDisplay(LEVELS[1]); updateFuelBar();
-    state.zoneCrossFlash={lvl:-3,timer:220,msg:'HULL RECONSTRUCTED — RETURNED TO BASE',_col:'#00ffcc'};
+    updateFuelBar();
+    state.zoneCrossFlash={lvl:-3,timer:220,msg:_outside?'HULL RECONSTRUCTED':'HULL RECONSTRUCTED, RETURNED TO BASE',_col:'#00ffcc'};
     resumeMusic();
   }
 }
@@ -6225,10 +6244,9 @@ function update(){
     let _fuelRate;
     if(state.outsideBarrier){
       // Per-pixel burn: same total fuel regardless of speed
-      // Target: 2x boost uses ~0.92 fuel over 62500px (1736 frames at 36px/frame)
-      // 0.92/1736 = 0.00053 per frame at 36px/frame → 0.00053/36 per pixel = 0.0000147/px
+      // Target: 2x boost uses ~0.89 fuel over 62500px, leaving ~11% margin on reach
       const _spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-      const _basePxRate = 0.0000147;
+      const _basePxRate = 0.0000142;
       // Proximity amplifier: within 15000px of target, 1x boost burns 4x more
       const _tDist = Math.sqrt((state.x-OUTER_TARGET_WX)**2 + state.y**2);
       const _proxAmp = (!state.boostDoubled && _tDist < 15000) ? (1 + 3*(1-_tDist/15000)) : 1;
@@ -13868,8 +13886,9 @@ function drawEarth(ctx, cx, cy){
 }
 
 function drawMoon(ctx, cx, cy){
-  // Orbit around Earth at 0.25px per 2 frames
-  _moonOrbitAng += 0.125 / MOON_ORBIT_R;
+  // Orbit around Earth at 0.25px per 2 frames, only ticks when player nears Earth
+  const _dxE = state.x - EARTH_WX, _dyE = state.y - EARTH_WY;
+  if(_dxE*_dxE + _dyE*_dyE < 2500*2500) _moonOrbitAng += 0.125 / MOON_ORBIT_R;
   const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
   const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
   const screenX = moonWX - state.x + cx;
