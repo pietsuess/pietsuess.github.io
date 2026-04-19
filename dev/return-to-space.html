@@ -1258,7 +1258,7 @@ function updateMissionBriefing(){
   const scoopStatus = _scoopCollected ? '✓' : '—';
   const debrisPct = _debrisTotal > 0 ? Math.round((_debrisCaptured / _debrisTotal) * 100) : 0;
   const debrisStatus = debrisPct >= 100 ? '✓' : (_hasScoop ? debrisPct + '%' : '—');
-  const marsStatus = (_marsSurface && _marsSurface.active) || _marsLanding ? '✓' : (_debrisMilestones[3] ? '...' : '—');
+  const marsStatus = (_marsSurface && _marsSurface.active) || _marsLanding ? '✓' : (state._outerLaunchpadRefuelled ? '...' : '—');
   const crystalPct = _marsSurface ? _marsSurface.crystalsCollected + '/' + MS_CRYSTAL_COUNT : '—';
   const crystalStatus = (_marsSurface && _marsSurface.crystalsCollected >= MS_CRYSTAL_COUNT) ? '✓' : (_marsSurface && _marsSurface.active ? crystalPct : '—');
   const lightStatus = _msHasLightSpeed ? '✓' : '—';
@@ -6614,12 +6614,22 @@ function triggerEarthVictory(){
 }
 
 function triggerLaunchpadVictory(){
-  // Flash message
-  state.zoneCrossFlash={
-    lvl:-3, timer:320,
-    msg:'FUEL COLLECTED · HOMEWARD BOUND',
-    _col:'#44ddff'
-  };
+  // Spawn fuel cell trail for Mars journey (both arcs: over and under belt)
+  const _marsTrailCells = [
+    // Near launchpad
+    [78000, 200],
+    // Path from station to belt
+    [60000, -400], [35000, 300],
+    // Arc over belt (negative y)
+    [25000, -18000], [10000, -22000], [-5000, -23000], [-18000, -21000], [-28000, -16000],
+    // Arc under belt (positive y)
+    [25000, 18000], [10000, 22000], [-5000, 23000], [-18000, 21000], [-28000, 16000],
+    // Mars approach trail
+    [-30000, -13500], [-33000, -13000], [-34500, -12500], [-36000, -12000]
+  ];
+  _marsTrailCells.forEach(function(p){
+    state.fuelObjects.push({wx:p[0], wy:p[1], size:14, rotation:0, liquidPhase:0, collected:false, _permanent:true, _marsTrailFuel:true});
+  });
   // Switch to LAUNCH track on refuel
   const _launchIdx = MOODS.findIndex(m=>m.name==='LAUNCH');
   if(_launchIdx >= 0){
@@ -7392,7 +7402,7 @@ function drawRadarMap(){
   }
 
   // ── Mars dot — orange/red, only after debris cleared, suppress when far ──
-  if(_debrisMilestones[3] && !state._farFromHome){
+  if(state._outerLaunchpadRefuelled && !state._farFromHome){
     const _maRx = mapX + (MARS_WX - state._radarCX) * scale;
     const _maRy = mapY + (MARS_WY - state._radarCY) * scale;
     const _maDx = _maRx - mapX, _maDy = _maRy - mapY;
@@ -9235,7 +9245,7 @@ function drawGame(){
   }
 
   // Mars arrow hint — after debris cleared, persistent arrow toward Mars (suppress when far)
-  if(_debrisMilestones[3] && !_marsLanding && !state._farFromHome){
+  if(state._outerLaunchpadRefuelled && !_marsLanding && !state._farFromHome){
     const _marsAng = Math.atan2(MARS_WY - state.y, MARS_WX - state.x);
     const _marsDist = Math.sqrt((MARS_WX-state.x)**2 + (MARS_WY-state.y)**2);
     if(_marsDist > MARS_R + 300){
@@ -11380,7 +11390,7 @@ var _marsLanding = false;
 var _marsLandingTimer = 0;
 
 function updateMarsApproach(){
-  if(!_debrisMilestones[3] || _marsLanding) return;
+  if(!state._outerLaunchpadRefuelled || _marsLanding) return;
   const dx = state.x - MARS_WX, dy = state.y - MARS_WY;
   const dist = Math.sqrt(dx*dx + dy*dy);
   if(dist < MARS_R + 60){
