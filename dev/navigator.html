@@ -4077,10 +4077,28 @@ function finishHullImplosion(){
     var _hwIdx = (typeof MOODS!=='undefined') ? MOODS.findIndex(function(m){ return m.name==='HOMEWARD'; }) : -1;
     if(_hwIdx>=0){ state.songIndex=_hwIdx; playSong(_hwIdx); } else { resumeMusic(); }
   } else {
-    // Auto-respawn at EDIT zone centre (launchpad), no choice screen
-    state.x=0; state.y=0; state.vx=0; state.vy=0; resetEnclosure();
-    state.fuel=1.0; state.outsideBarrier=false; state._committedInside=true;
-    state._prevX=0; state._prevY=0;
+    // Tiered respawn: east-of-barrier -> space station, other outside -> near hatch, else edit centre
+    const _impX = state._implosionRingWx, _impY = state._implosionRingWy;
+    const _outside = (_impX*_impX + _impY*_impY) > BELT_OUTER*BELT_OUTER;
+    const _eastOfBarrier = _outside && _impX > 0;
+    if(_eastOfBarrier){
+      state.x=OUTER_TARGET_WX; state.y=OUTER_TARGET_WY;
+      state.outsideBarrier=true; state._committedInside=false;
+      state.currentLevel=-99; state._outerZoneKey='OUTER BARRIER';
+    } else if(_outside){
+      state.x=BELT_OUTER-600; state.y=0;
+      state.outsideBarrier=false; state._committedInside=true;
+      state.currentLevel=1;
+      updateLevelDisplay(LEVELS[1]);
+    } else {
+      state.x=0; state.y=0; resetEnclosure();
+      state.outsideBarrier=false; state._committedInside=true;
+      state.currentLevel=1;
+      updateLevelDisplay(LEVELS[1]);
+    }
+    state.vx=0; state.vy=0;
+    state.fuel=1.0;
+    state._prevX=state.x; state._prevY=state.y;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -4089,12 +4107,11 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-title').textContent='⚠ FUEL CRITICAL';
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
-    state.currentLevel=1;
     populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
-    updateLevelDisplay(LEVELS[1]); updateFuelBar();
-    state.zoneCrossFlash={lvl:-3,timer:220,msg:'HULL RECONSTRUCTED — RETURNED TO BASE',_col:'#00ffcc'};
+    updateFuelBar();
+    state.zoneCrossFlash={lvl:-3,timer:220,msg:_nearEarth?'HULL RECONSTRUCTED':'HULL RECONSTRUCTED, RETURNED TO BASE',_col:'#00ffcc'};
     resumeMusic();
   }
 }
