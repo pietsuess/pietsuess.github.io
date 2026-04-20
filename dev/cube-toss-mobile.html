@@ -30,7 +30,12 @@ function toggleFullscreen(){
   const d=document;
   if(!d.fullscreenElement && !d.webkitFullscreenElement){
     const el=d.documentElement;
-    (el.requestFullscreen||el.webkitRequestFullscreen).call(el);
+    try{
+      const p = (el.requestFullscreen||el.webkitRequestFullscreen).call(el);
+      const lockLandscape = function(){ try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){} };
+      if(p && p.then) p.then(lockLandscape).catch(function(){});
+      else setTimeout(lockLandscape, 100);
+    }catch(e){}
   } else {
     (d.exitFullscreen||d.webkitExitFullscreen).call(d);
   }
@@ -3779,7 +3784,8 @@ function animate(time){
   if(camX<W){
     ctx.strokeStyle='rgba(254,249,240,0.12)';ctx.lineWidth=1;
     const wlX=getWalkLineX()-camX;
-    ctx.beginPath();ctx.moveTo(wlX,WALK_LINE_Y_START);ctx.lineTo(wlX,WALK_LINE_Y_START+WALK_LINE_LEN);ctx.stroke();
+    const wlY=WALK_LINE_Y_START+camY; // lock vertical to screen on mobile
+    ctx.beginPath();ctx.moveTo(wlX,wlY);ctx.lineTo(wlX,wlY+WALK_LINE_LEN);ctx.stroke();
 
     if(state==='ready'){
       for(const wk of walkCubes){
@@ -3790,7 +3796,7 @@ function animate(time){
         const tipAngle=eased*(Math.PI/2);
         const pivotLocalX=((stepIdx+1)*wk.size)%WALK_LINE_LEN;
         ctx.save();
-        ctx.translate(getWalkLineX()-camX,WALK_LINE_Y_START);
+        ctx.translate(getWalkLineX()-camX,wlY);
         ctx.rotate(Math.PI/2);ctx.translate(pivotLocalX,0);ctx.rotate(tipAngle);
         // Draw metallic walking cube
         const s=wk.size,r=s*0.15;
@@ -3827,8 +3833,8 @@ function animate(time){
 
     if(state==='ready'){
       ctx.fillStyle='rgba(254,249,240,0.3)';ctx.font='500 14px Urbanist';ctx.textAlign='center';
-      ctx.fillText('GRAB A CUBE',getWalkLineX()-camX,WALK_LINE_Y_START-20);
-      ctx.fillText('DRAG & THROW',getWalkLineX()-camX,WALK_LINE_Y_START-4);
+      ctx.fillText('GRAB A CUBE',getWalkLineX()-camX,wlY-20);
+      ctx.fillText('DRAG & THROW',getWalkLineX()-camX,wlY-4);
     }
   }
 
