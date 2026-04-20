@@ -372,6 +372,8 @@ const walkCubes = [
 let showHints = false;
 let levelMenuOpen = false;
 let levelMenuScroll = 0;
+let menuDragging = false;
+let menuDragStart = null;
 
 // Show goal preview
 let goalPreview = false;
@@ -1301,41 +1303,10 @@ function onDown(e){
   if (levelMenuOpen) {
     const mw = 240, rowH = 30, mx = ljx, my = ljyBtn + 30;
     const mh = Math.min((LEVELS.length + 1) * rowH + 8, H * 0.6);
-    // Click inside menu
+    // Start drag/tap inside menu
     if (p.x >= mx && p.x <= mx + mw && p.y >= my && p.y <= my + mh) {
-      const idx = Math.floor((p.y - my - 4 + levelMenuScroll) / rowH);
-      // ADD LEVEL button
-      if (idx === LEVELS.length) {
-        const newLv = {
-          name: 'NEW LEVEL', par: 3, width: 1000,
-          walls: [], platforms: [], bumpers: [], hintMarkers: [],
-          goal: { x: 700, y: H*0.4, w: 80, h: H*0.2, rot: 0 },
-          backWall: { x: 780, y: 0, w: 25, h: H, rot: 0 },
-        };
-        LEVELS.push(newLv);
-        level = LEVELS.length - 1; attempts = 0; resetLevel();
-        levelMenuOpen = false; edSaveLocal();        return;
-      }
-      // Reorder arrows (editor mode, right side of row)
-      if (editorMode && idx >= 0 && idx < LEVELS.length && p.x > mx + mw - 35) {
-        const iy = my + 4 + idx * rowH - levelMenuScroll;
-        const clickY = p.y - iy;
-        if (clickY < 15 && idx > 0) {
-          // Move up
-          [LEVELS[idx], LEVELS[idx-1]] = [LEVELS[idx-1], LEVELS[idx]];
-          if (level === idx) level--; else if (level === idx-1) level++;
-          edSaveLocal();  return;
-        }
-        if (clickY >= 15 && idx < LEVELS.length-1) {
-          // Move down
-          [LEVELS[idx], LEVELS[idx+1]] = [LEVELS[idx+1], LEVELS[idx]];
-          if (level === idx) level++; else if (level === idx+1) level--;
-          edSaveLocal();  return;
-        }
-      }
-      // Select level
-      if (idx >= 0 && idx < LEVELS.length) {
-        level = idx; attempts = 0; resetLevel(); levelMenuOpen = false;      }
+      menuDragging = true;
+      menuDragStart = { y: p.y, scroll: levelMenuScroll, moved: false, startX: p.x, startY: p.y };
       return;
     }
     // Click toggle button = close
@@ -1636,6 +1607,16 @@ function onMove(e){
   const p=getPos(e),now=performance.now(),moveDt=(now-(lastMoveTime||now))/1000;
   lastMoveTime=now; prevMX=mouseX;prevMY=mouseY; mouseX=p.x;mouseY=p.y;
 
+  // Level menu touch-drag scrolling
+  if (menuDragging && menuDragStart && levelMenuOpen) {
+    const dy = p.y - menuDragStart.y;
+    if (Math.abs(dy) > 5 || Math.abs(p.x - menuDragStart.startX) > 5) menuDragStart.moved = true;
+    const rowH = 30;
+    const maxScroll = Math.max(0, (LEVELS.length + 1) * rowH - H * 0.5);
+    levelMenuScroll = Math.max(0, Math.min(menuDragStart.scroll - dy, maxScroll));
+    return;
+  }
+
   if (editorMode) {
     const wx = p.x + camX, wy = p.y + camY;
     if (edToolbarDragging && edToolbarDragOff) {
@@ -1683,6 +1664,46 @@ function onMove(e){
 }
 
 function onUp(e){
+  // Menu tap-vs-drag resolution
+  if (menuDragging && menuDragStart) {
+    const wasTap = !menuDragStart.moved;
+    const tapY = menuDragStart.startY;
+    menuDragging = false;
+    const savedStart = menuDragStart;
+    menuDragStart = null;
+    if (wasTap && levelMenuOpen) {
+      // Replicate selection logic using tap position
+      const mw = 240, rowH = 30, mx = 15, my = 60 + 30;
+      const idx = Math.floor((tapY - my - 4 + levelMenuScroll) / rowH);
+      if (idx === LEVELS.length) {
+        const newLv = { name: 'NEW LEVEL', par: 3, width: 1000,
+          walls: [], platforms: [], bumpers: [], hintMarkers: [],
+          goal: { x: 700, y: H*0.4, w: 80, h: H*0.2, rot: 0 },
+          backWall: { x: 780, y: 0, w: 25, h: H, rot: 0 } };
+        LEVELS.push(newLv);
+        level = LEVELS.length - 1; attempts = 0; resetLevel();
+        levelMenuOpen = false; edSaveLocal(); return;
+      }
+      if (editorMode && idx >= 0 && idx < LEVELS.length && savedStart.startX > mx + mw - 35) {
+        const iy = my + 4 + idx * rowH - levelMenuScroll;
+        const clickY = tapY - iy;
+        if (clickY < 15 && idx > 0) {
+          [LEVELS[idx], LEVELS[idx-1]] = [LEVELS[idx-1], LEVELS[idx]];
+          if (level === idx) level--; else if (level === idx-1) level++;
+          edSaveLocal(); return;
+        }
+        if (clickY >= 15 && idx < LEVELS.length-1) {
+          [LEVELS[idx], LEVELS[idx+1]] = [LEVELS[idx+1], LEVELS[idx]];
+          if (level === idx) level++; else if (level === idx+1) level--;
+          edSaveLocal(); return;
+        }
+      }
+      if (idx >= 0 && idx < LEVELS.length) {
+        level = idx; attempts = 0; resetLevel(); levelMenuOpen = false;
+      }
+    }
+    return;
+  }
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
   if(peekPanning){ peekPanning=false; peekStart=null; return; }
   if(state==='aiming'&&cube&&grabbing){
@@ -4315,6 +4336,21 @@ function animate(time){
     ctx.strokeStyle='rgba(254,249,240,0.2)';ctx.lineWidth=1;ctx.stroke();
     ctx.fillStyle='rgba(254,249,240,0.7)';ctx.font='600 16px Urbanist';ctx.textAlign='center';
     ctx.fillText('PLAY AGAIN',pab.x+pab.w/2,pab.y+pab.h/2+5);
+
+    // NOW BUILD YOUR OWN LEVEL prompt pointing at the level dropdown
+    ctx.save();
+    ctx.fillStyle=COL.gold;
+    ctx.font='700 14px Urbanist'; ctx.textAlign='left';
+    ctx.fillText('NOW BUILD YOUR OWN LEVEL', 130, 100);
+    ctx.strokeStyle=COL.gold; ctx.lineWidth=2.5; ctx.setLineDash([]);
+    ctx.beginPath();
+    ctx.moveTo(125, 95);
+    ctx.quadraticCurveTo(75, 90, 60, 80);
+    ctx.stroke();
+    ctx.beginPath();
+    ctx.moveTo(55, 78); ctx.lineTo(67, 74); ctx.lineTo(65, 86); ctx.closePath();
+    ctx.fillStyle=COL.gold; ctx.fill();
+    ctx.restore();
   }
 
   // ─── LOST/OTHER MESSAGES (timed) ───
