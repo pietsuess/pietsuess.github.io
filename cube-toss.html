@@ -1,6 +1,12 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
+  <script>
+    // Redirect mobile devices to dedicated mobile build
+    if (/Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent)) {
+      location.replace('cube-toss-mobile.html' + location.search + location.hash);
+    }
+  </script>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Cube Toss</title>
@@ -9,9 +15,33 @@
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #1a0e2e; overflow: hidden; font-family: 'Urbanist', sans-serif; }
     canvas { display: block; cursor: default; }
+    #fs-btn {
+      position: fixed; top: 10px; right: 10px; z-index: 100;
+      width: 36px; height: 36px; border: 1px solid rgba(255,255,255,0.15);
+      border-radius: 8px; background: rgba(255,255,255,0.06);
+      color: #fef9f0; cursor: pointer; display: flex;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    }
+    #fs-btn:hover { background: rgba(255,255,255,0.12); }
+    #fs-btn svg { width: 18px; height: 18px; }
   </style>
 </head>
 <body>
+<button id="fs-btn" onclick="toggleFullscreen()" aria-label="Fullscreen">
+  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+</button>
+<script>
+function toggleFullscreen(){
+  const d=document;
+  if(!d.fullscreenElement && !d.webkitFullscreenElement){
+    const el=d.documentElement;
+    (el.requestFullscreen||el.webkitRequestFullscreen).call(el);
+  } else {
+    (d.exitFullscreen||d.webkitExitFullscreen).call(d);
+  }
+}
+</script>
 <canvas id="c"></canvas>
 <script>
 const DEV_MODE = true; // false for public release — hides editor
@@ -28,12 +58,18 @@ let levelsLoaded = false; // don't change H until levels are parsed
 const isMobile = /Mobi|Android|iPhone|iPad|iPod/.test(navigator.userAgent);
 
 function resize() {
-  realW = canvas.width = window.innerWidth;
-  realH = canvas.height = window.innerHeight;
-  const scaleByW = realW / DESIGN_W;
-  const scaleByH = realH / DESIGN_H;
-  // Desktop: fit everything (Math.min), Mobile: fill screen (Math.max)
-  gameScale = isMobile ? Math.max(scaleByW, scaleByH) : Math.min(scaleByW, scaleByH);
+  const vv = window.visualViewport;
+  realW = canvas.width = vv ? vv.width : window.innerWidth;
+  realH = canvas.height = vv ? vv.height : window.innerHeight;
+  // Mobile: scale by level 1 width so goal pins right, cubes pin left
+  if (isMobile) {
+    const CONTENT_W = 1040; // level 1 width (1000) + small right padding
+    gameScale = realW / CONTENT_W;
+  } else {
+    const scaleByW = realW / DESIGN_W;
+    const scaleByH = realH / DESIGN_H;
+    gameScale = Math.min(scaleByW, scaleByH);
+  }
   gameOffX = 0;
   gameOffY = 0;
   W = realW / gameScale;
@@ -41,6 +77,10 @@ function resize() {
 }
 resize();
 window.addEventListener('resize', resize);
+if (window.visualViewport) {
+  window.visualViewport.addEventListener('resize', resize);
+  window.visualViewport.addEventListener('scroll', resize);
+}
 
 
 // Prevent pull-to-refresh and overscroll on mobile
@@ -1200,6 +1240,11 @@ canvas.addEventListener('touchend',(e)=>{onUp(e);});
 // Side buttons — stacked vertically under the walk line on the left
 const SIDE_BTN_W = 100, SIDE_BTN_H = 32, SIDE_BTN_GAP = 8;
 function sideBtnBounds(index) {
+  if (isMobile) {
+    // Stack from bottom-left on mobile so both always visible
+    const stride = SIDE_BTN_H + SIDE_BTN_GAP;
+    return { x: 10, y: H - 10 - SIDE_BTN_H - index * stride, w: SIDE_BTN_W, h: SIDE_BTN_H };
+  }
   const startY = WALK_LINE_Y_START + WALK_LINE_LEN + 20;
   return { x: 10, y: startY + index * (SIDE_BTN_H + SIDE_BTN_GAP), w: SIDE_BTN_W, h: SIDE_BTN_H };
 }
@@ -1543,9 +1588,8 @@ function onDown(e){
       }
       return;
     }
-    camX=0;camY=0;camTargetX=0; // reset camera so worldX works correctly
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
-    cube=spawnCube(p.x,p.y,bestWk); // use screen pos since camX is now 0
+    cube=spawnCube(p.x+camX,p.y+camY,bestWk); // screen pos + cam offset = world pos
     state='aiming';canvas.style.cursor='grabbing';
   } else {
     // Clicked past throw zone — peek pan (mobile only)
