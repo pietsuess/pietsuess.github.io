@@ -1243,10 +1243,11 @@ function updateCube(c, dt) {
     if (Math.abs(c.vx) < 5) c.vx = (Math.random() > 0.5 ? 1 : -1) * 15;
   }
 
-  // Settle check — only if actually supported on a surface
-  if(finalSpeed<15&&Math.abs(c.angVel)<0.5&&state==='thrown'&&supported){
+  // Settle check — fast when supported, slower fallback for floating stuck cubes
+  if(finalSpeed<15&&Math.abs(c.angVel)<0.5&&state==='thrown'){
     c._settleTime=(c._settleTime||0)+dt;
-    if(c._settleTime>0.3){state='lost';showMsg('MISSED! TAP TO RETRY',3);stopAirborne();setTimeout(function(){if(state==='lost')resetCube();},3500);}
+    const threshold = supported ? 0.3 : 2.0;
+    if(c._settleTime>threshold){state='lost';showMsg('MISSED! TAP TO RETRY',3);stopAirborne();setTimeout(function(){if(state==='lost')resetCube();},3500);}
   }else{c._settleTime=0;}
 }
 
@@ -1368,11 +1369,8 @@ function onDown(e){
   // Side buttons — check all positions, determine which button by label
   {
     let bi = 0;
-    // RESET at 0
-    if (hitSideBtn(bi) && (state==='thrown'||state==='lost'||state==='won'||state==='aiming')) { resetCube(); return; }
-    bi++;
-    // HINTS
-    if (hitSideBtn(bi)) { showHints = !showHints; return; }
+    // RESET at 0 (always tappable)
+    if (hitSideBtn(bi)) { resetCube(); return; }
     bi++;
     // EDIT (dev only)
     if (DEV_MODE && hitSideBtn(bi)) {
@@ -4207,13 +4205,8 @@ function animate(time){
   }
 
   let btnIdx = 0;
-  // RESET (only when active)
-  if (state==='thrown'||state==='lost'||state==='won'||state==='aiming') {
-    drawSideBtn(btnIdx, 'RESET', false);
-  }
-  btnIdx++;
-  // HINTS
-  drawSideBtn(btnIdx, 'HINTS', showHints);
+  // RESET — always visible with yellow text
+  drawSideBtn(btnIdx, 'RESET', true);
   btnIdx++;
   // EDIT (dev only)
   if (DEV_MODE) drawSideBtn(btnIdx, 'EDIT', editorMode);
