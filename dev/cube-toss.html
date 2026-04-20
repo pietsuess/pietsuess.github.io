@@ -52,19 +52,26 @@ function toggleFullscreen(){
 function _enterLandscapeFullscreen(){
   const el = document.documentElement;
   const req = el.requestFullscreen || el.webkitRequestFullscreen;
-  if(!req) return;
-  Promise.resolve(req.call(el)).then(function(){
+  if(req){
     try{
-      if(screen.orientation && screen.orientation.lock){
-        screen.orientation.lock('landscape').catch(function(){});
-      }
+      const p = req.call(el);
+      if(p && p.then) p.then(function(){
+        try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
+      }).catch(function(){});
     }catch(e){}
-  }).catch(function(){});
+  }
+  // Attempt orientation lock even if fullscreen unsupported (some browsers allow)
+  try{ if(screen.orientation && screen.orientation.lock) screen.orientation.lock('landscape').catch(function(){}); }catch(e){}
 }
-document.addEventListener('pointerdown', function handler(){
-  document.removeEventListener('pointerdown', handler);
+var _landscapeTried = false;
+function _firstTapHandler(){
+  if(_landscapeTried) return;
+  _landscapeTried = true;
   _enterLandscapeFullscreen();
-});
+}
+document.addEventListener('pointerdown', _firstTapHandler, { passive: true });
+document.addEventListener('touchstart', _firstTapHandler, { passive: true });
+document.addEventListener('click', _firstTapHandler, { passive: true });
 </script>
 <div id="rotate-prompt">
   <svg viewBox="0 0 24 24" fill="none" stroke="#f4c542" stroke-width="1.5">
@@ -103,8 +110,7 @@ function resize() {
     gameScale = Math.min(scaleByW, scaleByH);
   }
   gameOffX = 0;
-  // Mobile: center the walk-to-goal zone (world Y ~370) vertically so goal sits higher
-  gameOffY = isMobile ? (realH / 2 - 370 * gameScale) : 0;
+  gameOffY = 0;
   W = realW / gameScale;
   if (levelsLoaded) H = realH / gameScale;
 }
