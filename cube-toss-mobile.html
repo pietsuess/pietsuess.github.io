@@ -1723,7 +1723,7 @@ function onUp(e){
     return;
   }
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
-  if(peekPanning){ peekPanning=false; peekStart=null; _peekHoldUntil = performance.now() + 4000; return; }
+  if(peekPanning){ peekPanning=false; peekStart=null; _peekHoldUntil = performance.now() + 1500; return; }
   if(state==='aiming'&&cube&&grabbing){
     if(cube.x >= getReleaseLine()){
       doThrow();
@@ -3687,22 +3687,18 @@ function animate(time){
           camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
         }
       }
-      // Vertical follow — keep cube in upper third, pan down aggressively so goal stays visible
+      const holdActive = performance.now() < _peekHoldUntil && state === 'ready';
+      // Vertical snap-follow: cube moves freely inside band, camera glued at edges
       if (cube && state === 'thrown') {
+        const topBand = H * 0.25;
+        const bottomBand = H * 0.55;
         const cubeScreenY = cube.y - camY;
-        let targetY = camY;
-        if (cubeScreenY < H * 0.25) {
-          targetY = cube.y - H * 0.3;
-        } else if (cubeScreenY > H * 0.55) {
-          // Smaller deadzone on bottom so camera starts panning down sooner
-          targetY = cube.y - H * 0.45;
-        }
-        camY += (targetY - camY) * 0.12;
-      } else if (camY !== BASE_CAM_Y) {
+        if (cubeScreenY < topBand) camY = cube.y - topBand;
+        else if (cubeScreenY > bottomBand) camY = cube.y - bottomBand;
+      } else if (camY !== BASE_CAM_Y && !holdActive) {
         camY += (BASE_CAM_Y - camY) * 0.05;
       }
-      // Smooth horizontal follow — respect peek-hold so user-panned view stays put
-      const holdActive = performance.now() < _peekHoldUntil && state === 'ready';
+      // Horizontal follow — respect peek-hold
       if (!peekPanning && !holdActive) {
         const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
         camX += (camTargetX - camX) * lerpRate;
