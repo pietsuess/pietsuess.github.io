@@ -182,7 +182,8 @@ let showMessage = '';
 let messageTimer = 0;
 let peekPanning = false;
 let peekStart = null; // {mx, my, camX, camY}
-let _peekHoldUntil = 0; // timestamp ms - keeps camera where user peeked
+let _peekHoldUntilX = 0; // horizontal peek hold
+let _peekHoldUntilY = 0; // vertical peek hold
 
 // ─── SCORECARD ───
 let scorecard = []; // [{throws, par, name}] per completed level
@@ -1608,7 +1609,8 @@ function onDown(e){
       return;
     }
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
-    _peekHoldUntil = 0; // clear any peek hold when player starts a throw
+    _peekHoldUntilX = 0; // release horizontal peek so camera returns to throw framing
+    // vertical peek (_peekHoldUntilY) stays so user throws from peeked elevation
     cube=spawnCube(p.x+camX,p.y+camY,bestWk); // screen pos + cam offset = world pos
     state='aiming';canvas.style.cursor='grabbing';
   } else {
@@ -1723,7 +1725,7 @@ function onUp(e){
     return;
   }
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
-  if(peekPanning){ peekPanning=false; peekStart=null; _peekHoldUntil = performance.now() + 1500; return; }
+  if(peekPanning){ peekPanning=false; peekStart=null; const _now=performance.now(); _peekHoldUntilX=_now+1500; _peekHoldUntilY=_now+1500; return; }
   if(state==='aiming'&&cube&&grabbing){
     if(cube.x >= getReleaseLine()){
       doThrow();
@@ -3687,19 +3689,21 @@ function animate(time){
           camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
         }
       }
-      const holdActive = performance.now() < _peekHoldUntil && state === 'ready';
-      // Vertical snap-follow: cube moves freely inside band, camera glued at edges
+      const _now = performance.now();
+      const holdX = _now < _peekHoldUntilX && state !== 'thrown';
+      const holdY = _now < _peekHoldUntilY && state !== 'thrown';
+      // Vertical snap-follow during throw (overrides hold); otherwise lerp back to base unless Y hold
       if (cube && state === 'thrown') {
         const topBand = H * 0.25;
         const bottomBand = H * 0.55;
         const cubeScreenY = cube.y - camY;
         if (cubeScreenY < topBand) camY = cube.y - topBand;
         else if (cubeScreenY > bottomBand) camY = cube.y - bottomBand;
-      } else if (camY !== BASE_CAM_Y && !holdActive) {
+      } else if (camY !== BASE_CAM_Y && !holdY) {
         camY += (BASE_CAM_Y - camY) * 0.05;
       }
-      // Horizontal follow — respect peek-hold
-      if (!peekPanning && !holdActive) {
+      // Horizontal follow — respect X hold
+      if (!peekPanning && !holdX) {
         const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
         camX += (camTargetX - camX) * lerpRate;
       }
