@@ -826,7 +826,8 @@ function findHintPath(lvIdx) {
 
 function spawnCube(x, y, wk) {
   return { x, y, size: wk.size, color: wk.color, bounce: wk.bounce, gravMult: wk.gravMult,
-    vx: 0, vy: 0, angle: 0, angVel: 0, trail: [] };
+    vx: 0, vy: 0, angle: 0, angVel: 0, trail: [],
+    _spawnCamX: camX }; // camera X at grab time, used for drag-based throw line
 }
 
 // ─── DRAW HELPERS ───
@@ -1674,7 +1675,8 @@ function onMove(e){
       velSamples.push({vx:(mouseX-prevMX)/moveDt,vy:(mouseY-prevMY)/moveDt});
       if(velSamples.length>5)velSamples.shift();
     }
-    if(cube.x>getThrowLine())doThrow();
+    // Throw check relative to cam-at-grab so peeked-camera grabs still work
+    if(cube.x - cube._spawnCamX > getThrowLine()) doThrow();
   }
   if(state==='ready'&&!grabbing&&!peekPanning){
     canvas.style.cursor=worldX(p.x)<getThrowLine()+100?'grab':'default';
@@ -1725,7 +1727,7 @@ function onUp(e){
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
   if(peekPanning){ peekPanning=false; peekStart=null; return; }
   if(state==='aiming'&&cube&&grabbing){
-    if(cube.x >= getReleaseLine()){
+    if(cube.x - cube._spawnCamX >= getReleaseLine()){
       doThrow();
     } else {
       // Cancel — put cube back
@@ -3697,14 +3699,12 @@ function animate(time){
       }
       // Horizontal: follow cube during throw; on won/lost center goal; during ready/aiming
       // stay put unless player peeked too far right (no throw room)
-      const MAX_READY_CAMX = 360; // beyond this, walk-line cubes would cross the throw line on grab
       if (!peekPanning) {
         if (state === 'thrown' || state === 'won' || state === 'lost') {
           const lerpRate = (state === 'thrown') ? 0.035 : 0.05;
           camX += (camTargetX - camX) * lerpRate;
-        } else if (camX > MAX_READY_CAMX) {
-          camX += (camTargetX - camX) * 0.06;
         }
+        // Otherwise (ready / aiming) stay wherever player peeked, no auto snap-back
       }
     } else {
       // ── DESKTOP CAMERA: only follow during thrown, not aiming ──
