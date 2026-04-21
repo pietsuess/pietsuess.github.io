@@ -182,6 +182,7 @@ let showMessage = '';
 let messageTimer = 0;
 let peekPanning = false;
 let peekStart = null; // {mx, my, camX, camY}
+let _peekHoldUntil = 0; // timestamp ms - keeps camera where user peeked
 
 // ─── SCORECARD ───
 let scorecard = []; // [{throws, par, name}] per completed level
@@ -1607,6 +1608,7 @@ function onDown(e){
       return;
     }
     grabbing=true;velSamples=[];lastMoveTime=performance.now();
+    _peekHoldUntil = 0; // clear any peek hold when player starts a throw
     cube=spawnCube(p.x+camX,p.y+camY,bestWk); // screen pos + cam offset = world pos
     state='aiming';canvas.style.cursor='grabbing';
   } else {
@@ -1721,7 +1723,7 @@ function onUp(e){
     return;
   }
   if (editorMode) { edDragging=false; edPanning=false; edToolbarDragging=false; edToolbarDragOff=null; edDragStart=null; edPanStart=null; canvas.style.cursor='default'; return; }
-  if(peekPanning){ peekPanning=false; peekStart=null; return; }
+  if(peekPanning){ peekPanning=false; peekStart=null; _peekHoldUntil = performance.now() + 4000; return; }
   if(state==='aiming'&&cube&&grabbing){
     if(cube.x >= getReleaseLine()){
       doThrow();
@@ -3685,23 +3687,23 @@ function animate(time){
           camTargetX = Math.min(maxCam, Math.max(0, goalCenterX - W * 0.5));
         }
       }
-      // Vertical follow — deadzone-based so minor bounces don't jitter camera
+      // Vertical follow — keep cube in upper third, pan down aggressively so goal stays visible
       if (cube && state === 'thrown') {
         const cubeScreenY = cube.y - camY;
         let targetY = camY;
-        if (cubeScreenY < H * 0.3) {
-          // Cube near top — pan up to keep it visible, park cube 35% from top
-          targetY = cube.y - H * 0.35;
-        } else if (cubeScreenY > H * 0.7) {
-          // Cube near bottom — pan down, park cube 55% from top
-          targetY = cube.y - H * 0.55;
+        if (cubeScreenY < H * 0.25) {
+          targetY = cube.y - H * 0.3;
+        } else if (cubeScreenY > H * 0.55) {
+          // Smaller deadzone on bottom so camera starts panning down sooner
+          targetY = cube.y - H * 0.45;
         }
-        camY += (targetY - camY) * 0.06;
+        camY += (targetY - camY) * 0.12;
       } else if (camY !== BASE_CAM_Y) {
         camY += (BASE_CAM_Y - camY) * 0.05;
       }
-      // Smooth horizontal follow
-      if (!peekPanning) {
+      // Smooth horizontal follow — respect peek-hold so user-panned view stays put
+      const holdActive = performance.now() < _peekHoldUntil && state === 'ready';
+      if (!peekPanning && !holdActive) {
         const lerpRate = (state === 'thrown') ? 0.035 : (state === 'won' || state === 'lost') ? 0.05 : 0.06;
         camX += (camTargetX - camX) * lerpRate;
       }
