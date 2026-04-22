@@ -2826,13 +2826,45 @@ window.onload = function() {
     const starGeo = new THREE.DodecahedronGeometry(3.5, 0);
     const starMat = new THREE.MeshStandardMaterial({ color: 0xff88ff, emissive: 0xff44ff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
 
-    // ── Pylon — speed-run gate. Bounce on hit, points for passing on correct side. ──
-    // LEFT pylon (cyan glow): pass to its LEFT (counter-clockwise) for +400.
-    // RIGHT pylon (magenta glow): pass to its RIGHT (clockwise) for +400.
-    // Wrong side within range: -200. Hit: bounce + slow + -100.
-    const pylonGeo = new THREE.ConeGeometry(4.5, 14, 6);
-    const pylonLeftMat  = new THREE.MeshStandardMaterial({ color: 0xff7722, emissive: 0x00ffcc, emissiveIntensity: 1.4, metalness: 0.0, roughness: 1.0 });
-    const pylonRightMat = new THREE.MeshStandardMaterial({ color: 0xff7722, emissive: 0xff44ff, emissiveIntensity: 1.4, metalness: 0.0, roughness: 1.0 });
+    // ── Pylon — orange traffic cone with arrow on top pointing the direction to go ──
+    // LEFT pylon: arrow on top points LEFT, cyan accent bands. Pass on its LEFT for +400.
+    // RIGHT pylon: arrow on top points RIGHT, magenta accent bands. Pass on its RIGHT for +400.
+    // Wrong side within range: -200. Hit: bounce + slowdown + -100.
+    const pylonConeGeo  = new THREE.ConeGeometry(3.5, 12, 12);
+    const pylonConeMat  = new THREE.MeshStandardMaterial({ color: 0xff5500, emissive: 0xff2200, emissiveIntensity: 0.6, metalness: 0.1, roughness: 0.6 });
+    const pylonBandUpperGeo = new THREE.TorusGeometry(2.3, 0.45, 6, 20);
+    const pylonBandLowerGeo = new THREE.TorusGeometry(3.0, 0.45, 6, 20);
+    const pylonBaseGeo  = new THREE.BoxGeometry(7, 0.8, 7);
+    const pylonBaseMat  = new THREE.MeshStandardMaterial({ color: 0x222222, roughness: 0.9 });
+    const pylonArrowGeo = new THREE.ConeGeometry(1.6, 4.5, 4);
+    const pylonLeftAccentMat  = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x00ffcc, emissiveIntensity: 1.8, metalness: 0.2, roughness: 0.3 });
+    const pylonRightAccentMat = new THREE.MeshStandardMaterial({ color: 0xff44ff, emissive: 0xff44ff, emissiveIntensity: 1.8, metalness: 0.2, roughness: 0.3 });
+    function createPylonMesh(isLeft) {
+        var grp = new THREE.Group();
+        var accent = isLeft ? pylonLeftAccentMat : pylonRightAccentMat;
+        // Orange cone body
+        grp.add(new THREE.Mesh(pylonConeGeo, pylonConeMat));
+        // Upper accent band (near tip)
+        var upper = new THREE.Mesh(pylonBandUpperGeo, accent);
+        upper.position.y = 1.8; upper.rotation.x = Math.PI / 2;
+        grp.add(upper);
+        // Lower accent band (mid-cone)
+        var lower = new THREE.Mesh(pylonBandLowerGeo, accent);
+        lower.position.y = -1.5; lower.rotation.x = Math.PI / 2;
+        grp.add(lower);
+        // Dark square base
+        var base = new THREE.Mesh(pylonBaseGeo, pylonBaseMat);
+        base.position.y = -6;
+        grp.add(base);
+        // BIG ARROW on top — points in the direction player should go
+        // Default cone tip points +Y; rotate so tip points +X (left) or -X (right) in pylon-local space.
+        // After the pylon's outer Z rotation, +X local maps to player's LEFT, -X to player's RIGHT.
+        var arrow = new THREE.Mesh(pylonArrowGeo, accent);
+        arrow.position.y = 8;
+        arrow.rotation.z = isLeft ? -Math.PI / 2 : Math.PI / 2;
+        grp.add(arrow);
+        return grp;
+    }
     // ── Content object geometries (2x size of regular items, zone-shaped) ──
     const contentGeos = {
         square:   new THREE.BoxGeometry(12, 12, 4),             // EDIT — cube slab
@@ -3503,11 +3535,12 @@ window.onload = function() {
             if (_pylonChance > 0 && Math.random() < _pylonChance) {
                 var _pAngle = _advanceSpiral(_t, zPos);
                 var _isLeft = Math.random() < 0.5;
-                var _pMesh = new THREE.Mesh(pylonGeo, _isLeft ? pylonLeftMat : pylonRightMat);
+                var _pMesh = createPylonMesh(_isLeft);
                 var _pHover = tubeRadius - 6;
                 _pMesh.position.set(Math.cos(_pAngle) * _pHover, Math.sin(_pAngle) * _pHover, zPos);
-                // Cone tip points inward toward tube center so the flat base faces outward
-                _pMesh.rotation.z = _pAngle - Math.PI / 2;
+                // Pylon stands upright on tube wall: tip toward tube center, base on outer wall.
+                // Rotation +π/2 around Z aligns local +Y to inward-radial direction.
+                _pMesh.rotation.z = _pAngle + Math.PI / 2;
                 _pMesh.userData = {
                     type: _isLeft ? 'pylon_left' : 'pylon_right',
                     hitRadius: 7.0,
