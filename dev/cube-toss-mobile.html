@@ -387,14 +387,28 @@ function playSound(type) {
 // ─── WALKING CUBES (size = club choice) ───
 // Big: heavy, low bounce, high momentum — punches through bumpers, rolls far
 // Small: light, high bounce, less momentum — trick shots, fits tight gaps
-const walkCubes = [
-  // Effective bounce = BOUNCE(0.85) * multiplier
-  // DRIVER: 0.50  IRON: 0.65  WEDGE: 0.75  PUTTER: 0.85
-  { size: 36, speed: 40, offset: 0,   color: COL.gold,    bounce: 0.59, gravMult: 1.25, label: 'DRIVER' },
-  { size: 32, speed: -55, offset: 80,  color: COL.coral,   bounce: 0.76, gravMult: 1.1, label: 'IRON' },
-  { size: 28, speed: 70, offset: 160, color: COL.rose,    bounce: 0.88, gravMult: 0.95, label: 'WEDGE' },
-  { size: 24, speed: -85, offset: 240, color: COL.magenta, bounce: 1.0, gravMult: 0.8, label: 'PUTTER' },
+// Physics derived from size via cubePhysicsFor(size). Mass auto-scales via Matter density.
+const REF_CUBE_SIZE = 36;
+function cubePhysicsFor(size) {
+  const r = size / REF_CUBE_SIZE;
+  return {
+    bounce:   Math.max(0.30, Math.min(1.20, 1.82 - 1.23 * r)),
+    gravMult: Math.max(0.50, Math.min(1.50, 0.03 + 1.22 * r)),
+  };
+}
+
+const DEFAULT_WALK_CUBES = [
+  { size: 36, speed: 40, offset: 0,   color: COL.gold,    label: 'DRIVER' },
+  { size: 32, speed: -55, offset: 80,  color: COL.coral,   label: 'IRON' },
+  { size: 28, speed: 70, offset: 160, color: COL.rose,    label: 'WEDGE' },
+  { size: 24, speed: -85, offset: 240, color: COL.magenta, label: 'PUTTER' },
 ];
+
+function getWalkCubes() {
+  const lv = (typeof LEVELS !== 'undefined' && LEVELS.length) ? LEVELS[level % LEVELS.length] : null;
+  if (!lv || !Array.isArray(lv.walkCubes) || !lv.walkCubes.length) return DEFAULT_WALK_CUBES;
+  return lv.walkCubes;
+}
 
 // ─── HINTS ───
 let showHints = false;
@@ -892,7 +906,8 @@ function findHintPath(lvIdx) {
 }
 
 function spawnCube(x, y, wk) {
-  return { x, y, size: wk.size, color: wk.color, bounce: wk.bounce, gravMult: wk.gravMult,
+  const { bounce, gravMult } = cubePhysicsFor(wk.size);
+  return { x, y, size: wk.size, color: wk.color, bounce, gravMult,
     vx: 0, vy: 0, angle: 0, angVel: 0, trail: [],
     _spawnCamX: camX }; // camera X at grab time, used for drag-based throw line
 }
@@ -1361,8 +1376,9 @@ function onDown(e){
   const wx=worldX(p.x);
   if(wx<getThrowLine()+100){
     // Find the nearest walking cube to click position
-    let bestWk=walkCubes[0], bestDist=Infinity;
-    for(const wk of walkCubes){
+    const wcs=getWalkCubes();
+    let bestWk=wcs[0], bestDist=Infinity;
+    for(const wk of wcs){
       const dist=wk.speed*elapsed+wk.offset;
       const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
       const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
@@ -1920,6 +1936,14 @@ function edToolbarHit(px, py) {
 }
 
 // Serialize a level to a plain object (no H references, store ratios)
+function _colorKey(c) {
+  for (const k in COL) if (COL[k] === c) return k;
+  return null;
+}
+function _colorFromKey(k, fallback) {
+  return (k && COL[k]) || fallback || COL.gold;
+}
+
 function serializeLevel(lv) {
   return {
     name: lv.name, par: lv.par, width: lv.width,
@@ -1934,6 +1958,10 @@ function serializeLevel(lv) {
     hintMarkers: (lv.hintMarkers||[]).map(h => ({ x: h.x, yR: h.y/DESIGN_H, r: h.r||18, rot: h.rot||0 })),
     goal: { x: lv.goal.x, yR: lv.goal.y/DESIGN_H, w: lv.goal.w, hR: lv.goal.h/DESIGN_H, rot: lv.goal.rot||0 },
     backWall: lv.backWall ? { x: lv.backWall.x, w: lv.backWall.w, rot: lv.backWall.rot||0 } : null,
+    walkCubes: (lv.walkCubes || DEFAULT_WALK_CUBES).map(wk => ({
+      size: wk.size, speed: wk.speed, offset: wk.offset,
+      colorKey: _colorKey(wk.color), label: wk.label
+    })),
   };
 }
 
@@ -1952,6 +1980,12 @@ function deserializeLevel(d) {
     hintMarkers: (d.hintMarkers||[]).map(h => ({ x: h.x, y: h.yR * DESIGN_H, r: h.r||18, rot: h.rot||0 })),
     goal: { x: d.goal.x, y: d.goal.yR * DESIGN_H, w: d.goal.w, h: d.goal.hR * DESIGN_H, rot: d.goal.rot||0 },
     backWall: d.backWall ? { x: d.backWall.x, y: 0, w: d.backWall.w, h: H, rot: d.backWall.rot||0 } : null,
+    walkCubes: (Array.isArray(d.walkCubes) && d.walkCubes.length
+      ? d.walkCubes.map(wk => ({
+          size: wk.size, speed: wk.speed, offset: wk.offset,
+          color: _colorFromKey(wk.colorKey, wk.color), label: wk.label
+        }))
+      : DEFAULT_WALK_CUBES.map(wk => Object.assign({}, wk))),
   };
 }
 
@@ -3445,7 +3479,36 @@ window.addEventListener('keydown', (e) => {
   if (editorMode && e.key === 'z' && (e.metaKey || e.ctrlKey) && e.shiftKey) {
     edPopRedo(); e.preventDefault();
   }
+  // Walk-cube editing: 1/2/3/4 selects walk-cube, [ shrinks, ] grows, 0 resets to default
+  if (editorMode && (e.key === '1' || e.key === '2' || e.key === '3' || e.key === '4')) {
+    const idx = parseInt(e.key, 10) - 1;
+    const wcs = getWalkCubes();
+    if (idx < wcs.length) edWalkCubeSel = idx;
+    e.preventDefault();
+  }
+  if (editorMode && edWalkCubeSel != null && (e.key === '[' || e.key === ']')) {
+    const lv = getCurrentLevel();
+    if (!lv.walkCubes) lv.walkCubes = DEFAULT_WALK_CUBES.map(wk => Object.assign({}, wk));
+    const wk = lv.walkCubes[edWalkCubeSel];
+    if (wk) {
+      edPushUndo();
+      const delta = e.key === ']' ? 2 : -2;
+      wk.size = Math.max(16, Math.min(64, wk.size + delta));
+    }
+    e.preventDefault();
+  }
+  if (editorMode && edWalkCubeSel != null && e.key === '0') {
+    const lv = getCurrentLevel();
+    if (lv.walkCubes && lv.walkCubes[edWalkCubeSel] && DEFAULT_WALK_CUBES[edWalkCubeSel]) {
+      edPushUndo();
+      lv.walkCubes[edWalkCubeSel].size = DEFAULT_WALK_CUBES[edWalkCubeSel].size;
+    }
+    e.preventDefault();
+  }
 });
+
+// Selected walk-cube index in editor mode (null = none)
+let edWalkCubeSel = null;
 
 // ─── ANIMATED GRADIENT BG (matches PietSuess site) ───
 let gradPhase = 0;
@@ -3619,7 +3682,7 @@ function animate(time){
     ctx.beginPath();ctx.moveTo(wlX,wlY);ctx.lineTo(wlX,wlY+WALK_LINE_LEN);ctx.stroke();
 
     if(state==='ready'){
-      for(const wk of walkCubes){
+      for(const wk of getWalkCubes()){
         const dist=wk.speed*elapsed+wk.offset;
         const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
         const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
@@ -3926,6 +3989,17 @@ function animate(time){
     // Edit mode label
     ctx.fillStyle = 'rgba(0,255,255,0.7)'; ctx.font = '600 11px Urbanist';
     ctx.fillText('EDIT MODE', cbx, cby);
+
+    // Walk-cube editor readout: 1234 select, [/] resize, 0 reset
+    const _wcs = getWalkCubes();
+    ctx.font = '500 9px Urbanist'; ctx.fillStyle = 'rgba(0,255,255,0.55)';
+    ctx.fillText('CUBES — 1234 sel  [/] size  0 reset', cbx, cby - 18);
+    if (edWalkCubeSel != null && _wcs[edWalkCubeSel]) {
+      const wk = _wcs[edWalkCubeSel];
+      const phys = cubePhysicsFor(wk.size);
+      ctx.fillStyle = 'rgba(244,197,66,0.9)'; ctx.font = '600 10px Urbanist';
+      ctx.fillText(`${wk.label} (${edWalkCubeSel+1}): size ${wk.size}  bounce ${phys.bounce.toFixed(2)}  grav ${phys.gravMult.toFixed(2)}`, cbx, cby - 6);
+    }
     const cbLabels = [
       { key: 'panRight', label: 'PAN RIGHT', val: cf.panRight },
       { key: 'panUp', label: 'PAN UP', val: cf.panUp },
