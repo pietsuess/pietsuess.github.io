@@ -28,6 +28,7 @@
   </style>
 </head>
 <body>
+<script src="https://cdn.jsdelivr.net/npm/matter-js@0.20.0/build/matter.min.js"></script>
 <button id="fs-btn" onclick="toggleFullscreen()" aria-label="Fullscreen">
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
 </button>
@@ -109,9 +110,18 @@ const COL = {
 // ─── CONSTANTS ───
 const GRAVITY = 900;
 const BOUNCE = 0.85;
-const FRICTION = 0.985;
-const ANG_FRICTION = 0.96;
 const CUBE_SIZE = 36;
+
+// ─── MATTER.JS PHYSICS ENGINE ───
+// Matter uses px/step units (step = 1/60 sec). Multiply our px/sec values by MSTEP to convert.
+const MSTEP = 1/60;
+const engine = Matter.Engine.create();
+const world = engine.world;
+engine.gravity.y = 1;
+engine.gravity.scale = 0.0013;
+let staticBodies = [];
+let throwLineBody = null;
+let cubeBody = null;
 const DEFAULT_THROW_LINE = 420;
 const DEFAULT_RELEASE_LINE = 50;
 const WALK_LINE_X = 60;
@@ -639,9 +649,55 @@ function getCamFlags() {
   return { panUp: !!lv.panUp, panDown: !!lv.panDown, panRight: lv.panRight !== false };
 }
 
-function resetCube() { cube = null; state = 'ready'; camX = 0; camY = 0; camTargetX = isMobile ? Math.max(0, getWalkLineX() - 20) : 0; hintCache = {}; stopAirborne(); }
+function destroyCubeBody() {
+  if (cubeBody) { Matter.Composite.remove(world, cubeBody); cubeBody = null; }
+  if (cube) cube.body = null;
+}
+
+// Rebuild static bodies for current level's walls, platforms, bumpers, back wall, ceiling, etc.
+function rebuildWorld() {
+  if (!levelsLoaded) return;
+  const lv = getCurrentLevel();
+  for (const b of staticBodies) Matter.Composite.remove(world, b);
+  staticBodies = [];
+  throwLineBody = null;
+
+  const wallOpts = { isStatic: true, friction: 0.4, restitution: 0.7, label: 'wall' };
+  for (const w of lv.walls) {
+    staticBodies.push(Matter.Bodies.rectangle(w.x + w.w/2, w.y + w.h/2, w.w, w.h,
+      Object.assign({}, wallOpts, { angle: w.rot || 0 })));
+  }
+  const PLAT_H = 20;
+  for (const p of lv.platforms) {
+    staticBodies.push(Matter.Bodies.rectangle(p.x + p.w/2, p.y + PLAT_H/2, p.w, PLAT_H,
+      Object.assign({}, wallOpts, { label: 'platform', angle: p.rot || 0 })));
+  }
+  if (lv.backWall) {
+    const bw = lv.backWall;
+    staticBodies.push(Matter.Bodies.rectangle(bw.x + bw.w/2, bw.y + bw.h/2, bw.w, bw.h,
+      Object.assign({}, wallOpts, { label: 'backWall' })));
+  }
+  for (const bm of lv.bumpers) {
+    staticBodies.push(Matter.Bodies.circle(bm.x, bm.y, bm.r,
+      { isStatic: true, restitution: 1.3, friction: 0, label: 'bumper' }));
+  }
+  const ceil = getCeilingY();
+  staticBodies.push(Matter.Bodies.rectangle(lv.width/2, ceil - 50, 40000, 100,
+    Object.assign({}, wallOpts, { label: 'ceiling' })));
+  const rightX = lv.width + 200;
+  staticBodies.push(Matter.Bodies.rectangle(rightX + 50, 0, 100, 40000,
+    Object.assign({}, wallOpts, { label: 'rightWall' })));
+  const tl = getThrowLine();
+  throwLineBody = Matter.Bodies.rectangle(tl - 2, 0, 4, 40000,
+    { isStatic: true, isSensor: true, friction: 0.4, restitution: 0.25, label: 'throwLine' });
+  staticBodies.push(throwLineBody);
+
+  Matter.Composite.add(world, staticBodies);
+}
+
+function resetCube() { destroyCubeBody(); cube = null; state = 'ready'; camX = 0; camY = 0; camTargetX = isMobile ? Math.max(0, getWalkLineX() - 20) : 0; hintCache = {}; stopAirborne(); }
 // Only reset camera when changing levels
-function resetLevel() { camX = 0; camY = 0; resetCube(); }
+function resetLevel() { camX = 0; camY = 0; resetCube(); rebuildWorld(); }
 
 // ─── TRAJECTORY SIMULATOR — finds a real path using actual physics ───
 let hintCache = {}; // level index → {path:[], vx, vy, startY}
@@ -676,9 +732,16 @@ function simulateTrajectory(lv, startX, startY, vx, vy, cubeSize, bounceMult, gr
     }
 
     for (const w of lv.walls) {
-      const simC = {x:cx,y:cy,vx:cvx,vy:cvy,angVel:0};
-      collideRotatedRect(simC, half, B, w.x, w.y, w.w, w.h, w.rot||0);
-      cx=simC.x;cy=simC.y;cvx=simC.vx;cvy=simC.vy;
+      // Simple AABB-vs-AABB wall collision for hint trajectory sim (rotated walls treated as AABB)
+      if (cx+half>w.x && cx-half<w.x+w.w && cy+half>w.y && cy-half<w.y+w.h) {
+        const ol=(cx+half)-w.x, or2=(w.x+w.w)-(cx-half);
+        const ot=(cy+half)-w.y, ob=(w.y+w.h)-(cy-half);
+        const m=Math.min(ol,or2,ot,ob);
+        if(m===ol){cx=w.x-half; cvx=-Math.abs(cvx)*B;}
+        else if(m===or2){cx=w.x+w.w+half; cvx=Math.abs(cvx)*B;}
+        else if(m===ot){cy=w.y-half; cvy=-Math.abs(cvy)*B;}
+        else{cy=w.y+w.h+half; cvy=Math.abs(cvy)*B;}
+      }
     }
 
     for (const p of lv.platforms) {
@@ -855,367 +918,79 @@ function getCubeCorners(c) {
 }
 
 // Apply rigid body impulse at a contact point (normal bounce + surface friction)
-function applyImpulse(c, contactX, contactY, normalX, normalY, restitution) {
-  const mass = 1;
-  const inertia = mass * (c.size * c.size) / 6;
+function updateCube(c, dt) {
+  if (!c.body) return;
 
-  // Contact point relative to center
-  const rx = contactX - c.x, ry = contactY - c.y;
-
-  // Velocity at contact point (linear + angular)
-  const vpx = c.vx - c.angVel * ry;
-  const vpy = c.vy + c.angVel * rx;
-
-  // --- Normal impulse (bounce) ---
-  const vn = vpx * normalX + vpy * normalY;
-  if (vn > 0) return; // moving away
-
-  const rxn = rx * normalY - ry * normalX;
-  const j = -(1 + restitution) * vn / (1/mass + rxn * rxn / inertia);
-
-  c.vx += j * normalX / mass;
-  c.vy += j * normalY / mass;
-  c.angVel += j * rxn / inertia;
-
-  // --- Tangential friction (makes cube roll with travel direction) ---
-  const tx = -normalY, ty = normalX; // tangent vector
-  const vt = vpx * tx + vpy * ty; // sliding velocity along surface
-  const rxt = rx * ty - ry * tx;
-  const frictionCoeff = 0.4;
-  let jt = -vt * frictionCoeff / (1/mass + rxt * rxt / inertia);
-  // Clamp friction to not exceed normal impulse (Coulomb friction)
-  const maxFriction = Math.abs(j) * frictionCoeff;
-  jt = Math.max(-maxFriction, Math.min(maxFriction, jt));
-
-  c.vx += jt * tx / mass;
-  c.vy += jt * ty / mass;
-  c.angVel += jt * rxt / inertia;
-}
-
-// Settle flat: align to the surface the cube is resting on
-function settleFlat(c, dt) {
-  const speed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (speed > 60) return;
-
-  const half = c.size / 2;
-  const lv = getCurrentLevel();
-
-  // Find the surface angle the cube is resting on
-  let surfaceAngle = 0;
-  const checkY = c.y + half + 5;
-
-  // Check platforms
-  for (const p of lv.platforms) {
-    const rot = p.rot || 0;
-    if (rot) {
-      // Rotated platform: transform cube into platform's local space
-      const cx = p.x + p.w/2, cy = p.y + 3;
-      const cos = Math.cos(-rot), sin = Math.sin(-rot);
-      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
-      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
-      if (Math.abs(lx) < p.w/2 + half && Math.abs(ly) < half + 10) {
-        surfaceAngle = rot;
-      }
-    } else {
-      if (c.x + half > p.x && c.x - half < p.x + p.w && Math.abs(checkY - p.y) < 10) {
-        surfaceAngle = 0;
-      }
-    }
-  }
-  // Check walls (cube can rest on top of a wall)
-  for (const w of lv.walls) {
-    const rot = w.rot || 0;
-    if (rot) {
-      const cx = w.x + w.w/2, cy = w.y + w.h/2;
-      const cos = Math.cos(-rot), sin = Math.sin(-rot);
-      const lx = (c.x - cx)*cos - (c.y - cy)*sin;
-      const ly = (c.x - cx)*sin + (c.y - cy)*cos;
-      if (Math.abs(lx) < w.w/2 + half && ly > 0 && ly < w.h/2 + half + 10) {
-        surfaceAngle = rot;
-      }
-    } else {
-      if (c.x + half > w.x && c.x - half < w.x + w.w && Math.abs(checkY - w.y) < 10) {
-        surfaceAngle = 0;
-      }
-    }
+  // Toggle throw-line wall: if thrown from behind, line is a sensor until cube crosses it
+  if (throwLineBody) {
+    const tl = getThrowLine();
+    const wantSensor = !!(c._thrownEarly && c.x < tl);
+    if (throwLineBody.isSensor !== wantSensor) throwLineBody.isSensor = wantSensor;
   }
 
-  // Target angle: nearest 90° increment offset by surface angle
-  const relAngle = c.angle - surfaceAngle;
-  const nearest90 = Math.round(relAngle / (Math.PI/2)) * (Math.PI/2);
-  const targetAngle = surfaceAngle + nearest90;
-  const diff = targetAngle - c.angle;
+  // Step Matter at fixed 60Hz for stability
+  Matter.Engine.update(engine, 1000/60);
 
-  if (speed < 40 && Math.abs(diff) > 0.01) {
-    c.angle += diff * 0.15;
-    c.angVel *= 0.5;
-  }
-  if (speed < 15 && Math.abs(diff) < 0.08) {
-    c.angle = targetAngle;
-    c.angVel = 0;
-  }
-}
+  // Sync Matter state onto cube (rendering, camera, goal all read these)
+  c.x = c.body.position.x;
+  c.y = c.body.position.y;
+  c.angle = c.body.angle;
+  c.vx = c.body.velocity.x / MSTEP;
+  c.vy = c.body.velocity.y / MSTEP;
+  c.angVel = c.body.angularVelocity / MSTEP;
 
-function collideCubeWalls(c, lv) {
-  const half = c.size / 2;
-  const B = BOUNCE * (c.bounce || 1);
+  if (c._thrownEarly && c.x > getThrowLine()) c._thrownEarly = false;
+
+  // Death zone — lowest corner past the death line
   const corners = getCubeCorners(c);
-
-  // Death zone
   const lowestCornerY = Math.max(corners[0].y, corners[1].y, corners[2].y, corners[3].y);
-  if (lowestCornerY > getDeathY() && !c._fellOff) { c._fellOff = true; }
+  if (lowestCornerY > getDeathY() && !c._fellOff) c._fellOff = true;
 
-  // Ceiling — bounce corners off ceiling
-  const ceil = getCeilingY();
-  for (const corner of corners) {
-    if (corner.y < ceil) {
-      const pen = ceil - corner.y;
-      c.y += pen;
-      applyImpulse(c, corner.x, corner.y, 0, 1, B);
-    }
+  // Goal — cube center must be inside (supports rotation)
+  const lv = getCurrentLevel(), g = lv.goal;
+  let inGoal = false;
+  if (g.rot) {
+    const gcx = g.x + g.w/2, gcy = g.y + g.h/2;
+    const cos = Math.cos(-g.rot), sin = Math.sin(-g.rot);
+    const dx = c.x - gcx, dy = c.y - gcy;
+    const lx = dx*cos - dy*sin, ly = dx*sin + dy*cos;
+    inGoal = Math.abs(lx) < g.w/2 && Math.abs(ly) < g.h/2 - 4;
+  } else {
+    inGoal = c.x > g.x && c.x < g.x + g.w && c.y > g.y + 4 && c.y < g.y + g.h - 4;
   }
-
-  // Left wall (throw line) — only acts as wall once cube has passed it
-  const tl = getThrowLine();
-  if (!c._thrownEarly || c.x > tl) {
-    if (c._thrownEarly) c._thrownEarly = false; // passed it, now it's a wall
-    for (const corner of corners) {
-      if (corner.x < tl) {
-        const pen = tl - corner.x;
-        c.x += pen;
-        applyImpulse(c, corner.x, corner.y, 1, 0, B);
-      }
-    }
-  }
-
-  // Right boundary
-  const rightEdge = lv.width + 200;
-  for (const corner of corners) {
-    if (corner.x > rightEdge) {
-      c.x -= (corner.x - rightEdge);
-      applyImpulse(c, corner.x, corner.y, -1, 0, B);
-    }
-  }
-
-  // Back wall — full height seal behind goal
-  if (lv.backWall) {
-    const bw = lv.backWall;
-    if (rectOverlap(c.x - half, c.y - half, c.size, c.size, bw.x, bw.y, bw.w, bw.h)) {
-      if (c.vx > 0) { c.x = bw.x - half; applyImpulse(c, bw.x, c.y, -1, 0, B); }
-      else { c.x = bw.x + bw.w + half; applyImpulse(c, bw.x + bw.w, c.y, 1, 0, B); }
-    }
-  }
-
-  // Platform collision — use rotated rect for all platforms (more robust)
-  const PLAT_H = 20; // visual height
-  const PLAT_COL_H = Math.max(PLAT_H, half + 4); // collision height scales with cube size
-  for (const p of lv.platforms) {
-    const colY = p.y - (PLAT_COL_H - PLAT_H) / 2; // center the taller collision box
-    collideRotatedRect(c, half, B, p.x, colY, p.w, PLAT_COL_H, p.rot || 0);
-  }
-
-  // Wall collision — use corners for proper square physics
-  for (const w of lv.walls) {
-    if (w.rot) {
-      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, w.rot);
-      continue;
-    }
-    // Axis-aligned: check each corner against the wall rect
-    let hit = false;
-    // Recompute corners after any platform push
-    const wCorners = getCubeCorners(c);
-    for (const corner of wCorners) {
-      if (corner.x > w.x && corner.x < w.x+w.w && corner.y > w.y && corner.y < w.y+w.h) {
-        const dl = corner.x - w.x, dr = w.x+w.w - corner.x;
-        const dt2 = corner.y - w.y, db = w.y+w.h - corner.y;
-        const minD = Math.min(dl, dr, dt2, db);
-        let nx=0, ny=0;
-        if (minD === dt2) { c.y -= dt2; ny = -1; }
-        else if (minD === db) { c.y += db; ny = 1; }
-        else if (minD === dl) { c.x -= dl; nx = -1; }
-        else { c.x += dr; nx = 1; }
-        applyImpulse(c, corner.x, corner.y, nx, ny, B);
-        hit = true; break;
-      }
-    }
-    if (!hit) {
-      collideRotatedRect(c, half, B, w.x, w.y, w.w, w.h, 0);
-    }
-  }
-
-  // Bumpers — bouncy but lose energy each hit
-  for (const b of lv.bumpers) {
-    const dx=c.x-b.x, dy=c.y-b.y, dist=Math.sqrt(dx*dx+dy*dy), md=half+b.r;
-    if (dist<md && dist>0) {
-      const nx=dx/dist, ny=dy/dist;
-      c.x=b.x+nx*md; c.y=b.y+ny*md;
-      const dot=c.vx*nx+c.vy*ny;
-      c.vx-=2*dot*nx; c.vy-=2*dot*ny;
-      // Lose 15% energy each bounce
-      c.vx *= 0.85; c.vy *= 0.85;
-      c.angVel+=(nx*c.vy-ny*c.vx)*0.01;
-    }
-  }
-}
-
-function rectOverlap(ax,ay,aw,ah,bx,by,bw,bh) {
-  return ax<bx+bw && ax+aw>bx && ay<by+bh && ay+ah>by;
-}
-
-// Rotated rectangle collision: transforms cube into wall's local space
-function collideRotatedRect(c, half, B, rx, ry, rw, rh, rot) {
-  if (!rot) {
-    // No rotation — use fast AABB
-    if (!rectOverlap(c.x-half, c.y-half, half*2, half*2, rx, ry, rw, rh)) return;
-    const ol=(c.x+half)-rx, or2=(rx+rw)-(c.x-half);
-    const ot=(c.y+half)-ry, ob=(ry+rh)-(c.y-half);
-    const m=Math.min(ol,or2,ot,ob);
-    let nx=0, ny=0;
-    if(m===ol){c.x=rx-half;nx=-1;}
-    else if(m===or2){c.x=rx+rw+half;nx=1;}
-    else if(m===ot){c.y=ry-half;ny=-1;}
-    else{c.y=ry+rh+half;ny=1;}
-    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
+  if (inGoal) {
+    state = 'won'; showMsg('LEVEL CLEAR!', 2.5);
+    scorecard[level] = { throws: attempts, par: lv.par, name: lv.name };
+    totalThrows += attempts;
+    destroyCubeBody();
     return;
   }
-
-  // Rotated: transform cube into rect's local coordinate space
-  const cx = rx + rw/2, cy = ry + rh/2; // rect center
-  const cos = Math.cos(-rot), sin = Math.sin(-rot);
-  // Cube position in local space
-  const dx = c.x - cx, dy = c.y - cy;
-  const lx = dx * cos - dy * sin;
-  const ly = dx * sin + dy * cos;
-
-  // AABB check in local space (rect is centered at origin, half-extents rw/2, rh/2)
-  const hw = rw/2 + half, hh = rh/2 + half;
-  if (Math.abs(lx) > hw || Math.abs(ly) > hh) return; // no overlap
-
-  // Find penetration axis in local space
-  const penL = hw + lx, penR = hw - lx;
-  const penT = hh + ly, penB = hh - ly;
-  const minPen = Math.min(penL, penR, penT, penB);
-
-  let pushLX = 0, pushLY = 0;
-  if (minPen === penL) pushLX = -(penL);
-  else if (minPen === penR) pushLX = penR;
-  else if (minPen === penT) pushLY = -(penT);
-  else pushLY = penB;
-
-  // Transform push vector back to world space
-  const cosR = Math.cos(rot), sinR = Math.sin(rot);
-  const pushWX = pushLX * cosR - pushLY * sinR;
-  const pushWY = pushLX * sinR + pushLY * cosR;
-
-  c.x += pushWX;
-  c.y += pushWY;
-
-  // Apply impulse along push direction
-  const pushLen = Math.sqrt(pushWX*pushWX + pushWY*pushWY);
-  if (pushLen > 0) {
-    const nx = pushWX/pushLen, ny = pushWY/pushLen;
-    applyImpulse(c, c.x - nx*half, c.y - ny*half, nx, ny, B);
-  }
-}
-
-function updateCube(c, dt) {
-  // Substep physics — max 1px movement per step so nothing tunnels through
-  const speed = Math.sqrt(c.vx * c.vx + c.vy * c.vy);
-  const maxStep = 1;
-  const steps = Math.max(1, Math.ceil(speed * dt / maxStep));
-  const subDt = dt / steps;
-
-  for (let i = 0; i < steps; i++) {
-    if (i === 0) c.vy += GRAVITY * (c.gravMult || 1) * dt; // per-cube gravity
-    c.x += c.vx * subDt;
-    c.y += c.vy * subDt;
-    collideCubeWalls(c, getCurrentLevel());
-
-    // Death zone — break out immediately
-    if (c._fellOff) break;
-
-    // Check goal — cube center must be inside (supports rotation)
-    const lv = getCurrentLevel(), g = lv.goal;
-    let inGoal = false;
-    if (g.rot) {
-      // Transform cube pos into goal's local space
-      const gcx = g.x + g.w/2, gcy = g.y + g.h/2;
-      const cos = Math.cos(-g.rot), sin = Math.sin(-g.rot);
-      const dx = c.x - gcx, dy = c.y - gcy;
-      const lx = dx*cos - dy*sin, ly = dx*sin + dy*cos;
-      inGoal = Math.abs(lx) < g.w/2 && Math.abs(ly) < g.h/2 - 4;
-    } else {
-      inGoal = c.x > g.x && c.x < g.x + g.w && c.y > g.y + 4 && c.y < g.y + g.h - 4;
-    }
-    if (inGoal) {
-      state = 'won'; showMsg('LEVEL CLEAR!', 2.5);
-            scorecard[level] = { throws: attempts, par: lv.par, name: lv.name };
-      totalThrows += attempts;
-      break;
-    }
-  }
-
-  c.angle += c.angVel * dt;
-  c.vx *= FRICTION; c.angVel *= ANG_FRICTION;
-
-  // Settle friction — only kicks in when cube is nearly done bouncing
-  const spd = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
-  if (spd < 40) {
-    c.vx *= 0.92;
-    c.angVel *= 0.92;
-  }
-  if (spd < 10) {
-    c.vx = 0; c.vy = 0; c.angVel = 0;
-  }
-
-  // Settle flat when slow
-  settleFlat(c, dt);
 
   // Trail
   if (c.trail.length===0 || Math.abs(c.x-c.trail[c.trail.length-1].x)>8 || Math.abs(c.y-c.trail[c.trail.length-1].y)>8) {
     c.trail.push({x:c.x,y:c.y,t:1});
-    if(c.trail.length>60)c.trail.shift();
+    if(c.trail.length>60) c.trail.shift();
   }
   for(const t of c.trail) t.t*=0.97;
 
   // Fell off bottom — instant reset
   if (c._fellOff) {
-    try { resetCube(); } catch(e) { cube=null; state='ready'; camTargetX=0; }
+    try { resetCube(); } catch(e) { destroyCubeBody(); cube=null; state='ready'; camTargetX=0; }
     return;
   }
 
-  // Check if cube is supported — is there a surface directly below it?
-  const half2 = c.size / 2;
-  let supported = false;
-  const checkY = c.y + half2 + 3; // just below the cube
-  const lv2 = getCurrentLevel();
-  // Check walls
-  for (const w of lv2.walls) {
-    if (!w.rot && c.x + half2 > w.x + 4 && c.x - half2 < w.x + w.w - 4 && Math.abs(checkY - w.y) < 6) {
-      supported = true; break;
+  // Settle — Matter's sleep detection is reliable once cube is genuinely at rest
+  const finalSpeed = Math.sqrt(c.vx*c.vx + c.vy*c.vy);
+  if ((c.body.isSleeping || (finalSpeed < 15 && Math.abs(c.angVel) < 0.3)) && state === 'thrown') {
+    c._settleTime = (c._settleTime || 0) + dt;
+    if (c._settleTime > 1.2) {
+      state = 'lost'; showMsg('MISSED! TAP TO RETRY', 3);
+      stopAirborne();
+      setTimeout(function(){ if(state==='lost') resetCube(); }, 3500);
     }
+  } else {
+    c._settleTime = 0;
   }
-  // Check platforms
-  if (!supported) {
-    for (const p of lv2.platforms) {
-      if (!p.rot && c.x + half2 > p.x + 4 && c.x - half2 < p.x + p.w - 4 && Math.abs(checkY - p.y) < 8) {
-        supported = true; break;
-      }
-    }
-  }
-
-  // If not supported and slow, give a sideways nudge to slide off
-  const finalSpeed = Math.sqrt(c.vx*c.vx+c.vy*c.vy);
-  if (!supported && finalSpeed < 30 && Math.abs(c.vy) < 20) {
-    // Nudge in whatever direction has less wall
-    if (Math.abs(c.vx) < 5) c.vx = (Math.random() > 0.5 ? 1 : -1) * 15;
-  }
-
-  // Settle check — only if actually supported on a surface
-  if(finalSpeed<15&&Math.abs(c.angVel)<0.5&&state==='thrown'&&supported){
-    c._settleTime=(c._settleTime||0)+dt;
-    if(c._settleTime>0.3){state='lost';showMsg('MISSED! TAP TO RETRY',3);stopAirborne();setTimeout(function(){if(state==='lost')resetCube();},3500);}
-  }else{c._settleTime=0;}
 }
 
 function showMsg(text,dur){showMessage=text;messageTimer=dur;}
@@ -1675,6 +1450,18 @@ function doThrow(){
   if(velSamples.length>0){for(const s of velSamples){ax+=s.vx;ay+=s.vy;}ax/=velSamples.length;ay/=velSamples.length;}
   else{ax=(mouseX-prevMX)*60;ay=(mouseY-prevMY)*60;}
   cube.vx=ax;cube.vy=ay;cube.angVel=cube.vx*0.02;velSamples=[];canvas.style.cursor='default';
+  // Rebuild world so any editor edits are picked up; then spawn Matter body with launch state.
+  rebuildWorld();
+  destroyCubeBody();
+  cubeBody = Matter.Bodies.rectangle(cube.x, cube.y, cube.size, cube.size, {
+    friction: 0.4, frictionAir: 0.008,
+    restitution: BOUNCE * (cube.bounce || 1),
+    density: 0.002, label: 'cube'
+  });
+  Matter.Composite.add(world, cubeBody);
+  Matter.Body.setVelocity(cubeBody, { x: cube.vx * MSTEP, y: cube.vy * MSTEP });
+  Matter.Body.setAngularVelocity(cubeBody, cube.angVel * MSTEP);
+  cube.body = cubeBody;
   }
 
 // ═══════════════════════════════════════════════════════
@@ -3590,6 +3377,7 @@ const EMBEDDED_LEVELS = [
   }
   levelsLoaded = true;
   resize(); // now H can adapt
+  rebuildWorld(); // create Matter static bodies for the initial level
 })();
 
 // Keyboard shortcuts
