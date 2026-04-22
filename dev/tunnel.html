@@ -5079,12 +5079,39 @@ window.onload = function() {
         // Instruction lines
         var collectLine = document.createElement('div');
         collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
-        collectLine.innerText = _sr ? 'BEAT THE CLOCK' : 'COLLECT CONTENT & RINGS';
+        // Auto-derive collect line from collectItems
+        function _intoCollectText() {
+            if (_sr) return 'BEAT THE CLOCK';
+            if (!collectItems.length) return 'JUST SURVIVE';
+            var labels = collectItems.map(function(i) { return i.label; });
+            var hasContent = labels.indexOf('CONTENT') >= 0;
+            var hasRing = labels.indexOf('RING') >= 0;
+            if (hasContent && hasRing && labels.length === 2) return 'COLLECT CONTENT & RINGS';
+            if (hasContent && labels.length === 1) return 'COLLECT CONTENT';
+            if (hasRing && labels.length === 1) return 'COLLECT RINGS';
+            return 'COLLECT ' + labels.join(' + ');
+        }
+        collectLine.innerText = _intoCollectText();
         el.appendChild(collectLine);
 
         var avoidLine = document.createElement('div');
         avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
-        avoidLine.innerText = _sr ? 'FIND THE GAPS' : 'AVOID HAZARDS';
+        // Auto-derive avoid line from avoidItems
+        function _intoAvoidText() {
+            if (!avoidItems.length) return _sr ? 'BEAT THE CLOCK' : 'CLEAR PATH AHEAD';
+            var labels = avoidItems.map(function(i) { return i.label; });
+            var hasBarrier = labels.indexOf('BARRIER') >= 0;
+            var hasPylon = labels.indexOf('PYLON GATES') >= 0;
+            var hasHazard = labels.some(function(l) { return l === 'MINE' || l === 'BLOCK' || l === 'KNOT'; });
+            if (hasPylon && labels.length === 1) return 'PASS PYLONS ON THE CORRECT SIDE';
+            if (hasPylon && hasHazard) return 'SLALOM PYLONS & AVOID HAZARDS';
+            if (hasPylon) return 'SLALOM THROUGH PYLONS';
+            if (hasBarrier && hasHazard) return 'AVOID HAZARDS & FIND BARRIER GAPS';
+            if (hasBarrier) return 'FIND THE GAPS';
+            if (hasHazard) return 'AVOID HAZARDS';
+            return 'AVOID ' + labels.join(' + ');
+        }
+        avoidLine.innerText = _intoAvoidText();
         el.appendChild(avoidLine);
 
         // Collection progress
@@ -6396,13 +6423,10 @@ window.onload = function() {
                     var _dA = shipAngle - _pAng;
                     while (_dA > Math.PI) _dA -= Math.PI * 2;
                     while (_dA < -Math.PI) _dA += Math.PI * 2;
-                    var _pyRange = 1.5; // ~86° correct-side window
-                    // CORRECT = within window AND on the right side. Anything else (wrong side,
-                    // or all the way around the back of the tube) counts as wrong.
-                    var _correct = false;
-                    if (Math.abs(_dA) < _pyRange) {
-                        _correct = (item.userData.type === 'pylon_left') ? (_dA > 0) : (_dA < 0);
-                    }
+                    // CORRECT = anywhere on the correct half of the tube. WRONG = anywhere on
+                    // the wrong half (or directly aligned). No distance penalty for being far on
+                    // the correct side — slalom-style: pick a side, full stop.
+                    var _correct = (item.userData.type === 'pylon_left') ? (_dA > 0) : (_dA < 0);
                     if (_correct) {
                         score += 400;
                         AudioEngine.playSFX('ring');
