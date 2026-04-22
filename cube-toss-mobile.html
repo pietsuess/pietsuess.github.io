@@ -995,12 +995,26 @@ function drawCubeAt(x, y, size, angle, color) {
   mg.addColorStop(1, 'rgba(255,255,255,0)');
   cubePath(); ctx.fillStyle = mg; ctx.fill();
 
-  // Highlight + shadow
+  // Shading — world-fixed so light stays "from above" as the cube spins.
+  // Soft top-to-bottom gradient + specular highlight near upper-left,
+  // instead of two hard bands that read as water.
   cubePath(); ctx.clip();
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillRect(-s/2, -s/2, s, s * 0.35);
-  ctx.fillStyle = 'rgba(0,0,0,0.15)';
-  ctx.fillRect(-s/2, s * 0.1, s, s * 0.4);
+  ctx.rotate(-angle);
+  const diag = s * Math.SQRT2;
+  const shade = ctx.createLinearGradient(0, -diag/2, 0, diag/2);
+  shade.addColorStop(0.00, 'rgba(255,255,255,0.28)');
+  shade.addColorStop(0.25, 'rgba(255,255,255,0.04)');
+  shade.addColorStop(0.55, 'rgba(0,0,0,0)');
+  shade.addColorStop(1.00, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(-diag/2, -diag/2, diag, diag);
+  // Specular blob near the upper-left (world space)
+  const spec = ctx.createRadialGradient(-s*0.22, -s*0.28, 0, -s*0.22, -s*0.28, s*0.55);
+  spec.addColorStop(0, 'rgba(255,255,255,0.45)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = spec;
+  ctx.fillRect(-diag/2, -diag/2, diag, diag);
+  ctx.rotate(angle);
 
   // Glass border
   ctx.restore();
@@ -1212,7 +1226,7 @@ function onDown(e){
       const wk = wcs[edWalkCubeSel];
       if (wk) {
         let changed = false;
-        if (hitBtn(b.sizePlusX, b.sizePlusY))        { wk.size = Math.min(64, wk.size + 2); changed = true; }
+        if (hitBtn(b.sizePlusX, b.sizePlusY))        { wk.size = Math.min(96, wk.size + 2); changed = true; }
         else if (hitBtn(b.sizeMinusX, b.sizeMinusY)) { wk.size = Math.max(16, wk.size - 2); changed = true; }
         else if (hitBtn(b.bouncePlusX, b.bouncePlusY) || hitBtn(b.bounceMinusX, b.bounceMinusY)) {
           const cur = (wk.bounceOverride != null) ? wk.bounceOverride : cubePhysicsFor(wk.size).bounce;
@@ -3508,7 +3522,8 @@ const EMBEDDED_LEVELS = [
   }
   levelsLoaded = true;
   resize(); // now H can adapt
-  loadUserWalkCubes(); // restore any saved walk-cube sizes
+  try { localStorage.removeItem(_WALK_CUBES_LS_KEY); } catch(e) {} // walk-cube edits reset each reload
+  userWalkCubes = DEFAULT_WALK_CUBES.map(wk => Object.assign({ bounceOverride: null }, wk));
   rebuildWorld(); // create Matter static bodies for the initial level
 })();
 
@@ -3549,7 +3564,7 @@ window.addEventListener('keydown', (e) => {
     const wk = wcs[edWalkCubeSel];
     if (wk) {
       const delta = e.key === ']' ? 2 : -2;
-      wk.size = Math.max(16, Math.min(64, wk.size + delta));
+      wk.size = Math.max(16, Math.min(96, wk.size + delta));
       saveUserWalkCubes();
     }
     e.preventDefault();
@@ -3758,7 +3773,7 @@ function animate(time){
         ctx.fillStyle = 'rgba(254,249,240,0.55)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
         ctx.fillText(`${wk.label}  ${wk.size}px`, sx + wk.size/2 + 10, sy + 4);
       }
-      // Selection ring + arrow buttons
+      // Selection ring + arrow button panel
       edWalkCubeBtns = null;
       if (edWalkCubeSel != null) {
         const slot = edWalkCubeLayout.find(s => s.origIdx === edWalkCubeSel);
@@ -3766,13 +3781,16 @@ function animate(time){
           const ring = slot.wk.size/2 + 6;
           ctx.strokeStyle = 'rgba(244,197,66,0.95)'; ctx.lineWidth = 2;
           ctx.beginPath(); ctx.arc(slot.sx, slot.sy, ring, 0, Math.PI*2); ctx.stroke();
-          const rad = 16;
-          // Size: vertical +/- above & below cube (up = bigger, down = smaller)
-          const sizePlusX = slot.sx, sizePlusY = slot.sy - slot.wk.size/2 - rad - 6;
-          const sizeMinusX = slot.sx, sizeMinusY = slot.sy + slot.wk.size/2 + rad + 6;
-          // Bounce: horizontal +/- flanking cube (right = bouncier, left = deader)
-          const bouncePlusX = slot.sx + slot.wk.size/2 + rad + 16, bouncePlusY = slot.sy;
-          const bounceMinusX = slot.sx - slot.wk.size/2 - rad - 16, bounceMinusY = slot.sy;
+          // Panel to the right of the biggest cube column (well clear of cube art)
+          const rad = 16, gap = 38; // center-to-center spacing for −/+ pair
+          const panelX = slot.sx + 96 / 2 + 36; // use MAX cube half-width so small cubes don't crowd
+          const rowGap = 42;
+          const sizeY = slot.sy - rowGap / 2;
+          const bounceY = slot.sy + rowGap / 2;
+          const sizeMinusX  = panelX,        sizeMinusY  = sizeY;
+          const sizePlusX   = panelX + gap,  sizePlusY   = sizeY;
+          const bounceMinusX= panelX,        bounceMinusY= bounceY;
+          const bouncePlusX = panelX + gap,  bouncePlusY = bounceY;
           function arrowBtn(cx, cy, glyph, enabled) {
             ctx.fillStyle = enabled ? 'rgba(244,197,66,0.20)' : 'rgba(255,255,255,0.06)';
             ctx.strokeStyle = enabled ? 'rgba(244,197,66,0.95)' : 'rgba(255,255,255,0.25)';
@@ -3785,20 +3803,19 @@ function animate(time){
           const curBounce = (slot.wk.bounceOverride != null)
             ? slot.wk.bounceOverride
             : cubePhysicsFor(slot.wk.size).bounce;
-          arrowBtn(sizePlusX,   sizePlusY,   '+', slot.wk.size < 64);
           arrowBtn(sizeMinusX,  sizeMinusY,  '−', slot.wk.size > 16);
-          arrowBtn(bouncePlusX, bouncePlusY, '+', curBounce < 1.50);
+          arrowBtn(sizePlusX,   sizePlusY,   '+', slot.wk.size < 96);
           arrowBtn(bounceMinusX,bounceMinusY,'−', curBounce > 0.10);
+          arrowBtn(bouncePlusX, bouncePlusY, '+', curBounce < 1.50);
+          // Row labels right of each row
+          ctx.fillStyle = 'rgba(244,197,66,0.85)'; ctx.font = '600 10px Urbanist'; ctx.textAlign = 'left';
+          ctx.fillText(`Size  ${slot.wk.size}px`, sizePlusX + rad + 10, sizeY + 4);
+          const overr = slot.wk.bounceOverride != null ? '*' : '';
+          ctx.fillText(`Bounce${overr}  ${curBounce.toFixed(2)}`, bouncePlusX + rad + 10, bounceY + 4);
           edWalkCubeBtns = {
             sizePlusX, sizePlusY, sizeMinusX, sizeMinusY,
             bouncePlusX, bouncePlusY, bounceMinusX, bounceMinusY, rad
           };
-          // Physics readout
-          const phys = cubePhysicsFor(slot.wk.size);
-          const overr = slot.wk.bounceOverride != null ? '*' : ' ';
-          ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
-          ctx.fillText(`size ${slot.wk.size}  bounce${overr} ${curBounce.toFixed(2)}  grav ${phys.gravMult.toFixed(2)}`,
-                       bouncePlusX + rad + 6, slot.sy + 4);
         }
       }
     } else if (state === 'ready') {
@@ -3822,9 +3839,22 @@ function animate(time){
         wm.addColorStop(0,'rgba(255,255,255,0)');wm.addColorStop(0.4,'rgba(255,255,255,0.22)');
         wm.addColorStop(0.6,'rgba(255,255,255,0.22)');wm.addColorStop(1,'rgba(255,255,255,0)');
         wp();ctx.fillStyle=wm;ctx.fill();
+        // World-fixed soft shading: move to cube center, undo all rotation, then shade
         wp();ctx.clip();
-        ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(-s,-s,s,s*0.35);
-        ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillRect(-s,-s*0.3,s,s*0.35);
+        ctx.translate(-s/2,-s/2); ctx.rotate(-(Math.PI/2 + tipAngle));
+        const diagW = s * Math.SQRT2;
+        const shadeW = ctx.createLinearGradient(0, -diagW/2, 0, diagW/2);
+        shadeW.addColorStop(0.00, 'rgba(255,255,255,0.26)');
+        shadeW.addColorStop(0.25, 'rgba(255,255,255,0.03)');
+        shadeW.addColorStop(0.55, 'rgba(0,0,0,0)');
+        shadeW.addColorStop(1.00, 'rgba(0,0,0,0.26)');
+        ctx.fillStyle = shadeW;
+        ctx.fillRect(-diagW/2, -diagW/2, diagW, diagW);
+        const specW = ctx.createRadialGradient(-s*0.22, -s*0.28, 0, -s*0.22, -s*0.28, s*0.55);
+        specW.addColorStop(0, 'rgba(255,255,255,0.40)');
+        specW.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = specW;
+        ctx.fillRect(-diagW/2, -diagW/2, diagW, diagW);
         ctx.restore();
       }
     }
