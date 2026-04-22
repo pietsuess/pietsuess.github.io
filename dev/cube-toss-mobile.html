@@ -995,14 +995,25 @@ function drawCubeAt(x, y, size, angle, color) {
   mg.addColorStop(1, 'rgba(255,255,255,0)');
   cubePath(); ctx.fillStyle = mg; ctx.fill();
 
-  // Highlight + shadow — world-fixed so light stays "from above" as the cube spins
+  // Shading — world-fixed so light stays "from above" as the cube spins.
+  // Soft top-to-bottom gradient + specular highlight near upper-left,
+  // instead of two hard bands that read as water.
   cubePath(); ctx.clip();
   ctx.rotate(-angle);
   const diag = s * Math.SQRT2;
-  ctx.fillStyle = 'rgba(255,255,255,0.15)';
-  ctx.fillRect(-diag/2, -diag/2, diag, diag * 0.35);
-  ctx.fillStyle = 'rgba(0,0,0,0.15)';
-  ctx.fillRect(-diag/2, diag * 0.10, diag, diag * 0.40);
+  const shade = ctx.createLinearGradient(0, -diag/2, 0, diag/2);
+  shade.addColorStop(0.00, 'rgba(255,255,255,0.28)');
+  shade.addColorStop(0.25, 'rgba(255,255,255,0.04)');
+  shade.addColorStop(0.55, 'rgba(0,0,0,0)');
+  shade.addColorStop(1.00, 'rgba(0,0,0,0.28)');
+  ctx.fillStyle = shade;
+  ctx.fillRect(-diag/2, -diag/2, diag, diag);
+  // Specular blob near the upper-left (world space)
+  const spec = ctx.createRadialGradient(-s*0.22, -s*0.28, 0, -s*0.22, -s*0.28, s*0.55);
+  spec.addColorStop(0, 'rgba(255,255,255,0.45)');
+  spec.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = spec;
+  ctx.fillRect(-diag/2, -diag/2, diag, diag);
   ctx.rotate(angle);
 
   // Glass border
@@ -3828,9 +3839,22 @@ function animate(time){
         wm.addColorStop(0,'rgba(255,255,255,0)');wm.addColorStop(0.4,'rgba(255,255,255,0.22)');
         wm.addColorStop(0.6,'rgba(255,255,255,0.22)');wm.addColorStop(1,'rgba(255,255,255,0)');
         wp();ctx.fillStyle=wm;ctx.fill();
+        // World-fixed soft shading: move to cube center, undo all rotation, then shade
         wp();ctx.clip();
-        ctx.fillStyle='rgba(255,255,255,0.12)';ctx.fillRect(-s,-s,s,s*0.35);
-        ctx.fillStyle='rgba(0,0,0,0.12)';ctx.fillRect(-s,-s*0.3,s,s*0.35);
+        ctx.translate(-s/2,-s/2); ctx.rotate(-(Math.PI/2 + tipAngle));
+        const diagW = s * Math.SQRT2;
+        const shadeW = ctx.createLinearGradient(0, -diagW/2, 0, diagW/2);
+        shadeW.addColorStop(0.00, 'rgba(255,255,255,0.26)');
+        shadeW.addColorStop(0.25, 'rgba(255,255,255,0.03)');
+        shadeW.addColorStop(0.55, 'rgba(0,0,0,0)');
+        shadeW.addColorStop(1.00, 'rgba(0,0,0,0.26)');
+        ctx.fillStyle = shadeW;
+        ctx.fillRect(-diagW/2, -diagW/2, diagW, diagW);
+        const specW = ctx.createRadialGradient(-s*0.22, -s*0.28, 0, -s*0.22, -s*0.28, s*0.55);
+        specW.addColorStop(0, 'rgba(255,255,255,0.40)');
+        specW.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = specW;
+        ctx.fillRect(-diagW/2, -diagW/2, diagW, diagW);
         ctx.restore();
       }
     }
