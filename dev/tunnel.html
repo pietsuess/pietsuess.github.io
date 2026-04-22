@@ -4819,6 +4819,43 @@ window.onload = function() {
                 ctx.lineTo(-sz * 0.85, sz * 0.7);
                 ctx.closePath();
                 ctx.fill(); ctx.stroke();
+            } else if (shapeType === 'pylon') {
+                // Orange cone with cyan + magenta arrows on top — pylon slalom gate
+                ctx.fillStyle = '#ff5500';
+                ctx.strokeStyle = '#ff7700';
+                ctx.shadowColor = '#ff7700';
+                ctx.beginPath();
+                ctx.moveTo(0, -sz * 0.9);
+                ctx.lineTo(sz * 0.55, sz * 0.7);
+                ctx.lineTo(-sz * 0.55, sz * 0.7);
+                ctx.closePath();
+                ctx.fill(); ctx.stroke();
+                // cyan stripe (LEFT)
+                ctx.strokeStyle = '#00ffcc';
+                ctx.shadowColor = '#00ffcc';
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.4, sz * 0.15); ctx.lineTo(sz * 0.4, sz * 0.15);
+                ctx.stroke();
+                // arrow LEFT (cyan)
+                ctx.fillStyle = '#00ffcc';
+                ctx.beginPath();
+                ctx.moveTo(-sz * 0.7, -sz * 1.05);
+                ctx.lineTo(-sz * 0.2, -sz * 1.35);
+                ctx.lineTo(-sz * 0.2, -sz * 0.75);
+                ctx.closePath();
+                ctx.fill();
+                // arrow RIGHT (magenta)
+                ctx.fillStyle = '#ff44ff';
+                ctx.shadowColor = '#ff44ff';
+                ctx.beginPath();
+                ctx.moveTo(sz * 0.7, -sz * 1.05);
+                ctx.lineTo(sz * 0.2, -sz * 1.35);
+                ctx.lineTo(sz * 0.2, -sz * 0.75);
+                ctx.closePath();
+                ctx.fill();
+                ctx.beginPath();
+                ctx.fill(); ctx.stroke();
             } else if (shapeType === 'block') {
                 // Block — wide flat rectangle
                 ctx.beginPath();
@@ -4983,6 +5020,13 @@ window.onload = function() {
         if (_s !== 3 && ((_s === 2 && _l >= 3) || _s >= 3)) {
             avoidItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
         }
+        // Pylons (slalom gates): when level has pylons configured in SPAWN_TUNING
+        try {
+            var _intoTuning = _getTuning(_s, _l);
+            if (_intoTuning && _intoTuning.pylons) {
+                avoidItems.push({ label: 'PYLON GATES', color: '#ff7700', shape: 'pylon' });
+            }
+        } catch(e) {}
 
         // Helper to build a row of preview items
         function buildPreviewRow(items, container) {
@@ -6301,23 +6345,25 @@ window.onload = function() {
                                 if (TUT.active) tutHit('score');
                             }
                             else if (item.userData.type === 'pylon_left' || item.userData.type === 'pylon_right') {
-                                // BOUNCE — no damage, brief slowdown, small score hit
-                                speed = Math.max(80, speed * 0.55);
-                                AudioEngine.playSFX('destroy');
-                                flash('#ff8800');
-                                spawnPointBurst('BOUNCE! -100', 'c-red');
-                                score = Math.max(0, score - 100);
-                                cameraShake = Math.max(cameraShake || 0, 3);
-                                item.userData._passChecked = true; // suppress pass-detect
+                                // SOFT BUMP — fires once per pylon. Pylon stays so you can pass through,
+                                // and pass-detection still scores correct/wrong side at the actual crossing.
+                                if (!item.userData._bumped) {
+                                    item.userData._bumped = true;
+                                    speed = Math.max(150, speed * 0.92);
+                                    AudioEngine.playSFX('jump');
+                                    flash('#ff9900');
+                                    cameraShake = Math.max(cameraShake || 0, 1.2);
+                                }
                             }
 
                             updateShieldBar();
                             document.getElementById('score').innerText = score.toString().padStart(6, '0');
 
-                            if (item.userData.type !== 'ramp') {
+                            if (item.userData.type !== 'ramp'
+                                && item.userData.type !== 'pylon_left'
+                                && item.userData.type !== 'pylon_right') {
                                 scene.remove(item);
                                 items.splice(i, 1);
-                
                             }
                             continue;
                         }
