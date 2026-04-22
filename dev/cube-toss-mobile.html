@@ -1168,6 +1168,35 @@ function onDown(e){
   if (editorMode) {
     const wx = p.x + camX, wy = p.y + camY;
 
+    // Walk-cube resize arrow buttons (when a walk-cube is selected)
+    if (edWalkCubeBtns && edWalkCubeSel != null) {
+      const b = edWalkCubeBtns;
+      const dp = Math.hypot(p.x - b.plusX, p.y - b.plusY);
+      const dm = Math.hypot(p.x - b.minusX, p.y - b.minusY);
+      if (dp <= b.rad || dm <= b.rad) {
+        const lv = getCurrentLevel();
+        if (!lv.walkCubes) lv.walkCubes = DEFAULT_WALK_CUBES.map(wk => Object.assign({}, wk));
+        const wk = lv.walkCubes[edWalkCubeSel];
+        if (wk) {
+          edPushUndo();
+          const delta = dp <= b.rad ? 2 : -2;
+          wk.size = Math.max(16, Math.min(64, wk.size + delta));
+        }
+        return;
+      }
+    }
+
+    // Walk-cube selection
+    if (edWalkCubeLayout) {
+      for (const slot of edWalkCubeLayout) {
+        const d = Math.hypot(p.x - slot.sx, p.y - slot.sy);
+        if (d <= slot.wk.size/2 + 6) {
+          edWalkCubeSel = (edWalkCubeSel === slot.origIdx) ? null : slot.origIdx;
+          return;
+        }
+      }
+    }
+
     // Camera pan checkboxes (below side buttons)
     const lastBtn = sideBtnBounds(3);
     const cbx2 = lastBtn.x, cby2 = lastBtn.y + lastBtn.h + 15 + 12;
@@ -3509,6 +3538,9 @@ window.addEventListener('keydown', (e) => {
 
 // Selected walk-cube index in editor mode (null = none)
 let edWalkCubeSel = null;
+// Populated each frame by the editor draw pass, consumed by onDown hit-test
+let edWalkCubeLayout = null; // [{ origIdx, wk, sx, sy }, ...]
+let edWalkCubeBtns = null;   // { plusX, plusY, minusX, minusY, rad } or null
 
 // ─── ANIMATED GRADIENT BG (matches PietSuess site) ───
 let gradPhase = 0;
@@ -3681,7 +3713,55 @@ function animate(time){
     const wlY=WALK_LINE_Y_START+camY;
     ctx.beginPath();ctx.moveTo(wlX,wlY);ctx.lineTo(wlX,wlY+WALK_LINE_LEN);ctx.stroke();
 
-    if(state==='ready'){
+    if (editorMode) {
+      // Static editor view — cubes frozen, arranged smallest-to-biggest along line
+      const _wcs = getWalkCubes();
+      const _layout = _wcs.map((wk, origIdx) => ({ wk, origIdx }))
+                          .sort((a,b) => a.wk.size - b.wk.size);
+      const slotCount = _layout.length;
+      edWalkCubeLayout = [];
+      for (let di = 0; di < slotCount; di++) {
+        const wk = _layout[di].wk;
+        const sx = wlX;
+        const sy = wlY + (di + 1) * WALK_LINE_LEN / (slotCount + 1);
+        edWalkCubeLayout.push({ origIdx: _layout[di].origIdx, wk, sx, sy });
+        drawCubeAt(sx, sy, wk.size, 0, wk.color);
+        // Label + size under cube
+        ctx.fillStyle = 'rgba(254,249,240,0.55)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
+        ctx.fillText(`${wk.label}  ${wk.size}px`, sx + wk.size/2 + 10, sy + 4);
+      }
+      // Selection ring + arrow buttons
+      edWalkCubeBtns = null;
+      if (edWalkCubeSel != null) {
+        const slot = edWalkCubeLayout.find(s => s.origIdx === edWalkCubeSel);
+        if (slot) {
+          const ring = slot.wk.size/2 + 6;
+          ctx.strokeStyle = 'rgba(244,197,66,0.95)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(slot.sx, slot.sy, ring, 0, Math.PI*2); ctx.stroke();
+          // + / − buttons right of cube
+          const bx = slot.sx + slot.wk.size/2 + 40;
+          const plusY = slot.sy - 18, minusY = slot.sy + 18, rad = 16;
+          function arrowBtn(cx, cy, glyph, enabled) {
+            ctx.fillStyle = enabled ? 'rgba(244,197,66,0.20)' : 'rgba(255,255,255,0.06)';
+            ctx.strokeStyle = enabled ? 'rgba(244,197,66,0.95)' : 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = enabled ? '#f4c542' : 'rgba(255,255,255,0.4)';
+            ctx.font = '700 18px Urbanist'; ctx.textAlign = 'center';
+            ctx.fillText(glyph, cx, cy + 6);
+          }
+          arrowBtn(bx, plusY,  '+', slot.wk.size < 64);
+          arrowBtn(bx, minusY, '−', slot.wk.size > 16);
+          edWalkCubeBtns = { plusX: bx, plusY, minusX: bx, minusY, rad };
+          // Physics readout
+          const phys = cubePhysicsFor(slot.wk.size);
+          ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
+          ctx.fillText(`bounce ${phys.bounce.toFixed(2)}  grav ${phys.gravMult.toFixed(2)}`,
+                       bx + rad + 6, slot.sy + 4);
+        }
+      }
+    } else if (state === 'ready') {
+      edWalkCubeLayout = null; edWalkCubeBtns = null;
       for(const wk of getWalkCubes()){
         const dist=wk.speed*elapsed+wk.offset;
         const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
@@ -3990,16 +4070,9 @@ function animate(time){
     ctx.fillStyle = 'rgba(0,255,255,0.7)'; ctx.font = '600 11px Urbanist';
     ctx.fillText('EDIT MODE', cbx, cby);
 
-    // Walk-cube editor readout: 1234 select, [/] resize, 0 reset
-    const _wcs = getWalkCubes();
-    ctx.font = '500 9px Urbanist'; ctx.fillStyle = 'rgba(0,255,255,0.55)';
-    ctx.fillText('CUBES — 1234 sel  [/] size  0 reset', cbx, cby - 18);
-    if (edWalkCubeSel != null && _wcs[edWalkCubeSel]) {
-      const wk = _wcs[edWalkCubeSel];
-      const phys = cubePhysicsFor(wk.size);
-      ctx.fillStyle = 'rgba(244,197,66,0.9)'; ctx.font = '600 10px Urbanist';
-      ctx.fillText(`${wk.label} (${edWalkCubeSel+1}): size ${wk.size}  bounce ${phys.bounce.toFixed(2)}  grav ${phys.gravMult.toFixed(2)}`, cbx, cby - 6);
-    }
+    // Walk-cube HUD hint (primary UI is visual click on the cube + arrow buttons)
+    ctx.font = '500 9px Urbanist'; ctx.fillStyle = 'rgba(0,255,255,0.5)';
+    ctx.fillText('Tap cube → +/− to resize', cbx, cby - 6);
     const cbLabels = [
       { key: 'panRight', label: 'PAN RIGHT', val: cf.panRight },
       { key: 'panUp', label: 'PAN UP', val: cf.panUp },
