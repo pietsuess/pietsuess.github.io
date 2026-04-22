@@ -4746,7 +4746,7 @@ window.onload = function() {
             angle += 0.025;
             ctx.save();
             ctx.translate(cx, cy);
-            if (shapeType !== 'boost' && shapeType !== 'ramp') ctx.rotate(angle);
+            if (shapeType !== 'boost' && shapeType !== 'ramp' && shapeType !== 'pylon') ctx.rotate(angle);
             ctx.shadowColor = color;
             ctx.shadowBlur = 12;
             ctx.strokeStyle = color;
@@ -4982,21 +4982,31 @@ window.onload = function() {
         // Dynamic preview items based on sector + level — split into COLLECT and AVOID rows
         var _s = currentSector, _l = currentLevel;
         var _sr = isSpeedRunSector(_s, _l);
+        // Filter the intro lists by what the level actually spawns.
+        // If SPAWN_TUNING explicitly zeroes a category, it never appears — don't claim it does.
+        var _t2 = (typeof SPAWN_TUNING !== 'undefined') ? (SPAWN_TUNING['S' + _s + 'L' + _l] || {}) : {};
+        var _noRing    = (_t2.baseRing        === 0);
+        var _noCore    = (_t2.baseCore        === 0);
+        var _noHazard  = (_t2.baseHazard      === 0);
+        var _noStar    = (_t2.starChance      === 0);
+        var _noBoost   = (_t2.boostChance     === 0);
+        var _noContent = (_t2.contentChance   === 0);
+        var _noBarrier = (_t2.barrierThreshold === 0);
         var collectItems = [];
-        if (!_sr) collectItems.push({ label: 'CONTENT', color: cColor, shape: contentShape });
-        collectItems.push({ label: 'RING', color: '#00ccff', shape: 'ring' });
+        if (!_sr && !_noContent) collectItems.push({ label: 'CONTENT', color: cColor, shape: contentShape });
+        if (!_noRing) collectItems.push({ label: 'RING', color: '#00ccff', shape: 'ring' });
         var avoidItems = [];
 
         // Cores (collect): S1 L3+, S2+
-        if ((_s === 1 && _l >= 3) || _s >= 2) {
+        if (((_s === 1 && _l >= 3) || _s >= 2) && !_noCore) {
             collectItems.push({ label: 'CORE', color: '#00ccff', shape: 'core' });
         }
         // Stars (collect): S2 L3+, S3+
-        if (_s >= 3 || (_s === 2 && _l >= 3)) {
+        if ((_s >= 3 || (_s === 2 && _l >= 3)) && !_noStar) {
             collectItems.push({ label: 'STAR', color: '#ffff00', shape: 'star' });
         }
         // Boost pads (collect): S3+
-        if (_s >= 3) {
+        if (_s >= 3 && !_noBoost) {
             collectItems.push({ label: 'BOOST', color: '#00ff66', shape: 'boost' });
         }
         // Ramps (collect): S4+
@@ -5005,19 +5015,19 @@ window.onload = function() {
         }
 
         // Mines (avoid): S1 all levels, S2, S4, S5 L2+ (NOT S3)
-        if (_s !== 3 && (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2))) {
+        if (_s !== 3 && (_s === 1 || _s === 2 || _s === 4 || (_s === 5 && _l >= 2)) && !_noHazard) {
             avoidItems.push({ label: 'MINE', color: '#ff4444', shape: 'mine' });
         }
         // Blocks (avoid): S1 L2+, S2, S4+ (NOT S3)
-        if (_s !== 3 && ((_s === 1 && _l >= 2) || _s >= 2)) {
+        if (_s !== 3 && ((_s === 1 && _l >= 2) || _s >= 2) && !_noHazard) {
             avoidItems.push({ label: 'BLOCK', color: '#ff4444', shape: 'block' });
         }
         // Barriers (avoid): S2+
-        if (_s >= 2) {
+        if (_s >= 2 && !_noBarrier) {
             avoidItems.push({ label: 'BARRIER', color: '#ff2266', shape: 'barrier' });
         }
         // Knots (avoid): S2 L3+, S4+ (NOT S3)
-        if (_s !== 3 && ((_s === 2 && _l >= 3) || _s >= 3)) {
+        if (_s !== 3 && ((_s === 2 && _l >= 3) || _s >= 3) && !_noHazard) {
             avoidItems.push({ label: 'KNOT', color: '#ff4444', shape: 'knot' });
         }
         // Pylons (slalom gates): when level has pylons configured in SPAWN_TUNING
