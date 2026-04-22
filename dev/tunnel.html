@@ -3527,31 +3527,6 @@ window.onload = function() {
         rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
         if (rand < 0) rand = Math.random();
 
-        // ── Pylon (speed-run gate) — independent roll, speed runs only ──
-        if (isSpeedRun) {
-            var _pylonChance = 0.15;
-            if (_t.pylonChance !== undefined) _pylonChance = _t.pylonChance;
-            if (_segS && _segS.pylonChance !== undefined) _pylonChance = _segS.pylonChance;
-            if (_pylonChance > 0 && Math.random() < _pylonChance) {
-                var _pAngle = _advanceSpiral(_t, zPos);
-                var _isLeft = Math.random() < 0.5;
-                var _pMesh = createPylonMesh(_isLeft);
-                var _pHover = tubeRadius - 6;
-                _pMesh.position.set(Math.cos(_pAngle) * _pHover, Math.sin(_pAngle) * _pHover, zPos);
-                // Pylon stands upright on tube wall: tip toward tube center, base on outer wall.
-                // Rotation +π/2 around Z aligns local +Y to inward-radial direction.
-                _pMesh.rotation.z = _pAngle + Math.PI / 2;
-                _pMesh.userData = {
-                    type: _isLeft ? 'pylon_left' : 'pylon_right',
-                    hitRadius: 7.0,
-                    pylonAngle: _pAngle,
-                    rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0,
-                    _passChecked: false
-                };
-                scene.add(_pMesh); items.push(_pMesh);
-                return;
-            }
-        }
 
         // --- Per-sector spawn profile (check SPAWN_TUNING overrides) ---
         var baseHazard, baseRing, baseCore;
@@ -4307,6 +4282,58 @@ window.onload = function() {
                 _spawnCallIdx++;
             }
             walkDist += segSpacing;
+        }
+
+        // ── Pylons (deterministic spiral, opt-in via SPAWN_TUNING[SnLn].pylons) ──
+        spawnPylonsForCurrentLevel(seedZ, startOffset);
+    }
+
+    // Spawn pylons for the active sector/level based on SPAWN_TUNING.pylons config.
+    // No-op unless pylons block is defined.
+    function spawnPylonsForCurrentLevel(seedZ, startOffset) {
+        var _t = _getTuning(currentSector, currentLevel);
+        var cfg = _t.pylons;
+        if (!cfg) return;
+        var spacing    = cfg.spacing    || 250;
+        var offset     = (cfg.offset    !== undefined) ? cfg.offset : 0.5;
+        var spiralStep = cfg.spiralStep || 0;
+        var startAngle = cfg.startAngle || 0;
+        var pattern    = cfg.pattern    || 'alternate';
+        var startPct   = (cfg.startPct  !== undefined) ? cfg.startPct : 0.05;
+        var endPct     = (cfg.endPct    !== undefined) ? cfg.endPct   : 0.85;
+
+        var startWalk = startPct * sectorDistance;
+        var endWalk   = endPct   * sectorDistance;
+        var hover = tubeRadius - 6;
+        var pyIdx = 0;
+
+        for (var w = startWalk; w < endWalk; w += spacing) {
+            var zPos = seedZ - (w - startOffset);
+            var baseA = startAngle + pyIdx * spiralStep;
+
+            function placeOne(isLeftSide) {
+                // offset > 0 pushes left cones LEFT (+angle), right cones RIGHT (-angle).
+                // offset < 0 swaps that — left cones drift right, right cones drift left.
+                var ang = isLeftSide ? (baseA + offset) : (baseA - offset);
+                var mesh = createPylonMesh(isLeftSide);
+                mesh.position.set(Math.cos(ang) * hover, Math.sin(ang) * hover, zPos);
+                mesh.rotation.z = ang + Math.PI / 2;
+                mesh.userData = {
+                    type: isLeftSide ? 'pylon_left' : 'pylon_right',
+                    hitRadius: 7.0,
+                    pylonAngle: ang,
+                    rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0,
+                    _passChecked: false
+                };
+                scene.add(mesh); items.push(mesh);
+            }
+
+            if (pattern === 'left')      placeOne(true);
+            else if (pattern === 'right') placeOne(false);
+            else if (pattern === 'pair') { placeOne(true); placeOne(false); }
+            else                          placeOne(pyIdx % 2 === 0); // alternate
+
+            pyIdx++;
         }
     }
 
