@@ -4983,15 +4983,22 @@ window.onload = function() {
         var _s = currentSector, _l = currentLevel;
         var _sr = isSpeedRunSector(_s, _l);
         // Filter the intro lists by what the level actually spawns.
-        // If SPAWN_TUNING explicitly zeroes a category, it never appears — don't claim it does.
+        // A category is "off" if the top-level value is 0, OR every spiralPattern segment overrides it to 0.
         var _t2 = (typeof SPAWN_TUNING !== 'undefined') ? (SPAWN_TUNING['S' + _s + 'L' + _l] || {}) : {};
-        var _noRing    = (_t2.baseRing        === 0);
-        var _noCore    = (_t2.baseCore        === 0);
-        var _noHazard  = (_t2.baseHazard      === 0);
-        var _noStar    = (_t2.starChance      === 0);
-        var _noBoost   = (_t2.boostChance     === 0);
-        var _noContent = (_t2.contentChance   === 0);
-        var _noBarrier = (_t2.barrierThreshold === 0);
+        function _zeroForKey(key) {
+            if (_t2[key] === 0) return true;
+            if (Array.isArray(_t2.spiralPattern) && _t2.spiralPattern.length > 0) {
+                return _t2.spiralPattern.every(function(seg) { return seg.spawn && seg.spawn[key] === 0; });
+            }
+            return false;
+        }
+        var _noRing    = _zeroForKey('baseRing');
+        var _noCore    = _zeroForKey('baseCore');
+        var _noHazard  = _zeroForKey('baseHazard');
+        var _noStar    = _zeroForKey('starChance');
+        var _noBoost   = _zeroForKey('boostChance');
+        var _noContent = _zeroForKey('contentChance');
+        var _noBarrier = _zeroForKey('barrierThreshold');
         var collectItems = [];
         if (!_sr && !_noContent) collectItems.push({ label: 'CONTENT', color: cColor, shape: contentShape });
         if (!_noRing) collectItems.push({ label: 'RING', color: '#00ccff', shape: 'ring' });
@@ -6389,7 +6396,7 @@ window.onload = function() {
                     var _dA = shipAngle - _pAng;
                     while (_dA > Math.PI) _dA -= Math.PI * 2;
                     while (_dA < -Math.PI) _dA += Math.PI * 2;
-                    var _pyRange = 0.85; // ~49° — generous so brushing past on the correct side counts
+                    var _pyRange = 1.5; // ~86° — very generous; almost any side-of-tube counts
                     if (Math.abs(_dA) < _pyRange) {
                         // LEFT pylon: player should be counter-clockwise of it → dA > 0
                         // RIGHT pylon: player should be clockwise of it → dA < 0
