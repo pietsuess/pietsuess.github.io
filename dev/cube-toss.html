@@ -333,17 +333,78 @@ function playSound(type) {
   } catch(e) {}
 }
 
-// ─── WALKING CUBES (size = club choice) ───
-// Big: heavy, low bounce, high momentum — punches through bumpers, rolls far
-// Small: light, high bounce, less momentum — trick shots, fits tight gaps
-const walkCubes = [
-  // Effective bounce = BOUNCE(0.85) * multiplier
-  // DRIVER: 0.50  IRON: 0.65  WEDGE: 0.75  PUTTER: 0.85
-  { size: 36, speed: 40, offset: 0,   color: COL.gold,    bounce: 0.59, gravMult: 1.25, label: 'DRIVER' },
-  { size: 32, speed: -55, offset: 80,  color: COL.coral,   bounce: 0.76, gravMult: 1.1, label: 'IRON' },
-  { size: 28, speed: 70, offset: 160, color: COL.rose,    bounce: 0.88, gravMult: 0.95, label: 'WEDGE' },
-  { size: 24, speed: -85, offset: 240, color: COL.magenta, bounce: 1.0, gravMult: 0.8, label: 'PUTTER' },
+// ─── WALKING CUBES ───
+// Big: heavy, low bounce, high momentum — punches through bumpers, rolls far.
+// Small: light, high bounce, less momentum — trick shots, fits tight gaps.
+// Physics derived from size via cubePhysicsFor(size). Mass auto-scales via Matter density.
+const REF_CUBE_SIZE = 36;
+function cubePhysicsFor(size) {
+  const r = size / REF_CUBE_SIZE;
+  return {
+    bounce:   Math.max(0.30, Math.min(1.20, 1.82 - 1.23 * r)),
+    gravMult: Math.max(0.50, Math.min(1.50, 0.03 + 1.22 * r)),
+  };
+}
+
+const DEFAULT_WALK_CUBES = [
+  { size: 36, speed: 40, offset: 0,   color: COL.gold,    label: 'L' },
+  { size: 32, speed: -55, offset: 80,  color: COL.coral,   label: 'M' },
+  { size: 28, speed: 70, offset: 160, color: COL.rose,    label: 'S' },
+  { size: 24, speed: -85, offset: 240, color: COL.magenta, label: 'XS' },
 ];
+
+// Migrate old golf labels from any saved localStorage data.
+const _LEGACY_CUBE_LABELS = { DRIVER: 'L', IRON: 'M', WEDGE: 'S', PUTTER: 'XS' };
+
+// Walk-cubes are user-global — one set shared across all levels, persisted in localStorage.
+let userWalkCubes = null;
+const _WALK_CUBES_LS_KEY = 'cubeTossWalkCubes';
+function _colorKey(c) {
+  for (const k in COL) if (COL[k] === c) return k;
+  return null;
+}
+function _colorFromKey(k, fallback) {
+  return (k && COL[k]) || fallback || COL.gold;
+}
+function loadUserWalkCubes() {
+  try {
+    const raw = localStorage.getItem(_WALK_CUBES_LS_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed) && parsed.length) {
+        userWalkCubes = parsed.map(wk => ({
+          size: wk.size, speed: wk.speed, offset: wk.offset,
+          color: _colorFromKey(wk.colorKey, wk.color),
+          label: _LEGACY_CUBE_LABELS[wk.label] || wk.label,
+          bounceOverride: (typeof wk.bounceOverride === 'number') ? wk.bounceOverride : null
+        }));
+        return;
+      }
+    }
+  } catch(e) {}
+  userWalkCubes = DEFAULT_WALK_CUBES.map(wk => Object.assign({ bounceOverride: null }, wk));
+}
+function saveUserWalkCubes() {
+  try {
+    localStorage.setItem(_WALK_CUBES_LS_KEY, JSON.stringify(
+      userWalkCubes.map(wk => ({
+        size: wk.size, speed: wk.speed, offset: wk.offset,
+        colorKey: _colorKey(wk.color), label: wk.label,
+        bounceOverride: (wk.bounceOverride != null) ? wk.bounceOverride : null
+      }))
+    ));
+  } catch(e) {}
+}
+
+function getWalkCubes() {
+  if (!userWalkCubes) userWalkCubes = DEFAULT_WALK_CUBES.map(wk => Object.assign({ bounceOverride: null }, wk));
+  return userWalkCubes;
+}
+
+// Selected walk-cube index in editor mode (null = none)
+let edWalkCubeSel = null;
+let edWalkCubeLayout = null; // [{ origIdx, wk, sx, sy }, ...]
+let edWalkCubeBtns = null;   // { sizePlusX,... } or null
 
 // ─── HINTS ───
 let showHints = false;
@@ -835,7 +896,9 @@ function findHintPath(lvIdx) {
 }
 
 function spawnCube(x, y, wk) {
-  return { x, y, size: wk.size, color: wk.color, bounce: wk.bounce, gravMult: wk.gravMult,
+  const phys = cubePhysicsFor(wk.size);
+  const bounce = (wk.bounceOverride != null) ? wk.bounceOverride : phys.bounce;
+  return { x, y, size: wk.size, color: wk.color, bounce, gravMult: phys.gravMult,
     vx: 0, vy: 0, angle: 0, angVel: 0, trail: [] };
 }
 
@@ -1127,6 +1190,37 @@ function onDown(e){
   if (editorMode) {
     const wx = p.x + camX, wy = p.y + camY;
 
+    // Walk-cube resize arrow buttons (when a walk-cube is selected)
+    if (edWalkCubeBtns && edWalkCubeSel != null) {
+      const b = edWalkCubeBtns;
+      const hitBtn = (bx, by) => Math.hypot(p.x - bx, p.y - by) <= b.rad;
+      const wcs = getWalkCubes();
+      const wk = wcs[edWalkCubeSel];
+      if (wk) {
+        let changed = false;
+        if (hitBtn(b.sizePlusX, b.sizePlusY))        { wk.size = Math.min(64, wk.size + 2); changed = true; }
+        else if (hitBtn(b.sizeMinusX, b.sizeMinusY)) { wk.size = Math.max(16, wk.size - 2); changed = true; }
+        else if (hitBtn(b.bouncePlusX, b.bouncePlusY) || hitBtn(b.bounceMinusX, b.bounceMinusY)) {
+          const cur = (wk.bounceOverride != null) ? wk.bounceOverride : cubePhysicsFor(wk.size).bounce;
+          const delta = hitBtn(b.bouncePlusX, b.bouncePlusY) ? 0.05 : -0.05;
+          wk.bounceOverride = Math.max(0.10, Math.min(1.50, +(cur + delta).toFixed(2)));
+          changed = true;
+        }
+        if (changed) { saveUserWalkCubes(); return; }
+      }
+    }
+
+    // Walk-cube selection
+    if (edWalkCubeLayout) {
+      for (const slot of edWalkCubeLayout) {
+        const d = Math.hypot(p.x - slot.sx, p.y - slot.sy);
+        if (d <= slot.wk.size/2 + 6) {
+          edWalkCubeSel = (edWalkCubeSel === slot.origIdx) ? null : slot.origIdx;
+          return;
+        }
+      }
+    }
+
     // Camera pan checkboxes (below side buttons)
     const lastBtn = sideBtnBounds(3);
     const cbx2 = lastBtn.x, cby2 = lastBtn.y + lastBtn.h + 15 + 12;
@@ -1335,8 +1429,9 @@ function onDown(e){
   const wx=worldX(p.x);
   if(wx<getThrowLine()+100){
     // Find the nearest walking cube to click position
-    let bestWk=walkCubes[0], bestDist=Infinity;
-    for(const wk of walkCubes){
+    const wcs=getWalkCubes();
+    let bestWk=wcs[0], bestDist=Infinity;
+    for(const wk of wcs){
       const dist=wk.speed*elapsed+wk.offset;
       const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
       const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
@@ -3374,6 +3469,7 @@ const EMBEDDED_LEVELS = [
   }
   levelsLoaded = true;
   resize(); // now H can adapt
+  loadUserWalkCubes(); // restore any saved walk-cube sizes and bounce overrides
   rebuildWorld(); // create Matter static bodies for the initial level
 })();
 
@@ -3572,8 +3668,64 @@ function animate(time){
     const wlX=getWalkLineX()-camX;
     ctx.beginPath();ctx.moveTo(wlX,WALK_LINE_Y_START);ctx.lineTo(wlX,WALK_LINE_Y_START+WALK_LINE_LEN);ctx.stroke();
 
-    if(state==='ready'){
-      for(const wk of walkCubes){
+    if (editorMode) {
+      // Static editor view — cubes frozen, arranged smallest-to-biggest along the line
+      const _wcs = getWalkCubes();
+      const _layout = _wcs.map((wk, origIdx) => ({ wk, origIdx }))
+                          .sort((a,b) => (a.wk.size - b.wk.size) || (a.origIdx - b.origIdx));
+      const slotCount = _layout.length;
+      edWalkCubeLayout = [];
+      for (let di = 0; di < slotCount; di++) {
+        const wk = _layout[di].wk;
+        const sx = wlX;
+        const sy = WALK_LINE_Y_START + (di + 1) * WALK_LINE_LEN / (slotCount + 1);
+        edWalkCubeLayout.push({ origIdx: _layout[di].origIdx, wk, sx, sy });
+        drawCubeAt(sx, sy, wk.size, 0, wk.color);
+        ctx.fillStyle = 'rgba(254,249,240,0.55)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
+        ctx.fillText(`${wk.label}  ${wk.size}px`, sx + wk.size/2 + 10, sy + 4);
+      }
+      edWalkCubeBtns = null;
+      if (edWalkCubeSel != null) {
+        const slot = edWalkCubeLayout.find(s => s.origIdx === edWalkCubeSel);
+        if (slot) {
+          const ring = slot.wk.size/2 + 6;
+          ctx.strokeStyle = 'rgba(244,197,66,0.95)'; ctx.lineWidth = 2;
+          ctx.beginPath(); ctx.arc(slot.sx, slot.sy, ring, 0, Math.PI*2); ctx.stroke();
+          const rad = 16;
+          const sizePlusX = slot.sx, sizePlusY = slot.sy - slot.wk.size/2 - rad - 6;
+          const sizeMinusX = slot.sx, sizeMinusY = slot.sy + slot.wk.size/2 + rad + 6;
+          const bouncePlusX = slot.sx + slot.wk.size/2 + rad + 16, bouncePlusY = slot.sy;
+          const bounceMinusX = slot.sx - slot.wk.size/2 - rad - 16, bounceMinusY = slot.sy;
+          function arrowBtn(cx, cy, glyph, enabled) {
+            ctx.fillStyle = enabled ? 'rgba(244,197,66,0.20)' : 'rgba(255,255,255,0.06)';
+            ctx.strokeStyle = enabled ? 'rgba(244,197,66,0.95)' : 'rgba(255,255,255,0.25)';
+            ctx.lineWidth = 2;
+            ctx.beginPath(); ctx.arc(cx, cy, rad, 0, Math.PI*2); ctx.fill(); ctx.stroke();
+            ctx.fillStyle = enabled ? '#f4c542' : 'rgba(255,255,255,0.4)';
+            ctx.font = '700 18px Urbanist'; ctx.textAlign = 'center';
+            ctx.fillText(glyph, cx, cy + 6);
+          }
+          const curBounce = (slot.wk.bounceOverride != null)
+            ? slot.wk.bounceOverride
+            : cubePhysicsFor(slot.wk.size).bounce;
+          arrowBtn(sizePlusX,   sizePlusY,   '+', slot.wk.size < 64);
+          arrowBtn(sizeMinusX,  sizeMinusY,  '−', slot.wk.size > 16);
+          arrowBtn(bouncePlusX, bouncePlusY, '+', curBounce < 1.50);
+          arrowBtn(bounceMinusX,bounceMinusY,'−', curBounce > 0.10);
+          edWalkCubeBtns = {
+            sizePlusX, sizePlusY, sizeMinusX, sizeMinusY,
+            bouncePlusX, bouncePlusY, bounceMinusX, bounceMinusY, rad
+          };
+          const phys = cubePhysicsFor(slot.wk.size);
+          const overr = slot.wk.bounceOverride != null ? '*' : ' ';
+          ctx.fillStyle = 'rgba(244,197,66,0.8)'; ctx.font = '500 9px Urbanist'; ctx.textAlign = 'left';
+          ctx.fillText(`size ${slot.wk.size}  bounce${overr} ${curBounce.toFixed(2)}  grav ${phys.gravMult.toFixed(2)}`,
+                       bouncePlusX + rad + 6, slot.sy + 4);
+        }
+      }
+    } else if (state === 'ready') {
+      edWalkCubeLayout = null; edWalkCubeBtns = null;
+      for(const wk of getWalkCubes()){
         const dist=wk.speed*elapsed+wk.offset;
         const rawDist=((dist%WALK_LINE_LEN)+WALK_LINE_LEN)%WALK_LINE_LEN;
         const steps=rawDist/wk.size, stepIdx=Math.floor(steps), frac=steps-stepIdx;
