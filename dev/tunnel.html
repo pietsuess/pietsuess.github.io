@@ -1501,7 +1501,14 @@ window.onload = function() {
     function isZoneComplete(sector) { return getZoneCollectedCount(sector) >= getZoneItemCount(sector); }
     function allZonesComplete() { for (var i = 1; i <= 5; i++) { if (!isZoneComplete(i)) return false; } return true; }
     function isSpeedRunSector(sector, level) {
-        // Check editor config first, fall back to hardcoded defaults
+        // 1. SPAWN_TUNING per-level override (from spawn editor)
+        try {
+            if (typeof SPAWN_TUNING !== 'undefined') {
+                var t = SPAWN_TUNING['S' + sector + 'L' + level];
+                if (t && t.isSpeedRun !== undefined) return !!t.isSpeedRun;
+            }
+        } catch(e) {}
+        // 2. Legacy per-sector override (old sector config editor)
         try {
             var raw = JSON.parse(localStorage.getItem('tunnelRunner_sectorConfig'));
             if (raw) {
@@ -1509,6 +1516,7 @@ window.onload = function() {
                 if (cfg[sector - 1] && cfg[sector - 1].isSpeedRun !== undefined) return !!cfg[sector - 1].isSpeedRun;
             }
         } catch(e) {}
+        // 3. Hardcoded fallback
         return sector === 3 || (sector === 5 && level === 1);
     }
 
@@ -3905,8 +3913,14 @@ window.onload = function() {
         initializeFlight(true);
     }
 
-    // Speed run target time — fixed 30 seconds
+    // Speed run target — per-level override via SPAWN_TUNING, else hardcoded
     function getSpeedRunTarget() {
+        try {
+            if (typeof SPAWN_TUNING !== 'undefined') {
+                var t = SPAWN_TUNING['S' + currentSector + 'L' + currentLevel];
+                if (t && t.speedRunTarget !== undefined) return t.speedRunTarget;
+            }
+        } catch(e) {}
         return currentSector === 5 ? 45 : 30;
     }
 
