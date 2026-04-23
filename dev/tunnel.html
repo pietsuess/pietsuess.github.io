@@ -2362,6 +2362,7 @@ window.onload = function() {
     scene.background = new THREE.Color(0x000810);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000);
+    scene.add(camera);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
@@ -5909,15 +5910,15 @@ window.onload = function() {
     // COLLECT BURST — 3 expanding pink rings from the collected object
     // ═══════════════════════════════════════════════════════════════
     var _collectBursts = [];
-    var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta — content-only
+    var _COLLECT_BURST_COLOR = 0xff66cc;
+    var _BURST_SCALES = [[0.4, 7], [0.6, 11], [0.9, 15]];
     function spawnCollectBurst(pos, colorOverride) {
         var now = performance.now();
         var ringCount = 3;
-        var stagger = 90;  // ms — faster between rings
-        var duration = 650; // ms — faster overall
+        var stagger = 90;
+        var duration = 650;
         var meshes = [];
         for (var i = 0; i < ringCount; i++) {
-            // Thicker rings: inner 0.5, outer 2.5 = thickness 2.0 (was 0.9)
             var geo = new THREE.RingGeometry(0.5, 2.5, 40);
             var mat = new THREE.MeshBasicMaterial({
                 color: colorOverride || _COLLECT_BURST_COLOR,
@@ -5929,15 +5930,16 @@ window.onload = function() {
                 blending: THREE.AdditiveBlending
             });
             var m = new THREE.Mesh(geo, mat);
-            // Parent to shipContainer so the rings travel with the ship (screen-space feel)
-            m.position.set(0, 0, -8); // local, ahead of ship nose
+            m.position.set(0, 0, -8);
             m.renderOrder = 999;
             m.userData = {
                 _birth: now + i * stagger,
                 _duration: duration,
+                _scaleStart: _BURST_SCALES[i][0],
+                _scaleEnd: _BURST_SCALES[i][1],
                 _done: false
             };
-            try { shipContainer.add(m); } catch(e) { scene.add(m); }
+            try { camera.add(m); } catch(e) { scene.add(m); }
             meshes.push(m);
         }
         _collectBursts.push({ meshes: meshes });
@@ -5955,24 +5957,20 @@ window.onload = function() {
                 if (age < 0) { allDone = false; continue; }
                 if (age < m.userData._duration) {
                     var t = age / m.userData._duration;
-                    // Faster expansion: full size by 30% of life
-                    var expT = Math.min(1, t / 0.3);
-                    var easeOut = 1 - Math.pow(1 - expT, 2.5);
-                    var scale = 1.2 + easeOut * 12.0;
+                    var easeOut = 1 - Math.pow(1 - t, 2.5);
+                    var s0 = m.userData._scaleStart;
+                    var s1 = m.userData._scaleEnd;
+                    var scale = s0 + easeOut * (s1 - s0);
                     m.scale.setScalar(scale);
-                    // Half-transparent max: 0 → 0.5 fade-in, hold, 0.5 → 0 fade-out (faster)
-                    var MAX_OP = 0.5;
+                    var MAX_OP = 0.35;
                     var opacity;
                     if (t < 0.10)       opacity = (t / 0.10) * MAX_OP;
                     else if (t < 0.45)  opacity = MAX_OP;
                     else                opacity = MAX_OP * (1 - (t - 0.45) / 0.55);
                     m.material.opacity = Math.max(0, opacity);
-                    // Billboard toward camera (in local space of shipContainer,
-                    // the ship's orientation is close enough to camera facing)
-                    // No lookAt needed since ship tracks camera.
                     allDone = false;
                 } else {
-                    scene.remove(m);
+                    if (m.parent) m.parent.remove(m);
                     m.geometry.dispose();
                     m.material.dispose();
                     m.userData._done = true;
