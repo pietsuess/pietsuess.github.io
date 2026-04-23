@@ -294,16 +294,37 @@
         body.cinematic-active #sector-intro-splash {
           display: none !important;
         }
-        /* Literal title — reuse #start-screen's #title-card during cinematic. */
-        body.cinematic-active #start-screen {
-          display: flex !important;
-          background: transparent !important;
-          z-index: 610 !important;
-          pointer-events: none !important;
+        /* Cinematic title clone overlay.
+           Replicates #title-byline + #title-main from the real start-screen.
+           The original #start-screen hides normally via .overlay-screen sweep
+           during initializeFlight; we do NOT keep it visible. */
+        #cine-title-stack {
+          position: fixed; inset: 0; z-index: 615;
+          display: flex; flex-direction: column; align-items: center;
+          justify-content: flex-start;
+          padding: 14vh 16px 16px;
+          background: transparent;
+          pointer-events: none;
+          opacity: 1;
+          transition: opacity 0.2s ease-out;
         }
-        body.cinematic-active #start-screen #press-start,
-        body.cinematic-active #start-screen #lb-wrapper {
-          display: none !important;
+        #cine-title-stack .cine-title-inner {
+          width: 100%; max-width: 520px; margin: 0 auto;
+          display: flex; flex-direction: column; align-items: center;
+          padding-top: 140px;
+          text-align: center;
+        }
+        #cine-title-stack .cine-title-byline {
+          font-family: 'Press Start 2P', monospace;
+          font-size: clamp(10px,2.8vw,15px); color: #ff69b4; letter-spacing: 3px;
+          text-shadow: 0 0 8px rgba(255,105,180,0.7); margin-bottom: 8px;
+          animation: titleFadeUp 0.8s 0.3s both;
+        }
+        #cine-title-stack .cine-title-main {
+          font-family: 'Press Start 2P', monospace;
+          font-size: clamp(22px,6vw,34px); color: #00ffcc; letter-spacing: 3px;
+          line-height: 1;
+          animation: titlePulse 1.6s ease-in-out infinite, titleFadeUp 0.7s 0.1s both;
         }
         @keyframes tutFade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes cdPop { 0%{opacity:0;transform:scale(2.2)} 40%{opacity:1;transform:scale(0.85)} 100%{opacity:1;transform:scale(1)} }
@@ -5478,22 +5499,37 @@ window.onload = function() {
             if (audioCtx && audioCtx.state === 'suspended') {
                 try { audioCtx.resume(); } catch (e) {}
             }
-            // Literal title: keep real #start-screen visible during cinematic.
-            // CSS body.cinematic-active overrides the inline display:none that
-            // the .overlay-screen reset above applied, and hides non-title kids.
-            var _ss = document.getElementById('start-screen');
-            if (_ss) { _ss.style.opacity = '1'; _ss.style.transition = ''; }
+            // v4: don't touch the real #start-screen. The .overlay-screen
+            // display:none sweep above already hid it. Build a cinematic-only
+            // clone overlay that mirrors the title's DRAW DATA (byline + main).
+            try {
+                var _existing = document.getElementById('cine-title-stack');
+                if (_existing && _existing.parentNode) _existing.parentNode.removeChild(_existing);
+                var _cts = document.createElement('div');
+                _cts.id = 'cine-title-stack';
+                var _cinner = document.createElement('div');
+                _cinner.className = 'cine-title-inner';
+                var _cby = document.createElement('div');
+                _cby.className = 'cine-title-byline';
+                _cby.textContent = 'PIET SUESS';
+                var _cmn = document.createElement('div');
+                _cmn.className = 'cine-title-main';
+                _cmn.textContent = 'TUNNEL RUNNER';
+                _cinner.appendChild(_cby);
+                _cinner.appendChild(_cmn);
+                _cts.appendChild(_cinner);
+                document.body.appendChild(_cts);
+            } catch (e) { console.error('cine-title-stack create err', e); }
             runCinematic(function() {
-                var _ss2 = document.getElementById('start-screen');
-                if (_ss2) {
-                    _ss2.style.transition = 'opacity 0.2s ease-out';
-                    _ss2.style.opacity = '0';
-                    setTimeout(function() {
-                        _ss2.style.opacity = '';
-                        _ss2.style.transition = '';
-                        _ss2.style.display = 'none';
-                    }, 220);
-                }
+                try {
+                    var _cts2 = document.getElementById('cine-title-stack');
+                    if (_cts2) {
+                        _cts2.style.opacity = '0';
+                        setTimeout(function() {
+                            if (_cts2 && _cts2.parentNode) _cts2.parentNode.removeChild(_cts2);
+                        }, 220);
+                    }
+                } catch (e) { console.error('cine-title-stack remove err', e); }
                 _runIntroChain();
             });
         } else {
@@ -6194,39 +6230,64 @@ window.onload = function() {
     // At end, call onDone() without resetting; the splash hides the frame
     // and the 'playing' block overwrites positions on first frame.
     function runCinematic(onDone) {
-        _cine.active = true;
-        _cine.t = 0;
-        _cine.phase = 1;
-        _cine.onDone = onDone;
-        _cine.stingerPlayed = false;
-        try { document.body.classList.add('cinematic-active'); } catch (e) {}
-        camera.position.x = Math.cos(0) * (tubeRadius - 16);
-        camera.position.y = Math.sin(0) * (tubeRadius - 16);
-        camera.rotation.z = Math.PI / 2;
-        shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
-        shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
-        shipContainer.position.z = camera.position.z - 18;
-        shipContainer.rotation.set(0, 0, 0);
-        // Gameplay resting pose: bankGroup ZXY (0.08, 0, PI/2). Without this
-        // the ship mesh reads as 90deg rotated since bankGroup default is 0,0,0.
-        bankGroup.rotation.order = 'ZXY';
-        bankGroup.rotation.set(0.08, 0, Math.PI / 2);
-        if (!bankGroup._bank) bankGroup._bank = 0;
-        gunBankGroup.rotation.order = 'ZXY';
-        gunBankGroup.rotation.set(0.08, 0, Math.PI / 2);
-        shipContainer.visible = true;
-        // Full-boost driver reset; tickCinematic ramps it phase A.
-        throttleSmooth = 0;
-        _cine.camStart.x = camera.position.x;
-        _cine.camStart.y = camera.position.y;
-        _cine.camStart.z = camera.position.z;
-        _cine.sideTarget.x = tubeRadius * 1.8;
-        _cine.sideTarget.y = 0;
-        _cine.sideTarget.z = shipContainer.position.z + 55;
-        // Fire triumphant stinger at cinematic t=0.0s.
-        _cine.stingerPlayed = true;
-        try { AudioEngine.playSFX('intro_stinger'); } catch (e) {}
-        clock.getDelta();
+        // v4 hardening: wrap everything in try/catch so a silent throw cannot
+        // leave gameState stuck on 'cinematic' (which would freeze the title
+        // on mobile since tickCinematic would throw every frame).
+        try {
+            _cine.active = true;
+            _cine.t = 0;
+            _cine.phase = 1;
+            _cine.onDone = onDone;
+            _cine.stingerPlayed = false;
+            try { document.body.classList.add('cinematic-active'); } catch (e) {}
+            camera.position.x = Math.cos(0) * (tubeRadius - 16);
+            camera.position.y = Math.sin(0) * (tubeRadius - 16);
+            camera.rotation.z = Math.PI / 2;
+            shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+            shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
+            shipContainer.position.z = camera.position.z - 18;
+            try { shipContainer.rotation.set(0, 0, 0); } catch (e) {}
+            // Two-call pattern (order string first, then 3-arg set) to avoid
+            // any Euler.set(x,y,z,order) quirks on older THREE builds.
+            try {
+                bankGroup.rotation.order = 'ZXY';
+                bankGroup.rotation.set(0.08, 0, Math.PI / 2);
+            } catch (e) { console.error('cine bankGroup pose err', e); }
+            if (!bankGroup._bank) bankGroup._bank = 0;
+            try {
+                gunBankGroup.rotation.order = 'ZXY';
+                gunBankGroup.rotation.set(0.08, 0, Math.PI / 2);
+            } catch (e) { console.error('cine gunBankGroup pose err', e); }
+            shipContainer.visible = true;
+            // Full-boost driver reset; tickCinematic ramps it phase A.
+            throttleSmooth = 0;
+            _cine.camStart.x = camera.position.x;
+            _cine.camStart.y = camera.position.y;
+            _cine.camStart.z = camera.position.z;
+            _cine.sideTarget.x = tubeRadius * 1.8;
+            _cine.sideTarget.y = 0;
+            _cine.sideTarget.z = shipContainer.position.z + 55;
+            // Mobile: AudioContext is suspended until a user gesture resumes
+            // it. The title tap that triggered initializeFlight IS a gesture,
+            // so a synchronous resume() here should succeed. Do it BEFORE the
+            // stinger so playSFX doesn't fire into a suspended context.
+            try {
+                if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) { console.error('cine audio resume err', e); }
+            // Fire triumphant stinger at cinematic t=0.0s.
+            _cine.stingerPlayed = true;
+            try { AudioEngine.playSFX('intro_stinger'); } catch (e) { console.error('cine stinger err', e); }
+            clock.getDelta();
+        } catch (err) {
+            // Hard-fail fallback: never leave gameState stuck on 'cinematic'.
+            console.error('runCinematic fatal', err);
+            _cine.active = false;
+            try { document.body.classList.remove('cinematic-active'); } catch (e) {}
+            var cb = onDone; _cine.onDone = null;
+            if (cb) { try { cb(); } catch (e) {} }
+        }
     }
 
     function tickCinematic(delta) {
