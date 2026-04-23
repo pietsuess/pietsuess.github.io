@@ -6425,25 +6425,31 @@ window.onload = function() {
                     && item.position.z >= shipContainer.position.z) {
                     item.userData._passChecked = true;
                     var _pAng = item.userData.pylonAngle;
-                    var _dA = shipAngle - _pAng;
-                    while (_dA > Math.PI) _dA -= Math.PI * 2;
-                    while (_dA < -Math.PI) _dA += Math.PI * 2;
-                    // CORRECT = anywhere on the correct half of the tube. WRONG = anywhere on
-                    // the wrong half (or directly aligned). No distance penalty for being far on
-                    // the correct side — slalom-style: pick a side, full stop.
-                    var _correct = (item.userData.type === 'pylon_left') ? (_dA > 0) : (_dA < 0);
-                    if (_correct) {
+                    // Correct anchor = 90° offset from pylon on the correct side of the tube.
+                    // LEFT pylon: correct anchor is +π/2 from pylon angle (counter-clockwise).
+                    // RIGHT pylon: correct anchor is -π/2 from pylon angle (clockwise).
+                    var _correctAnchor = _pAng + ((item.userData.type === 'pylon_left') ? Math.PI / 2 : -Math.PI / 2);
+                    var _ddA = shipAngle - _correctAnchor;
+                    while (_ddA > Math.PI) _ddA -= Math.PI * 2;
+                    while (_ddA < -Math.PI) _ddA += Math.PI * 2;
+                    var _absD = Math.abs(_ddA);
+                    var _third = Math.PI / 3; // ~60°
+                    if (_absD < _third) {
+                        // CORRECT zone (close to the perfect-pass anchor)
                         score += 400;
                         AudioEngine.playSFX('ring');
                         flash('#00ffcc');
                         spawnPointBurst('PYLON +400', 'c-green');
-                    } else {
+                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                    } else if (_absD >= 2 * _third) {
+                        // WRONG zone (close to the wrong anchor)
                         score = Math.max(0, score - 200);
                         AudioEngine.playSFX('destroy');
                         flash('#ff4444');
                         spawnPointBurst('WRONG SIDE -200', 'c-red');
+                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
                     }
-                    document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                    // else: NEUTRAL middle third — silent, no score change.
                 }
 
                 if (item.position.z > camera.position.z + 50) {
