@@ -1004,7 +1004,7 @@ function initAudioGraph() {
   wet.connect(audioCtx.destination); reverbIn = d1;
 }
 
-// Core note voice
+// Shield note voice
 function _v(freq, start, attack, hold, release, gainPk, type, reverbSend) {
   if (!audioCtx || _musicPaused) return;
   type = type || 'sine'; reverbSend = (reverbSend === undefined) ? 0.45 : reverbSend;
@@ -1230,11 +1230,50 @@ var MOODS = [
       });
     }
   }
+},
+
+{
+  name:'NEON RUSH', bpm:160, scale:'amin', root:110.0,
+  gen:function(t0,bar,bl,sc,root,rng){
+    var B=bar, barLen=8*bl;
+    var vol=1.05;
+    for(var k=0;k<8;k++) _bass(44,t0+k*bl,bl*0.1,0.10*vol);
+    var bassPat=[0,7,0,7,0,7,0,7];
+    bassPat.forEach(function(ss,i){ _bass(root/2*fr(sc[ss%sc.length]),t0+i*bl,bl*0.65,0.10*vol); });
+    var arpNotes=[0,3,7,12,7,3,0,7,3,12,7,0,3,7,12,3];
+    arpNotes.forEach(function(ss,i){
+      var octShift=i>8?2:1;
+      _plk(root*octShift*fr(ss),t0+i*bl*0.5,0.05*vol);
+    });
+    var prog=[[0,3,7],[5,8,0],[0,4,7],[7,11,2]];
+    var cIdx=Math.floor(B/2)%4, chord=prog[cIdx];
+    chord.forEach(function(ss,i){
+      _pad(root*fr(ss),t0+i*0.12,barLen+2.4,0.055*vol*(1-i*0.10),B*i+5);
+    });
+    chord.forEach(function(ss,i){ _str(root*fr(ss),t0+i*0.08,barLen*0.85,0.038*vol); });
+    var stabPat=[0,2,4,6];
+    stabPat.forEach(function(i){
+      var s2=sc[rng(0,4)];
+      _v(root*fr(s2),t0+i*bl,0.03,bl*0.2,0.15,0.045*vol,'sawtooth',0.25);
+    });
+    var lead=[0,3,5,7,12,7,5,3,7,5,3,0,3,5,7,12];
+    var li=B%lead.length;
+    [0,1,2,3,4,5,6,7].forEach(function(beat,i){
+      _mel(root*2*fr(sc[lead[(li+i)%lead.length]%sc.length]),t0+beat*bl,bl*1.1,0.05*vol);
+    });
+    var counter=[7,5,3,0,3,5,7,5];
+    counter.forEach(function(ss,i){
+      _v(root*4*fr(sc[ss%sc.length]),t0+i*bl+bl*0.25,0.05,bl*0.4,0.18,0.028*vol,'triangle',0.4);
+    });
+    if(B%2===0){
+      [0,3,7,10].forEach(function(ss,i){ _atm(root*4*fr(sc[ss%sc.length]),t0+i*bl*0.7,barLen,0.018*vol); });
+    }
+  }
 }
 
 ];
 
-var MOOD_DESCS = ['Dark \u00b7 Hypnotic \u00b7 Relentless','Fast \u00b7 Aggressive \u00b7 Phrygian','Eerie \u00b7 Atmospheric \u00b7 Haunting'];
+var MOOD_DESCS = ['Dark \u00b7 Hypnotic \u00b7 Relentless','Fast \u00b7 Aggressive \u00b7 Phrygian','Eerie \u00b7 Atmospheric \u00b7 Haunting','Cinematic \u00b7 Triumphant \u00b7 Hook-first'];
 
 // Music scheduler
 function stopMusic() {
@@ -1361,7 +1400,7 @@ var AudioEngine = {
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
       o.type='sine'; o.frequency.setValueAtTime(1320,t); o.frequency.setValueAtTime(1760,t+0.02);
       g.gain.setValueAtTime(0.18,t); g.gain.exponentialRampToValueAtTime(0.01,t+0.25); o.start(); o.stop(t+0.25);
-    } else if (type === 'core') {
+    } else if (type === 'shield') {
       // Warm double chime — two tones
       var o1=audioCtx.createOscillator(),g1=audioCtx.createGain(); o1.connect(g1); g1.connect(sfxGainNode);
       o1.type='sine'; o1.frequency.setValueAtTime(660,t);
@@ -3000,7 +3039,7 @@ window.onload = function() {
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
-    // Star — temporary invincibility shield (dodecahedron — visually distinct from octahedron core)
+    // Star — temporary invincibility power-up (dodecahedron — visually distinct from octahedron shield)
     const starGeo = new THREE.DodecahedronGeometry(3.5, 0);
     const starMat = new THREE.MeshStandardMaterial({ color: 0xff88ff, emissive: 0xff44ff, emissiveIntensity: 2.0, metalness: 0.0, roughness: 1.0 });
 
@@ -3380,25 +3419,67 @@ window.onload = function() {
     // ═══════════════════════════════════════════════════════════════
     var SPAWN_TUNING = {
         'S1L1': {
-            baseHazard: 0.10, baseRing: 0.95,
-            spacing: 80, maxSpawnPct: 0.85,
-            speed: 200, length: 11000,
-            stars: true, mines: true,
+            blocks: false,
+            shields: true,
+            barriers: false,
+            knots: false,
+            mines: true,
+            ramps: false,
+            stars: false,
+            boost: false,
+            baseHazard: 0.1,
+            baseRing: 0.95,
+            baseShields: 0,
+            levelEscalation: 0.1,
+            barrierThreshold: 0,
+            normalMinDist: 800,
+            gapChance: 1,
+            gapSizeMin: 0.6,
+            gapSizeMax: 1.1,
+            srSpacing: 40,
+            srCountMin: 3,
+            srCountMax: 4,
+            srTwistMin: 0.15,
+            srTwistMax: 0.3,
+            srGapMin: 0.9,
+            srGapMax: 1.3,
+            srMinDist: 400,
+            spacing: 80,
+            startOffset: 400,
+            maxSpawnPct: 0.85,
+            starChance: 0,
+            contentChance: 0.063,
+            boostChance: 0,
+            boostRingCount: 5,
+            knotShare: 0,
+            blockShare: 0,
+            baseSpeed: 200,
+            levelSpeed: 200,
+            baseLength: 11000,
+            levelLength: 11000,
+            spiralStep: 1.1,
             spiralPattern: [
-                { until: 0.1, lanes: [
+                { until: 0.15, lanes: [
                     { step: 0.3, offset: 0.35 }
-                ], spacing: 100, spawn: { contentCount: 3, baseHazard: 0, baseRing: 60 } },
-                { until: 0.4, spacing: 70, spawn: { baseHazard: 0, baseRing: 90, contentCount: 0, baseCore: 0, starChance: 2 }, step: 0 },
-                { until: 0.85, lanes: [
-                    { step: -0.3, offset: 0 },
-                    { step: 0.3, offset: 1.75 }
-                ], spawn: { contentCount: 3 } },
-                { until: 1.0, lanes: [
+                ], spacing: 200, spawn: { contentCount: 2, baseHazard: 0, baseRing: 10, baseShields: 0, starChance: 0, boostChance: 0, barrierThreshold: 0 } },
+                { until: 0.2, spacing: 50, spawn: { baseHazard: 90, baseRing: 0, contentCount: 0, baseShields: 0, starChance: 0, barrierThreshold: 0, boostChance: 0 }, step: 6 },
+                { until: 0.45, spawn: { baseRing: 90, baseShields: 10, contentCount: 2, baseHazard: 0 }, step: 0 },
+                { until: 0.75, lanes: [
                     { step: -0.1, offset: 0.61 },
                     { step: 0.1, offset: 1.57 }
-                ], spacing: 60, spawn: { baseRing: 100, baseHazard: 0, contentCount: 2 } }
+                ], spacing: 60, spawn: { baseRing: 100, baseHazard: 1, contentCount: 3, baseShields: 1 } },
+                { until: 1, lanes: [
+                    { step: 0.1, offset: 1.57 },
+                    { step: -0.1, offset: 4.71 }
+                ], spacing: 90, spawn: { baseRing: 100, baseHazard: 0, contentCount: 2 } }
             ],
             rotMult: 0.7,
+            knotSwaySpeedMin: 1.5,
+            knotSwaySpeedMax: 2.5,
+            knotSwayRangeMin: 0.4,
+            knotSwayRangeMax: 0.7,
+            isSpeedRun: false,
+            speedRunTarget: 30,
             pylons: {
                 spacing: 180,
                 offset: 0.55,
@@ -3421,7 +3502,7 @@ window.onload = function() {
                 { until: 0.55, lanes: [
                     { step: 0.1, offset: 0 },
                     { step: 0.1, offset: 1.57 }
-                ], spacing: 90, spawn: { baseHazard: 85, baseRing: 0, contentCount: 0, baseCore: 15, starChance: 1 } },
+                ], spacing: 90, spawn: { baseHazard: 85, baseRing: 0, contentCount: 0, baseShields: 15, starChance: 1 } },
                 { until: 0.85, lanes: [
                     { step: 0.3, offset: 3.14 },
                     { step: -0.3, offset: 1.75 }
@@ -3433,9 +3514,9 @@ window.onload = function() {
             ],
             rotMult: 0.8
         },
-        // S1L3 — cores unlocked; spiralPattern edited per spawn editor
+        // S1L3 — shields unlocked; spiralPattern edited per spawn editor
         'S1L3': {
-            baseHazard: 0.22, baseRing: 0.68, baseCore: 0.10,
+            baseHazard: 0.22, baseRing: 0.68, baseShields: 0.10,
             spacing: 70, maxSpawnPct: 0.84,
             speed: 240, length: 13000,
             spiralPattern: [
@@ -3450,7 +3531,7 @@ window.onload = function() {
                     { step: 0.1, offset: 0 },
                     { step: 0.1, offset: 1.57 },
                     { step: 0.1, offset: 3.14 }
-                ], spacing: 85, spawn: { baseHazard: 80, baseRing: 0, contentCount: 0, baseCore: 20 } },
+                ], spacing: 85, spawn: { baseHazard: 80, baseRing: 0, contentCount: 0, baseShields: 20 } },
                 { until: 0.85, lanes: [
                     { step: 0.6, offset: 3.14 },
                     { step: -0.6, offset: 1.75 },
@@ -3461,13 +3542,13 @@ window.onload = function() {
                     { step: -0.1, offset: 1.75 },
                     { step: -0.1, offset: 2.27 },
                     { step: -0.1, offset: 2.79 }
-                ], spacing: 50, spawn: { baseRing: 85, baseHazard: 0, baseCore: 15, contentCount: 2 } }
+                ], spacing: 50, spawn: { baseRing: 85, baseHazard: 0, baseShields: 15, contentCount: 2 } }
             ],
             rotMult: 0.9
         },
         // S1L4 — converted to SPEED RUN (40s). spiralPattern heavily edited.
         'S1L4': {
-            baseHazard: 0.28, baseRing: 0.60, baseCore: 0.12,
+            baseHazard: 0.28, baseRing: 0.60, baseShields: 0.12,
             spacing: 65, maxSpawnPct: 0.86,
             speed: 260, length: 14000,
             isSpeedRun: true,
@@ -3475,21 +3556,21 @@ window.onload = function() {
             spiralPattern: [
                 { until: 0.35, lanes: [
                     { step: 0.8, offset: 0.44 }
-                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 10, baseCore: 0, contentCount: 10, barrierThreshold: 1, starChance: 0, boostChance: 0 } },
+                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 10, baseShields: 0, contentCount: 10, barrierThreshold: 1, starChance: 0, boostChance: 0 } },
                 { until: 0.5, lanes: [
                     { step: 0.6, offset: 3.14 },
                     { step: -0.6, offset: 1.75 },
                     { step: 0.1, offset: 1.57 }
-                ], spawn: { contentCount: 0, baseHazard: 1, baseRing: 0, baseCore: 1, barrierThreshold: 0, starChance: 1, boostChance: 0 } },
+                ], spawn: { contentCount: 0, baseHazard: 1, baseRing: 0, baseShields: 1, barrierThreshold: 0, starChance: 1, boostChance: 0 } },
                 { until: 1.0, lanes: [
                     { step: 0.2, offset: 1.57 }
-                ], spawn: { baseHazard: 0, baseCore: 0, contentCount: 10, barrierThreshold: 0, starChance: 1, baseRing: 0 } }
+                ], spawn: { baseHazard: 0, baseShields: 0, contentCount: 10, barrierThreshold: 0, starChance: 1, baseRing: 0 } }
             ],
             rotMult: 1.0
         },
         // S2L1 — pylon-slalom test (cloned from S1L4 export 2026-04-22)
         'S2L1': {
-            baseHazard: 0, baseRing: 0, baseCore: 0,
+            baseHazard: 0, baseRing: 0, baseShields: 0,
             spacing: 50, maxSpawnPct: 0.86,
             speed: 260, length: 14000,
             isSpeedRun: true,
@@ -3497,7 +3578,7 @@ window.onload = function() {
             spiralPattern: [
                 { until: 1.0, lanes: [
                     { step: 0.8, offset: 0.44 }
-                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 0, baseCore: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0 } }
+                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 0, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0 } }
             ],
             pylons: {
                 spacing: 560,
@@ -3641,7 +3722,7 @@ window.onload = function() {
 
         // ═══════════════════════════════════════════════════════════════
         // HAZARD GATING PER SECTOR + LEVEL:
-        // S1 (EDITING):   L1: rings+mines, L2: +blocks, L3: +cores+blocks, L4: same
+        // S1 (EDITING):   L1: rings+mines, L2: +blocks, L3: +shields+blocks, L4: same
         // S2 (PHOTO):     L1-2: +barriers(gap), L3-4: +knots(motion)
         // S3 (ANIMATE):   SPEED RUN — gap barrier series with twist, stars, boost pads
         // S4 (DESIGN):    knots(motion), gap barriers, ramps+full barriers — everything
@@ -3650,7 +3731,7 @@ window.onload = function() {
 
         // Per-sector-per-level object gating
         var blocksEnabled   = ((s === 1 && lvl >= 2) || s >= 2) && s !== 3;  // no blocks in S3 speed run
-        var coresEnabled    = (s === 1 && lvl >= 3) || s >= 2;
+        var shieldsEnabled    = (s === 1 && lvl >= 3) || s >= 2;
         var barriersEnabled = s >= 2;
         var knotsEnabled    = ((s === 2 && lvl >= 3) || s >= 3) && s !== 3;  // no knots in S3 speed run
         var minesEnabled    = s !== 3;  // no mines in S3 speed run — only gap barriers
@@ -3740,31 +3821,31 @@ window.onload = function() {
 
 
         // --- Per-sector spawn profile (check SPAWN_TUNING overrides) ---
-        var baseHazard, baseRing, baseCore;
-        if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+        var baseHazard, baseRing, baseShields;
+        if (s === 1)       { baseHazard = 0.20; baseRing = 0.80; baseShields = (lvl >= 3 ? 0.10 : 0.00); }
 
-        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
-        else if (s === 3)  { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }  // speed run — no hazards, only gap barriers
-        else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
-        else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
+        else if (s === 2)  { baseHazard = 0.35; baseRing = 0.55; baseShields = 0.10; }
+        else if (s === 3)  { baseHazard = 0.00; baseRing = 0.85; baseShields = 0.15; }  // speed run — no hazards, only gap barriers
+        else if (s === 4)  { baseHazard = 0.45; baseRing = 0.30; baseShields = 0.25; }
+        else               { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseShields = 0.20; }
         // Apply SPAWN_TUNING overrides
         if (_t.baseHazard !== undefined) baseHazard = _t.baseHazard;
         if (_t.baseRing !== undefined) baseRing = _t.baseRing;
-        if (_t.baseCore !== undefined) baseCore = _t.baseCore;
+        if (_t.baseShields !== undefined) baseShields = _t.baseShields;
         // Apply per-segment spawn overrides (highest priority)
         if (_segS) {
             if (_segS.baseHazard !== undefined) baseHazard = _segS.baseHazard;
             if (_segS.baseRing !== undefined) baseRing = _segS.baseRing;
-            if (_segS.baseCore !== undefined) baseCore = _segS.baseCore;
+            if (_segS.baseShields !== undefined) baseShields = _segS.baseShields;
         }
         // If the main distribution is intentionally empty, skip — don't fall back to a ring.
         // This lets pylons-only / barrier-only levels stay clean.
-        if (baseHazard === 0 && baseRing === 0 && baseCore === 0) return;
-        // Level escalation: +10% hazards per level, rings/cores shrink proportionally
+        if (baseHazard === 0 && baseRing === 0 && baseShields === 0) return;
+        // Level escalation: +10% hazards per level, rings/shields shrink proportionally
         var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
         var remaining = 1 - hazardChance;
-        var ringChance = remaining * (baseRing / (baseRing + baseCore + 0.001));
-        var coreChance = remaining * (baseCore / (baseRing + baseCore + 0.001));
+        var ringChance = remaining * (baseRing / (baseRing + baseShields + 0.001));
+        var shieldChance = remaining * (baseShields / (baseRing + baseShields + 0.001));
 
         const zoneIdx = Math.min(s - 1, ZONES.length - 1);
         let mesh, type, hitRadius;
@@ -3802,11 +3883,11 @@ window.onload = function() {
         if (_segS && _segS.starChance !== undefined) starChance = _segS.starChance;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
-        } else if (coresEnabled && rand < coreChance) {
+        } else if (shieldsEnabled && rand < shieldChance) {
             mesh = new THREE.Mesh(coreGeo, coreMat); type = 'health'; hitRadius = 5.5;
-        } else if (rand < coreChance + ringChance) {
+        } else if (rand < shieldChance + ringChance) {
             mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score';  hitRadius = 6.5;
-        } else if (rand < coreChance + ringChance + hazardChance) {
+        } else if (rand < shieldChance + ringChance + hazardChance) {
             // No hazard objects in S3 — only gap barrier series
             if (!minesEnabled && !blocksEnabled && !knotsEnabled) {
                 mesh = new THREE.Mesh(ringGeo, ringMat); type = 'score'; hitRadius = 6.5;
@@ -4394,7 +4475,7 @@ window.onload = function() {
                 else if (obj.type === 'hazard') { mesh = new THREE.Mesh(blockGeo, hazardMat); hitRadius = 6.0; utype = 'hazard'; }
                 else if (obj.type === 'mine')   { mesh = new THREE.Mesh(mineGeo,  hazardMat); hitRadius = 5.5; utype = 'hazard'; }
                 else if (obj.type === 'knot')   { mesh = new THREE.Mesh(knotGeo,  hazardMat); hitRadius = 5.0; utype = 'hazard'; }
-                else if (obj.type === 'core')   { mesh = new THREE.Mesh(coreGeo,  coreMat);   hitRadius = 5.5; utype = 'health'; }
+                else if (obj.type === 'shield')   { mesh = new THREE.Mesh(coreGeo,  coreMat);   hitRadius = 5.5; utype = 'health'; }
                 else if (obj.type === 'star')   { mesh = new THREE.Mesh(starGeo,  starMat.clone()); hitRadius = 5.5; utype = 'star'; }
                 else if (obj.type === 'ramp')    { mesh = new THREE.Mesh(rampGeo,      rampMat);      hitRadius = 16.0;         utype = 'ramp';       }
                 else if (obj.type === 'barrier') {
@@ -4684,7 +4765,7 @@ window.onload = function() {
         for (var n = 0; n < count; n++) {
             var mesh, utype, hr;
             if      (type === 'ring') { mesh = new THREE.Mesh(ringGeo, ringMat);   utype='score';  hr=4.0; }
-            else if (type === 'core') { mesh = new THREE.Mesh(coreGeo, coreMat);   utype='health'; hr=2.5; }
+            else if (type === 'shield') { mesh = new THREE.Mesh(coreGeo, coreMat);   utype='health'; hr=2.5; }
             else                      { mesh = new THREE.Mesh(blockGeo, hazardMat); utype='hazard'; hr=4.0; }
             var a = -Math.PI / 2, r = tubeRadius - 6;
             mesh.position.set(Math.cos(a)*r, Math.sin(a)*r, startZ - n * 120);
@@ -4712,7 +4793,7 @@ window.onload = function() {
     function tutPhaseShields() {
         TUT.phase = 'shields'; TUT.passed = 0;
         tutClear();
-        tutSpawnWave('core', 3, camera.position.z - 280);
+        tutSpawnWave('shield', 3, camera.position.z - 280);
         tutMsg('Collect shield boosts to restore health');
     }
 
@@ -4908,14 +4989,14 @@ window.onload = function() {
     var SECTOR_INTRO_DATA = [
         { items: ['RINGS', 'MINES'], desc: 'COLLECT CONTENT & DODGE HAZARDS' },
         { items: ['+ GAP BARRIERS', '+ RAMPS', '+ FULL BARRIERS'], desc: 'STEER GAPS & JUMP LASER WALLS' },
-        { items: ['+ HEALTH CORES', '+ FORCE FIELD', '+ BLOCKS'], desc: 'HARDER HAZARDS — GRAB HEALING' },
+        { items: ['+ HEALTH SHIELDS', '+ FORCE FIELD', '+ BLOCKS'], desc: 'HARDER HAZARDS — GRAB HEALING' },
         { items: ['SPEED RUN', 'BARRIER SLALOM'], desc: 'BEAT THE CLOCK — SPEED IS KEY' },
         { items: ['+ BOOST PADS', '+ KNOTS', 'ALL HAZARDS'], desc: 'EVERYTHING ACTIVE — FINAL ZONE' },
     ];
     var SECTOR_ITEM_SYMBOLS = {
         'RINGS': { shape: 'circle', color: '#00ccff' },
         'MINES': { shape: 'triangle', color: '#ff4444' },
-        '+ HEALTH CORES': { shape: 'diamond', color: '#44aaff' },
+        '+ HEALTH SHIELDS': { shape: 'diamond', color: '#44aaff' },
         '+ FORCE FIELD': { shape: 'star', color: '#ff88ff' },
         '+ GAP BARRIERS': { shape: 'ring-gap', color: '#ff2266' },
         '+ RAMPS': { shape: 'ramp', color: '#00ffcc' },
@@ -5061,8 +5142,8 @@ window.onload = function() {
                 ctx.beginPath();
                 ctx.rect(-sz, -sz * 0.5, sz * 2, sz);
                 ctx.fill(); ctx.stroke();
-            } else if (shapeType === 'core') {
-                // Core — octahedron / diamond
+            } else if (shapeType === 'shield') {
+                // Shield — octahedron / diamond
                 ctx.beginPath();
                 ctx.moveTo(0, -sz); ctx.lineTo(sz * 0.7, 0); ctx.lineTo(0, sz); ctx.lineTo(-sz * 0.7, 0);
                 ctx.closePath();
@@ -5193,7 +5274,7 @@ window.onload = function() {
             return false;
         }
         var _noRing    = _zeroForKey('baseRing');
-        var _noCore    = _zeroForKey('baseCore');
+        var _noShield    = _zeroForKey('baseShields');
         var _noHazard  = _zeroForKey('baseHazard');
         var _noStar    = _zeroForKey('starChance');
         var _noBoost   = _zeroForKey('boostChance');
@@ -5204,9 +5285,9 @@ window.onload = function() {
         if (!_noRing) collectItems.push({ label: 'RING', color: '#00ccff', shape: 'ring' });
         var avoidItems = [];
 
-        // Cores (collect): S1 L3+, S2+
-        if (((_s === 1 && _l >= 3) || _s >= 2) && !_noCore) {
-            collectItems.push({ label: 'CORE', color: '#00ccff', shape: 'core' });
+        // Shields (collect): S1 L3+, S2+
+        if (((_s === 1 && _l >= 3) || _s >= 2) && !_noShield) {
+            collectItems.push({ label: 'SHIELD', color: '#00ccff', shape: 'shield' });
         }
         // Stars (collect): S2 L3+, S3+
         if ((_s >= 3 || (_s === 2 && _l >= 3)) && !_noStar) {
@@ -6246,6 +6327,9 @@ window.onload = function() {
             _cine.phase = 1;
             _cine.onDone = onDone;
             _cine.stingerPlayed = false;
+            _cine.bSnapped = false;
+            _cine.bStart = null;
+            _cine.bEndQ = null;
             try { document.body.classList.add('cinematic-active'); } catch (e) {}
             camera.position.x = Math.cos(0) * (tubeRadius - 16);
             camera.position.y = Math.sin(0) * (tubeRadius - 16);
@@ -6277,7 +6361,11 @@ window.onload = function() {
             try {
                 if (typeof musicGainNode !== 'undefined' && musicGainNode) {
                     _cine.prevMusicGain = musicGainNode.gain.value;
-                    musicGainNode.gain.value = _musicMuted ? 0 : 1.6;
+                    _cine.prevMood = (typeof _songIndex !== 'undefined') ? _songIndex : 0;
+                    musicGainNode.gain.value = _musicMuted ? 0 : 1.9;
+                    if (!_musicMuted && typeof playSong === 'function') {
+                        try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
+                    }
                 }
             } catch (e) { console.error('cine music boost err', e); }
             clock.getDelta();
@@ -6297,32 +6385,73 @@ window.onload = function() {
         _cine.t += delta;
         var T = _cine.t;
 
-        if (T < 4.0) {
-            var f = T / 4.0;
+        try {
+            var _ts = document.getElementById('cine-title-stack');
+            if (_ts) {
+                var _scl = 1 + 0.2 * Math.min(1, T / 7.0);
+                _ts.style.transformOrigin = 'center center';
+                _ts.style.transform = 'scale(' + _scl + ')';
+            }
+        } catch (eTitle) {}
+
+        if (T < 0.6) {
+            var f = T / 0.6;
             speed = 40 + (600 - 40) * f;
-            throttleSmooth = 1.5 * f; // ramp to full hyper across phase A
+            throttleSmooth = 1.5 * f;
             camera.position.x = _cine.camStart.x;
             camera.position.y = _cine.camStart.y;
             camera.rotation.z = Math.PI / 2;
             camera.position.z -= speed * delta;
-            _applyShipVisuals(delta);
             shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z + shipZOffset;
+            _applyShipVisuals(delta);
             return;
         }
 
-        if (T < 6.0) {
+        if (T < 3.5) {
             speed = 600;
             throttleSmooth = 1.5;
+            camera.position.x = _cine.camStart.x;
+            camera.position.y = _cine.camStart.y;
+            camera.rotation.z = Math.PI / 2;
+            camera.position.z -= speed * delta;
+            shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+            shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
+            shipContainer.position.z = camera.position.z + shipZOffset;
+            _applyShipVisuals(delta);
+            return;
+        }
+
+        if (T < 5.5) {
+            speed = 600;
+            throttleSmooth = 1.5;
+            if (!_cine.bSnapped) {
+                _cine.bSnapped = true;
+                _cine.bStart = {
+                    x: camera.position.x, y: camera.position.y, z: camera.position.z,
+                    qx: camera.quaternion.x, qy: camera.quaternion.y, qz: camera.quaternion.z, qw: camera.quaternion.w
+                };
+                shipContainer.position.z = camera.position.z + shipZOffset;
+                var _saveP = camera.position.clone();
+                var _saveQ = camera.quaternion.clone();
+                camera.position.set(_cine.sideTarget.x, _cine.sideTarget.y, shipContainer.position.z + 55);
+                camera.up.set(0, 1, 0);
+                camera.lookAt(shipContainer.position);
+                _cine.bEndQ = camera.quaternion.clone();
+                camera.position.copy(_saveP);
+                camera.quaternion.copy(_saveQ);
+            }
             shipContainer.position.z -= speed * delta;
-            var sx = _cine.sideTarget.x;
-            var sy = _cine.sideTarget.y;
-            camera.position.x += (sx - camera.position.x) * Math.min(1, delta * 4.0);
-            camera.position.y += (sy - camera.position.y) * Math.min(1, delta * 4.0);
-            camera.position.z = shipContainer.position.z + 55;
-            camera.rotation.z += (0 - camera.rotation.z) * Math.min(1, delta * 4.0);
-            camera.lookAt(shipContainer.position);
+            var t = (T - 3.5) / 2.0;
+            if (t < 0) t = 0; else if (t > 1) t = 1;
+            var ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
+            var endZ = shipContainer.position.z + 55;
+            camera.position.x = _cine.bStart.x + (_cine.sideTarget.x - _cine.bStart.x) * ease;
+            camera.position.y = _cine.bStart.y + (_cine.sideTarget.y - _cine.bStart.y) * ease;
+            camera.position.z = _cine.bStart.z + (endZ - _cine.bStart.z) * ease;
+            var qStart = new THREE.Quaternion(_cine.bStart.qx, _cine.bStart.qy, _cine.bStart.qz, _cine.bStart.qw);
+            camera.quaternion.slerpQuaternions(qStart, _cine.bEndQ, ease);
             _applyShipVisuals(delta);
             return;
         }
@@ -6382,8 +6511,36 @@ window.onload = function() {
             cameraShake = 0;
             try {
                 if (typeof musicGainNode !== 'undefined' && musicGainNode && typeof _cine.prevMusicGain === 'number') {
-                    musicGainNode.gain.value = _musicMuted ? 0 : _cine.prevMusicGain;
+                    var _prevG = _cine.prevMusicGain;
+                    var _prevM = (typeof _cine.prevMood === 'number') ? _cine.prevMood : 0;
+                    if (audioCtx && !_musicMuted) {
+                        try {
+                            var _now = audioCtx.currentTime;
+                            musicGainNode.gain.cancelScheduledValues(_now);
+                            musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, _now);
+                            musicGainNode.gain.linearRampToValueAtTime(0.0001, _now + 0.25);
+                            setTimeout(function() {
+                                try {
+                                    if (typeof playSong === 'function') playSong(_prevM);
+                                    if (audioCtx && !_musicMuted) {
+                                        var _t2 = audioCtx.currentTime;
+                                        musicGainNode.gain.cancelScheduledValues(_t2);
+                                        musicGainNode.gain.setValueAtTime(0.0001, _t2);
+                                        musicGainNode.gain.linearRampToValueAtTime(_prevG, _t2 + 0.55);
+                                    } else if (musicGainNode) {
+                                        musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
+                                    }
+                                } catch (eX) { console.error('cine music crossfade err', eX); }
+                            }, 260);
+                        } catch (eY) {
+                            musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
+                            if (typeof playSong === 'function') { try { playSong(_prevM); } catch(eZ) {} }
+                        }
+                    } else {
+                        musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
+                    }
                     _cine.prevMusicGain = null;
+                    _cine.prevMood = null;
                 }
             } catch (e) { console.error('cine music restore err', e); }
         } catch (e) { console.error('cinematic reset err', e); }
@@ -6991,7 +7148,7 @@ window.onload = function() {
                                 sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 20);
                                 score += 85;
-                                AudioEngine.playSFX('core');
+                                AudioEngine.playSFX('shield');
                                 flash('#44aaff');
                                 spawnPointBurst('+20 SHIELD', 'c-cyan');
                                 if (TUT.active) tutHit('health');
