@@ -5521,7 +5521,7 @@ window.onload = function() {
                 _cby.textContent = 'PIET SUESS';
                 var _cmn = document.createElement('div');
                 _cmn.className = 'cine-title-main';
-                _cmn.textContent = 'TUNNEL RUNNER';
+                _cmn.innerHTML = 'TUNNEL<br>RUNNER';
                 _cinner.appendChild(_cby);
                 _cinner.appendChild(_cmn);
                 _cts.appendChild(_cinner);
@@ -6254,20 +6254,11 @@ window.onload = function() {
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z - 18;
             try { shipContainer.rotation.set(0, 0, 0); } catch (e) {}
-            // Two-call pattern (order string first, then 3-arg set) to avoid
-            // any Euler.set(x,y,z,order) quirks on older THREE builds.
-            try {
-                bankGroup.rotation.order = 'ZXY';
-                bankGroup.rotation.set(0.08, 0, Math.PI / 2);
-            } catch (e) { console.error('cine bankGroup pose err', e); }
             if (!bankGroup._bank) bankGroup._bank = 0;
-            try {
-                gunBankGroup.rotation.order = 'ZXY';
-                gunBankGroup.rotation.set(0.08, 0, Math.PI / 2);
-            } catch (e) { console.error('cine gunBankGroup pose err', e); }
             shipContainer.visible = true;
             // Full-boost driver reset; tickCinematic ramps it phase A.
             throttleSmooth = 0;
+            shipZOffset = -18;
             _cine.camStart.x = camera.position.x;
             _cine.camStart.y = camera.position.y;
             _cine.camStart.z = camera.position.z;
@@ -6283,9 +6274,12 @@ window.onload = function() {
                     audioCtx.resume();
                 }
             } catch (e) { console.error('cine audio resume err', e); }
-            // Fire triumphant stinger at cinematic t=0.0s.
-            _cine.stingerPlayed = true;
-            try { AudioEngine.playSFX('intro_stinger'); } catch (e) { console.error('cine stinger err', e); }
+            try {
+                if (typeof musicGainNode !== 'undefined' && musicGainNode) {
+                    _cine.prevMusicGain = musicGainNode.gain.value;
+                    musicGainNode.gain.value = _musicMuted ? 0 : 1.6;
+                }
+            } catch (e) { console.error('cine music boost err', e); }
             clock.getDelta();
         } catch (err) {
             // Hard-fail fallback: never leave gameState stuck on 'cinematic'.
@@ -6311,10 +6305,10 @@ window.onload = function() {
             camera.position.y = _cine.camStart.y;
             camera.rotation.z = Math.PI / 2;
             camera.position.z -= speed * delta;
+            _applyShipVisuals(delta);
             shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
-            shipContainer.position.z = camera.position.z - 18;
-            _cineBoostVisuals(delta);
+            shipContainer.position.z = camera.position.z + shipZOffset;
             return;
         }
 
@@ -6329,7 +6323,7 @@ window.onload = function() {
             camera.position.z = shipContainer.position.z + 55;
             camera.rotation.z += (0 - camera.rotation.z) * Math.min(1, delta * 4.0);
             camera.lookAt(shipContainer.position);
-            _cineBoostVisuals(delta);
+            _applyShipVisuals(delta);
             return;
         }
 
@@ -6344,7 +6338,7 @@ window.onload = function() {
             if (Math.abs(shipContainer.position.x) < 400) {
                 camera.lookAt(shipContainer.position);
             }
-            _cineBoostVisuals(delta);
+            _applyShipVisuals(delta);
             return;
         }
 
@@ -6371,6 +6365,7 @@ window.onload = function() {
             camera.updateMatrixWorld();
             // Reset boost driver + visuals so gameplay starts idle.
             throttleSmooth = 0;
+            shipZOffset = -18;
             engineLight.intensity = 3.0;
             gEngLight.intensity = 4.0;
             flameInner.scale.set(0.5, 0.5, 0.3);
@@ -6378,6 +6373,19 @@ window.onload = function() {
             matFlameInner.opacity = 0.9;
             matFlameOuter.opacity = 0.5;
             for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
+            currentFov = BASE_FOV;
+            camera.fov = BASE_FOV;
+            camera.updateProjectionMatrix();
+            wireMat.opacity = 0.55;
+            wireMat.color.setRGB(0, 1, 136/255);
+            tracerGroup.visible = false;
+            cameraShake = 0;
+            try {
+                if (typeof musicGainNode !== 'undefined' && musicGainNode && typeof _cine.prevMusicGain === 'number') {
+                    musicGainNode.gain.value = _musicMuted ? 0 : _cine.prevMusicGain;
+                    _cine.prevMusicGain = null;
+                }
+            } catch (e) { console.error('cine music restore err', e); }
         } catch (e) { console.error('cinematic reset err', e); }
         try { document.body.classList.remove('cinematic-active'); } catch (e) {}
         var cb = _cine.onDone;
@@ -6385,12 +6393,28 @@ window.onload = function() {
         if (cb) { try { cb(); } catch (e) { console.error('cinematic onDone err', e); } }
     }
 
-    // Mirror of gameplay boost visual writes. Called each cinematic frame so
-    // the ship shows full-throttle flame, engine glow, and exhaust trail.
-    function _cineBoostVisuals(delta) {
+    function _applyShipVisuals(delta) {
         var hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
         engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
         gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+        try { AudioEngine.updateEngine(throttleSmooth, false); } catch (e) {}
+        var targetFov = BASE_FOV + (HYPER_FOV - BASE_FOV) * hyperFrac;
+        currentFov += (targetFov - currentFov) * 0.12;
+        camera.fov = currentFov;
+        camera.updateProjectionMatrix();
+        wireMat.opacity = 0.55 + hyperFrac * 0.35;
+        var wr = Math.round(hyperFrac * 255);
+        var wg = Math.round(255 - hyperFrac * 117);
+        var wb = Math.round(136 - hyperFrac * 68);
+        wireMat.color.setRGB(wr/255, wg/255, wb/255);
+        var baseZOffset = -18;
+        shipZOffset += ((baseZOffset - throttleSmooth * 4) - shipZOffset) * 0.08;
+        if (!bankGroup._bank) bankGroup._bank = 0;
+        bankGroup._bank += (0 - bankGroup._bank) * Math.min(1, delta * 8);
+        bankGroup.rotation.order = 'ZXY';
+        bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
+        gunBankGroup.rotation.order = 'ZXY';
+        gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
         var flameLen = 0.3 + throttleSmooth * 0.7 + hyperFrac * 0.8;
         var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
         var fz = flameLen * flicker;
@@ -6403,7 +6427,6 @@ window.onload = function() {
         matFlameOuter.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
         matFlameOuter.opacity = 0.4 + bright * 0.2;
         gEngine.scale.set(1, 1 + Math.sin(Date.now() * 0.008) * 0.12, 1);
-        // Exhaust smoke particles — spawn while hyperFrac > 0.1 (same as playing).
         if (hyperFrac > 0.1) {
             var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
             for (var si = 0; si < spawnCount; si++) {
@@ -6434,6 +6457,19 @@ window.onload = function() {
             tp2.material.opacity = (1 - frac) * 0.5;
             tp2.scale.multiplyScalar(1 - delta * 1.2);
             tp2.lookAt(camera.position);
+        }
+        if (hyperFrac > 0) cameraShake = Math.max(cameraShake, hyperFrac * 1.0);
+        tracerGroup.visible = hyperFrac > 0.01;
+        if (hyperFrac > 0.01) {
+            var moveDist = speed * delta;
+            for (var tr_i = 0; tr_i < tracers.length; tr_i++) {
+                var tr = tracers[tr_i];
+                tr.position.z += moveDist * (1.0 + hyperFrac * 0.5);
+                tr.material.opacity = hyperFrac * 0.7 + Math.random() * 0.1;
+                if (tr.position.z > camera.position.z + 30) {
+                    tr.position.z = camera.position.z - 200 - Math.random() * 300;
+                }
+            }
         }
     }
 
