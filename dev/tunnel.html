@@ -3039,6 +3039,8 @@ window.onload = function() {
     // ANALYTICS — posts play session data to Google Sheets via sendBeacon
     // ═══════════════════════════════════════════════════════════════
     var _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbxQcS_M7eZe3ob69qbxaH3QDUUqDQGvec6BKDN94wildC5p3LGTSwytm_2ZyutpznB4/exec';
+    // Suppress all analytics + leaderboard writes when running from /dev/ path so test plays don't pollute live data.
+    var _isDevPath = (function(){ try { return window.location.pathname.indexOf('/dev/') >= 0; } catch(e){ return false; } })();
     var _analyticsSession = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
     var _analyticsStartTime = 0;
     var _analyticsDeathCount = 0;
@@ -3084,12 +3086,14 @@ window.onload = function() {
         return p;
     }
     function _sendTelemetry(event) {
+        if (_isDevPath) return; // dev path: don't write to live analytics
         try {
             navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(_trAnalyticsPayload(event)));
         } catch(e) {}
     }
     // Send analytics on page close/navigate away (mid-game only)
     window.addEventListener('beforeunload', function() {
+        if (_isDevPath) return; // dev path: skip abandon beacon
         if (gameState === 'playing') {
             try {
                 navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify(_trAnalyticsPayload('abandon')));
@@ -5492,6 +5496,7 @@ window.onload = function() {
 
     // ── Global leaderboard via Google Apps Script ──────────────
     function submitGlobalScore(name, score) {
+        if (_isDevPath) return; // dev path: don't pollute leaderboard
         try {
             navigator.sendBeacon(_ANALYTICS_URL, JSON.stringify({
                 action: 'leaderboard_submit',
