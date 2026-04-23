@@ -259,18 +259,6 @@
             margin: 12px 0 13px;
         }
         @keyframes blink { 50% { opacity: 0; } }
-        #cinematic-title-overlay {
-            position: fixed; inset: 0; z-index: 610;
-            display: none; align-items: center; justify-content: center;
-            pointer-events: none; background: transparent;
-            opacity: 1; transition: opacity 0.2s ease-out;
-        }
-        #cinematic-title-overlay .cine-title {
-            font-family: 'Press Start 2P', monospace;
-            font-size: clamp(22px,6vw,34px); color: #00ffcc; letter-spacing: 3px;
-            line-height: 1; text-align: center;
-            animation: titlePulse 1.6s ease-in-out infinite;
-        }
         /* Hide gameplay HUD while cinematic is playing */
         body.cinematic-active #hud,
         body.cinematic-active #hud-title,
@@ -290,7 +278,31 @@
         body.cinematic-active #boost-wrapper,
         body.cinematic-active #shield-wrapper,
         body.cinematic-active #hamburger-btn,
-        body.cinematic-active #mission-banner {
+        body.cinematic-active #mission-banner,
+        body.cinematic-active #mission-objective,
+        body.cinematic-active #mission-zone-label,
+        body.cinematic-active #mission-divider,
+        body.cinematic-active #collection-hud,
+        body.cinematic-active #fire-btn,
+        body.cinematic-active #tut-title,
+        body.cinematic-active #tut-hud,
+        body.cinematic-active #tut-ptr,
+        body.cinematic-active #ctrl-hint,
+        body.cinematic-active #skip-tutorial-btn,
+        body.cinematic-active #countdown-overlay,
+        body.cinematic-active #zone-name,
+        body.cinematic-active #sector-intro-splash {
+          display: none !important;
+        }
+        /* Literal title — reuse #start-screen's #title-card during cinematic. */
+        body.cinematic-active #start-screen {
+          display: flex !important;
+          background: transparent !important;
+          z-index: 610 !important;
+          pointer-events: none !important;
+        }
+        body.cinematic-active #start-screen #press-start,
+        body.cinematic-active #start-screen #lb-wrapper {
           display: none !important;
         }
         @keyframes tutFade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
@@ -714,7 +726,6 @@
     </div>
   </div>
 </div>
-<div id="cinematic-title-overlay"><div class="cine-title">TUNNEL RUNNER</div></div>
 <div id="game-over-screen" class="overlay-screen">
     <h1 class="screen-title stagger-in">HULL BREACH</h1>
     <h2 class="screen-sub c-pink stagger-in">SECTOR FAILED</h2>
@@ -1442,58 +1453,68 @@ var AudioEngine = {
       dn.type='sine'; dn.frequency.setValueAtTime(1480,t+0.05);
       dg.gain.setValueAtTime(0.12,t+0.05); dg.gain.linearRampToValueAtTime(0,t+0.4); dn.start(t+0.05); dn.stop(t+0.4);
     } else if (type === 'intro_stinger') {
-      // Jubilant launch fanfare — rising arpeggio + sustained fifth pad
-      // Matches theme palette: triangle leads, sawtooth bass, sine pads.
-      var notes = [523.25, 783.99, 1046.50, 1318.51]; // C5 G5 C6 E6
-      var step = 0.11;
+      // Theme derivative: NEON DESCENT is A minor, root 110Hz. Stinger shifts
+      // to parallel A MAJOR for triumphant lift, using exact theme voices:
+      // triangle leads (_mel/_plk), sine body/pad (_pad/_bass body),
+      // sawtooth bass (_bass kick). Length ~2.0s. Fires at cinematic t=0.
+      // Arpeggio: A4 C#5 E5 A5 C#6 E6 — theme root stepped up through A major.
+      var notes = [440.00, 554.37, 659.25, 880.00, 1108.73, 1318.51];
+      var step = 0.09;
       for (var ci = 0; ci < notes.length; ci++) {
-        // Triangle lead
+        // Triangle lead (matches _mel + _plk voice)
         var ol = audioCtx.createOscillator(), gl = audioCtx.createGain();
         ol.connect(gl); gl.connect(sfxGainNode);
         ol.type = 'triangle'; ol.frequency.setValueAtTime(notes[ci], t + ci * step);
         gl.gain.setValueAtTime(0, t + ci * step);
-        gl.gain.linearRampToValueAtTime(0.24, t + ci * step + 0.015);
-        gl.gain.setValueAtTime(0.20, t + ci * step + 0.25);
-        gl.gain.linearRampToValueAtTime(0, t + 1.6);
-        ol.start(t + ci * step); ol.stop(t + 1.7);
-        // Sine doubling octave below for body
+        gl.gain.linearRampToValueAtTime(0.22, t + ci * step + 0.015);
+        gl.gain.setValueAtTime(0.18, t + ci * step + 0.22);
+        gl.gain.linearRampToValueAtTime(0, t + 1.8);
+        ol.start(t + ci * step); ol.stop(t + 1.9);
+        // Sine body doubling (matches _mel sine layer + _bass triangle body)
         var os = audioCtx.createOscillator(), gs = audioCtx.createGain();
         os.connect(gs); gs.connect(sfxGainNode);
         os.type = 'sine'; os.frequency.setValueAtTime(notes[ci] * 0.5, t + ci * step);
         gs.gain.setValueAtTime(0, t + ci * step);
-        gs.gain.linearRampToValueAtTime(0.10, t + ci * step + 0.02);
-        gs.gain.linearRampToValueAtTime(0, t + 1.5);
-        os.start(t + ci * step); os.stop(t + 1.6);
+        gs.gain.linearRampToValueAtTime(0.09, t + ci * step + 0.02);
+        gs.gain.linearRampToValueAtTime(0, t + 1.7);
+        os.start(t + ci * step); os.stop(t + 1.8);
       }
-      // Sustained perfect-fifth pad underneath (C4 + G4)
-      var padNotes = [261.63, 392.00];
+      // Sustained A-major pad (A3 + E4 + C#5) — sine like _pad.
+      var padNotes = [220.00, 329.63, 554.37];
       for (var pi = 0; pi < padNotes.length; pi++) {
         var op = audioCtx.createOscillator(), gp = audioCtx.createGain();
         op.connect(gp); gp.connect(sfxGainNode);
         op.type = 'sine'; op.frequency.setValueAtTime(padNotes[pi], t);
         gp.gain.setValueAtTime(0, t);
-        gp.gain.linearRampToValueAtTime(0.09, t + 0.05);
-        gp.gain.setValueAtTime(0.08, t + 0.8);
-        gp.gain.linearRampToValueAtTime(0, t + 1.8);
-        op.start(t); op.stop(t + 1.9);
+        gp.gain.linearRampToValueAtTime(0.075, t + 0.06);
+        gp.gain.setValueAtTime(0.07, t + 1.0);
+        gp.gain.linearRampToValueAtTime(0, t + 2.0);
+        op.start(t); op.stop(t + 2.05);
       }
-      // Sawtooth bass thud for weight
+      // Sawtooth bass root A1 (55Hz) — matches NEON DESCENT _bass kick voice.
       var ob = audioCtx.createOscillator(), gb = audioCtx.createGain();
       ob.connect(gb); gb.connect(sfxGainNode);
-      ob.type = 'sawtooth'; ob.frequency.setValueAtTime(65.41, t); // C2
+      ob.type = 'sawtooth'; ob.frequency.setValueAtTime(55.00, t);
       gb.gain.setValueAtTime(0.18, t);
-      gb.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
-      ob.start(t); ob.stop(t + 0.65);
-      // Shimmer top — triangle way up
+      gb.gain.exponentialRampToValueAtTime(0.001, t + 0.7);
+      ob.start(t); ob.stop(t + 0.75);
+      // Octave kick thump A2 (110Hz) for V-I cadence feel.
+      var ok = audioCtx.createOscillator(), gk = audioCtx.createGain();
+      ok.connect(gk); gk.connect(sfxGainNode);
+      ok.type = 'sine'; ok.frequency.setValueAtTime(110.00, t + 0.8);
+      gk.gain.setValueAtTime(0.14, t + 0.8);
+      gk.gain.exponentialRampToValueAtTime(0.001, t + 1.4);
+      ok.start(t + 0.8); ok.stop(t + 1.45);
+      // Shimmer top — triangle sweep A6 -> E7, matches theme _atm/_plk upper.
       var osh = audioCtx.createOscillator(), gsh = audioCtx.createGain();
       osh.connect(gsh); gsh.connect(sfxGainNode);
       osh.type = 'triangle';
-      osh.frequency.setValueAtTime(2093, t + 0.35); // C7
-      osh.frequency.linearRampToValueAtTime(3136, t + 1.2); // G7
-      gsh.gain.setValueAtTime(0, t + 0.35);
-      gsh.gain.linearRampToValueAtTime(0.07, t + 0.45);
-      gsh.gain.linearRampToValueAtTime(0, t + 1.6);
-      osh.start(t + 0.35); osh.stop(t + 1.7);
+      osh.frequency.setValueAtTime(1760, t + 0.25);
+      osh.frequency.linearRampToValueAtTime(2637, t + 1.4);
+      gsh.gain.setValueAtTime(0, t + 0.25);
+      gsh.gain.linearRampToValueAtTime(0.065, t + 0.4);
+      gsh.gain.linearRampToValueAtTime(0, t + 1.9);
+      osh.start(t + 0.25); osh.stop(t + 2.0);
     } else if (type === 'countdown_tick') {
       // Short digital beep for 3-2-1
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
@@ -5457,16 +5478,21 @@ window.onload = function() {
             if (audioCtx && audioCtx.state === 'suspended') {
                 try { audioCtx.resume(); } catch (e) {}
             }
-            var _cineTitleEl = document.getElementById('cinematic-title-overlay');
-            if (_cineTitleEl) {
-                _cineTitleEl.style.display = 'flex';
-                _cineTitleEl.style.opacity = '1';
-            }
+            // Literal title: keep real #start-screen visible during cinematic.
+            // CSS body.cinematic-active overrides the inline display:none that
+            // the .overlay-screen reset above applied, and hides non-title kids.
+            var _ss = document.getElementById('start-screen');
+            if (_ss) { _ss.style.opacity = '1'; _ss.style.transition = ''; }
             runCinematic(function() {
-                var _tEl = document.getElementById('cinematic-title-overlay');
-                if (_tEl) {
-                    _tEl.style.opacity = '0';
-                    setTimeout(function() { _tEl.style.display = 'none'; }, 220);
+                var _ss2 = document.getElementById('start-screen');
+                if (_ss2) {
+                    _ss2.style.transition = 'opacity 0.2s ease-out';
+                    _ss2.style.opacity = '0';
+                    setTimeout(function() {
+                        _ss2.style.opacity = '';
+                        _ss2.style.transition = '';
+                        _ss2.style.display = 'none';
+                    }, 220);
                 }
                 _runIntroChain();
             });
@@ -6180,13 +6206,26 @@ window.onload = function() {
         shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
         shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
         shipContainer.position.z = camera.position.z - 18;
-        shipContainer.rotation.z = 0;
+        shipContainer.rotation.set(0, 0, 0);
+        // Gameplay resting pose: bankGroup ZXY (0.08, 0, PI/2). Without this
+        // the ship mesh reads as 90deg rotated since bankGroup default is 0,0,0.
+        bankGroup.rotation.order = 'ZXY';
+        bankGroup.rotation.set(0.08, 0, Math.PI / 2);
+        if (!bankGroup._bank) bankGroup._bank = 0;
+        gunBankGroup.rotation.order = 'ZXY';
+        gunBankGroup.rotation.set(0.08, 0, Math.PI / 2);
+        shipContainer.visible = true;
+        // Full-boost driver reset; tickCinematic ramps it phase A.
+        throttleSmooth = 0;
         _cine.camStart.x = camera.position.x;
         _cine.camStart.y = camera.position.y;
         _cine.camStart.z = camera.position.z;
         _cine.sideTarget.x = tubeRadius * 1.8;
         _cine.sideTarget.y = 0;
         _cine.sideTarget.z = shipContainer.position.z + 55;
+        // Fire triumphant stinger at cinematic t=0.0s.
+        _cine.stingerPlayed = true;
+        try { AudioEngine.playSFX('intro_stinger'); } catch (e) {}
         clock.getDelta();
     }
 
@@ -6199,6 +6238,7 @@ window.onload = function() {
         if (T < 4.0) {
             var f = T / 4.0;
             speed = 40 + (600 - 40) * f;
+            throttleSmooth = 1.5 * f; // ramp to full hyper across phase A
             camera.position.x = _cine.camStart.x;
             camera.position.y = _cine.camStart.y;
             camera.rotation.z = Math.PI / 2;
@@ -6206,15 +6246,13 @@ window.onload = function() {
             shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z - 18;
+            _cineBoostVisuals(delta);
             return;
         }
 
         if (T < 6.0) {
-            if (!_cine.stingerPlayed) {
-                _cine.stingerPlayed = true;
-                try { AudioEngine.playSFX('intro_stinger'); } catch (e) {}
-            }
             speed = 600;
+            throttleSmooth = 1.5;
             shipContainer.position.z -= speed * delta;
             var sx = _cine.sideTarget.x;
             var sy = _cine.sideTarget.y;
@@ -6223,11 +6261,13 @@ window.onload = function() {
             camera.position.z = shipContainer.position.z + 55;
             camera.rotation.z += (0 - camera.rotation.z) * Math.min(1, delta * 4.0);
             camera.lookAt(shipContainer.position);
+            _cineBoostVisuals(delta);
             return;
         }
 
         if (T < 7.0) {
             speed = 600;
+            throttleSmooth = 1.5;
             shipContainer.position.z -= speed * delta;
             shipContainer.position.x += (600 - shipContainer.position.x) * Math.min(1, delta * 3.5);
             shipContainer.rotation.z += (0.8 - shipContainer.rotation.z) * Math.min(1, delta * 3.0);
@@ -6236,6 +6276,7 @@ window.onload = function() {
             if (Math.abs(shipContainer.position.x) < 400) {
                 camera.lookAt(shipContainer.position);
             }
+            _cineBoostVisuals(delta);
             return;
         }
 
@@ -6251,11 +6292,72 @@ window.onload = function() {
             camera.rotation.z = Math.PI / 2;
             camera.position.x = Math.cos(0) * (tubeRadius - 16);
             camera.position.y = Math.sin(0) * (tubeRadius - 16);
+            // Reset boost driver + visuals so gameplay starts idle.
+            throttleSmooth = 0;
+            engineLight.intensity = 3.0;
+            gEngLight.intensity = 4.0;
+            flameInner.scale.set(0.5, 0.5, 0.3);
+            flameOuter.scale.set(0.65, 0.65, 0.315);
+            matFlameInner.opacity = 0.9;
+            matFlameOuter.opacity = 0.5;
+            for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
         } catch (e) { console.error('cinematic reset err', e); }
         try { document.body.classList.remove('cinematic-active'); } catch (e) {}
         var cb = _cine.onDone;
         _cine.onDone = null;
         if (cb) { try { cb(); } catch (e) { console.error('cinematic onDone err', e); } }
+    }
+
+    // Mirror of gameplay boost visual writes. Called each cinematic frame so
+    // the ship shows full-throttle flame, engine glow, and exhaust trail.
+    function _cineBoostVisuals(delta) {
+        var hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
+        engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+        gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+        var flameLen = 0.3 + throttleSmooth * 0.7 + hyperFrac * 0.8;
+        var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
+        var fz = flameLen * flicker;
+        var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1);
+        flameInner.scale.set(fx, fx, fz);
+        flameOuter.scale.set(fx * 1.3, fx * 1.3, fz * 1.05);
+        var bright = Math.min(1, throttleSmooth + hyperFrac * 0.5);
+        matFlameInner.color.setRGB(1.0, 0.8 + bright * 0.2, 0.4 + bright * 0.6);
+        matFlameInner.opacity = 0.8 + bright * 0.2;
+        matFlameOuter.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
+        matFlameOuter.opacity = 0.4 + bright * 0.2;
+        gEngine.scale.set(1, 1 + Math.sin(Date.now() * 0.008) * 0.12, 1);
+        // Exhaust smoke particles — spawn while hyperFrac > 0.1 (same as playing).
+        if (hyperFrac > 0.1) {
+            var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
+            for (var si = 0; si < spawnCount; si++) {
+                var tp = trailParticles[trailIdx];
+                trailIdx = (trailIdx + 1) % TRAIL_COUNT;
+                flameOuter.getWorldPosition(tp.position);
+                tp.position.z += 2 + Math.random() * 2;
+                tp.userData.vx = (Math.random() - 0.5) * 1.5;
+                tp.userData.vy = (Math.random() - 0.5) * 1.5;
+                tp.userData.life = 0;
+                tp.userData.maxLife = 0.3 + Math.random() * 0.4 + throttleSmooth * 0.3;
+                tp.scale.setScalar(0.3 + throttleSmooth * 0.3 + Math.random() * 0.15);
+                tp.material.color.setRGB(0.45 + Math.random() * 0.1, 0.45 + Math.random() * 0.1, 0.5 + Math.random() * 0.1);
+                tp.material.opacity = 0.5 + throttleSmooth * 0.3;
+                tp.visible = true;
+                tp.lookAt(camera.position);
+            }
+        }
+        for (var ti = 0; ti < TRAIL_COUNT; ti++) {
+            var tp2 = trailParticles[ti];
+            if (!tp2.visible) continue;
+            tp2.userData.life += delta;
+            var frac = tp2.userData.life / tp2.userData.maxLife;
+            if (frac >= 1) { tp2.visible = false; continue; }
+            tp2.position.z += (speed * 0.003 + 8) * delta;
+            tp2.position.x += tp2.userData.vx * delta;
+            tp2.position.y += tp2.userData.vy * delta;
+            tp2.material.opacity = (1 - frac) * 0.5;
+            tp2.scale.multiplyScalar(1 - delta * 1.2);
+            tp2.lookAt(camera.position);
+        }
     }
 
     function animate() {
