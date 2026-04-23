@@ -259,6 +259,18 @@
             margin: 12px 0 13px;
         }
         @keyframes blink { 50% { opacity: 0; } }
+        #cinematic-title-overlay {
+            position: fixed; inset: 0; z-index: 610;
+            display: none; align-items: center; justify-content: center;
+            pointer-events: none; background: transparent;
+            opacity: 1; transition: opacity 0.2s ease-out;
+        }
+        #cinematic-title-overlay .cine-title {
+            font-family: 'Press Start 2P', monospace;
+            font-size: clamp(22px,6vw,34px); color: #00ffcc; letter-spacing: 3px;
+            line-height: 1; text-align: center;
+            animation: titlePulse 1.6s ease-in-out infinite;
+        }
         @keyframes tutFade { from{opacity:0;transform:translateY(8px)} to{opacity:1;transform:translateY(0)} }
         @keyframes cdPop { 0%{opacity:0;transform:scale(2.2)} 40%{opacity:1;transform:scale(0.85)} 100%{opacity:1;transform:scale(1)} }
         /* Leaderboard */
@@ -680,6 +692,7 @@
     </div>
   </div>
 </div>
+<div id="cinematic-title-overlay"><div class="cine-title">TUNNEL RUNNER</div></div>
 <div id="game-over-screen" class="overlay-screen">
     <h1 class="screen-title stagger-in">HULL BREACH</h1>
     <h2 class="screen-sub c-pink stagger-in">SECTOR FAILED</h2>
@@ -5418,12 +5431,23 @@ window.onload = function() {
         if (isFullReset && !_cinematicPlayed) {
             _cinematicPlayed = true;
             gameState = 'cinematic';
-            // Ensure audio is alive so stinger can play.
             try { AudioEngine.init(); } catch (e) {}
             if (audioCtx && audioCtx.state === 'suspended') {
                 try { audioCtx.resume(); } catch (e) {}
             }
-            runCinematic(_runIntroChain);
+            var _cineTitleEl = document.getElementById('cinematic-title-overlay');
+            if (_cineTitleEl) {
+                _cineTitleEl.style.display = 'flex';
+                _cineTitleEl.style.opacity = '1';
+            }
+            runCinematic(function() {
+                var _tEl = document.getElementById('cinematic-title-overlay');
+                if (_tEl) {
+                    _tEl.style.opacity = '0';
+                    setTimeout(function() { _tEl.style.display = 'none'; }, 220);
+                }
+                _runIntroChain();
+            });
         } else {
             _runIntroChain();
         }
@@ -6127,78 +6151,63 @@ window.onload = function() {
         _cine.phase = 1;
         _cine.onDone = onDone;
         _cine.stingerPlayed = false;
+        camera.position.x = Math.cos(0) * (tubeRadius - 16);
+        camera.position.y = Math.sin(0) * (tubeRadius - 16);
+        camera.rotation.z = Math.PI / 2;
+        shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+        shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
+        shipContainer.position.z = camera.position.z - 18;
+        shipContainer.rotation.z = 0;
         _cine.camStart.x = camera.position.x;
         _cine.camStart.y = camera.position.y;
         _cine.camStart.z = camera.position.z;
-        // Side view target — outside the tube, to the +X side, looking in.
         _cine.sideTarget.x = tubeRadius * 1.8;
         _cine.sideTarget.y = 0;
         _cine.sideTarget.z = shipContainer.position.z + 55;
-        // Reset delta so first frame isn't huge.
         clock.getDelta();
     }
 
     function tickCinematic(delta) {
         if (!_cine.active) return;
-        // Guard against huge deltas (tab-switch etc.)
         if (delta > 0.1) delta = 0.1;
         _cine.t += delta;
         var T = _cine.t;
 
-        // --- Phase 1: POV forward 0.0 - 1.5s ------------------------
-        if (T < 1.5) {
-            // Ramp speed upward toward HYPER feel.
-            var f = T / 1.5;
-            speed = 150 + (580 - 150) * f;
-            // Hold camera at its starting on-wall pose.
+        if (T < 4.0) {
+            var f = T / 4.0;
+            speed = 40 + (600 - 40) * f;
             camera.position.x = _cine.camStart.x;
             camera.position.y = _cine.camStart.y;
-            // Drive forward manually.
+            camera.rotation.z = Math.PI / 2;
             camera.position.z -= speed * delta;
-            // Ship stays ahead of camera at the same relative offset.
-            shipContainer.position.x = _cine.camStart.x * 0.1;
-            shipContainer.position.y = _cine.camStart.y * 0.1;
+            shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+            shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z - 18;
             return;
         }
 
-        // --- Phase 2: ease to side view 1.5 - 3.0s ------------------
-        if (T < 3.0) {
-            // Play stinger once at phase entry.
+        if (T < 6.0) {
             if (!_cine.stingerPlayed) {
                 _cine.stingerPlayed = true;
                 try { AudioEngine.playSFX('intro_stinger'); } catch (e) {}
             }
-            // Keep forward motion going so tunnel still rushes past.
-            speed = 580;
-            camera.position.z -= speed * delta;
-            shipContainer.position.z = camera.position.z - 18;
-
-            // Lerp camera x/y toward side-view target.
+            speed = 600;
+            shipContainer.position.z -= speed * delta;
             var sx = _cine.sideTarget.x;
             var sy = _cine.sideTarget.y;
             camera.position.x += (sx - camera.position.x) * Math.min(1, delta * 4.0);
             camera.position.y += (sy - camera.position.y) * Math.min(1, delta * 4.0);
-            // Smoothly decay the on-wall roll back to 0.
+            camera.position.z = shipContainer.position.z + 55;
             camera.rotation.z += (0 - camera.rotation.z) * Math.min(1, delta * 4.0);
-            // Aim at ship so it stays framed.
             camera.lookAt(shipContainer.position);
-            // Ship holds centered laterally during reveal.
-            shipContainer.position.x += (0 - shipContainer.position.x) * Math.min(1, delta * 4.0);
-            shipContainer.position.y += (0 - shipContainer.position.y) * Math.min(1, delta * 4.0);
             return;
         }
 
-        // --- Phase 3: ship zooms off right 3.0 - 4.0s --------------
-        if (T < 4.0) {
-            speed = 580;
-            camera.position.z -= speed * delta;
-            // Ship flies off to +X and also adds forward boost so it shrinks.
+        if (T < 7.0) {
+            speed = 600;
+            shipContainer.position.z -= speed * delta;
             shipContainer.position.x += (600 - shipContainer.position.x) * Math.min(1, delta * 3.5);
-            shipContainer.position.z += speed * delta * 1.8; // outpaces camera forward
-            // Small roll for flair.
             shipContainer.rotation.z += (0.8 - shipContainer.rotation.z) * Math.min(1, delta * 3.0);
-            // Hold camera at side target (don't follow ship off-screen).
             camera.position.x += (_cine.sideTarget.x - camera.position.x) * Math.min(1, delta * 2.0);
             camera.position.y += (_cine.sideTarget.y - camera.position.y) * Math.min(1, delta * 2.0);
             if (Math.abs(shipContainer.position.x) < 400) {
@@ -6207,7 +6216,6 @@ window.onload = function() {
             return;
         }
 
-        // --- End: hand off to splash. DO NOT reset positions. -------
         _cine.active = false;
         var cb = _cine.onDone;
         _cine.onDone = null;
