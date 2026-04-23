@@ -1406,6 +1406,59 @@ var AudioEngine = {
       var dn=audioCtx.createOscillator(),dg=audioCtx.createGain(); dn.connect(dg); dg.connect(sfxGainNode);
       dn.type='sine'; dn.frequency.setValueAtTime(1480,t+0.05);
       dg.gain.setValueAtTime(0.12,t+0.05); dg.gain.linearRampToValueAtTime(0,t+0.4); dn.start(t+0.05); dn.stop(t+0.4);
+    } else if (type === 'intro_stinger') {
+      // Jubilant launch fanfare — rising arpeggio + sustained fifth pad
+      // Matches theme palette: triangle leads, sawtooth bass, sine pads.
+      var notes = [523.25, 783.99, 1046.50, 1318.51]; // C5 G5 C6 E6
+      var step = 0.11;
+      for (var ci = 0; ci < notes.length; ci++) {
+        // Triangle lead
+        var ol = audioCtx.createOscillator(), gl = audioCtx.createGain();
+        ol.connect(gl); gl.connect(sfxGainNode);
+        ol.type = 'triangle'; ol.frequency.setValueAtTime(notes[ci], t + ci * step);
+        gl.gain.setValueAtTime(0, t + ci * step);
+        gl.gain.linearRampToValueAtTime(0.24, t + ci * step + 0.015);
+        gl.gain.setValueAtTime(0.20, t + ci * step + 0.25);
+        gl.gain.linearRampToValueAtTime(0, t + 1.6);
+        ol.start(t + ci * step); ol.stop(t + 1.7);
+        // Sine doubling octave below for body
+        var os = audioCtx.createOscillator(), gs = audioCtx.createGain();
+        os.connect(gs); gs.connect(sfxGainNode);
+        os.type = 'sine'; os.frequency.setValueAtTime(notes[ci] * 0.5, t + ci * step);
+        gs.gain.setValueAtTime(0, t + ci * step);
+        gs.gain.linearRampToValueAtTime(0.10, t + ci * step + 0.02);
+        gs.gain.linearRampToValueAtTime(0, t + 1.5);
+        os.start(t + ci * step); os.stop(t + 1.6);
+      }
+      // Sustained perfect-fifth pad underneath (C4 + G4)
+      var padNotes = [261.63, 392.00];
+      for (var pi = 0; pi < padNotes.length; pi++) {
+        var op = audioCtx.createOscillator(), gp = audioCtx.createGain();
+        op.connect(gp); gp.connect(sfxGainNode);
+        op.type = 'sine'; op.frequency.setValueAtTime(padNotes[pi], t);
+        gp.gain.setValueAtTime(0, t);
+        gp.gain.linearRampToValueAtTime(0.09, t + 0.05);
+        gp.gain.setValueAtTime(0.08, t + 0.8);
+        gp.gain.linearRampToValueAtTime(0, t + 1.8);
+        op.start(t); op.stop(t + 1.9);
+      }
+      // Sawtooth bass thud for weight
+      var ob = audioCtx.createOscillator(), gb = audioCtx.createGain();
+      ob.connect(gb); gb.connect(sfxGainNode);
+      ob.type = 'sawtooth'; ob.frequency.setValueAtTime(65.41, t); // C2
+      gb.gain.setValueAtTime(0.18, t);
+      gb.gain.exponentialRampToValueAtTime(0.001, t + 0.6);
+      ob.start(t); ob.stop(t + 0.65);
+      // Shimmer top — triangle way up
+      var osh = audioCtx.createOscillator(), gsh = audioCtx.createGain();
+      osh.connect(gsh); gsh.connect(sfxGainNode);
+      osh.type = 'triangle';
+      osh.frequency.setValueAtTime(2093, t + 0.35); // C7
+      osh.frequency.linearRampToValueAtTime(3136, t + 1.2); // G7
+      gsh.gain.setValueAtTime(0, t + 0.35);
+      gsh.gain.linearRampToValueAtTime(0.07, t + 0.45);
+      gsh.gain.linearRampToValueAtTime(0, t + 1.6);
+      osh.start(t + 0.35); osh.stop(t + 1.7);
     } else if (type === 'countdown_tick') {
       // Short digital beep for 3-2-1
       var o=audioCtx.createOscillator(),g=audioCtx.createGain(); o.connect(g); g.connect(sfxGainNode);
@@ -1497,6 +1550,17 @@ window.onload = function() {
     let gameState = 'title';
     var _prePauseState = null, _prePauseScreen = null;
     var _countdownActive = false; // true during 3-2-1, tunnel moves but no items/timer 
+    // --- Intro cinematic state (first full launch only) ---
+    var _cinematicPlayed = false;
+    var _cine = {
+        active: false,
+        t: 0,
+        phase: 0,
+        onDone: null,
+        stingerPlayed: false,
+        camStart: { x: 0, y: 0, z: 0 },
+        sideTarget: { x: 0, y: 0, z: 0 }
+    };
     let score = 0;
     let health = 100;
     let baseSpeed = 150;
@@ -5324,30 +5388,45 @@ window.onload = function() {
         // Always reset throttle on sector transitions (not just full reset)
         throttle = 0; throttleSmooth = 0; shipZOffset = -18;
 
-        gameState = 'intro'; // not playing yet — waiting for intro + countdown
-        clock.getDelta();
         TUT.skipNext = false;
         // Show sector intro splash, then mission banner, then countdown
         var zoneForIntro = getLevelScaledZone(currentSector);
-        showSectorIntro(zoneForIntro, function() {
-            showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
-            setTimeout(function(){
-                // Start moving tunnel during countdown — no items yet
-                gameState = 'playing';
-                _countdownActive = true;
-                document.getElementById('hamburger-btn').style.display = 'flex';
-                // Only resume raw audio context for countdown tick/go SFX
-                if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
-                startCountdown(function(){
-                    // GO — spawn items, start music + engine, start clock
-                    _countdownActive = false;
-                    AudioEngine.resume();
-                    AudioEngine.startEngine();
-                    spawnIntroWave();
-                    sectorTime = 0;
-                });
-            }, 1200);
-        });
+        function _runIntroChain() {
+            gameState = 'intro'; // not playing yet — waiting for intro + countdown
+            clock.getDelta();
+            showSectorIntro(zoneForIntro, function() {
+                showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
+                setTimeout(function(){
+                    // Start moving tunnel during countdown — no items yet
+                    gameState = 'playing';
+                    _countdownActive = true;
+                    document.getElementById('hamburger-btn').style.display = 'flex';
+                    // Only resume raw audio context for countdown tick/go SFX
+                    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+                    startCountdown(function(){
+                        // GO — spawn items, start music + engine, start clock
+                        _countdownActive = false;
+                        AudioEngine.resume();
+                        AudioEngine.startEngine();
+                        spawnIntroWave();
+                        sectorTime = 0;
+                    });
+                }, 1200);
+            });
+        }
+        // First full launch only: play cinematic before splash.
+        if (isFullReset && !_cinematicPlayed) {
+            _cinematicPlayed = true;
+            gameState = 'cinematic';
+            // Ensure audio is alive so stinger can play.
+            try { AudioEngine.init(); } catch (e) {}
+            if (audioCtx && audioCtx.state === 'suspended') {
+                try { audioCtx.resume(); } catch (e) {}
+            }
+            runCinematic(_runIntroChain);
+        } else {
+            _runIntroChain();
+        }
 
     }
     // --- Menu Actions ---
@@ -5980,10 +6059,115 @@ window.onload = function() {
         }
     }
 
+    // --- Intro cinematic ---------------------------------------------
+    // Three phases over ~4s:
+    //   P1 0.0-1.5s: POV full-speed forward, HYPER feel (ramp speed to ~580).
+    //   P2 1.5-3.0s: ease camera to side-view, lookAt ship, reset roll.
+    //                Stinger SFX plays at start of P2.
+    //   P3 3.0-4.0s: ship zooms off right + forward, slight roll.
+    // At end, call onDone() without resetting; the splash hides the frame
+    // and the 'playing' block overwrites positions on first frame.
+    function runCinematic(onDone) {
+        _cine.active = true;
+        _cine.t = 0;
+        _cine.phase = 1;
+        _cine.onDone = onDone;
+        _cine.stingerPlayed = false;
+        _cine.camStart.x = camera.position.x;
+        _cine.camStart.y = camera.position.y;
+        _cine.camStart.z = camera.position.z;
+        // Side view target — outside the tube, to the +X side, looking in.
+        _cine.sideTarget.x = tubeRadius * 1.8;
+        _cine.sideTarget.y = 0;
+        _cine.sideTarget.z = shipContainer.position.z + 55;
+        // Reset delta so first frame isn't huge.
+        clock.getDelta();
+    }
+
+    function tickCinematic(delta) {
+        if (!_cine.active) return;
+        // Guard against huge deltas (tab-switch etc.)
+        if (delta > 0.1) delta = 0.1;
+        _cine.t += delta;
+        var T = _cine.t;
+
+        // --- Phase 1: POV forward 0.0 - 1.5s ------------------------
+        if (T < 1.5) {
+            // Ramp speed upward toward HYPER feel.
+            var f = T / 1.5;
+            speed = 150 + (580 - 150) * f;
+            // Hold camera at its starting on-wall pose.
+            camera.position.x = _cine.camStart.x;
+            camera.position.y = _cine.camStart.y;
+            // Drive forward manually.
+            camera.position.z -= speed * delta;
+            // Ship stays ahead of camera at the same relative offset.
+            shipContainer.position.x = _cine.camStart.x * 0.1;
+            shipContainer.position.y = _cine.camStart.y * 0.1;
+            shipContainer.position.z = camera.position.z - 18;
+            return;
+        }
+
+        // --- Phase 2: ease to side view 1.5 - 3.0s ------------------
+        if (T < 3.0) {
+            // Play stinger once at phase entry.
+            if (!_cine.stingerPlayed) {
+                _cine.stingerPlayed = true;
+                try { AudioEngine.playSFX('intro_stinger'); } catch (e) {}
+            }
+            // Keep forward motion going so tunnel still rushes past.
+            speed = 580;
+            camera.position.z -= speed * delta;
+            shipContainer.position.z = camera.position.z - 18;
+
+            // Lerp camera x/y toward side-view target.
+            var sx = _cine.sideTarget.x;
+            var sy = _cine.sideTarget.y;
+            camera.position.x += (sx - camera.position.x) * Math.min(1, delta * 4.0);
+            camera.position.y += (sy - camera.position.y) * Math.min(1, delta * 4.0);
+            // Smoothly decay the on-wall roll back to 0.
+            camera.rotation.z += (0 - camera.rotation.z) * Math.min(1, delta * 4.0);
+            // Aim at ship so it stays framed.
+            camera.lookAt(shipContainer.position);
+            // Ship holds centered laterally during reveal.
+            shipContainer.position.x += (0 - shipContainer.position.x) * Math.min(1, delta * 4.0);
+            shipContainer.position.y += (0 - shipContainer.position.y) * Math.min(1, delta * 4.0);
+            return;
+        }
+
+        // --- Phase 3: ship zooms off right 3.0 - 4.0s --------------
+        if (T < 4.0) {
+            speed = 580;
+            camera.position.z -= speed * delta;
+            // Ship flies off to +X and also adds forward boost so it shrinks.
+            shipContainer.position.x += (600 - shipContainer.position.x) * Math.min(1, delta * 3.5);
+            shipContainer.position.z += speed * delta * 1.8; // outpaces camera forward
+            // Small roll for flair.
+            shipContainer.rotation.z += (0.8 - shipContainer.rotation.z) * Math.min(1, delta * 3.0);
+            // Hold camera at side target (don't follow ship off-screen).
+            camera.position.x += (_cine.sideTarget.x - camera.position.x) * Math.min(1, delta * 2.0);
+            camera.position.y += (_cine.sideTarget.y - camera.position.y) * Math.min(1, delta * 2.0);
+            if (Math.abs(shipContainer.position.x) < 400) {
+                camera.lookAt(shipContainer.position);
+            }
+            return;
+        }
+
+        // --- End: hand off to splash. DO NOT reset positions. -------
+        _cine.active = false;
+        var cb = _cine.onDone;
+        _cine.onDone = null;
+        if (cb) { try { cb(); } catch (e) { console.error('cinematic onDone err', e); } }
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         
         const delta = clock.getDelta();
+
+        if (gameState === 'cinematic') {
+            tickCinematic(delta);
+        }
 
         if (gameState === 'playing') {
 
