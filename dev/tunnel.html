@@ -1294,6 +1294,26 @@ var AudioEngine = {
         g.gain.setValueAtTime(0,t+si*0.07); g.gain.linearRampToValueAtTime(0.18,t+si*0.07+0.02);
         g.gain.linearRampToValueAtTime(0,t+si*0.07+0.35); o.start(t+si*0.07); o.stop(t+si*0.07+0.35);
       }
+    } else if (type === 'content_burst') {
+      // Airy shimmer — rising glissando with sparkle overtone
+      var notes = [880, 1320, 1760, 2200];
+      for (var ci = 0; ci < notes.length; ci++) {
+        var o = audioCtx.createOscillator(), g = audioCtx.createGain();
+        o.connect(g); g.connect(sfxGainNode);
+        o.type = 'sine';
+        o.frequency.setValueAtTime(notes[ci], t + ci * 0.04);
+        g.gain.setValueAtTime(0, t + ci * 0.04);
+        g.gain.linearRampToValueAtTime(0.22, t + ci * 0.04 + 0.02);
+        g.gain.linearRampToValueAtTime(0, t + ci * 0.04 + 0.45);
+        o.start(t + ci * 0.04); o.stop(t + ci * 0.04 + 0.45);
+      }
+      var os = audioCtx.createOscillator(), gs = audioCtx.createGain();
+      os.connect(gs); gs.connect(sfxGainNode);
+      os.type = 'triangle';
+      os.frequency.setValueAtTime(3520, t + 0.1);
+      gs.gain.setValueAtTime(0.08, t + 0.1);
+      gs.gain.linearRampToValueAtTime(0, t + 0.6);
+      os.start(t + 0.1); os.stop(t + 0.6);
     } else if (type === 'combo2') {
       // x2 — quick two-note ascending chime
       var o1=audioCtx.createOscillator(),g1=audioCtx.createGain(); o1.connect(g1); g1.connect(sfxGainNode);
@@ -5865,26 +5885,28 @@ window.onload = function() {
     // COLLECT BURST — 3 expanding pink rings from the collected object
     // ═══════════════════════════════════════════════════════════════
     var _collectBursts = [];
-    var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta
+    var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta — content-only
     function spawnCollectBurst(pos, colorOverride) {
         var now = performance.now();
         var ringCount = 3;
-        var stagger = 120; // ms between rings
-        var duration = 650; // ms each
+        var stagger = 140; // ms between rings
+        var duration = 1100; // ms total life per ring
         var meshes = [];
         for (var i = 0; i < ringCount; i++) {
-            var geo = new THREE.RingGeometry(0.8, 1.2, 32);
+            var geo = new THREE.RingGeometry(0.7, 1.15, 40);
             var mat = new THREE.MeshBasicMaterial({
                 color: colorOverride || _COLLECT_BURST_COLOR,
                 transparent: true,
-                opacity: 0.95,
+                opacity: 1.0,
                 side: THREE.DoubleSide,
                 depthWrite: false,
+                depthTest: false, // render through tunnel walls
                 blending: THREE.AdditiveBlending
             });
             var m = new THREE.Mesh(geo, mat);
             m.position.copy(pos);
             m.lookAt(camera.position);
+            m.renderOrder = 999; // draw after the tunnel
             m.userData = {
                 _birth: now + i * stagger,
                 _duration: duration,
@@ -5894,6 +5916,7 @@ window.onload = function() {
             meshes.push(m);
         }
         _collectBursts.push({ meshes: meshes });
+        try { AudioEngine.playSFX('content_burst'); } catch(e) {}
     }
     function updateCollectBursts() {
         var now = performance.now();
@@ -5907,10 +5930,15 @@ window.onload = function() {
                 if (age < 0) { allDone = false; continue; }
                 if (age < m.userData._duration) {
                     var t = age / m.userData._duration;
-                    var easeOut = 1 - Math.pow(1 - t, 2);
-                    var scale = 1.2 + easeOut * 18.0;
+                    // Fast expansion: reach full size in the first 45% of life
+                    var expT = Math.min(1, t / 0.45);
+                    var easeOut = 1 - Math.pow(1 - expT, 2.5);
+                    var scale = 1.2 + easeOut * 32.0;
                     m.scale.setScalar(scale);
-                    m.material.opacity = 0.95 * (1 - t);
+                    // Hold opacity full, then fade in the last 40%
+                    var fadeStart = 0.6;
+                    var opacity = (t < fadeStart) ? 1.0 : (1.0 - (t - fadeStart) / (1 - fadeStart));
+                    m.material.opacity = opacity;
                     m.lookAt(camera.position);
                     allDone = false;
                 } else {
@@ -6397,7 +6425,6 @@ window.onload = function() {
                                 }
                             }
                             else if (item.userData.type === 'star') {
-                                spawnCollectBurst(item.position, 0xffff00);
                                 sectorCollectiblesCollected++;
                                 shieldsUp = true;
                                 shieldsUpTimer = getShieldsDuration(currentSector);
@@ -6436,7 +6463,6 @@ window.onload = function() {
                                 }
                             }
                             else if (item.userData.type === 'health') {
-                                spawnCollectBurst(item.position, 0x00ccff);
                                 sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 20);
                                 score += 85;
@@ -6446,7 +6472,6 @@ window.onload = function() {
                                 if (TUT.active) tutHit('health');
                             }
                             else if (item.userData.type === 'score') {
-                                spawnCollectBurst(item.position);
                                 sectorCollectiblesCollected++;
                                 combo++;
                                 comboTimer = COMBO_WINDOW;
