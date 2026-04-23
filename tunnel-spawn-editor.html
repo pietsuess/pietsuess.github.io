@@ -118,6 +118,29 @@
   .seg-spawn-row .seg-spawn-unit { color:#555; font-size:8px; flex:0 0 50px; }
   .seg-spawn-row .seg-spawn-set { color:#ffe000; font-size:8px; }
   .seg-spawn-row .seg-spawn-default { color:#444; font-size:8px; font-style:italic; }
+
+  /* Level Layout Preview (bottom-locked) */
+  #preview-pane {
+    position: fixed; left: 0; right: 0; bottom: 0; height: 260px; z-index: 50;
+    background: #050505; border-top: 2px solid #222; padding: 8px 12px;
+    box-sizing: border-box; display: flex; flex-direction: column;
+  }
+  #preview-header {
+    display: flex; justify-content: space-between; align-items: center;
+    font-family: 'Press Start 2P', monospace; font-size: 8px; color: #888;
+    margin-bottom: 6px; letter-spacing: 1px;
+  }
+  #preview-header .hint { color: #555; text-transform: lowercase; letter-spacing: 0; font-family: 'Courier New', monospace; font-size: 10px; }
+  #preview-header .seed { color: #555; }
+  #preview-header .seed button {
+    font-family: inherit; font-size: 7px; padding: 3px 7px; background: transparent;
+    border: 1px solid #444; color: #888; cursor: pointer; margin-left: 6px; border-radius: 3px;
+  }
+  #preview-header .seed button:hover { border-color: #00ffcc; color: #00ffcc; }
+  #level-preview-canvas {
+    flex: 1; width: 100%; background: #070707; border: 1px solid #1a1a1a; cursor: pointer; display: block;
+  }
+  body { padding-bottom: 276px; }
 </style>
 </head>
 <body>
@@ -129,6 +152,9 @@
 <div class="level-tabs" id="level-tabs"></div>
 
 <div id="editor-panel">
+  <!-- Speed-run toggle + countdown (top of every level pane) -->
+  <div id="speedrun-toggle"></div>
+
   <!-- Computed stats -->
   <div class="computed" id="computed-stats"></div>
 
@@ -201,16 +227,32 @@
     <div class="section-desc">Controls how objects wind around the tunnel walls. In <b>uniform</b> mode, one continuous twist runs the whole level. Switch to <b>pattern</b> mode to add segments with different directions, speeds, and multiple parallel lanes of objects. Drag the breakpoints on the bar to resize segments.</div>
     <div id="spiral-editor"></div>
   </div>
+
+  <!-- Pylons -->
+  <div class="section">
+    <div class="section-title">PYLONS (SLALOM GATES)</div>
+    <div class="section-desc">Orange traffic cones the player slaloms past. Each pylon has an arrow on top: cyan = pass on its <b>LEFT</b>, magenta = pass on its <b>RIGHT</b>. Correct-side pass within range = +400. Wrong side = -200. Hit = bounce + slowdown + -100. Pylons are opt-in per level: enable below to add a deterministic spiral of cones.</div>
+    <div id="pylons-editor"></div>
+  </div>
 </div>
 
 <!-- Export -->
 <div class="export-area">
-  <button class="export-btn" onclick="exportCurrent()">EXPORT CURRENT SECTOR</button>
+  <button class="export-btn" onclick="exportCurrent()">EXPORT CURRENT LEVEL</button>
   <button class="export-btn green" onclick="exportAll()">EXPORT ALL SECTORS</button>
   <button class="export-btn gold" onclick="copyExport()">COPY TO CLIPBOARD</button>
   <button class="export-btn" onclick="resetCurrent()" style="color:#ff4444;border-color:#ff4444;background:#1a0000;">RESET THIS LEVEL</button>
   <button class="export-btn" onclick="resetAll()" style="color:#ff4444;border-color:#ff4444;background:#1a0000;">RESET ALL</button>
   <textarea id="export-output" placeholder="Export data will appear here..."></textarea>
+</div>
+
+<!-- Level Layout Preview (bottom-locked, shows active level, click a segment to edit) -->
+<div id="preview-pane">
+  <div id="preview-header">
+    <span id="preview-title">LEVEL LAYOUT PREVIEW <span class="hint">click a segment to edit</span></span>
+    <span class="seed">seed <span id="preview-seed-val">1</span><button type="button" onclick="rerollPreview()">REROLL</button></span>
+  </div>
+  <canvas id="level-preview-canvas"></canvas>
 </div>
 
 <script>
@@ -358,8 +400,9 @@ function buildDefaults() {
         // Knot sway
         knotSwaySpeedMin, knotSwaySpeedMax,
         knotSwayRangeMin, knotSwayRangeMax,
-        // Is speed run?
-        isSpeedRun: sr
+        // Is speed run? (user-overridable; default follows hardcoded formula)
+        isSpeedRun: sr,
+        speedRunTarget: s === 5 ? 45 : 30
       };
     }
   }
@@ -370,46 +413,58 @@ let DEFAULTS = buildDefaults();
 let config = JSON.parse(JSON.stringify(DEFAULTS));
 
 // ═══════════════════════════════════════════════════════════════
-// LIVE SYNC — fetch SPAWN_TUNING from tunnel-dev.html on load
-// Patches defaults + config so the editor always matches the game.
+// LIVE SYNC — fetches SPAWN_TUNING from /dev/tunnel.html on load.
+// No baked snapshot. If fetch fails, editor shows formula DEFAULTS only.
 // ═══════════════════════════════════════════════════════════════
 var _gameSynced = false;
+
+function _applySpawnTuning(tuning) {
+  for (const key in tuning) {
+    const km = key.match(/^S(\d+)L(\d+)$/);
+    if (!km || !DEFAULTS[km[1]] || !DEFAULTS[km[1]][km[2]]) continue;
+    const overrides = tuning[key];
+    const mapped = {};
+    for (const k in overrides) {
+      if (k === 'speed') { mapped.baseSpeed = overrides[k]; mapped.levelSpeed = overrides[k]; }
+      else if (k === 'length') { mapped.baseLength = overrides[k]; mapped.levelLength = overrides[k]; }
+      else { mapped[k] = overrides[k]; }
+    }
+    Object.assign(DEFAULTS[km[1]][km[2]], mapped);
+  }
+}
+
+// No baked snapshot — editor always fetches live SPAWN_TUNING from /dev/tunnel.html.
+// Default formula DEFAULTS apply until fetch resolves.
+config = JSON.parse(JSON.stringify(DEFAULTS));
+
+// Fetch URL: absolute so the editor reflects live state whether opened online
+// (arcade.pietsuess.com) or locally (file://). Works cross-origin thanks to GitHub Pages CORS.
+var _LIVE_TUNING_URL = 'https://arcade.pietsuess.com/dev/tunnel.html';
+
 function syncFromGame() {
-  fetch('tunnel-dev.html?_=' + Date.now())
-    .then(r => r.text())
-    .then(html => {
-      // Extract SPAWN_TUNING block
-      const m = html.match(/var\s+SPAWN_TUNING\s*=\s*(\{[\s\S]*?\n    \});/);
-      if (!m) { console.warn('SPAWN_TUNING not found in game'); return; }
-      // Evaluate it (handles Math.PI etc)
+  var statusEl = document.getElementById('sync-status');
+  if (statusEl) statusEl.innerHTML = '<span style="color:#888;">Fetching live tuning from /dev/…</span>';
+  fetch(_LIVE_TUNING_URL + '?_=' + Date.now())
+    .then(function(r){ if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+    .then(function(html) {
+      var m = html.match(/var\s+SPAWN_TUNING\s*=\s*(\{[\s\S]*?\n    \});/);
+      if (!m) { if (statusEl) statusEl.innerHTML = '<span style="color:#ff4444;">No SPAWN_TUNING found in /dev/</span>'; return; }
       var tuning;
-      try { tuning = new Function('return ' + m[1])(); } catch(e) { console.warn('Failed to parse SPAWN_TUNING:', e); return; }
-      // Apply each override to DEFAULTS
-      for (const key in tuning) {
-        const km = key.match(/^S(\d+)L(\d+)$/);
-        if (!km || !DEFAULTS[km[1]] || !DEFAULTS[km[1]][km[2]]) continue;
-        const overrides = tuning[key];
-        // Map game keys to editor keys
-        const mapped = {};
-        for (const k in overrides) {
-          if (k === 'speed') { mapped.baseSpeed = overrides[k]; mapped.levelSpeed = overrides[k]; }
-          else if (k === 'length') { mapped.baseLength = overrides[k]; mapped.levelLength = overrides[k]; }
-          else { mapped[k] = overrides[k]; }
-        }
-        Object.assign(DEFAULTS[km[1]][km[2]], mapped);
+      try { tuning = new Function('return ' + m[1])(); } catch(e) {
+        if (statusEl) statusEl.innerHTML = '<span style="color:#ff4444;">Parse error: ' + e.message + '</span>';
+        return;
       }
-      // Rebuild config from patched defaults + localStorage overrides
+      _applySpawnTuning(tuning);
       config = JSON.parse(JSON.stringify(DEFAULTS));
       for (var _sk in config) { for (var _lk in config[_sk]) _cleanSegSpawn(config[_sk][_lk]); }
       loadFromStorage();
       _gameSynced = true;
       var count = Object.keys(tuning).length;
-      document.getElementById('sync-status').innerHTML = '<span style="color:#00ff88;">Synced ' + count + ' override' + (count > 1 ? 's' : '') + ' from game</span>';
+      if (statusEl) statusEl.innerHTML = '<span style="color:#00ff88;">Synced ' + count + ' level' + (count !== 1 ? 's' : '') + ' from live /dev/ — <a href="#" style="color:#00ffcc;" onclick="syncFromGame();refresh();return false;">reload</a></span>';
       refresh();
     })
-    .catch(e => {
-      console.warn('Failed to fetch game file:', e);
-      document.getElementById('sync-status').innerHTML = '<span style="color:#ff4444;">Could not sync from game</span>';
+    .catch(function(e) {
+      if (statusEl) statusEl.innerHTML = '<span style="color:#ff4444;">Failed to reach live /dev/: ' + (e.message || e) + ' — <a href="#" style="color:#ffe000;" onclick="syncFromGame();return false;">retry</a></span>';
     });
 }
 syncFromGame();
@@ -1169,13 +1224,842 @@ function startSpiralDrag(e) {
 function refresh() {
   buildTabs();
   buildLevelTabs();
+  buildSpeedRunToggle();
   buildGatingToggles();
   buildSliders();
   buildSpiralEditor();
+  buildPylonEditor();
   buildSpawnChart();
   buildComputedStats();
   saveConfig();
+  renderLevelPreview();
+  pushHistory();
 }
+
+// ═══════════════════════════════════════════════════════════════
+// PYLON EDITOR — opt-in slalom-gate config (writes to c.pylons)
+// ═══════════════════════════════════════════════════════════════
+var PYLON_DEFAULTS = {
+  spacing: 250, offset: 0.5, spiralStep: 0, startAngle: 0,
+  pattern: 'alternate', startPct: 0.05, endPct: 0.85
+};
+
+function buildPylonEditor() {
+  var host = document.getElementById('pylons-editor');
+  if (!host) return;
+  host.innerHTML = '';
+  var c = getC();
+  var enabled = !!c.pylons;
+
+  // Enable row
+  var topRow = document.createElement('div');
+  topRow.style.cssText = 'display:flex;align-items:center;gap:14px;padding:10px 14px;'
+    + 'background:' + (enabled ? '#1a1000' : '#0a0a0a') + ';'
+    + 'border:1px solid ' + (enabled ? '#ff8800' : '#222') + ';'
+    + 'border-radius:4px;margin-bottom:12px;';
+
+  var chk = document.createElement('input');
+  chk.type = 'checkbox';
+  chk.id = 'pylon-enabled-chk';
+  chk.checked = enabled;
+  chk.style.cssText = 'accent-color:#ff8800;width:16px;height:16px;cursor:pointer;';
+  chk.onchange = function() {
+    if (this.checked) {
+      c.pylons = Object.assign({}, PYLON_DEFAULTS);
+    } else {
+      delete c.pylons;
+    }
+    refresh();
+  };
+  var lbl = document.createElement('label');
+  lbl.htmlFor = 'pylon-enabled-chk';
+  lbl.textContent = 'ENABLE PYLONS';
+  lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:10px;letter-spacing:1px;'
+    + 'color:' + (enabled ? '#ff8800' : '#666') + ';cursor:pointer;';
+  topRow.appendChild(chk);
+  topRow.appendChild(lbl);
+  if (enabled) {
+    var hint = document.createElement('span');
+    hint.textContent = 'orange cones with cyan/magenta arrows on top';
+    hint.style.cssText = 'color:#666;font-size:10px;margin-left:auto;font-style:italic;';
+    topRow.appendChild(hint);
+  } else {
+    var off = document.createElement('span');
+    off.textContent = 'no pylons in this level';
+    off.style.cssText = 'color:#444;font-size:10px;margin-left:auto;font-style:italic;';
+    topRow.appendChild(off);
+  }
+  host.appendChild(topRow);
+
+  if (!enabled) return;
+
+  // Slider helper for pylon fields
+  function pylonRow(key, label, min, max, step, unit, desc) {
+    var p = c.pylons;
+    var grp = document.createElement('div');
+    var changed = p[key] !== PYLON_DEFAULTS[key];
+    grp.className = 'slider-group' + (changed ? ' changed' : '');
+    var row = document.createElement('div');
+    row.className = 'row';
+    var lbl = document.createElement('label');
+    lbl.textContent = label;
+    var range = document.createElement('input');
+    range.type = 'range';
+    range.min = min; range.max = max; range.step = step;
+    range.value = p[key];
+    var num = document.createElement('input');
+    num.type = 'number';
+    num.className = 'val-input';
+    num.min = min; num.max = max; num.step = step;
+    num.value = p[key];
+    var unitEl = document.createElement('span');
+    unitEl.className = 'unit';
+    unitEl.textContent = unit;
+    var sync = function(v) {
+      var n = parseFloat(v);
+      if (isNaN(n)) return;
+      p[key] = n;
+      range.value = n;
+      num.value = n;
+      grp.classList.toggle('changed', n !== PYLON_DEFAULTS[key]);
+      saveConfig();
+      renderLevelPreview();
+      pushHistory();
+    };
+    range.oninput = function(){ sync(this.value); };
+    num.onchange = function(){ sync(this.value); };
+    row.appendChild(lbl); row.appendChild(range); row.appendChild(num); row.appendChild(unitEl);
+    grp.appendChild(row);
+    if (desc) {
+      var d = document.createElement('div');
+      d.className = 'slider-desc';
+      d.textContent = desc;
+      grp.appendChild(d);
+    }
+    host.appendChild(grp);
+  }
+
+  pylonRow('spacing',    'Spacing',    50, 1000, 10,  'units', 'Z distance between consecutive pylons. Lower = denser slalom.');
+  pylonRow('offset',     'Offset',     -1.5, 1.5, 0.05, 'rad',  'Positive: LEFT cones drift LEFT, RIGHT cones drift RIGHT. Negative: cones cross over (LEFT pylons end up on the right, RIGHT on the left).');
+  pylonRow('spiralStep', 'Spiral Step', -2, 2, 0.05, 'rad',  'How far the base angle advances per pylon. 0 = straight column. ±0.5 = winding spiral.');
+  pylonRow('startAngle', 'Start Angle', 0, 6.28, 0.05, 'rad',  'Initial spiral base angle (where the first pylon sits before offset).');
+  pylonRow('startPct',   'Start at',   0, 1, 0.01,  '%',   'Where in the level pylons begin (fraction of sector length).');
+  pylonRow('endPct',     'End at',     0, 1, 0.01,  '%',   'Where in the level pylons stop.');
+
+  // Pattern dropdown
+  var patGrp = document.createElement('div');
+  var patChanged = c.pylons.pattern !== PYLON_DEFAULTS.pattern;
+  patGrp.className = 'slider-group' + (patChanged ? ' changed' : '');
+  var patRow = document.createElement('div');
+  patRow.className = 'row';
+  var patLbl = document.createElement('label');
+  patLbl.textContent = 'Pattern';
+  var sel = document.createElement('select');
+  sel.style.cssText = 'background:#0a0a0a;color:#ff8800;border:1px solid #553300;font-family:"Press Start 2P",monospace;font-size:9px;padding:4px 8px;border-radius:3px;';
+  ['alternate','left','right','pair'].forEach(function(opt){
+    var o = document.createElement('option');
+    o.value = opt; o.textContent = opt.toUpperCase();
+    if (c.pylons.pattern === opt) o.selected = true;
+    sel.appendChild(o);
+  });
+  sel.onchange = function() {
+    c.pylons.pattern = this.value;
+    saveConfig();
+    renderLevelPreview();
+    pushHistory();
+    refresh();
+  };
+  patRow.appendChild(patLbl); patRow.appendChild(sel);
+  patGrp.appendChild(patRow);
+  var patDesc = document.createElement('div');
+  patDesc.className = 'slider-desc';
+  patDesc.textContent = 'ALTERNATE = LRLRLR. PAIR = both at the same Z (a gate). LEFT or RIGHT = single-side column.';
+  patGrp.appendChild(patDesc);
+  host.appendChild(patGrp);
+}
+
+function buildSpeedRunToggle() {
+  var host = document.getElementById('speedrun-toggle');
+  if (!host) return;
+  host.innerHTML = '';
+  var c = getC();
+  var isSR = !!c.isSpeedRun;
+
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'display:flex;align-items:center;gap:14px;padding:10px 14px;'
+    + 'background:' + (isSR ? '#1a0000' : '#0a0a0a') + ';'
+    + 'border:1px solid ' + (isSR ? '#ff4444' : '#222') + ';'
+    + 'border-radius:4px;margin-bottom:12px;';
+
+  var chkId = 'speedrun-chk';
+  var chk = document.createElement('input');
+  chk.type = 'checkbox';
+  chk.id = chkId;
+  chk.checked = isSR;
+  chk.style.cssText = 'accent-color:#ff4444;width:16px;height:16px;cursor:pointer;';
+  chk.onchange = function() {
+    c.isSpeedRun = this.checked;
+    if (this.checked && (c.speedRunTarget === undefined || c.speedRunTarget === null)) {
+      c.speedRunTarget = activeSector === 5 ? 45 : 30;
+    }
+    refresh();
+  };
+
+  var lbl = document.createElement('label');
+  lbl.htmlFor = chkId;
+  lbl.textContent = 'IS SPEED LEVEL';
+  lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:10px;letter-spacing:1px;'
+    + 'color:' + (isSR ? '#ff4444' : '#666') + ';cursor:pointer;';
+
+  wrap.appendChild(chk);
+  wrap.appendChild(lbl);
+
+  if (isSR) {
+    var sep = document.createElement('span');
+    sep.textContent = '|';
+    sep.style.cssText = 'color:#440000;';
+    wrap.appendChild(sep);
+
+    var tlbl = document.createElement('span');
+    tlbl.textContent = 'COUNTDOWN';
+    tlbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;color:#888;letter-spacing:1px;';
+    wrap.appendChild(tlbl);
+
+    var tinp = document.createElement('input');
+    tinp.type = 'number';
+    tinp.min = '5'; tinp.max = '300'; tinp.step = '1';
+    tinp.value = (c.speedRunTarget !== undefined && c.speedRunTarget !== null) ? c.speedRunTarget : (activeSector === 5 ? 45 : 30);
+    tinp.style.cssText = 'background:#0a0a0a;border:1px solid #440000;color:#ff4444;'
+      + 'font-family:"Press Start 2P",monospace;font-size:10px;padding:5px 7px;width:72px;'
+      + 'border-radius:3px;outline:none;-moz-appearance:textfield;';
+    tinp.onchange = function() {
+      var v = parseInt(this.value, 10);
+      if (isNaN(v) || v < 5) v = 5;
+      if (v > 300) v = 300;
+      c.speedRunTarget = v;
+      refresh();
+    };
+    wrap.appendChild(tinp);
+
+    var unit = document.createElement('span');
+    unit.textContent = 'sec';
+    unit.style.cssText = 'color:#555;font-size:10px;';
+    wrap.appendChild(unit);
+
+    var hint = document.createElement('span');
+    hint.textContent = 'barriers become clusters, content drops, target timer runs';
+    hint.style.cssText = 'color:#555;font-size:10px;margin-left:auto;font-style:italic;';
+    wrap.appendChild(hint);
+  } else {
+    var offHint = document.createElement('span');
+    offHint.textContent = 'check to convert this level into a timed speed run';
+    offHint.style.cssText = 'color:#555;font-size:10px;margin-left:auto;font-style:italic;';
+    wrap.appendChild(offHint);
+  }
+
+  host.appendChild(wrap);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// UNDO / REDO — 30-state history, Cmd-Z / Cmd-Shift-Z
+// ═══════════════════════════════════════════════════════════════
+var MAX_HISTORY = 30;
+var _history = [];
+var _historyIdx = -1;
+var _isUndoRedo = false;
+
+function pushHistory() {
+  if (_isUndoRedo) return;
+  var snap = JSON.stringify(config);
+  if (_historyIdx >= 0 && _history[_historyIdx] === snap) return; // unchanged
+  // Truncate any forward history — user made a new change after undoing
+  if (_historyIdx < _history.length - 1) _history = _history.slice(0, _historyIdx + 1);
+  _history.push(snap);
+  if (_history.length > MAX_HISTORY) _history.shift();
+  _historyIdx = _history.length - 1;
+  updateHistoryIndicator();
+}
+
+function undo() {
+  if (_historyIdx <= 0) { flashHistoryIndicator('NOTHING TO UNDO'); return; }
+  _historyIdx--;
+  _isUndoRedo = true;
+  try {
+    config = JSON.parse(_history[_historyIdx]);
+    saveConfig();
+    buildTabs(); buildLevelTabs(); buildGatingToggles(); buildSliders();
+    buildSpiralEditor(); buildSpawnChart(); buildComputedStats();
+    renderLevelPreview();
+  } finally { _isUndoRedo = false; }
+  flashHistoryIndicator('UNDO ' + (_historyIdx + 1) + '/' + _history.length);
+}
+
+function redo() {
+  if (_historyIdx >= _history.length - 1) { flashHistoryIndicator('NOTHING TO REDO'); return; }
+  _historyIdx++;
+  _isUndoRedo = true;
+  try {
+    config = JSON.parse(_history[_historyIdx]);
+    saveConfig();
+    buildTabs(); buildLevelTabs(); buildGatingToggles(); buildSliders();
+    buildSpiralEditor(); buildSpawnChart(); buildComputedStats();
+    renderLevelPreview();
+  } finally { _isUndoRedo = false; }
+  flashHistoryIndicator('REDO ' + (_historyIdx + 1) + '/' + _history.length);
+}
+
+function updateHistoryIndicator() { /* silent in normal use */ }
+
+function flashHistoryIndicator(msg) {
+  var el = document.getElementById('history-toast');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'history-toast';
+    el.style.cssText = 'position:fixed;top:12px;left:50%;transform:translateX(-50%);z-index:100;'
+      + 'font-family:\'Press Start 2P\',monospace;font-size:10px;padding:8px 14px;'
+      + 'background:#1a1a00;color:#ffe000;border:1px solid #ffe000;border-radius:4px;'
+      + 'letter-spacing:1px;opacity:0;transition:opacity 0.15s;pointer-events:none;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._t);
+  el._t = setTimeout(function(){ el.style.opacity = '0'; }, 900);
+}
+
+document.addEventListener('keydown', function(e) {
+  if (!e.metaKey) return; // Cmd only, not Ctrl
+  if (e.key === 'z' || e.key === 'Z') {
+    e.preventDefault();
+    if (e.shiftKey) redo(); else undo();
+  }
+});
+
+// ═══════════════════════════════════════════════════════════════
+// LEVEL LAYOUT PREVIEW — faithful side view of the ACTIVE level.
+// Mirrors game spawnItem() logic: content-forcing, barrier re-roll,
+// multi-lane spiral, boost ring trails, forced contentCount, etc.
+// ═══════════════════════════════════════════════════════════════
+
+var previewSeed = 1;
+var previewSegBounds = []; // [{segIdx, x0, x1, zFrom, zTo, color, isReal}] filled on each render
+
+function rerollPreview() {
+  previewSeed = (previewSeed + 1) % 999;
+  var el = document.getElementById('preview-seed-val');
+  if (el) el.textContent = previewSeed;
+  renderLevelPreview();
+}
+
+// mulberry32 — tiny seeded PRNG
+function mulberry32(a) {
+  return function() {
+    var t = (a += 0x6D2B79F5);
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+// Replay the game's spawnItem logic deterministically, return a list of placements.
+// Each entry: { z, type, angle, segIdx, gapAngle?, gapSize?, withRamp? }
+function simulateLevelSpawns(c) {
+  var spawns = [];
+  if (!c) return spawns;
+  var rng = mulberry32(previewSeed * 9973 + activeSector * 131 + activeLevel * 17);
+  var nextRand = function() { return rng(); };
+
+  var spacing = c.spacing || 80;
+  var startOffset = c.startOffset || 400;
+  var maxPct = c.maxSpawnPct || 0.80; // game uses 0.80 hard stop
+  var levelLength = c.levelLength || 15000;
+  var endZ = levelLength * maxPct;
+
+  var s = activeSector, lvl = activeLevel;
+  var isSpeedRun = (s === 3) || (s === 5 && lvl === 1);
+
+  var blocksEnabled   = ((s === 1 && lvl >= 2) || s >= 2) && s !== 3;
+  var coresEnabled    = (s === 1 && lvl >= 3) || s >= 2;
+  var barriersEnabled = s >= 2;
+  var knotsEnabled    = ((s === 2 && lvl >= 3) || s >= 3) && s !== 3;
+  var minesEnabled    = s !== 3;
+  var rampsEnabled    = s >= 4;
+  var starsEnabled    = s >= 3 || (s === 2 && lvl >= 3);
+  var boostEnabled    = s >= 3;
+
+  // Forced content positions — one per contentCount override, evenly spaced within segment
+  var forcedContentZ = [];
+  if (Array.isArray(c.spiralPattern) && c.spiralPattern.length > 0) {
+    var prevUF = 0;
+    c.spiralPattern.forEach(function(seg) {
+      if (seg.spawn && seg.spawn.contentCount !== undefined && seg.spawn.contentCount > 0) {
+        var z0 = Math.max(startOffset, prevUF * levelLength);
+        var z1 = Math.min(endZ, seg.until * levelLength);
+        var n = seg.spawn.contentCount;
+        for (var i = 1; i <= n; i++) forcedContentZ.push(z0 + (z1 - z0) * (i / (n + 1)));
+      }
+      prevUF = seg.until;
+    });
+  }
+
+  // Spiral state (mirrors _advanceSpiral / _getSegSpawn in game)
+  var laneAngles = [];
+  var lastSegIdx = -1;
+  var laneCounter = 0;
+  var flatAngle = -Math.PI / 2; // game init
+
+  function currentSegIdx(zPos) {
+    var pat = c.spiralPattern;
+    if (!pat || pat.length === 0) return -1;
+    var progress = zPos / levelLength;
+    for (var i = 0; i < pat.length; i++) if (progress <= pat[i].until) return i;
+    return pat.length - 1;
+  }
+  function getSegSpawn(zPos) {
+    var idx = currentSegIdx(zPos);
+    if (idx < 0) return null;
+    return c.spiralPattern[idx].spawn || null;
+  }
+  function advanceSpiral(zPos) {
+    var pat = c.spiralPattern;
+    if (!pat || pat.length === 0) {
+      flatAngle += (c.spiralStep !== undefined ? c.spiralStep : 1.1);
+      return flatAngle;
+    }
+    var idx = currentSegIdx(zPos);
+    var seg = pat[idx];
+    var lanes = seg.lanes || [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
+    if (idx !== lastSegIdx) {
+      lastSegIdx = idx;
+      laneAngles = [];
+      for (var l = 0; l < lanes.length; l++) laneAngles[l] = (lanes[l].offset || 0);
+      laneCounter = 0;
+    }
+    var li = laneCounter % lanes.length;
+    laneCounter++;
+    if (laneCounter > lanes.length) laneAngles[li] += (lanes[li].step || 0);
+    return laneAngles[li];
+  }
+
+  var lastBarrierZ = -99999;
+  var lastRampZ = -99999;
+
+  for (var z = startOffset; z < endZ; z += spacing) {
+    var rand = nextRand();
+    var segS = getSegSpawn(z);
+    var segIdx = currentSegIdx(z);
+
+    // Forced content (contentCount override)
+    var forceContent = false;
+    for (var fi = 0; fi < forcedContentZ.length; fi++) {
+      if (Math.abs(forcedContentZ[fi] - z) < spacing / 2) { forceContent = true; forcedContentZ.splice(fi, 1); break; }
+    }
+    var segHasCount = segS && segS.contentCount !== undefined;
+    var contentChance = 0;
+    if (!forceContent) {
+      contentChance = segHasCount ? 0 : (isSpeedRun ? 0 : (c.contentChance !== undefined ? c.contentChance : 0.055 + lvl * 0.008));
+    }
+    if (forceContent || rand < contentChance) {
+      var aC = advanceSpiral(z);
+      spawns.push({ z: z, type: 'content', angle: aC, segIdx: segIdx });
+      continue;
+    }
+
+    // Barrier threshold (with overrides)
+    var barrierThreshold;
+    if (!barriersEnabled) barrierThreshold = 0;
+    else if (isSpeedRun) barrierThreshold = 0.30;
+    else if (s === 2) barrierThreshold = 0.12;
+    else if (s === 4) barrierThreshold = 0.20;
+    else barrierThreshold = 0.22;
+    barrierThreshold *= (1 + (lvl - 1) * 0.10);
+    if (segS && segS.barrierThreshold !== undefined) barrierThreshold = segS.barrierThreshold;
+
+    // Speed-run barrier cluster (walks backwards from trigger)
+    if (isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 400) {
+      lastRampZ = z;
+      var seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] : (s === 5 ? 40 : 30);
+      var seriesCount = 3 + Math.floor(nextRand() * 2);
+      var baseGapAngle = nextRand() * Math.PI * 2;
+      var twistPerBarrier = 0.15 + nextRand() * 0.15;
+      for (var bi = 0; bi < seriesCount; bi++) {
+        var gapSizeSR = Math.PI * (0.9 + nextRand() * 0.4);
+        var gapAngleSR = baseGapAngle + bi * twistPerBarrier;
+        var bzSR = z - bi * seriesSpacing;
+        spawns.push({ z: bzSR, type: 'barrier', gapAngle: gapAngleSR, gapSize: gapSizeSR, segIdx: segIdx, withRamp: false });
+      }
+      continue;
+    }
+
+    // Normal barrier
+    if (!isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 800) {
+      lastRampZ = z;
+      var baseAng = nextRand() * Math.PI * 2;
+      if (!rampsEnabled || nextRand() < 0.4) {
+        var gs = Math.PI * (0.6 + nextRand() * 0.5);
+        var ga = nextRand() * Math.PI * 2;
+        spawns.push({ z: z, type: 'barrier', gapAngle: ga, gapSize: gs, segIdx: segIdx, withRamp: false });
+      } else {
+        // full ring + ramp placed before in Z (ramp at z - peakDist, approx 200)
+        spawns.push({ z: z - 200, type: 'ramp', angle: baseAng, segIdx: segIdx });
+        spawns.push({ z: z, type: 'barrier', gapAngle: 0, gapSize: 0, segIdx: segIdx, withRamp: true });
+      }
+      continue;
+    }
+
+    // Re-roll past barrier threshold (game line ~3493)
+    rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
+    if (rand < 0) rand = nextRand();
+
+    // Base distribution with level escalation
+    var baseHazard, baseRing, baseCore;
+    if (s === 1)      { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+    else if (s === 2) { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
+    else if (s === 3) { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }
+    else if (s === 4) { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
+    else              { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
+    if (c.baseHazard !== undefined) baseHazard = c.baseHazard;
+    if (c.baseRing   !== undefined) baseRing   = c.baseRing;
+    if (c.baseCore   !== undefined) baseCore   = c.baseCore;
+    if (segS) {
+      if (segS.baseHazard !== undefined) baseHazard = segS.baseHazard;
+      if (segS.baseRing   !== undefined) baseRing   = segS.baseRing;
+      if (segS.baseCore   !== undefined) baseCore   = segS.baseCore;
+    }
+    // If the main distribution is intentionally empty, skip — don't fall back to a ring.
+    // (Mirrors the game-side fix.)
+    if (baseHazard === 0 && baseRing === 0 && baseCore === 0) continue;
+    var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
+    var remaining = 1 - hazardChance;
+    var ringChance = remaining * (baseRing / (baseRing + baseCore + 0.001));
+    var coreChance = remaining * (baseCore / (baseRing + baseCore + 0.001));
+
+    // Boost pad (+ 5-ring flip arc trail)
+    var boostThreshold = boostEnabled ? 0.04 : 0;
+    if (segS && segS.boostChance !== undefined) boostThreshold = segS.boostChance;
+    if (boostThreshold > 0 && rand < boostThreshold) {
+      var bAng = advanceSpiral(z);
+      spawns.push({ z: z, type: 'boost', angle: bAng, segIdx: segIdx });
+      var flipAheadDist = 38;
+      var ringCount = 5;
+      for (var ri = 1; ri <= ringCount; ri++) {
+        var frac = ri / (ringCount + 1);
+        spawns.push({ z: z - frac * flipAheadDist, type: 'ring', angle: bAng + frac * Math.PI * 2, segIdx: segIdx });
+      }
+      continue;
+    }
+
+    // Star / core / ring / hazard
+    var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+    if (segS && segS.starChance !== undefined) starChance = segS.starChance;
+
+    var itemType;
+    if (starChance > 0 && rand < starChance) itemType = 'star';
+    else if (coresEnabled && rand < coreChance) itemType = 'core';
+    else if (rand < coreChance + ringChance) itemType = 'ring';
+    else if (rand < coreChance + ringChance + hazardChance) {
+      if (!minesEnabled && !blocksEnabled && !knotsEnabled) itemType = 'ring';
+      else {
+        var hRand = nextRand();
+        if (knotsEnabled && hRand < 0.25) itemType = 'knot';
+        else if (blocksEnabled && hRand < 0.50) itemType = 'block';
+        else if (minesEnabled) itemType = 'mine';
+        else itemType = 'ring';
+      }
+    } else itemType = 'ring';
+
+    var aM = advanceSpiral(z);
+    spawns.push({ z: z, type: itemType, angle: aM, segIdx: segIdx });
+  }
+
+  // ── Pylons (deterministic, opt-in via c.pylons) ──
+  if (c.pylons) {
+    var py = c.pylons;
+    var pySpacing    = py.spacing    || 250;
+    var pyOffset     = (py.offset    !== undefined) ? py.offset    : 0.5;
+    var pyStep       = py.spiralStep || 0;
+    var pyStart      = py.startAngle || 0;
+    var pyPattern    = py.pattern    || 'alternate';
+    var pyStartPct   = (py.startPct  !== undefined) ? py.startPct  : 0.05;
+    var pyEndPct     = (py.endPct    !== undefined) ? py.endPct    : 0.85;
+    var pyStartZ = pyStartPct * levelLength;
+    var pyEndZ   = pyEndPct   * levelLength;
+    var pyIdx = 0;
+    for (var pz = pyStartZ; pz < pyEndZ; pz += pySpacing) {
+      // For alternate, base advances per PAIR (not per pylon) so the visual
+      // alternation L R L R is preserved regardless of spiralStep magnitude.
+      var pairIdx = (pyPattern === 'alternate') ? Math.floor(pyIdx / 2) : pyIdx;
+      var baseA = pyStart + pairIdx * pyStep;
+      function place(isLeftSide) {
+        var ang = isLeftSide ? (baseA + pyOffset) : (baseA - pyOffset);
+        spawns.push({ z: pz, type: isLeftSide ? 'pylon_left' : 'pylon_right', angle: ang, segIdx: -2 });
+      }
+      if      (pyPattern === 'left')  place(true);
+      else if (pyPattern === 'right') place(false);
+      else if (pyPattern === 'pair')  { place(true); place(false); }
+      else                            place(pyIdx % 2 === 0); // alternate
+      pyIdx++;
+    }
+  }
+
+  return spawns;
+}
+
+function renderLevelPreview() {
+  var canvas = document.getElementById('level-preview-canvas');
+  if (!canvas) return;
+  var ctx = canvas.getContext('2d');
+
+  // Retina-aware sizing
+  var dpr = window.devicePixelRatio || 1;
+  var cssW = canvas.clientWidth || 800;
+  var cssH = canvas.clientHeight || 200;
+  if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+    canvas.width = cssW * dpr;
+    canvas.height = cssH * dpr;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, cssW, cssH);
+
+  var c = config[activeSector] && config[activeSector][activeLevel];
+  if (!c) return;
+
+  // Update header
+  var title = document.getElementById('preview-title');
+  if (title) {
+    var segCount = (Array.isArray(c.spiralPattern) && c.spiralPattern.length > 0) ? c.spiralPattern.length : 1;
+    title.innerHTML = 'S' + activeSector + ' ' + SECTOR_NAMES[activeSector-1] + ' L' + activeLevel
+      + ' <span style="color:' + SECTOR_COLORS[activeSector-1] + ';">' + segCount + ' SEG' + (segCount > 1 ? 'S' : '') + '</span>'
+      + ' <span class="hint">click a segment to edit</span>';
+  }
+
+  // Build unified segment list (pattern mode OR a single implicit segment for uniform mode)
+  var segs = [];
+  if (Array.isArray(c.spiralPattern) && c.spiralPattern.length > 0) {
+    var prevU = 0;
+    c.spiralPattern.forEach(function(seg, i) {
+      segs.push({ idx: i, uFrom: prevU, uTo: seg.until, seg: seg, isReal: true });
+      prevU = seg.until;
+    });
+  } else {
+    segs.push({ idx: -1, uFrom: 0, uTo: 1, seg: { step: c.spiralStep || 1.1 }, isReal: false });
+  }
+
+  previewSegBounds = [];
+  var padL = 4, padR = 4, padT = 18, padB = 4;
+  var usableW = cssW - padL - padR;
+  var trackH = cssH - padT - padB;
+  var levelLength = c.levelLength || 15000;
+
+  // Draw each segment band
+  for (var si = 0; si < segs.length; si++) {
+    var sg = segs[si];
+    var segColor = sg.isReal ? SEG_BORDER[sg.idx % SEG_BORDER.length] : SECTOR_COLORS[activeSector-1];
+    var segBg    = sg.isReal ? SEG_BG[sg.idx % SEG_BG.length]       : '#151515';
+    var x0 = padL + sg.uFrom * usableW;
+    var x1 = padL + sg.uTo   * usableW;
+    previewSegBounds.push({ segIdx: sg.idx, x0: x0, x1: x1, color: segColor, isReal: sg.isReal });
+
+    // Background fill
+    ctx.fillStyle = hexToRgba(segBg, 0.55);
+    ctx.fillRect(x0, padT, x1 - x0, trackH);
+
+    // Thin inner border
+    ctx.strokeStyle = 'rgba(255,255,255,0.04)';
+    ctx.lineWidth = 1;
+    ctx.strokeRect(x0 + 0.5, padT + 0.5, (x1 - x0) - 1, trackH - 1);
+
+    // Segment label at top
+    var pctFrom = Math.round(sg.uFrom * 100);
+    var pctTo   = Math.round(sg.uTo   * 100);
+    var segLabel = sg.isReal ? ('SEG ' + (sg.idx + 1) + '  ' + pctFrom + '→' + pctTo + '%') : ('UNIFORM  ' + pctFrom + '→' + pctTo + '%');
+    ctx.fillStyle = segColor;
+    ctx.font = '8px "Press Start 2P", monospace';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    if ((x1 - x0) > 60) ctx.fillText(segLabel, (x0 + x1) / 2, padT / 2 + 2);
+
+  }
+
+  // Run the faithful simulator once for the whole active level
+  var spawns = simulateLevelSpawns(c);
+  var innerPadTop = padT + 2;
+  var spawnH = trackH - 4;
+  var spawnY = innerPadTop;
+
+  for (var spi = 0; spi < spawns.length; spi++) {
+    var sp = spawns[spi];
+    if (sp.z < 0 || sp.z > levelLength) continue;
+    var xPos = padL + (sp.z / levelLength) * usableW;
+
+    if (sp.type === 'barrier') {
+      drawBarrierArc(ctx, xPos, spawnY, spawnH, sp);
+      continue;
+    }
+
+    var angUnit = ((sp.angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2) / (Math.PI * 2);
+    var yPos = spawnY + angUnit * spawnH;
+
+    switch (sp.type) {
+      case 'ring':        drawRing(ctx, xPos, yPos); break;
+      case 'core':        drawCore(ctx, xPos, yPos); break;
+      case 'mine':        drawMine(ctx, xPos, yPos); break;
+      case 'block':       drawBlock(ctx, xPos, yPos); break;
+      case 'knot':        drawKnot(ctx, xPos, yPos); break;
+      case 'ramp':        drawRamp(ctx, xPos, yPos); break;
+      case 'boost':       drawBoost(ctx, xPos, yPos); break;
+      case 'star':        drawStar(ctx, xPos, yPos); break;
+      case 'content':     drawContent(ctx, xPos, yPos); break;
+      case 'pylon_left':  drawPylon(ctx, xPos, yPos, true); break;
+      case 'pylon_right': drawPylon(ctx, xPos, yPos, false); break;
+    }
+  }
+
+  // Segment divider lines on top
+  if (segs.length > 1) {
+    ctx.strokeStyle = 'rgba(255,255,255,0.18)';
+    ctx.lineWidth = 1;
+    for (var di = 0; di < segs.length - 1; di++) {
+      var dx = Math.round(padL + segs[di].uTo * usableW) + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(dx, padT);
+      ctx.lineTo(dx, padT + trackH);
+      ctx.stroke();
+    }
+  }
+}
+
+// Shape primitives — real shapes at readable size
+function drawRing(ctx, x, y)   { ctx.strokeStyle = '#00ffcc'; ctx.lineWidth = 1.8; ctx.beginPath(); ctx.arc(x, y, 5, 0, Math.PI * 2); ctx.stroke(); }
+function drawCore(ctx, x, y)   { ctx.fillStyle = '#ff69b4'; ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 5, y); ctx.lineTo(x, y + 5); ctx.lineTo(x - 5, y); ctx.closePath(); ctx.fill(); }
+function drawMine(ctx, x, y)   { ctx.fillStyle = '#ff4444'; ctx.beginPath(); ctx.moveTo(x, y - 5); ctx.lineTo(x + 4.5, y + 4); ctx.lineTo(x - 4.5, y + 4); ctx.closePath(); ctx.fill(); }
+function drawBlock(ctx, x, y)  { ctx.fillStyle = '#ff6666'; ctx.fillRect(x - 4.5, y - 3, 9, 6); }
+function drawKnot(ctx, x, y)   { ctx.strokeStyle = '#ff8866'; ctx.lineWidth = 1.6; ctx.beginPath(); ctx.arc(x - 2.2, y, 2.6, 0, Math.PI * 2); ctx.arc(x + 2.2, y, 2.6, 0, Math.PI * 2); ctx.stroke(); }
+function drawRamp(ctx, x, y)   { ctx.fillStyle = '#ffe000'; ctx.beginPath(); ctx.moveTo(x - 5, y + 3); ctx.lineTo(x + 5, y - 3); ctx.lineTo(x + 5, y + 3); ctx.closePath(); ctx.fill(); }
+function drawBoost(ctx, x, y)  { ctx.fillStyle = '#ff8c00'; ctx.fillRect(x - 7, y - 2.5, 14, 5); }
+function drawStar(ctx, x, y)   { ctx.fillStyle = '#ffd700'; ctx.beginPath(); for (var i = 0; i < 8; i++) { var a = i * Math.PI / 4; var r = (i % 2 === 0) ? 6 : 2.5; ctx.lineTo(x + Math.cos(a) * r, y + Math.sin(a) * r); } ctx.closePath(); ctx.fill(); }
+function drawContent(ctx, x, y){ ctx.strokeStyle = '#b46cff'; ctx.lineWidth = 2; ctx.strokeRect(x - 5, y - 5, 10, 10); }
+function drawPylon(ctx, x, y, isLeft) {
+  // Orange triangle (cone) base
+  ctx.fillStyle = '#ff5500';
+  ctx.beginPath();
+  ctx.moveTo(x, y - 6);
+  ctx.lineTo(x + 4, y + 5);
+  ctx.lineTo(x - 4, y + 5);
+  ctx.closePath();
+  ctx.fill();
+  // Accent ring
+  var accent = isLeft ? '#00ffcc' : '#ff44ff';
+  ctx.strokeStyle = accent;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(x - 3, y + 1);
+  ctx.lineTo(x + 3, y + 1);
+  ctx.stroke();
+  // Direction arrow above the cone
+  ctx.fillStyle = accent;
+  ctx.beginPath();
+  if (isLeft) {
+    // Arrow pointing LEFT
+    ctx.moveTo(x - 6, y - 8);
+    ctx.lineTo(x - 1, y - 11);
+    ctx.lineTo(x - 1, y - 5);
+  } else {
+    // Arrow pointing RIGHT
+    ctx.moveTo(x + 6, y - 8);
+    ctx.lineTo(x + 1, y - 11);
+    ctx.lineTo(x + 1, y - 5);
+  }
+  ctx.closePath();
+  ctx.fill();
+}
+
+// Barrier: project gapAngle + gapSize onto the unrolled Y axis.
+// Full-ring (gapSize=0) or withRamp=true → solid vertical. Gap barrier → segments above/below gap, with wrap.
+function drawBarrierArc(ctx, x, yTop, h, sp) {
+  var col = '#ff4444';
+  ctx.strokeStyle = col;
+  ctx.lineWidth = 2.2;
+  if (sp.withRamp || !sp.gapSize || sp.gapSize <= 0) {
+    ctx.beginPath(); ctx.moveTo(x, yTop); ctx.lineTo(x, yTop + h); ctx.stroke();
+    return;
+  }
+  var TWO_PI = Math.PI * 2;
+  var gapCenterU = (((sp.gapAngle || 0) % TWO_PI) + TWO_PI) % TWO_PI / TWO_PI;
+  var gapHalfU = (sp.gapSize / 2) / TWO_PI;
+  var gapStartU = gapCenterU - gapHalfU;
+  var gapEndU = gapCenterU + gapHalfU;
+  var segments = [];
+  if (gapStartU < 0) {
+    segments.push([gapEndU, gapStartU + 1]);
+  } else if (gapEndU > 1) {
+    segments.push([gapEndU - 1, gapStartU]);
+  } else {
+    if (gapStartU > 0) segments.push([0, gapStartU]);
+    if (gapEndU < 1) segments.push([gapEndU, 1]);
+  }
+  for (var i = 0; i < segments.length; i++) {
+    var u0 = segments[i][0], u1 = segments[i][1];
+    ctx.beginPath();
+    ctx.moveTo(x, yTop + u0 * h);
+    ctx.lineTo(x, yTop + u1 * h);
+    ctx.stroke();
+  }
+  // tiny gap-edge ticks (subtle marker)
+  ctx.strokeStyle = 'rgba(255,68,68,0.35)';
+  ctx.lineWidth = 1;
+  var gY0 = yTop + Math.max(0, gapStartU) * h;
+  var gY1 = yTop + Math.min(1, gapEndU) * h;
+  ctx.beginPath();
+  ctx.moveTo(x - 3, gY0); ctx.lineTo(x + 3, gY0);
+  ctx.moveTo(x - 3, gY1); ctx.lineTo(x + 3, gY1);
+  ctx.stroke();
+}
+
+function hexToRgba(hex, a) {
+  var h = hex.replace('#', '');
+  if (h.length === 3) h = h[0]+h[0]+h[1]+h[1]+h[2]+h[2];
+  var r = parseInt(h.substr(0,2),16), g = parseInt(h.substr(2,2),16), b = parseInt(h.substr(4,2),16);
+  return 'rgba(' + r + ',' + g + ',' + b + ',' + a + ')';
+}
+
+// Click on a segment → scroll to its seg-card in the spiral editor and flash-highlight.
+// Click in uniform mode → scroll to the spiral editor section so the user can switch modes.
+(function wirePreviewClick() {
+  function onClick(e) {
+    var canvas = document.getElementById('level-preview-canvas');
+    if (!canvas) return;
+    var rect = canvas.getBoundingClientRect();
+    var mx = e.clientX - rect.left;
+    for (var i = 0; i < previewSegBounds.length; i++) {
+      var b = previewSegBounds[i];
+      if (mx >= b.x0 && mx <= b.x1) {
+        var spiralEditor = document.getElementById('spiral-editor');
+        if (!spiralEditor) return;
+        if (b.isReal) {
+          var cards = spiralEditor.querySelectorAll('.seg-card');
+          var target = cards[b.segIdx];
+          if (target) {
+            target.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            target.classList.add('diff-highlight');
+            setTimeout(function() { target.classList.remove('diff-highlight'); }, 1200);
+          }
+        } else {
+          spiralEditor.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
+        break;
+      }
+    }
+  }
+  var c0 = document.getElementById('level-preview-canvas');
+  if (c0) c0.addEventListener('click', onClick);
+  else document.addEventListener('DOMContentLoaded', function() {
+    var c = document.getElementById('level-preview-canvas');
+    if (c) c.addEventListener('click', onClick);
+  });
+})();
+
+window.addEventListener('resize', function() { renderLevelPreview(); });
 
 // ═══════════════════════════════════════════════════════════════
 // EXPORT
@@ -1203,9 +2087,51 @@ function exportSector(s) {
   return out;
 }
 
+function _downloadJSON(filename, data) {
+  var blob = new Blob([data], { type: 'application/json' });
+  var url = URL.createObjectURL(blob);
+  var a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(function(){ URL.revokeObjectURL(url); }, 100);
+}
+
+function _dateStamp() {
+  var d = new Date();
+  var pad = function(n){ return n < 10 ? '0' + n : '' + n; };
+  return d.getFullYear() + '-' + pad(d.getMonth()+1) + '-' + pad(d.getDate());
+}
+
+function exportLevel(s, l) {
+  const c = config[s][l];
+  const d = DEFAULTS[s][l];
+  const diff = {};
+  let hasDiff = false;
+  for (const key in c) {
+    if (JSON.stringify(c[key]) !== JSON.stringify(d[key])) {
+      diff[key] = c[key];
+      hasDiff = true;
+    }
+  }
+  return {
+    sector: s,
+    sectorName: SECTOR_NAMES[s-1],
+    level: l,
+    isSpeedRun: c.isSpeedRun,
+    exportDate: new Date().toISOString(),
+    all: c,
+    changed: hasDiff ? diff : null
+  };
+}
+
 function exportCurrent() {
-  const out = exportSector(activeSector);
-  document.getElementById('export-output').value = JSON.stringify(out, null, 2);
+  const out = exportLevel(activeSector, activeLevel);
+  const json = JSON.stringify(out, null, 2);
+  document.getElementById('export-output').value = json;
+  _downloadJSON('tunnel-spawn-S' + activeSector + 'L' + activeLevel + '-' + SECTOR_NAMES[activeSector-1] + '-' + _dateStamp() + '.json', json);
 }
 
 function exportAll() {
@@ -1227,7 +2153,9 @@ function exportAll() {
     }
   }
   out.changesSummary = changes.length > 0 ? changes : ['No changes from defaults'];
-  document.getElementById('export-output').value = JSON.stringify(out, null, 2);
+  const json = JSON.stringify(out, null, 2);
+  document.getElementById('export-output').value = json;
+  _downloadJSON('tunnel-spawn-ALL-' + _dateStamp() + '.json', json);
 }
 
 function copyExport() {
