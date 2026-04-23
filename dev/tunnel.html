@@ -6021,7 +6021,35 @@ window.onload = function() {
             try { camera.add(m); } catch(e) { scene.add(m); }
             meshes.push(m);
         }
-        _collectBursts.push({ meshes: meshes });
+        var rays = [];
+        var rayCount = 8;
+        var rayDuration = 500;
+        for (var r = 0; r < rayCount; r++) {
+            var rgeo = new THREE.PlaneGeometry(0.15, 4);
+            rgeo.translate(0, 2, 0);
+            var rmat = new THREE.MeshBasicMaterial({
+                color: 0xffdd44,
+                transparent: true,
+                opacity: 0.0,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                depthTest: false,
+                blending: THREE.AdditiveBlending
+            });
+            var rm = new THREE.Mesh(rgeo, rmat);
+            rm.position.set(0, 0, -8);
+            rm.rotation.z = r * (Math.PI / 4);
+            rm.renderOrder = 999;
+            rm.userData = {
+                _birth: now,
+                _duration: rayDuration,
+                _baseAngle: r * (Math.PI / 4),
+                _done: false
+            };
+            try { camera.add(rm); } catch(e) { scene.add(rm); }
+            rays.push(rm);
+        }
+        _collectBursts.push({ meshes: meshes, rays: rays });
         try { AudioEngine.playSFX('content_burst'); } catch(e) {}
     }
     function updateCollectBursts() {
@@ -6053,6 +6081,32 @@ window.onload = function() {
                     m.geometry.dispose();
                     m.material.dispose();
                     m.userData._done = true;
+                }
+            }
+            if (burst.rays) {
+                for (var k = 0; k < burst.rays.length; k++) {
+                    var rm = burst.rays[k];
+                    if (rm.userData._done) continue;
+                    var rage = now - rm.userData._birth;
+                    if (rage < 0) { allDone = false; continue; }
+                    if (rage < rm.userData._duration) {
+                        var rt = rage / rm.userData._duration;
+                        var rEase = 1 - Math.pow(1 - rt, 3);
+                        rm.scale.y = 0.3 + rEase * 1.0;
+                        rm.rotation.z = rm.userData._baseAngle + rt * 0.3;
+                        var rMax = 0.6;
+                        var rOp;
+                        if (rt < 0.15)      rOp = (rt / 0.15) * rMax;
+                        else if (rt < 0.40) rOp = rMax;
+                        else                rOp = rMax * (1 - (rt - 0.40) / 0.60);
+                        rm.material.opacity = Math.max(0, rOp);
+                        allDone = false;
+                    } else {
+                        if (rm.parent) rm.parent.remove(rm);
+                        rm.geometry.dispose();
+                        rm.material.dispose();
+                        rm.userData._done = true;
+                    }
                 }
             }
             if (allDone) _collectBursts.splice(i, 1);
