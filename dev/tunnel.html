@@ -70,7 +70,7 @@
           position: fixed; top: 45%; left: 50%;
           z-index: 700; pointer-events: none;
           font-family: 'Press Start 2P', monospace;
-          font-size: clamp(40px, 10vw, 86px);
+          font-size: clamp(38px, 9.5vw, 80px);
           color: #ff00ff;
           text-shadow: 0 0 30px #ff00ff, 0 0 60px #ff44ff, 0 0 120px #ff00ff;
           letter-spacing: 6px;
@@ -5911,24 +5911,30 @@ window.onload = function() {
     var _collectBursts = [];
     var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta — content-only
     function spawnCollectBurst(pos, colorOverride) {
+        // Always emit from the ship nose, regardless of caller's `pos`.
+        var origin = new THREE.Vector3();
+        try {
+            shipContainer.getWorldPosition(origin);
+            origin.z -= 8; // slightly ahead of ship
+        } catch(e) { origin.copy(pos || new THREE.Vector3()); }
         var now = performance.now();
         var ringCount = 3;
-        var stagger = 140; // ms between rings
-        var duration = 1100; // ms total life per ring
+        var stagger = 140;
+        var duration = 1100;
         var meshes = [];
         for (var i = 0; i < ringCount; i++) {
-            var geo = new THREE.RingGeometry(0.7, 1.15, 40);
+            var geo = new THREE.RingGeometry(0.7, 1.6, 40); // thickness doubled
             var mat = new THREE.MeshBasicMaterial({
                 color: colorOverride || _COLLECT_BURST_COLOR,
                 transparent: true,
-                opacity: 1.0,
+                opacity: 0.0,
                 side: THREE.DoubleSide,
                 depthWrite: false,
                 depthTest: false, // render through tunnel walls
                 blending: THREE.AdditiveBlending
             });
             var m = new THREE.Mesh(geo, mat);
-            m.position.copy(pos);
+            m.position.copy(origin);
             m.lookAt(camera.position);
             m.renderOrder = 999; // draw after the tunnel
             m.userData = {
@@ -5957,12 +5963,14 @@ window.onload = function() {
                     // Fast expansion: reach full size in the first 45% of life
                     var expT = Math.min(1, t / 0.45);
                     var easeOut = 1 - Math.pow(1 - expT, 2.5);
-                    var scale = 1.2 + easeOut * 32.0;
+                    var scale = 1.2 + easeOut * 16.0; // halved final scale
                     m.scale.setScalar(scale);
-                    // Hold opacity full, then fade in the last 40%
-                    var fadeStart = 0.6;
-                    var opacity = (t < fadeStart) ? 1.0 : (1.0 - (t - fadeStart) / (1 - fadeStart));
-                    m.material.opacity = opacity;
+                    // Start transparent, fade in quickly, hold, then fade out
+                    var opacity;
+                    if (t < 0.12)       opacity = t / 0.12;           // 0 → 1 over first 12%
+                    else if (t < 0.6)   opacity = 1.0;                // hold
+                    else                opacity = 1 - (t - 0.6) / 0.4; // 1 → 0 over last 40%
+                    m.material.opacity = Math.max(0, opacity);
                     m.lookAt(camera.position);
                     allDone = false;
                 } else {
