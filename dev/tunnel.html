@@ -1296,7 +1296,7 @@ function playSong(moodIdx) {
       if (!_musicMuted && !_musicPaused) scheduleBar(nextT); else songTimeout = null;
     }, Math.max(8, msUntil));
   }
-  scheduleBar(audioCtx.currentTime + 0.05);
+  scheduleBar(audioCtx.currentTime + 0.02);
 }
 function pauseMusic() {
   _musicPaused = true;
@@ -6330,10 +6330,31 @@ window.onload = function() {
     // At end, call onDone() without resetting; the splash hides the frame
     // and the 'playing' block overwrites positions on first frame.
     function runCinematic(onDone) {
-        // v4 hardening: wrap everything in try/catch so a silent throw cannot
-        // leave gameState stuck on 'cinematic' (which would freeze the title
-        // on mobile since tickCinematic would throw every frame).
         try {
+            try {
+                if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+            } catch (e) { console.error('cine audio resume err', e); }
+            try {
+                if (typeof musicGainNode !== 'undefined' && musicGainNode) {
+                    _cine.prevMusicGain = musicGainNode.gain.value;
+                    _cine.prevMood = (typeof _songIndex !== 'undefined') ? _songIndex : 0;
+                    if (!_musicMuted) {
+                        try {
+                            var _gNow = audioCtx ? audioCtx.currentTime : 0;
+                            musicGainNode.gain.cancelScheduledValues(_gNow);
+                            musicGainNode.gain.setValueAtTime(1.9, _gNow);
+                        } catch (eGS) { musicGainNode.gain.value = 1.9; }
+                    } else {
+                        musicGainNode.gain.value = 0;
+                    }
+                    if (!_musicMuted && typeof playSong === 'function') {
+                        try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
+                    }
+                }
+            } catch (e) { console.error('cine music boost err', e); }
+            try { AudioEngine.startEngine(); } catch (eE) { console.error('cine engine start err', eE); }
             _cine.active = true;
             _cine.t = 0;
             _cine.phase = 1;
@@ -6352,7 +6373,6 @@ window.onload = function() {
             try { shipContainer.rotation.set(0, 0, 0); } catch (e) {}
             if (!bankGroup._bank) bankGroup._bank = 0;
             shipContainer.visible = true;
-            // Full-boost driver reset; tickCinematic ramps it phase A.
             throttleSmooth = 0;
             shipZOffset = -18;
             _cine.camStart.x = camera.position.x;
@@ -6361,25 +6381,7 @@ window.onload = function() {
             _cine.sideTarget.x = tubeRadius * 1.8;
             _cine.sideTarget.y = 0;
             _cine.sideTarget.z = shipContainer.position.z + 55;
-            // Mobile: AudioContext is suspended until a user gesture resumes
-            // it. The title tap that triggered initializeFlight IS a gesture,
-            // so a synchronous resume() here should succeed. Do it BEFORE the
-            // stinger so playSFX doesn't fire into a suspended context.
-            try {
-                if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-            } catch (e) { console.error('cine audio resume err', e); }
-            try {
-                if (typeof musicGainNode !== 'undefined' && musicGainNode) {
-                    _cine.prevMusicGain = musicGainNode.gain.value;
-                    _cine.prevMood = (typeof _songIndex !== 'undefined') ? _songIndex : 0;
-                    musicGainNode.gain.value = _musicMuted ? 0 : 1.9;
-                    if (!_musicMuted && typeof playSong === 'function') {
-                        try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
-                    }
-                }
-            } catch (e) { console.error('cine music boost err', e); }
+            try { shipContainer.updateMatrixWorld(true); } catch (eMW) {}
             clock.getDelta();
         } catch (err) {
             // Hard-fail fallback: never leave gameState stuck on 'cinematic'.
@@ -6414,9 +6416,11 @@ window.onload = function() {
             camera.position.y = _cine.camStart.y;
             camera.rotation.z = Math.PI / 2;
             camera.position.z -= speed * delta;
+            shipZOffset += ((-18 - throttleSmooth * 4) - shipZOffset) * 0.08;
             shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z + shipZOffset;
+            shipContainer.updateMatrixWorld(true);
             _applyShipVisuals(delta);
             return;
         }
@@ -6428,9 +6432,11 @@ window.onload = function() {
             camera.position.y = _cine.camStart.y;
             camera.rotation.z = Math.PI / 2;
             camera.position.z -= speed * delta;
+            shipZOffset += ((-18 - throttleSmooth * 4) - shipZOffset) * 0.08;
             shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
             shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
             shipContainer.position.z = camera.position.z + shipZOffset;
+            shipContainer.updateMatrixWorld(true);
             _applyShipVisuals(delta);
             return;
         }
@@ -6464,6 +6470,7 @@ window.onload = function() {
             camera.position.z = _cine.bStart.z + (endZ - _cine.bStart.z) * ease;
             var qStart = new THREE.Quaternion(_cine.bStart.qx, _cine.bStart.qy, _cine.bStart.qz, _cine.bStart.qw);
             camera.quaternion.slerpQuaternions(qStart, _cine.bEndQ, ease);
+            shipContainer.updateMatrixWorld(true);
             _applyShipVisuals(delta);
             return;
         }
@@ -6479,6 +6486,7 @@ window.onload = function() {
             if (Math.abs(shipContainer.position.x) < 400) {
                 camera.lookAt(shipContainer.position);
             }
+            shipContainer.updateMatrixWorld(true);
             _applyShipVisuals(delta);
             return;
         }
@@ -6576,8 +6584,6 @@ window.onload = function() {
         var wg = Math.round(255 - hyperFrac * 117);
         var wb = Math.round(136 - hyperFrac * 68);
         wireMat.color.setRGB(wr/255, wg/255, wb/255);
-        var baseZOffset = -18;
-        shipZOffset += ((baseZOffset - throttleSmooth * 4) - shipZOffset) * 0.08;
         if (!bankGroup._bank) bankGroup._bank = 0;
         bankGroup._bank += (0 - bankGroup._bank) * Math.min(1, delta * 8);
         bankGroup.rotation.order = 'ZXY';
