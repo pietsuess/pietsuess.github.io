@@ -5911,38 +5911,33 @@ window.onload = function() {
     var _collectBursts = [];
     var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta — content-only
     function spawnCollectBurst(pos, colorOverride) {
-        // Always emit from the ship nose, regardless of caller's `pos`.
-        var origin = new THREE.Vector3();
-        try {
-            shipContainer.getWorldPosition(origin);
-            origin.z -= 8; // slightly ahead of ship
-        } catch(e) { origin.copy(pos || new THREE.Vector3()); }
         var now = performance.now();
         var ringCount = 3;
-        var stagger = 140;
-        var duration = 1100;
+        var stagger = 90;  // ms — faster between rings
+        var duration = 650; // ms — faster overall
         var meshes = [];
         for (var i = 0; i < ringCount; i++) {
-            var geo = new THREE.RingGeometry(0.7, 1.6, 40); // thickness doubled
+            // Thicker rings: inner 0.5, outer 2.5 = thickness 2.0 (was 0.9)
+            var geo = new THREE.RingGeometry(0.5, 2.5, 40);
             var mat = new THREE.MeshBasicMaterial({
                 color: colorOverride || _COLLECT_BURST_COLOR,
                 transparent: true,
                 opacity: 0.0,
                 side: THREE.DoubleSide,
                 depthWrite: false,
-                depthTest: false, // render through tunnel walls
+                depthTest: false,
                 blending: THREE.AdditiveBlending
             });
             var m = new THREE.Mesh(geo, mat);
-            m.position.copy(origin);
-            m.lookAt(camera.position);
-            m.renderOrder = 999; // draw after the tunnel
+            // Parent to shipContainer so the rings travel with the ship (screen-space feel)
+            m.position.set(0, 0, -8); // local, ahead of ship nose
+            m.renderOrder = 999;
             m.userData = {
                 _birth: now + i * stagger,
                 _duration: duration,
                 _done: false
             };
-            scene.add(m);
+            try { shipContainer.add(m); } catch(e) { scene.add(m); }
             meshes.push(m);
         }
         _collectBursts.push({ meshes: meshes });
@@ -5960,18 +5955,21 @@ window.onload = function() {
                 if (age < 0) { allDone = false; continue; }
                 if (age < m.userData._duration) {
                     var t = age / m.userData._duration;
-                    // Fast expansion: reach full size in the first 45% of life
-                    var expT = Math.min(1, t / 0.45);
+                    // Faster expansion: full size by 30% of life
+                    var expT = Math.min(1, t / 0.3);
                     var easeOut = 1 - Math.pow(1 - expT, 2.5);
-                    var scale = 1.2 + easeOut * 16.0; // halved final scale
+                    var scale = 1.2 + easeOut * 12.0;
                     m.scale.setScalar(scale);
-                    // Start transparent, fade in quickly, hold, then fade out
+                    // Half-transparent max: 0 → 0.5 fade-in, hold, 0.5 → 0 fade-out (faster)
+                    var MAX_OP = 0.5;
                     var opacity;
-                    if (t < 0.12)       opacity = t / 0.12;           // 0 → 1 over first 12%
-                    else if (t < 0.6)   opacity = 1.0;                // hold
-                    else                opacity = 1 - (t - 0.6) / 0.4; // 1 → 0 over last 40%
+                    if (t < 0.10)       opacity = (t / 0.10) * MAX_OP;
+                    else if (t < 0.45)  opacity = MAX_OP;
+                    else                opacity = MAX_OP * (1 - (t - 0.45) / 0.55);
                     m.material.opacity = Math.max(0, opacity);
-                    m.lookAt(camera.position);
+                    // Billboard toward camera (in local space of shipContainer,
+                    // the ship's orientation is close enough to camera facing)
+                    // No lookAt needed since ship tracks camera.
                     allDone = false;
                 } else {
                     scene.remove(m);
