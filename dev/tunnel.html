@@ -5861,6 +5861,69 @@ window.onload = function() {
     // --- Main Render Loop ---
     const clock = new THREE.Clock();
 
+    // ═══════════════════════════════════════════════════════════════
+    // COLLECT BURST — 3 expanding pink rings from the collected object
+    // ═══════════════════════════════════════════════════════════════
+    var _collectBursts = [];
+    var _COLLECT_BURST_COLOR = 0xff00ff; // bright pink/magenta
+    function spawnCollectBurst(pos, colorOverride) {
+        var now = performance.now();
+        var ringCount = 3;
+        var stagger = 120; // ms between rings
+        var duration = 650; // ms each
+        var meshes = [];
+        for (var i = 0; i < ringCount; i++) {
+            var geo = new THREE.RingGeometry(0.8, 1.2, 32);
+            var mat = new THREE.MeshBasicMaterial({
+                color: colorOverride || _COLLECT_BURST_COLOR,
+                transparent: true,
+                opacity: 0.95,
+                side: THREE.DoubleSide,
+                depthWrite: false,
+                blending: THREE.AdditiveBlending
+            });
+            var m = new THREE.Mesh(geo, mat);
+            m.position.copy(pos);
+            m.lookAt(camera.position);
+            m.userData = {
+                _birth: now + i * stagger,
+                _duration: duration,
+                _done: false
+            };
+            scene.add(m);
+            meshes.push(m);
+        }
+        _collectBursts.push({ meshes: meshes });
+    }
+    function updateCollectBursts() {
+        var now = performance.now();
+        for (var i = _collectBursts.length - 1; i >= 0; i--) {
+            var burst = _collectBursts[i];
+            var allDone = true;
+            for (var j = 0; j < burst.meshes.length; j++) {
+                var m = burst.meshes[j];
+                if (m.userData._done) continue;
+                var age = now - m.userData._birth;
+                if (age < 0) { allDone = false; continue; }
+                if (age < m.userData._duration) {
+                    var t = age / m.userData._duration;
+                    var easeOut = 1 - Math.pow(1 - t, 2);
+                    var scale = 1.2 + easeOut * 18.0;
+                    m.scale.setScalar(scale);
+                    m.material.opacity = 0.95 * (1 - t);
+                    m.lookAt(camera.position);
+                    allDone = false;
+                } else {
+                    scene.remove(m);
+                    m.geometry.dispose();
+                    m.material.dispose();
+                    m.userData._done = true;
+                }
+            }
+            if (allDone) _collectBursts.splice(i, 1);
+        }
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         
@@ -6334,6 +6397,7 @@ window.onload = function() {
                                 }
                             }
                             else if (item.userData.type === 'star') {
+                                spawnCollectBurst(item.position, 0xffff00);
                                 sectorCollectiblesCollected++;
                                 shieldsUp = true;
                                 shieldsUpTimer = getShieldsDuration(currentSector);
@@ -6343,6 +6407,7 @@ window.onload = function() {
                                 score += 165;
                             }
                             else if (item.userData.type === 'content') {
+                                spawnCollectBurst(item.position);
                                 var cZone = item.userData.contentZone;
                                 var cTitle = item.userData.contentTitle;
                                 if (!collectedContent[cZone].has(cTitle)) {
@@ -6371,6 +6436,7 @@ window.onload = function() {
                                 }
                             }
                             else if (item.userData.type === 'health') {
+                                spawnCollectBurst(item.position, 0x00ccff);
                                 sectorCollectiblesCollected++;
                                 health = Math.min(100, health + 20);
                                 score += 85;
@@ -6380,6 +6446,7 @@ window.onload = function() {
                                 if (TUT.active) tutHit('health');
                             }
                             else if (item.userData.type === 'score') {
+                                spawnCollectBurst(item.position);
                                 sectorCollectiblesCollected++;
                                 combo++;
                                 comboTimer = COMBO_WINDOW;
@@ -6505,6 +6572,7 @@ window.onload = function() {
         }
 
         updateExplosion(delta);
+        updateCollectBursts();
 
         // Only render 3D scene when game is active (not on title screen or sector intro splash)
         if (gameState !== 'title') {
