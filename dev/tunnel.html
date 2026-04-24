@@ -1360,8 +1360,11 @@ var AudioEngine = {
     initAudioGraph();
     if (_musicMuted) musicGainNode.gain.value = 0;
     if (_sfxMuted) sfxGainNode.gain.value = 0;
-    if (!_musicMuted) playSong(_songIndex);
-    if (audioCtx.state === 'suspended') audioCtx.resume().then(function() { if (!songTimeout && !_musicMuted) playSong(_songIndex); });
+    // v8: do NOT pre-play song in init. Callers (runCinematic on cold tap,
+    // _runIntroChain on warm restart) own song selection. Avoids the
+    // double-schedule (NEON DESCENT then stop then NEON RUSH) that was
+    // delaying the first audible note after cold tap on mobile.
+    if (audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) {} }
   },
   playSFX: function(type) {
     if (!audioCtx || _sfxMuted) return;
@@ -2715,16 +2718,27 @@ window.onload = function() {
     bankGroup.add(thruster);
 
     // ── Thruster flame: teardrop pointing back toward camera, 2x size ──
+    // v8: translate geometry +half-height along Z so base sits at the
+    // mesh origin and apex at +height. Scale.z then extends ONLY in
+    // +Z (behind the ship); the base stays anchored at mesh.position
+    // no matter how big fz gets. This fixes "flame ahead of ship" —
+    // previously, origin-centred geometry moved the base in -Z as fz
+    // grew, so a boosted flame poked through the nose.
     const flameGeoInner = new THREE.ConeGeometry(1.4, 12.0, 10);
-    flameGeoInner.rotateX(Math.PI / 2); // point toward camera (+Z)
+    flameGeoInner.rotateX(Math.PI / 2); // apex at +Z after rotate
+    flameGeoInner.translate(0, 0, 6.0); // base at Z=0, apex at Z=+12
     const flameGeoOuter = new THREE.ConeGeometry(2.0, 14.0, 10);
     flameGeoOuter.rotateX(Math.PI / 2);
+    flameGeoOuter.translate(0, 0, 7.0); // base at Z=0, apex at Z=+14
     const matFlameInner = new THREE.MeshBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.9 });
     const matFlameOuter = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.5 });
     const flameInner = new THREE.Mesh(flameGeoInner, matFlameInner);
     const flameOuter = new THREE.Mesh(flameGeoOuter, matFlameOuter);
-    flameInner.position.set(0, -0.1, 7.0);
-    flameOuter.position.set(0, -0.1, 7.3);
+    // Position is the BASE anchor now (was mesh centre previously).
+    // Original base sat at bank-local Z=1.0 (inner: 7.0-6.0) and Z=0.3
+    // (outer: 7.3-7.0). Keep those values so fz=1 matches prior visual.
+    flameInner.position.set(0, -0.1, 1.0);
+    flameOuter.position.set(0, -0.1, 0.3);
     bankGroup.add(flameOuter);
     bankGroup.add(flameInner);
     const engine = flameInner;
@@ -6331,11 +6345,13 @@ window.onload = function() {
     // and the 'playing' block overwrites positions on first frame.
     function runCinematic(onDone) {
         try {
-            try {
-                if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') {
-                    audioCtx.resume();
-                }
-            } catch (e) { console.error('cine audio resume err', e); }
+            // v8: capture mood + prevGain synchronously, but defer the
+            // actual playSong + startEngine until audioCtx.resume()
+            // resolves. On cold first tap on mobile the context is
+            // suspended; scheduling oscillators before it is running
+            // was delaying the first audible note. Gain is held at 1.0
+            // (not 1.9) so the engine hum is audible over the music
+            // during the cinematic.
             try {
                 if (typeof musicGainNode !== 'undefined' && musicGainNode) {
                     _cine.prevMusicGain = musicGainNode.gain.value;
@@ -6344,17 +6360,31 @@ window.onload = function() {
                         try {
                             var _gNow = audioCtx ? audioCtx.currentTime : 0;
                             musicGainNode.gain.cancelScheduledValues(_gNow);
-                            musicGainNode.gain.setValueAtTime(1.9, _gNow);
-                        } catch (eGS) { musicGainNode.gain.value = 1.9; }
+                            musicGainNode.gain.setValueAtTime(1.0, _gNow);
+                        } catch (eGS) { musicGainNode.gain.value = 1.0; }
                     } else {
                         musicGainNode.gain.value = 0;
                     }
-                    if (!_musicMuted && typeof playSong === 'function') {
-                        try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
+                }
+            } catch (e) { console.error('cine music gain err', e); }
+            function _cineStartAudio() {
+                if (!_musicMuted && typeof playSong === 'function') {
+                    try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
+                }
+                try { AudioEngine.startEngine(); } catch (eE) { console.error('cine engine start err', eE); }
+            }
+            try {
+                if (typeof audioCtx !== 'undefined' && audioCtx) {
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume().then(_cineStartAudio).catch(function(e) {
+                            console.error('cine audioCtx.resume err', e);
+                            _cineStartAudio();
+                        });
+                    } else {
+                        _cineStartAudio();
                     }
                 }
-            } catch (e) { console.error('cine music boost err', e); }
-            try { AudioEngine.startEngine(); } catch (eE) { console.error('cine engine start err', eE); }
+            } catch (e) { console.error('cine audio chain err', e); }
             _cine.active = true;
             _cine.t = 0;
             _cine.phase = 1;
