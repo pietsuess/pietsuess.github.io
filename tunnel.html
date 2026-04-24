@@ -7115,7 +7115,20 @@ window.onload = function() {
 
             // Speed hint — S1L1 only, loops arrow from center to top until player boosts
             if (throttleSmooth > 0.5) _everBoosted = true;
-            if (!_speedHintShown && !_everBoosted && currentSector === 1 && currentLevel === 1 && progressPct >= 5) {
+            var _hintSegOK = false;
+            var _segIdx = -1;
+            if (currentSector === 1 && currentLevel === 1) {
+                var _pat = (typeof SPAWN_TUNING !== 'undefined' && SPAWN_TUNING.S1L1 && SPAWN_TUNING.S1L1.spiralPattern) || null;
+                if (_pat && _pat.length > 2) {
+                    var _prog = progressPct / 100;
+                    _segIdx = _pat.length;
+                    for (var _si = 0; _si < _pat.length; _si++) {
+                        if (_prog <= _pat[_si].until) { _segIdx = _si; break; }
+                    }
+                    _hintSegOK = (_segIdx === 2);
+                }
+            }
+            if (!_speedHintShown && !_everBoosted && _hintSegOK) {
                 _speedHintShown = true;
                 var _sh = document.getElementById('speed-hint');
                 _sh.style.display = 'block';
@@ -7137,6 +7150,15 @@ window.onload = function() {
                     if (_everBoosted) { clearInterval(_sh._interval); return; }
                     _shCycle();
                 }, 4200);
+            }
+            if (_speedHintShown && !_everBoosted && _segIdx > 2) {
+                var _shPast = document.getElementById('speed-hint');
+                if (_shPast._interval) { clearInterval(_shPast._interval); _shPast._interval = null; }
+                if (_shPast.style.display !== 'none') {
+                    _shPast.style.transition = 'opacity 0.4s';
+                    _shPast.style.opacity = '0';
+                    setTimeout(function(){ _shPast.style.display = 'none'; }, 500);
+                }
             }
             // Dismiss speed hint immediately when player boosts
             if (_everBoosted) {
