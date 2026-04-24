@@ -769,10 +769,8 @@
         <button class="menu-btn" id="go-inventory" style="width:auto;padding:10px 24px;color:#ffe000;border-color:#ffe000;">[ VIEW INVENTORY ]</button>
       </div>
     </div>
-    <button class="menu-btn stagger-in" id="retry-sector-btn">[ RETRY SECTOR ]</button>
-    <button class="menu-btn stagger-in" id="go-replay-level-btn" style="display:none;">[ REPLAY LEVEL ]</button>
-    <button class="menu-btn stagger-in" id="go-level-select-btn" style="display:none;color:#ff69b4;border-color:#ff69b4;">[ RETRY SECTOR OR TRY ANOTHER ]</button>
-    <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
+    <button class="menu-btn stagger-in" id="go-retry-level-btn">[ RETRY LEVEL ]</button>
+    <button class="menu-btn btn-danger stagger-in" id="go-abort-btn">[ ABORT ]</button>
 </div>
 <div id="victory-screen" class="overlay-screen">
     <div id="victory-unlocks" style="display:none;text-align:center;margin-bottom:14px;"></div>
@@ -833,6 +831,17 @@
     </div>
     <div id="tr-carousel-scroll-hint">&lt; SCROLL &gt;</div>
     <button id="tr-carousel-continue">[ PLAY NEXT SECTOR &gt; ]</button>
+    <div id="tr-carousel-abort-nav" style="display:none;position:absolute;left:0;right:0;bottom:88px;z-index:3;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:auto;">
+        <button class="menu-btn" id="tr-abort-retry-level-btn" style="width:auto;padding:12px 22px;font-size:10px;">[ RETRY LEVEL ]</button>
+        <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#888;letter-spacing:2px;margin-top:4px;">TRY ANOTHER SECTOR</div>
+        <div id="tr-abort-sector-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+            <button class="menu-btn" data-abort-sector="1" style="width:auto;padding:8px 14px;font-size:9px;">S1</button>
+            <button class="menu-btn" data-abort-sector="2" style="width:auto;padding:8px 14px;font-size:9px;">S2</button>
+            <button class="menu-btn" data-abort-sector="3" style="width:auto;padding:8px 14px;font-size:9px;">S3</button>
+            <button class="menu-btn" data-abort-sector="4" style="width:auto;padding:8px 14px;font-size:9px;">S4</button>
+            <button class="menu-btn" data-abort-sector="5" style="width:auto;padding:8px 14px;font-size:9px;">S5</button>
+        </div>
+    </div>
 </div>
 
 <!-- Video Player -->
@@ -2209,6 +2218,7 @@ window.onload = function() {
     // Whether carousel was opened from pause menu (returns to pause, not next sector)
     var carouselFromPause = false;
     var carouselFromVictory = false;
+    var _carouselFromAbort = false;
 
     function unlockZone(zone) {
         if (unlockedZones[zone]) return;
@@ -2483,6 +2493,8 @@ window.onload = function() {
         overlay.className = isDesign ? 'tr-design-bg' : '';
         overlay.style.zIndex = _inventoryCarouselActive ? '590' : '560';
         overlay.style.display = 'flex';
+        var _abortNav = document.getElementById('tr-carousel-abort-nav');
+        if (_abortNav) _abortNav.style.display = _carouselFromAbort ? 'flex' : 'none';
         document.body.style.touchAction = 'auto';
 
         // Position centered on first bonus reveal card, or most recently collected
@@ -2597,6 +2609,14 @@ window.onload = function() {
         document.getElementById('tr-video-player').style.display = 'none';
         document.body.style.touchAction = 'none';
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+        var _abortNavEl = document.getElementById('tr-carousel-abort-nav');
+        if (_abortNavEl) _abortNavEl.style.display = 'none';
+        if (_carouselFromAbort) {
+            _carouselFromAbort = false;
+            var _ss = document.getElementById('start-screen');
+            if (_ss) _ss.style.display = 'flex';
+            return;
+        }
         if (_inventoryCarouselActive) {
             _inventoryCarouselActive = false;
             openInventory(_inventoryReturnTo);
@@ -4421,15 +4441,12 @@ window.onload = function() {
             var _trQual = (typeof _trQualifiesForLeaderboard === 'function') ? _trQualifiesForLeaderboard(score) : (score > 0);
             document.getElementById('initials-entry').style.display = _trQual ? 'block' : 'none';
             document.getElementById('go-post-submit').style.display = 'none';
-            document.getElementById('retry-sector-btn').style.display = '';
-            document.getElementById('abort-run-btn').style.display = '';
-            var _goRL = document.getElementById('go-replay-level-btn');
-            if (_goRL) _goRL.style.display = '';
-            var _goLS = document.getElementById('go-level-select-btn');
-            if (_goLS) _goLS.style.display = '';
+            var _goRetry = document.getElementById('go-retry-level-btn');
+            if (_goRetry) _goRetry.style.display = '';
+            var _goAbort = document.getElementById('go-abort-btn');
+            if (_goAbort) _goAbort.style.display = '';
             ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
             document.getElementById('game-over-screen').style.display = 'flex';
-            document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
             setTimeout(function(){ var el=document.getElementById('ini-1'); if(el) el.focus(); }, 100);
         }, 1500);
     }
@@ -6204,8 +6221,54 @@ window.onload = function() {
             startNextSector();
         }
     });
-    bindTap('retry-sector-btn', () => initializeFlight(false));
-    bindTap('abort-run-btn', () => { _sendTelemetry('quit'); document.getElementById('game-over-screen').style.display = 'none'; carouselFromVictory = true; showCarousel(currentSector); });
+    bindTap('go-retry-level-btn', function() {
+        var s = currentSector, l = currentLevel;
+        var gos = document.getElementById('game-over-screen');
+        if (gos) gos.style.display = 'none';
+        try { initializeFlight(true, s, l); } catch(err) {}
+    });
+    bindTap('go-abort-btn', function() {
+        _sendTelemetry('quit');
+        document.getElementById('game-over-screen').style.display = 'none';
+        _carouselFromAbort = true;
+        showCarousel(currentSector);
+    });
+    bindTap('tr-abort-retry-level-btn', function() {
+        var s = currentSector, l = currentLevel;
+        _carouselFromAbort = false;
+        var ov = document.getElementById('tr-carousel-overlay');
+        if (ov) ov.style.display = 'none';
+        var nav = document.getElementById('tr-carousel-abort-nav');
+        if (nav) nav.style.display = 'none';
+        document.body.style.touchAction = 'none';
+        if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+        try { initializeFlight(true, s, l); } catch(err) {}
+    });
+    (function() {
+        var row = document.getElementById('tr-abort-sector-row');
+        if (!row) return;
+        var btns = row.querySelectorAll('button[data-abort-sector]');
+        btns.forEach(function(b) {
+            var n = parseInt(b.getAttribute('data-abort-sector'), 10);
+            var lastTap = 0;
+            var handler = function(e) {
+                e.preventDefault(); e.stopPropagation();
+                var now = Date.now();
+                if (now - lastTap < 300) return;
+                lastTap = now;
+                _carouselFromAbort = false;
+                var ov = document.getElementById('tr-carousel-overlay');
+                if (ov) ov.style.display = 'none';
+                var nav = document.getElementById('tr-carousel-abort-nav');
+                if (nav) nav.style.display = 'none';
+                document.body.style.touchAction = 'none';
+                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+                try { initializeFlight(true, n, 1); } catch(err) {}
+            };
+            b.addEventListener('touchend', handler, {passive:false});
+            b.addEventListener('mouseup', handler, {passive:false});
+        });
+    })();
     // Dev sector jump buttons
     function devJumpSector(n) {
         document.getElementById('pause-screen').style.display = 'none';
@@ -6338,8 +6401,10 @@ window.onload = function() {
         if (score > 0) saveHighScore(score, initials);
         submitGlobalScore(initials, score);
         document.getElementById('initials-entry').style.display = 'none';
-        document.getElementById('retry-sector-btn').style.display = 'none';
-        document.getElementById('abort-run-btn').style.display = 'none';
+        var _goRetryHide = document.getElementById('go-retry-level-btn');
+        if (_goRetryHide) _goRetryHide.style.display = 'none';
+        var _goAbortHide = document.getElementById('go-abort-btn');
+        if (_goAbortHide) _goAbortHide.style.display = 'none';
         document.getElementById('go-post-submit').style.display = 'block';
         renderLeaderboard(score, 'go-lb-rows');
         loadGlobalScores(function(g){ _globalScoresCache = g; renderLeaderboard(score, 'go-lb-rows'); renderLeaderboard(score); });
@@ -7706,18 +7771,11 @@ window.onload = function() {
         }
         bind('title-level-select-btn', _trOpenLevelSelect);
         bind('vs-level-select-btn', _trOpenLevelSelect);
-        bind('go-level-select-btn', _trOpenLevelSelect);
         bind('level-select-back-btn', _trCloseLevelSelect);
         bind('vs-replay-level-btn', function() {
             var s = currentSector, l = currentLevel;
             var vs = document.getElementById('victory-screen');
             if (vs) vs.style.display = 'none';
-            try { initializeFlight(true, s, l); } catch(err) {}
-        });
-        bind('go-replay-level-btn', function() {
-            var s = currentSector, l = currentLevel;
-            var gos = document.getElementById('game-over-screen');
-            if (gos) gos.style.display = 'none';
             try { initializeFlight(true, s, l); } catch(err) {}
         });
         _trRefreshTitleReplayBtn();
