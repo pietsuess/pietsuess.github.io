@@ -831,14 +831,7 @@
     <button id="tr-carousel-continue">[ PLAY NEXT SECTOR &gt; ]</button>
     <div id="tr-carousel-abort-nav" style="display:none;position:absolute;left:0;right:0;bottom:88px;z-index:3;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:auto;">
         <button class="menu-btn" id="tr-abort-retry-level-btn" style="width:auto;padding:12px 22px;font-size:10px;">[ RETRY LEVEL ]</button>
-        <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#888;letter-spacing:2px;margin-top:4px;">TRY ANOTHER SECTOR</div>
-        <div id="tr-abort-sector-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-            <button class="menu-btn" data-abort-sector="1" style="width:auto;padding:8px 14px;font-size:9px;">S1</button>
-            <button class="menu-btn" data-abort-sector="2" style="width:auto;padding:8px 14px;font-size:9px;">S2</button>
-            <button class="menu-btn" data-abort-sector="3" style="width:auto;padding:8px 14px;font-size:9px;">S3</button>
-            <button class="menu-btn" data-abort-sector="4" style="width:auto;padding:8px 14px;font-size:9px;">S4</button>
-            <button class="menu-btn" data-abort-sector="5" style="width:auto;padding:8px 14px;font-size:9px;">S5</button>
-        </div>
+        <div id="tr-abort-grid" style="width:100%;max-width:360px;"></div>
     </div>
 </div>
 
@@ -2493,7 +2486,10 @@ window.onload = function() {
         overlay.style.zIndex = _inventoryCarouselActive ? '590' : '560';
         overlay.style.display = 'flex';
         var _abortNav = document.getElementById('tr-carousel-abort-nav');
-        if (_abortNav) _abortNav.style.display = _carouselFromAbort ? 'flex' : 'none';
+        if (_abortNav) {
+            if (_carouselFromAbort) { try { _trBuildAbortGrid(); } catch(e) {} }
+            _abortNav.style.display = _carouselFromAbort ? 'flex' : 'none';
+        }
         if (contBtn) contBtn.style.display = _carouselFromAbort ? 'none' : '';
         document.body.style.touchAction = 'auto';
 
@@ -5284,6 +5280,7 @@ window.onload = function() {
         }
 
         contentSpawnedThisRun = [];
+        try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
         var zone = getLevelScaledZone(currentSector);
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
@@ -5787,6 +5784,7 @@ window.onload = function() {
                 currentSector = startSector;
                 currentLevel = startLevel;
             }
+            try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
             introSpawned = false;
             contentSpawnedThisRun = [];
             collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
@@ -6282,31 +6280,7 @@ window.onload = function() {
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
         try { initializeFlight(true, s, l); } catch(err) {}
     });
-    (function() {
-        var row = document.getElementById('tr-abort-sector-row');
-        if (!row) return;
-        var btns = row.querySelectorAll('button[data-abort-sector]');
-        btns.forEach(function(b) {
-            var n = parseInt(b.getAttribute('data-abort-sector'), 10);
-            var lastTap = 0;
-            var handler = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                var now = Date.now();
-                if (now - lastTap < 300) return;
-                lastTap = now;
-                _carouselFromAbort = false;
-                var ov = document.getElementById('tr-carousel-overlay');
-                if (ov) ov.style.display = 'none';
-                var nav = document.getElementById('tr-carousel-abort-nav');
-                if (nav) nav.style.display = 'none';
-                document.body.style.touchAction = 'none';
-                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
-                try { initializeFlight(true, n, 1); } catch(err) {}
-            };
-            b.addEventListener('touchend', handler, {passive:false});
-            b.addEventListener('mouseup', handler, {passive:false});
-        });
-    })();
+
     // Dev sector jump buttons
     function devJumpSector(n) {
         document.getElementById('pause-screen').style.display = 'none';
@@ -7698,13 +7672,8 @@ window.onload = function() {
 })();
 
     // ── Level progress tracking + level select ─────────────────────────────
-    var _TR_LEVELS = [
-        { s: 1, levels: 4 },
-        { s: 2, levels: 4 },
-        { s: 3, levels: 4 },
-        { s: 4, levels: 4 },
-        { s: 5, levels: 4 }
-    ];
+    var _TR_SECTORS = 5;
+    var _TR_LEVELS_PER = 4;
     function _trLoadMaxPassed() {
         try {
             var raw = localStorage.getItem('tunnelrunner.maxLevelPassed');
@@ -7722,6 +7691,23 @@ window.onload = function() {
             }
         } catch (e) {}
     }
+    function _trLoadMaxReached() {
+        try {
+            var raw = localStorage.getItem('tunnelrunner.maxLevelReached');
+            if (!raw) return { s: 1, l: 1 };
+            var m = raw.match(/^S(\d+)L(\d+)$/);
+            if (!m) return { s: 1, l: 1 };
+            return { s: parseInt(m[1]), l: parseInt(m[2]) };
+        } catch (e) { return { s: 1, l: 1 }; }
+    }
+    function _trSaveMaxReached(s, l) {
+        try {
+            var cur = _trLoadMaxReached();
+            if (s > cur.s || (s === cur.s && l > cur.l)) {
+                localStorage.setItem('tunnelrunner.maxLevelReached', 'S' + s + 'L' + l);
+            }
+        } catch (e) {}
+    }
     function _trAnyCompleted() {
         var m = _trLoadMaxPassed();
         return m.s > 0 && m.l > 0;
@@ -7732,101 +7718,113 @@ window.onload = function() {
         if (m.s === 0 && m.l === 0) return (s === 1 && l === 1);
         return (s < m.s) || (s === m.s && l <= m.l);
     }
+    function _trIsReached(s, l) {
+        if (s === 1 && l === 1) return true;
+        var r = _trLoadMaxReached();
+        return (s < r.s) || (s === r.s && l <= r.l);
+    }
+    function _trBuildLevelGrid(container, opts) {
+        if (!container) return;
+        container.innerHTML = '';
+        opts = opts || {};
+        var passedMark = _trLoadMaxPassed();
+        var grid = document.createElement('div');
+        grid.style.cssText = "display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;width:100%;max-width:360px;margin:0 auto;";
+        for (var s = 1; s <= _TR_SECTORS; s++) {
+            (function(sNum) {
+                var col = document.createElement('div');
+                col.style.cssText = "display:flex;flex-direction:column;align-items:stretch;gap:6px;";
+                var header = document.createElement('button');
+                header.className = 'menu-btn';
+                var hReached = _trIsReached(sNum, 1);
+                var hBase = "width:auto;margin:0;padding:6px 4px;font-size:9px;letter-spacing:1px;text-align:center;";
+                if (hReached) {
+                    header.style.cssText = hBase + "border-color:#ffe000;color:#ffe000;background:rgba(255,224,0,0.06);";
+                } else {
+                    header.style.cssText = hBase + "opacity:0.25;filter:grayscale(1);pointer-events:none;";
+                }
+                header.innerText = 'S' + sNum;
+                if (hReached) {
+                    var hLast = 0;
+                    var hHandler = function(e) {
+                        e.preventDefault(); e.stopPropagation();
+                        var now = Date.now();
+                        if (now - hLast < 300) return;
+                        hLast = now;
+                        if (opts.onPick) opts.onPick(sNum, 1);
+                    };
+                    header.addEventListener('touchend', hHandler, {passive:false});
+                    header.addEventListener('mouseup', hHandler, {passive:false});
+                }
+                col.appendChild(header);
+                for (var l = 1; l <= _TR_LEVELS_PER; l++) {
+                    (function(lNum) {
+                        var b = document.createElement('button');
+                        b.className = 'menu-btn';
+                        var reached = _trIsReached(sNum, lNum);
+                        var passed = (sNum < passedMark.s) || (sNum === passedMark.s && lNum <= passedMark.l);
+                        var base = "width:auto;margin:0;padding:8px 4px;font-size:8px;letter-spacing:1px;text-align:center;";
+                        if (reached) {
+                            b.style.cssText = base + "border-color:#ffe000;color:#ffe000;background:rgba(255,224,0,0.06);box-shadow:0 0 8px rgba(255,224,0,0.15);";
+                        } else {
+                            b.style.cssText = base + "opacity:0.25;filter:grayscale(1);pointer-events:none;";
+                        }
+                        b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
+                        if (reached) {
+                            var lastTap = 0;
+                            var handler = function(e) {
+                                e.preventDefault(); e.stopPropagation();
+                                var now = Date.now();
+                                if (now - lastTap < 300) return;
+                                lastTap = now;
+                                if (opts.onPick) opts.onPick(sNum, lNum);
+                            };
+                            b.addEventListener('touchend', handler, {passive:false});
+                            b.addEventListener('mouseup', handler, {passive:false});
+                        }
+                        col.appendChild(b);
+                    })(l);
+                }
+                grid.appendChild(col);
+            })(s);
+        }
+        container.appendChild(grid);
+    }
     function _trBuildLevelSelect() {
         var grid = document.getElementById('level-select-grid');
         if (!grid) return;
-        grid.innerHTML = '';
-        var m = _trLoadMaxPassed();
-        _TR_LEVELS.forEach(function(sec) {
-            var row = document.createElement('div');
-            row.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;';
-            var label = document.createElement('div');
-            label.style.cssText = "font-family:'Press Start 2P',monospace;font-size:9px;color:#ffe000;letter-spacing:2px;";
-            label.innerText = 'SECTOR ' + sec.s;
-            row.appendChild(label);
-            var btnRow = document.createElement('div');
-            btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
-            for (var li = 1; li <= sec.levels; li++) {
-                (function(sNum, lNum) {
-                    var b = document.createElement('button');
-                    b.className = 'menu-btn';
-                    var passed = (sNum < m.s) || (sNum === m.s && lNum <= m.l);
-                    var unlocked = _trIsUnlocked(sNum, lNum);
-                    var base = "width:auto;padding:8px 12px;font-size:8px;";
-                    if (!unlocked) {
-                        b.style.cssText = base + "opacity:0.3;pointer-events:none;filter:grayscale(1);";
-                    } else {
-                        b.style.cssText = base;
-                    }
-                    b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
-                    if (unlocked) {
-                        var lastTap = 0;
-                        var handler = function(e) {
-                            e.preventDefault(); e.stopPropagation();
-                            var now = Date.now();
-                            if (now - lastTap < 300) return;
-                            lastTap = now;
-                            _trLaunchLevel(sNum, lNum);
-                        };
-                        b.addEventListener('touchend', handler, {passive:false});
-                        b.addEventListener('mouseup', handler, {passive:false});
-                    }
-                    btnRow.appendChild(b);
-                })(sec.s, li);
-            }
-            row.appendChild(btnRow);
-            grid.appendChild(row);
+        _trBuildLevelGrid(grid, {
+            onPick: function(s, l) { _trLaunchLevel(s, l); }
         });
     }
     function _trBuildPauseSectorNav() {
         var host = document.getElementById('pause-sector-nav');
         if (!host) return;
-        host.innerHTML = '';
-        var header = document.createElement('div');
-        header.style.cssText = "font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:4px;text-align:center;";
-        header.innerText = 'SECTORS';
-        host.appendChild(header);
-        _TR_LEVELS.forEach(function(sec) {
-            var anyUnlocked = false;
-            for (var li = 1; li <= sec.levels; li++) {
-                if (_trIsUnlocked(sec.s, li)) { anyUnlocked = true; break; }
+        _trBuildLevelGrid(host, {
+            onPick: function(s, l) {
+                var ps = document.getElementById('pause-screen');
+                if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
+                gameState = 'playing';
+                _prePauseState = null;
+                _prePauseScreen = null;
+                try { initializeFlight(true, s, l); } catch(err) {}
             }
-            if (!anyUnlocked) return;
-            var row = document.createElement('div');
-            row.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;';
-            var label = document.createElement('div');
-            label.style.cssText = "font-family:'Press Start 2P',monospace;font-size:9px;color:#ffe000;letter-spacing:2px;";
-            label.innerText = 'SECTOR ' + sec.s;
-            row.appendChild(label);
-            var btnRow = document.createElement('div');
-            btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
-            for (var li2 = 1; li2 <= sec.levels; li2++) {
-                (function(sNum, lNum) {
-                    if (!_trIsUnlocked(sNum, lNum)) return;
-                    var b = document.createElement('button');
-                    b.className = 'menu-btn';
-                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;";
-                    b.innerText = 'L' + lNum;
-                    var lastTap = 0;
-                    var handler = function(e) {
-                        e.preventDefault(); e.stopPropagation();
-                        var now = Date.now();
-                        if (now - lastTap < 300) return;
-                        lastTap = now;
-                        var ps = document.getElementById('pause-screen');
-                        if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
-                        gameState = 'playing';
-                        _prePauseState = null;
-                        _prePauseScreen = null;
-                        try { initializeFlight(true, sNum, lNum); } catch(err) {}
-                    };
-                    b.addEventListener('touchend', handler, {passive:false});
-                    b.addEventListener('mouseup', handler, {passive:false});
-                    btnRow.appendChild(b);
-                })(sec.s, li2);
+        });
+    }
+    function _trBuildAbortGrid() {
+        var host = document.getElementById('tr-abort-grid');
+        if (!host) return;
+        _trBuildLevelGrid(host, {
+            onPick: function(s, l) {
+                _carouselFromAbort = false;
+                var ov = document.getElementById('tr-carousel-overlay');
+                if (ov) ov.style.display = 'none';
+                var nav = document.getElementById('tr-carousel-abort-nav');
+                if (nav) nav.style.display = 'none';
+                document.body.style.touchAction = 'none';
+                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+                try { initializeFlight(true, s, l); } catch(err) {}
             }
-            row.appendChild(btnRow);
-            host.appendChild(row);
         });
     }
     function _trOpenLevelSelect() {
