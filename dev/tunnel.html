@@ -776,9 +776,8 @@
     <h1 class="screen-title stagger-in">SECTOR CLEARED</h1>
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
     <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:18px;"></div>
-    <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ NEXT SECTOR &gt; ]</button>
+    <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ BROWSE CONTENT ]</button>
     <button class="menu-btn stagger-in" id="vs-replay-level-btn" style="margin-top:6px;">[ REPLAY LEVEL ]</button>
-    <button class="menu-btn stagger-in" id="vs-level-select-btn" style="margin-top:6px;color:#ff69b4;border-color:#ff69b4;">[ LEVEL SELECT ]</button>
 </div>
 <div id="level-select-screen" class="overlay-screen" style="display:none;">
     <h1 class="screen-title" style="font-family:'Press Start 2P',monospace;font-size:clamp(14px,3.5vw,20px);color:#00ffcc;letter-spacing:3px;margin-bottom:18px;">LEVEL SELECT</h1>
@@ -925,6 +924,7 @@
         <button class="menu-btn" id="dev-s5" style="width:auto;padding:6px 12px;font-size:9px;">S5</button>
       </div>
     </div>
+    <div id="pause-sector-nav" style="width:100%;max-width:320px;margin:18px auto 0;display:flex;flex-direction:column;gap:10px;"></div>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
 </div>
 
@@ -4689,25 +4689,7 @@ window.onload = function() {
         } else {
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
         }
-        if (isZoneComplete(currentSector) && currentSector >= 5 && allZonesComplete()) {
-            document.getElementById('next-level-btn').innerText = '[ VIEW FINALE ]';
-        } else if (contentZone) {
-            var collected = getZoneCollectedCount(currentSector);
-            var total = getZoneItemCount(currentSector);
-            // Speed run: if time not beaten, force replay
-            var s4Failed = (isSpeedRunSector(currentSector, currentLevel) && sectorTime > getSpeedRunTarget());
-            if (s4Failed) {
-                document.getElementById('next-level-btn').innerText = '[ RETRY SPEED RUN ]';
-            } else if (collected >= total) {
-                document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
-            } else if (collected > 0) {
-                document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
-            } else {
-                document.getElementById('next-level-btn').innerText = '[ NEXT LEVEL ' + (currentLevel + 1) + ' > ]';
-            }
-        } else {
-            document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
-        }
+        document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
         document.getElementById('victory-screen').style.display = 'flex';
         AudioEngine.stopEngine();
         stopMusic();
@@ -5958,6 +5940,7 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
+            _trBuildPauseSectorNav();
             // Show pause on top of all content overlays
             document.getElementById('pause-screen').style.zIndex = '650';
             document.getElementById('pause-screen').style.display = 'flex';
@@ -5969,6 +5952,7 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
+            _trBuildPauseSectorNav();
             document.getElementById('pause-screen').style.display = 'flex';
             var fireBtn = document.getElementById('fire-btn');
             if (fireBtn) fireBtn.style.display = 'none';
@@ -5981,6 +5965,7 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
+            _trBuildPauseSectorNav();
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (gameState === 'paused') {
             document.getElementById('pause-screen').style.display = 'none';
@@ -6209,17 +6194,10 @@ window.onload = function() {
     bindTap('play-btn', () => initializeFlight(true));
     bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('next-level-btn', function() {
-        var btnText = document.getElementById('next-level-btn').innerText;
         document.getElementById('victory-screen').style.display = 'none';
-        if (allZonesComplete()) {
-            window.location.href = 'navigator-victory.html';
-        } else if (btnText.indexOf('BROWSE') >= 0) {
-            carouselFromVictory = true;
-            showCarousel(currentSector);
-        } else {
-            // NEXT ZONE / NEXT LEVEL / NEXT SECTOR / RETRY — advance directly
-            startNextSector();
-        }
+        _carouselFromAbort = false;
+        carouselFromVictory = true;
+        showCarousel(currentSector);
     });
     bindTap('go-retry-level-btn', function() {
         var s = currentSector, l = currentLevel;
@@ -6369,8 +6347,14 @@ window.onload = function() {
 
     // Init portfolio toggle button text
     bindTap('abort-btn', () => {
-        document.getElementById('pause-screen').style.display = 'none';
-        triggerGameOver();
+        var ps = document.getElementById('pause-screen');
+        if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
+        gameState = 'playing';
+        _prePauseState = null;
+        _prePauseScreen = null;
+        _sendTelemetry('quit');
+        _carouselFromAbort = true;
+        showCarousel(currentSector);
     });
     bindTap('music-toggle-row', toggleMusicMute);
     bindTap('sfx-toggle-row', toggleSfxMute);
@@ -7682,6 +7666,12 @@ window.onload = function() {
         var m = _trLoadMaxPassed();
         return m.s > 0 && m.l > 0;
     }
+    function _trIsUnlocked(s, l) {
+        if (s === 1 && l === 1) return true;
+        var m = _trLoadMaxPassed();
+        if (m.s === 0 && m.l === 0) return (s === 1 && l === 1);
+        return (s < m.s) || (s === m.s && l <= m.l);
+    }
     function _trBuildLevelSelect() {
         var grid = document.getElementById('level-select-grid');
         if (!grid) return;
@@ -7701,23 +7691,82 @@ window.onload = function() {
                     var b = document.createElement('button');
                     b.className = 'menu-btn';
                     var passed = (sNum < m.s) || (sNum === m.s && lNum <= m.l);
-                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;";
+                    var unlocked = _trIsUnlocked(sNum, lNum);
+                    var base = "width:auto;padding:8px 12px;font-size:8px;";
+                    if (!unlocked) {
+                        b.style.cssText = base + "opacity:0.3;pointer-events:none;filter:grayscale(1);";
+                    } else {
+                        b.style.cssText = base;
+                    }
                     b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
+                    if (unlocked) {
+                        var lastTap = 0;
+                        var handler = function(e) {
+                            e.preventDefault(); e.stopPropagation();
+                            var now = Date.now();
+                            if (now - lastTap < 300) return;
+                            lastTap = now;
+                            _trLaunchLevel(sNum, lNum);
+                        };
+                        b.addEventListener('touchend', handler, {passive:false});
+                        b.addEventListener('mouseup', handler, {passive:false});
+                    }
+                    btnRow.appendChild(b);
+                })(sec.s, li);
+            }
+            row.appendChild(btnRow);
+            grid.appendChild(row);
+        });
+    }
+    function _trBuildPauseSectorNav() {
+        var host = document.getElementById('pause-sector-nav');
+        if (!host) return;
+        host.innerHTML = '';
+        var header = document.createElement('div');
+        header.style.cssText = "font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:4px;text-align:center;";
+        header.innerText = 'SECTORS';
+        host.appendChild(header);
+        _TR_LEVELS.forEach(function(sec) {
+            var anyUnlocked = false;
+            for (var li = 1; li <= sec.levels; li++) {
+                if (_trIsUnlocked(sec.s, li)) { anyUnlocked = true; break; }
+            }
+            if (!anyUnlocked) return;
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;';
+            var label = document.createElement('div');
+            label.style.cssText = "font-family:'Press Start 2P',monospace;font-size:9px;color:#ffe000;letter-spacing:2px;";
+            label.innerText = 'SECTOR ' + sec.s;
+            row.appendChild(label);
+            var btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
+            for (var li2 = 1; li2 <= sec.levels; li2++) {
+                (function(sNum, lNum) {
+                    if (!_trIsUnlocked(sNum, lNum)) return;
+                    var b = document.createElement('button');
+                    b.className = 'menu-btn';
+                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;";
+                    b.innerText = 'L' + lNum;
                     var lastTap = 0;
                     var handler = function(e) {
                         e.preventDefault(); e.stopPropagation();
                         var now = Date.now();
                         if (now - lastTap < 300) return;
                         lastTap = now;
-                        _trLaunchLevel(sNum, lNum);
+                        var ps = document.getElementById('pause-screen');
+                        if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
+                        gameState = 'playing';
+                        _prePauseState = null;
+                        _prePauseScreen = null;
+                        try { initializeFlight(true, sNum, lNum); } catch(err) {}
                     };
                     b.addEventListener('touchend', handler, {passive:false});
                     b.addEventListener('mouseup', handler, {passive:false});
                     btnRow.appendChild(b);
-                })(sec.s, li);
+                })(sec.s, li2);
             }
             row.appendChild(btnRow);
-            grid.appendChild(row);
+            host.appendChild(row);
         });
     }
     function _trOpenLevelSelect() {
@@ -7761,7 +7810,6 @@ window.onload = function() {
             el.addEventListener('touchend', handler, {passive:false});
             el.addEventListener('mouseup', handler, {passive:false});
         }
-        bind('vs-level-select-btn', _trOpenLevelSelect);
         bind('level-select-back-btn', _trCloseLevelSelect);
         bind('vs-replay-level-btn', function() {
             var s = currentSector, l = currentLevel;
