@@ -1365,6 +1365,15 @@ var AudioEngine = {
     // double-schedule (NEON DESCENT then stop then NEON RUSH) that was
     // delaying the first audible note after cold tap on mobile.
     if (audioCtx.state === 'suspended') { try { audioCtx.resume(); } catch (e) {} }
+    try {
+      var _wOsc = audioCtx.createOscillator();
+      var _wGain = audioCtx.createGain();
+      _wGain.gain.value = 0.0001;
+      _wOsc.connect(_wGain);
+      _wGain.connect(audioCtx.destination);
+      _wOsc.start(audioCtx.currentTime);
+      _wOsc.stop(audioCtx.currentTime + 0.01);
+    } catch (e) {}
   },
   playSFX: function(type) {
     if (!audioCtx || _sfxMuted) return;
@@ -5694,44 +5703,63 @@ window.onload = function() {
         // First full launch only: play cinematic before splash.
         if (isFullReset && !_cinematicPlayed) {
             _cinematicPlayed = true;
-            gameState = 'cinematic';
             try { AudioEngine.init(); } catch (e) {}
-            if (audioCtx && audioCtx.state === 'suspended') {
-                try { audioCtx.resume(); } catch (e) {}
-            }
-            // v4: don't touch the real #start-screen. The .overlay-screen
-            // display:none sweep above already hid it. Build a cinematic-only
-            // clone overlay that mirrors the title's DRAW DATA (byline + main).
-            try {
-                var _existing = document.getElementById('cine-title-stack');
-                if (_existing && _existing.parentNode) _existing.parentNode.removeChild(_existing);
-                var _cts = document.createElement('div');
-                _cts.id = 'cine-title-stack';
-                var _cinner = document.createElement('div');
-                _cinner.className = 'cine-title-inner';
-                var _cby = document.createElement('div');
-                _cby.className = 'cine-title-byline';
-                _cby.textContent = 'PIET SUESS';
-                var _cmn = document.createElement('div');
-                _cmn.className = 'cine-title-main';
-                _cmn.innerHTML = 'TUNNEL<br>RUNNER';
-                _cinner.appendChild(_cby);
-                _cinner.appendChild(_cmn);
-                _cts.appendChild(_cinner);
-                document.body.appendChild(_cts);
-            } catch (e) { console.error('cine-title-stack create err', e); }
-            runCinematic(function() {
+            var _startedCinematic = false;
+            function _beginCinematicNow() {
+                if (_startedCinematic) return;
+                _startedCinematic = true;
+                gameState = 'cinematic';
+                try { document.body.classList.add('cinematic-active'); } catch (e) {}
                 try {
-                    var _cts2 = document.getElementById('cine-title-stack');
-                    if (_cts2) {
-                        _cts2.style.opacity = '0';
-                        setTimeout(function() {
-                            if (_cts2 && _cts2.parentNode) _cts2.parentNode.removeChild(_cts2);
-                        }, 220);
+                    var _existing = document.getElementById('cine-title-stack');
+                    if (_existing && _existing.parentNode) _existing.parentNode.removeChild(_existing);
+                    var _cts = document.createElement('div');
+                    _cts.id = 'cine-title-stack';
+                    var _cinner = document.createElement('div');
+                    _cinner.className = 'cine-title-inner';
+                    var _cby = document.createElement('div');
+                    _cby.className = 'cine-title-byline';
+                    _cby.textContent = 'PIET SUESS';
+                    var _cmn = document.createElement('div');
+                    _cmn.className = 'cine-title-main';
+                    _cmn.innerHTML = 'TUNNEL<br>RUNNER';
+                    _cinner.appendChild(_cby);
+                    _cinner.appendChild(_cmn);
+                    _cts.appendChild(_cinner);
+                    document.body.appendChild(_cts);
+                } catch (e) { console.error('cine-title-stack create err', e); }
+                runCinematic(function() {
+                    try {
+                        var _cts2 = document.getElementById('cine-title-stack');
+                        if (_cts2) {
+                            _cts2.style.opacity = '0';
+                            setTimeout(function() {
+                                if (_cts2 && _cts2.parentNode) _cts2.parentNode.removeChild(_cts2);
+                            }, 220);
+                        }
+                    } catch (e) { console.error('cine-title-stack remove err', e); }
+                    _runIntroChain();
+                });
+            }
+            try {
+                if (typeof audioCtx !== 'undefined' && audioCtx) {
+                    try { audioCtx.resume(); } catch (e) {}
+                    if (audioCtx.state === 'running') {
+                        _beginCinematicNow();
+                    } else {
+                        var _onSt = function() {
+                            if (audioCtx.state === 'running') {
+                                try { audioCtx.removeEventListener('statechange', _onSt); } catch (e) {}
+                                _beginCinematicNow();
+                            }
+                        };
+                        try { audioCtx.addEventListener('statechange', _onSt); } catch (e) {}
+                        setTimeout(function() { _beginCinematicNow(); }, 1200);
                     }
-                } catch (e) { console.error('cine-title-stack remove err', e); }
-                _runIntroChain();
-            });
+                } else {
+                    _beginCinematicNow();
+                }
+            } catch (e) { _beginCinematicNow(); }
         } else {
             _runIntroChain();
         }
@@ -6447,25 +6475,7 @@ window.onload = function() {
                 try { AudioEngine.playSFX('cinematic_music'); } catch(e){}
                 try { AudioEngine.startEngine(); } catch(e){}
             }
-            function _cineTryStart() {
-                if (typeof audioCtx === 'undefined' || !audioCtx) return false;
-                if (audioCtx.state === 'running') { _cineStartAudio(); return true; }
-                return false;
-            }
-            try {
-                if (!_cineTryStart()) {
-                    if (typeof audioCtx !== 'undefined' && audioCtx) {
-                        var _cineOnState = function() {
-                            if (audioCtx.state === 'running') {
-                                try { audioCtx.removeEventListener('statechange', _cineOnState); } catch (eRm) {}
-                                _cineStartAudio();
-                            }
-                        };
-                        try { audioCtx.addEventListener('statechange', _cineOnState); } catch (eAdd) {}
-                        try { audioCtx.resume(); } catch (eR) {}
-                    }
-                }
-            } catch (e) { console.error('cine audio chain err', e); }
+            _cineStartAudio();
             _cine.active = true;
             _cine.t = 0;
             _cine.phase = 1;
@@ -6474,7 +6484,6 @@ window.onload = function() {
             _cine.bSnapped = false;
             _cine.bStart = null;
             _cine.bEndQ = null;
-            try { document.body.classList.add('cinematic-active'); } catch (e) {}
             camera.position.x = Math.cos(0) * (tubeRadius - 16);
             camera.position.y = Math.sin(0) * (tubeRadius - 16);
             camera.rotation.z = Math.PI / 2;
