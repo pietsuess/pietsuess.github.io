@@ -771,7 +771,7 @@
     </div>
     <button class="menu-btn stagger-in" id="retry-sector-btn">[ RETRY SECTOR ]</button>
     <button class="menu-btn stagger-in" id="go-replay-level-btn" style="display:none;">[ REPLAY LEVEL ]</button>
-    <button class="menu-btn stagger-in" id="go-level-select-btn" style="display:none;color:#ff69b4;border-color:#ff69b4;">[ LEVEL SELECT ]</button>
+    <button class="menu-btn stagger-in" id="go-level-select-btn" style="display:none;color:#ff69b4;border-color:#ff69b4;">[ RETRY SECTOR OR TRY ANOTHER ]</button>
     <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
 </div>
 <div id="victory-screen" class="overlay-screen">
@@ -4426,7 +4426,7 @@ window.onload = function() {
             var _goRL = document.getElementById('go-replay-level-btn');
             if (_goRL) _goRL.style.display = '';
             var _goLS = document.getElementById('go-level-select-btn');
-            if (_goLS) _goLS.style.display = (typeof _trAnyCompleted === 'function' && _trAnyCompleted()) ? '' : 'none';
+            if (_goLS) _goLS.style.display = '';
             ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
             document.getElementById('game-over-screen').style.display = 'flex';
             document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
@@ -6205,7 +6205,7 @@ window.onload = function() {
         }
     });
     bindTap('retry-sector-btn', () => initializeFlight(false));
-    bindTap('abort-run-btn', () => { _sendTelemetry('quit'); initializeFlight(true); });
+    bindTap('abort-run-btn', () => { _sendTelemetry('quit'); document.getElementById('game-over-screen').style.display = 'none'; carouselFromVictory = true; showCarousel(currentSector); });
     // Dev sector jump buttons
     function devJumpSector(n) {
         document.getElementById('pause-screen').style.display = 'none';
@@ -7622,7 +7622,7 @@ window.onload = function() {
     function _trRefreshTitleReplayBtn() {
         var btn = document.getElementById('title-level-select-btn');
         if (!btn) return;
-        btn.style.display = _trAnyCompleted() ? 'block' : 'none';
+        btn.style.display = 'block';
     }
     function _trBuildLevelSelect() {
         var grid = document.getElementById('level-select-grid');
@@ -7642,21 +7642,19 @@ window.onload = function() {
                 (function(sNum, lNum) {
                     var b = document.createElement('button');
                     b.className = 'menu-btn';
-                    var unlocked = (sNum < m.s) || (sNum === m.s && lNum <= m.l) || (sNum === 1 && lNum === 1);
-                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;" + (unlocked ? '' : 'opacity:0.3;pointer-events:none;filter:grayscale(1);');
-                    b.innerText = 'L' + lNum;
-                    if (unlocked) {
-                        var lastTap = 0;
-                        var handler = function(e) {
-                            e.preventDefault(); e.stopPropagation();
-                            var now = Date.now();
-                            if (now - lastTap < 300) return;
-                            lastTap = now;
-                            _trLaunchLevel(sNum, lNum);
-                        };
-                        b.addEventListener('touchend', handler, {passive:false});
-                        b.addEventListener('mouseup', handler, {passive:false});
-                    }
+                    var passed = (sNum < m.s) || (sNum === m.s && lNum <= m.l);
+                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;";
+                    b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
+                    var lastTap = 0;
+                    var handler = function(e) {
+                        e.preventDefault(); e.stopPropagation();
+                        var now = Date.now();
+                        if (now - lastTap < 300) return;
+                        lastTap = now;
+                        _trLaunchLevel(sNum, lNum);
+                    };
+                    b.addEventListener('touchend', handler, {passive:false});
+                    b.addEventListener('mouseup', handler, {passive:false});
                     btnRow.appendChild(b);
                 })(sec.s, li);
             }
