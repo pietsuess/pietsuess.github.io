@@ -1591,6 +1591,104 @@ var AudioEngine = {
       var o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2); g2.connect(sfxGainNode);
       o2.type='sine'; o2.frequency.setValueAtTime(1760,t+0.05);
       g2.gain.setValueAtTime(0.05,t+0.05); g2.gain.linearRampToValueAtTime(0,t+0.3); o2.start(t+0.05); o2.stop(t+0.3);
+    } else if (type === 'cinematic_music') {
+      var cmBus = audioCtx.createGain(); cmBus.gain.value = 1.6; cmBus.connect(sfxGainNode);
+      var ROOT = 110.0;
+      var AMIN = [0,2,3,5,7,8,10];
+      function _cmFr(semi){ return Math.pow(2, semi/12); }
+      var PROG = [[0,3,7],[5,8,0],[0,4,7],[7,11,2]];
+      var BASS_ROOT_SEMI = [0,-4,3,-2];
+      var BAR_DUR = 1.6;
+      var BARS = 4;
+      var TOTAL = BAR_DUR * BARS;
+      var BASS_GAIN = 0.5;
+      var PAD_GAIN = 0.4;
+      var ARP_GAIN = 0.35;
+      var STAB_GAIN = 0.6;
+      var SHIM_GAIN = 0.4;
+      for (var bi = 0; bi < BARS; bi++) {
+        var bStart = t + bi * BAR_DUR;
+        var bEnd = bStart + BAR_DUR - 0.02;
+        var bassFreq = ROOT * 0.5 * _cmFr(BASS_ROOT_SEMI[bi]);
+        var bLp = audioCtx.createBiquadFilter();
+        bLp.type = 'lowpass';
+        bLp.frequency.value = 320;
+        bLp.Q.value = 0.7;
+        var bOsc = audioCtx.createOscillator();
+        var bG = audioCtx.createGain();
+        bOsc.type = 'sawtooth';
+        bOsc.frequency.setValueAtTime(bassFreq, bStart);
+        bG.gain.setValueAtTime(0.0001, bStart);
+        bG.gain.linearRampToValueAtTime(BASS_GAIN, bStart + 0.03);
+        bG.gain.setValueAtTime(BASS_GAIN, bEnd - 0.3);
+        bG.gain.exponentialRampToValueAtTime(0.0001, bEnd);
+        bOsc.connect(bLp); bLp.connect(bG); bG.connect(cmBus);
+        bOsc.start(bStart); bOsc.stop(bEnd + 0.03);
+      }
+      var padChordSemis = PROG[0];
+      for (var pi2 = 0; pi2 < padChordSemis.length; pi2++) {
+        var pFreq = ROOT * _cmFr(padChordSemis[pi2]);
+        var pStart = t + pi2 * 0.04;
+        var pEnd = t + TOTAL - 0.05;
+        var pOsc = audioCtx.createOscillator();
+        var pG = audioCtx.createGain();
+        pOsc.type = 'sine';
+        pOsc.frequency.setValueAtTime(pFreq, pStart);
+        pG.gain.setValueAtTime(0.0001, pStart);
+        pG.gain.linearRampToValueAtTime(PAD_GAIN * (1 - pi2 * 0.15), pStart + 0.3);
+        pG.gain.setValueAtTime(PAD_GAIN * (1 - pi2 * 0.15), pEnd - 0.8);
+        pG.gain.exponentialRampToValueAtTime(0.0001, pEnd);
+        pOsc.connect(pG); pG.connect(cmBus);
+        pOsc.start(pStart); pOsc.stop(pEnd + 0.03);
+      }
+      var ARP = [0,3,7,12,7,3,0,7,3,12,7,0,3,7,12,3];
+      var ARP_STEP = 60 / 160 / 4;
+      var ARP_NOTE_LEN = 0.08;
+      var ARP_COUNT = 64;
+      for (var ai = 0; ai < ARP_COUNT; ai++) {
+        var semi = ARP[ai % ARP.length];
+        var aStart = t + ai * ARP_STEP;
+        if (aStart > t + TOTAL - 0.05) break;
+        var octMul = ((ai % 16) > 8) ? 2 : 1;
+        var aFreq = ROOT * octMul * _cmFr(semi);
+        var aEnd2 = aStart + ARP_NOTE_LEN;
+        var aOsc = audioCtx.createOscillator();
+        var aG = audioCtx.createGain();
+        aOsc.type = 'triangle';
+        aOsc.frequency.setValueAtTime(aFreq, aStart);
+        aG.gain.setValueAtTime(0.0001, aStart);
+        aG.gain.linearRampToValueAtTime(ARP_GAIN, aStart + 0.005);
+        aG.gain.exponentialRampToValueAtTime(0.0001, aEnd2);
+        aOsc.connect(aG); aG.connect(cmBus);
+        aOsc.start(aStart); aOsc.stop(aEnd2 + 0.02);
+      }
+      var stabTimes = [3.5, 5.5];
+      for (var si2 = 0; si2 < stabTimes.length; si2++) {
+        var stFreq = ROOT * 2 * _cmFr(AMIN[0]);
+        var stStart = t + stabTimes[si2];
+        var stEnd = stStart + 0.35;
+        var stOsc = audioCtx.createOscillator();
+        var stG = audioCtx.createGain();
+        stOsc.type = 'sawtooth';
+        stOsc.frequency.setValueAtTime(stFreq, stStart);
+        stG.gain.setValueAtTime(0.0001, stStart);
+        stG.gain.linearRampToValueAtTime(STAB_GAIN, stStart + 0.01);
+        stG.gain.exponentialRampToValueAtTime(0.0001, stEnd);
+        stOsc.connect(stG); stG.connect(cmBus);
+        stOsc.start(stStart); stOsc.stop(stEnd + 0.03);
+      }
+      var shStart = t + 6.5;
+      var shEnd = t + 6.9;
+      var shOsc = audioCtx.createOscillator();
+      var shG = audioCtx.createGain();
+      shOsc.type = 'triangle';
+      shOsc.frequency.setValueAtTime(3520, shStart);
+      shOsc.frequency.linearRampToValueAtTime(5500, shEnd);
+      shG.gain.setValueAtTime(0.0001, shStart);
+      shG.gain.linearRampToValueAtTime(SHIM_GAIN, shStart + 0.05);
+      shG.gain.exponentialRampToValueAtTime(0.0001, shEnd);
+      shOsc.connect(shG); shG.connect(cmBus);
+      shOsc.start(shStart); shOsc.stop(shEnd + 0.03);
     }
   },
   // --- Persistent engine hum ---
@@ -6345,31 +6443,9 @@ window.onload = function() {
     // and the 'playing' block overwrites positions on first frame.
     function runCinematic(onDone) {
         try {
-            // v8: capture mood + prevGain synchronously, but defer the
-            // actual playSong + startEngine until audioCtx.resume()
-            // resolves. On cold first tap on mobile the context is
-            // suspended; scheduling oscillators before it is running
-            // was delaying the first audible note. Gain is held at 1.0
-            // (not 1.9) so the engine hum is audible over the music
-            // during the cinematic.
-            try {
-                if (typeof musicGainNode !== 'undefined' && musicGainNode) {
-                    if (!_musicMuted) {
-                        try {
-                            var _gNow = audioCtx ? audioCtx.currentTime : 0;
-                            musicGainNode.gain.cancelScheduledValues(_gNow);
-                            musicGainNode.gain.setValueAtTime(1.0, _gNow);
-                        } catch (eGS) { musicGainNode.gain.value = 1.0; }
-                    } else {
-                        musicGainNode.gain.value = 0;
-                    }
-                }
-            } catch (e) { console.error('cine music gain err', e); }
             function _cineStartAudio() {
-                if (!_musicMuted && typeof playSong === 'function') {
-                    try { playSong(3); } catch(e2) { console.error('cine playSong err', e2); }
-                }
-                try { AudioEngine.startEngine(); } catch (eE) { console.error('cine engine start err', eE); }
+                try { AudioEngine.playSFX('cinematic_music'); } catch(e){}
+                try { AudioEngine.startEngine(); } catch(e){}
             }
             function _cineTryStart() {
                 if (typeof audioCtx === 'undefined' || !audioCtx) return false;
