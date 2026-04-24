@@ -1586,9 +1586,9 @@ function simulateLevelSpawns(c) {
   var rng = mulberry32(previewSeed * 9973 + activeSector * 131 + activeLevel * 17);
   var nextRand = function() { return rng(); };
 
-  var spacing = c.spacing || 80;
+  var defaultSpacing = c.spacing || 80;
   var startOffset = c.startOffset || 400;
-  var maxPct = c.maxSpawnPct || 0.80; // game uses 0.80 hard stop
+  var maxPct = c.maxSpawnPct || 0.78;
   var levelLength = c.levelLength || 15000;
   var endZ = levelLength * maxPct;
 
@@ -1604,29 +1604,9 @@ function simulateLevelSpawns(c) {
   var starsEnabled    = s >= 3 || (s === 2 && lvl >= 3);
   var boostEnabled    = s >= 3;
 
-  // Forced content positions — one per contentCount override, evenly spaced within segment
-  var forcedContentZ = [];
-  if (Array.isArray(c.spiralPattern) && c.spiralPattern.length > 0) {
-    var prevUF = 0;
-    c.spiralPattern.forEach(function(seg) {
-      if (seg.spawn && seg.spawn.contentCount !== undefined && seg.spawn.contentCount > 0) {
-        var z0 = Math.max(startOffset, prevUF * levelLength);
-        var z1 = Math.min(endZ, seg.until * levelLength);
-        var n = seg.spawn.contentCount;
-        for (var i = 1; i <= n; i++) forcedContentZ.push(z0 + (z1 - z0) * (i / (n + 1)));
-      }
-      prevUF = seg.until;
-    });
-  }
-
-  // Spiral state (mirrors _advanceSpiral / _getSegSpawn in game)
-  var laneAngles = [];
-  var lastSegIdx = -1;
-  var laneCounter = 0;
-  var flatAngle = -Math.PI / 2; // game init
+  var pat = c.spiralPattern;
 
   function currentSegIdx(zPos) {
-    var pat = c.spiralPattern;
     if (!pat || pat.length === 0) return -1;
     var progress = zPos / levelLength;
     for (var i = 0; i < pat.length; i++) if (progress <= pat[i].until) return i;
@@ -1635,10 +1615,53 @@ function simulateLevelSpawns(c) {
   function getSegSpawn(zPos) {
     var idx = currentSegIdx(zPos);
     if (idx < 0) return null;
-    return c.spiralPattern[idx].spawn || null;
+    return pat[idx].spawn || null;
   }
+
+  // Pass 1: simulate the lane-aware walk to map spawn-call indices to segments.
+  // This mirrors the game's two-pass contentCount logic exactly.
+  var forcedContentCallIdx = {};
+  if (pat && pat.length > 0 && levelLength > 0) {
+    var segCalls = {};
+    var simWalk = startOffset, simCallIdx = 0;
+    var lastItemWalk = levelLength * maxPct;
+    for (var sn = 0; sn < 600; sn++) {
+      if (simWalk > lastItemWalk) break;
+      var simProg = simWalk / levelLength;
+      var simSi = pat.length - 1, simLanes = 1, simSpacing = defaultSpacing;
+      for (var si = 0; si < pat.length; si++) {
+        if (simProg <= pat[si].until) {
+          simSi = si;
+          if (pat[si].lanes) simLanes = pat[si].lanes.length;
+          if (pat[si].spacing) simSpacing = pat[si].spacing;
+          break;
+        }
+      }
+      if (!segCalls[simSi]) segCalls[simSi] = [];
+      for (var sl = 0; sl < simLanes; sl++) segCalls[simSi].push(simCallIdx++);
+      simWalk += simSpacing;
+    }
+    for (var sci = 0; sci < pat.length; sci++) {
+      var seg2 = pat[sci];
+      if (seg2.spawn && seg2.spawn.contentCount > 0) {
+        var calls = segCalls[sci] || [];
+        var count = Math.min(seg2.spawn.contentCount, calls.length);
+        for (var ci = 0; ci < count; ci++) {
+          var pickIdx = Math.round((ci + 0.5) / count * calls.length - 0.5);
+          pickIdx = Math.max(0, Math.min(calls.length - 1, pickIdx));
+          forcedContentCallIdx[calls[pickIdx]] = true;
+        }
+      }
+    }
+  }
+
+  // Spiral state (mirrors _advanceSpiral in game, with shipAngle=0 at level start)
+  var laneAngles = [];
+  var lastSegIdx = -1;
+  var laneCounter = 0;
+  var flatAngle = 0;
+
   function advanceSpiral(zPos) {
-    var pat = c.spiralPattern;
     if (!pat || pat.length === 0) {
       flatAngle += (c.spiralStep !== undefined ? c.spiralStep : 1.1);
       return flatAngle;
@@ -1658,138 +1681,151 @@ function simulateLevelSpawns(c) {
     return laneAngles[li];
   }
 
-  var lastBarrierZ = -99999;
   var lastRampZ = -99999;
+  var callIdx = 0;
 
-  for (var z = startOffset; z < endZ; z += spacing) {
-    var rand = nextRand();
-    var segS = getSegSpawn(z);
+  // Pass 2: walk with per-segment spacing, emit one spawnItem call per lane at same Z.
+  var walkDist = startOffset;
+  for (var n = 0; n < 600; n++) {
+    if (walkDist > endZ) break;
+    var z = walkDist;
     var segIdx = currentSegIdx(z);
-
-    // Forced content (contentCount override)
-    var forceContent = false;
-    for (var fi = 0; fi < forcedContentZ.length; fi++) {
-      if (Math.abs(forcedContentZ[fi] - z) < spacing / 2) { forceContent = true; forcedContentZ.splice(fi, 1); break; }
-    }
-    var segHasCount = segS && segS.contentCount !== undefined;
-    var contentChance = 0;
-    if (!forceContent) {
-      contentChance = segHasCount ? 0 : (isSpeedRun ? 0 : (c.contentChance !== undefined ? c.contentChance : 0.055 + lvl * 0.008));
-    }
-    if (forceContent || rand < contentChance) {
-      var aC = advanceSpiral(z);
-      spawns.push({ z: z, type: 'content', angle: aC, segIdx: segIdx });
-      continue;
+    var segS = getSegSpawn(z);
+    var laneCount = 1;
+    var segSpacing = defaultSpacing;
+    if (pat && pat.length > 0) {
+      var segP = pat[segIdx];
+      if (segP.lanes) laneCount = segP.lanes.length;
+      if (segP.spacing) segSpacing = segP.spacing;
     }
 
-    // Barrier threshold (with overrides)
-    var barrierThreshold;
-    if (!barriersEnabled) barrierThreshold = 0;
-    else if (isSpeedRun) barrierThreshold = 0.30;
-    else if (s === 2) barrierThreshold = 0.12;
-    else if (s === 4) barrierThreshold = 0.20;
-    else barrierThreshold = 0.22;
-    barrierThreshold *= (1 + (lvl - 1) * 0.10);
-    if (segS && segS.barrierThreshold !== undefined) barrierThreshold = segS.barrierThreshold;
+    for (var ln = 0; ln < laneCount; ln++) {
+      var forceContent = !!forcedContentCallIdx[callIdx];
+      callIdx++;
+      var rand = nextRand();
 
-    // Speed-run barrier cluster (walks backwards from trigger)
-    if (isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 400) {
-      lastRampZ = z;
-      var seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] : (s === 5 ? 40 : 30);
-      var seriesCount = 3 + Math.floor(nextRand() * 2);
-      var baseGapAngle = nextRand() * Math.PI * 2;
-      var twistPerBarrier = 0.15 + nextRand() * 0.15;
-      for (var bi = 0; bi < seriesCount; bi++) {
-        var gapSizeSR = Math.PI * (0.9 + nextRand() * 0.4);
-        var gapAngleSR = baseGapAngle + bi * twistPerBarrier;
-        var bzSR = z - bi * seriesSpacing;
-        spawns.push({ z: bzSR, type: 'barrier', gapAngle: gapAngleSR, gapSize: gapSizeSR, segIdx: segIdx, withRamp: false });
+      // Content spawn (contentCount suppresses random contentChance)
+      var segHasCount = segS && segS.contentCount !== undefined;
+      var contentChance = 0;
+      if (!forceContent) {
+        contentChance = segHasCount ? 0 : (isSpeedRun ? 0 : (c.contentChance !== undefined ? c.contentChance : 0.055 + lvl * 0.008));
       }
-      continue;
-    }
-
-    // Normal barrier
-    if (!isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 800) {
-      lastRampZ = z;
-      var baseAng = nextRand() * Math.PI * 2;
-      if (!rampsEnabled || nextRand() < 0.4) {
-        var gs = Math.PI * (0.6 + nextRand() * 0.5);
-        var ga = nextRand() * Math.PI * 2;
-        spawns.push({ z: z, type: 'barrier', gapAngle: ga, gapSize: gs, segIdx: segIdx, withRamp: false });
-      } else {
-        // full ring + ramp placed before in Z (ramp at z - peakDist, approx 200)
-        spawns.push({ z: z - 200, type: 'ramp', angle: baseAng, segIdx: segIdx });
-        spawns.push({ z: z, type: 'barrier', gapAngle: 0, gapSize: 0, segIdx: segIdx, withRamp: true });
+      if (forceContent || rand < contentChance) {
+        var aC = advanceSpiral(z);
+        spawns.push({ z: z, type: 'content', angle: aC, segIdx: segIdx });
+        continue;
       }
-      continue;
-    }
 
-    // Re-roll past barrier threshold (game line ~3493)
-    rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
-    if (rand < 0) rand = nextRand();
+      // Barrier threshold (with segment override)
+      var barrierThreshold;
+      if (!barriersEnabled) barrierThreshold = 0;
+      else if (isSpeedRun) barrierThreshold = 0.30;
+      else if (s === 2) barrierThreshold = 0.12;
+      else if (s === 4) barrierThreshold = 0.20;
+      else barrierThreshold = 0.22;
+      barrierThreshold *= (1 + (lvl - 1) * 0.10);
+      if (segS && segS.barrierThreshold !== undefined) barrierThreshold = segS.barrierThreshold;
 
-    // Base distribution with level escalation
-    var baseHazard, baseRing, baseCore;
-    if (s === 1)      { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
-    else if (s === 2) { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
-    else if (s === 3) { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }
-    else if (s === 4) { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
-    else              { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
-    if (c.baseHazard !== undefined) baseHazard = c.baseHazard;
-    if (c.baseRing   !== undefined) baseRing   = c.baseRing;
-    if (c.baseCore   !== undefined) baseCore   = c.baseCore;
-    if (segS) {
-      if (segS.baseHazard !== undefined) baseHazard = segS.baseHazard;
-      if (segS.baseRing   !== undefined) baseRing   = segS.baseRing;
-      if (segS.baseCore   !== undefined) baseCore   = segS.baseCore;
-    }
-    // If the main distribution is intentionally empty, skip — don't fall back to a ring.
-    // (Mirrors the game-side fix.)
-    if (baseHazard === 0 && baseRing === 0 && baseCore === 0) continue;
-    var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
-    var remaining = 1 - hazardChance;
-    var ringChance = remaining * (baseRing / (baseRing + baseCore + 0.001));
-    var coreChance = remaining * (baseCore / (baseRing + baseCore + 0.001));
-
-    // Boost pad (+ 5-ring flip arc trail)
-    var boostThreshold = boostEnabled ? 0.04 : 0;
-    if (segS && segS.boostChance !== undefined) boostThreshold = segS.boostChance;
-    if (boostThreshold > 0 && rand < boostThreshold) {
-      var bAng = advanceSpiral(z);
-      spawns.push({ z: z, type: 'boost', angle: bAng, segIdx: segIdx });
-      var flipAheadDist = 38;
-      var ringCount = 5;
-      for (var ri = 1; ri <= ringCount; ri++) {
-        var frac = ri / (ringCount + 1);
-        spawns.push({ z: z - frac * flipAheadDist, type: 'ring', angle: bAng + frac * Math.PI * 2, segIdx: segIdx });
+      // Speed-run barrier cluster
+      if (isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 400) {
+        lastRampZ = z;
+        var seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] : (s === 5 ? 40 : 30);
+        var seriesCount = 3 + Math.floor(nextRand() * 2);
+        var baseGapAngle = nextRand() * Math.PI * 2;
+        var twistPerBarrier = 0.15 + nextRand() * 0.15;
+        for (var bi = 0; bi < seriesCount; bi++) {
+          var gapSizeSR = Math.PI * (0.9 + nextRand() * 0.4);
+          var gapAngleSR = baseGapAngle + bi * twistPerBarrier;
+          var bzSR = z - bi * seriesSpacing;
+          spawns.push({ z: bzSR, type: 'barrier', gapAngle: gapAngleSR, gapSize: gapSizeSR, segIdx: segIdx, withRamp: false });
+        }
+        continue;
       }
-      continue;
+
+      // Normal barrier (jump arc + ramp for full rings)
+      if (!isSpeedRun && barriersEnabled && rand < barrierThreshold && (z - lastRampZ) > 800) {
+        lastRampZ = z;
+        var baseAng = nextRand() * Math.PI * 2;
+        if (!rampsEnabled || nextRand() < 0.4) {
+          var gs = Math.PI * (0.6 + nextRand() * 0.5);
+          var ga = nextRand() * Math.PI * 2;
+          spawns.push({ z: z, type: 'barrier', gapAngle: ga, gapSize: gs, segIdx: segIdx, withRamp: false });
+        } else {
+          spawns.push({ z: z - 200, type: 'ramp', angle: baseAng, segIdx: segIdx });
+          spawns.push({ z: z, type: 'barrier', gapAngle: 0, gapSize: 0, segIdx: segIdx, withRamp: true });
+        }
+        continue;
+      }
+
+      // Re-roll past barrier threshold
+      rand = (rand - Math.max(barrierThreshold, 0.001)) / (1 - Math.max(barrierThreshold, 0.001));
+      if (rand < 0) rand = nextRand();
+
+      // Base distribution with level escalation + per-level + per-segment overrides
+      var baseHazard, baseRing, baseCore;
+      if (s === 1)      { baseHazard = 0.20; baseRing = 0.80; baseCore = (lvl >= 3 ? 0.10 : 0.00); }
+      else if (s === 2) { baseHazard = 0.35; baseRing = 0.55; baseCore = 0.10; }
+      else if (s === 3) { baseHazard = 0.00; baseRing = 0.85; baseCore = 0.15; }
+      else if (s === 4) { baseHazard = 0.45; baseRing = 0.30; baseCore = 0.25; }
+      else              { baseHazard = isSpeedRun ? 0.10 : 0.55; baseRing = isSpeedRun ? 0.70 : 0.25; baseCore = 0.20; }
+      if (c.baseHazard !== undefined) baseHazard = c.baseHazard;
+      if (c.baseRing   !== undefined) baseRing   = c.baseRing;
+      if (c.baseCore   !== undefined) baseCore   = c.baseCore;
+      if (segS) {
+        if (segS.baseHazard !== undefined) baseHazard = segS.baseHazard;
+        if (segS.baseRing   !== undefined) baseRing   = segS.baseRing;
+        if (segS.baseCore   !== undefined) baseCore   = segS.baseCore;
+      }
+      if (baseHazard === 0 && baseRing === 0 && baseCore === 0) continue;
+      var hazardChance = Math.min(0.85, baseHazard * (1 + (lvl - 1) * 0.10));
+      var remaining = 1 - hazardChance;
+      var ringChance = remaining * (baseRing / (baseRing + baseCore + 0.001));
+      var coreChance = remaining * (baseCore / (baseRing + baseCore + 0.001));
+
+      // Boost pad + 5-ring flip arc trail
+      var boostThreshold = boostEnabled ? 0.04 : 0;
+      if (segS && segS.boostChance !== undefined) boostThreshold = segS.boostChance;
+      if (boostThreshold > 0 && rand < boostThreshold) {
+        var bAng = advanceSpiral(z);
+        spawns.push({ z: z, type: 'boost', angle: bAng, segIdx: segIdx });
+        var flipAheadDist = 38;
+        var ringCount = 5;
+        for (var ri = 1; ri <= ringCount; ri++) {
+          var frac = ri / (ringCount + 1);
+          spawns.push({ z: z - frac * flipAheadDist, type: 'ring', angle: bAng + frac * Math.PI * 2, segIdx: segIdx });
+        }
+        continue;
+      }
+
+      // Star / core / ring / hazard
+      var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+      if (segS && segS.starChance !== undefined) starChance = segS.starChance;
+
+      var itemType;
+      if (starChance > 0 && rand < starChance) itemType = 'star';
+      else if (coresEnabled && rand < coreChance) itemType = 'core';
+      else if (rand < coreChance + ringChance) itemType = 'ring';
+      else if (rand < coreChance + ringChance + hazardChance) {
+        if (!minesEnabled && !blocksEnabled && !knotsEnabled) itemType = 'ring';
+        else {
+          var hRand = nextRand();
+          if (knotsEnabled && hRand < 0.25) itemType = 'knot';
+          else if (blocksEnabled && hRand < 0.50) itemType = 'block';
+          else if (minesEnabled) itemType = 'mine';
+          else itemType = 'ring';
+        }
+      } else itemType = 'ring';
+
+      var aM = advanceSpiral(z);
+      spawns.push({ z: z, type: itemType, angle: aM, segIdx: segIdx });
     }
 
-    // Star / core / ring / hazard
-    var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
-    if (segS && segS.starChance !== undefined) starChance = segS.starChance;
-
-    var itemType;
-    if (starChance > 0 && rand < starChance) itemType = 'star';
-    else if (coresEnabled && rand < coreChance) itemType = 'core';
-    else if (rand < coreChance + ringChance) itemType = 'ring';
-    else if (rand < coreChance + ringChance + hazardChance) {
-      if (!minesEnabled && !blocksEnabled && !knotsEnabled) itemType = 'ring';
-      else {
-        var hRand = nextRand();
-        if (knotsEnabled && hRand < 0.25) itemType = 'knot';
-        else if (blocksEnabled && hRand < 0.50) itemType = 'block';
-        else if (minesEnabled) itemType = 'mine';
-        else itemType = 'ring';
-      }
-    } else itemType = 'ring';
-
-    var aM = advanceSpiral(z);
-    spawns.push({ z: z, type: itemType, angle: aM, segIdx: segIdx });
+    walkDist += segSpacing;
   }
 
-  // ── Pylons (deterministic, opt-in via c.pylons) ──
+  // Pylons (deterministic spiral, opt-in via c.pylons) — game pct applies to sector distance.
+  // Editor's levelLength is the same reference the walk uses, so pylon start/end pcts land
+  // at identical canvas positions relative to the ring walk.
   if (c.pylons) {
     var py = c.pylons;
     var pySpacing    = py.spacing    || 250;
@@ -1803,8 +1839,6 @@ function simulateLevelSpawns(c) {
     var pyEndZ   = pyEndPct   * levelLength;
     var pyIdx = 0;
     for (var pz = pyStartZ; pz < pyEndZ; pz += pySpacing) {
-      // For alternate, base advances per PAIR (not per pylon) so the visual
-      // alternation L R L R is preserved regardless of spiralStep magnitude.
       var pairIdx = (pyPattern === 'alternate') ? Math.floor(pyIdx / 2) : pyIdx;
       var baseA = pyStart + pairIdx * pyStep;
       function place(isLeftSide) {
@@ -1814,7 +1848,7 @@ function simulateLevelSpawns(c) {
       if      (pyPattern === 'left')  place(true);
       else if (pyPattern === 'right') place(false);
       else if (pyPattern === 'pair')  { place(true); place(false); }
-      else                            place(pyIdx % 2 === 0); // alternate
+      else                            place(pyIdx % 2 === 0);
       pyIdx++;
     }
   }
