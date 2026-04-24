@@ -741,6 +741,7 @@
       </div>
     </div>
     <div id="press-start">TOUCH ANYWHERE TO BEGIN</div>
+    <button class="menu-btn" id="title-level-select-btn" style="display:none;margin:8px auto 4px;width:auto;padding:10px 22px;font-size:9px;color:#ff69b4;border-color:#ff69b4;">[ REPLAY LEVEL ]</button>
     <div id="lb-wrapper">
       <div id="lb-title">--  HIGH SCORES  --</div>
       <div id="lb-rows"></div>
@@ -769,6 +770,8 @@
       </div>
     </div>
     <button class="menu-btn stagger-in" id="retry-sector-btn">[ RETRY SECTOR ]</button>
+    <button class="menu-btn stagger-in" id="go-replay-level-btn" style="display:none;">[ REPLAY LEVEL ]</button>
+    <button class="menu-btn stagger-in" id="go-level-select-btn" style="display:none;color:#ff69b4;border-color:#ff69b4;">[ LEVEL SELECT ]</button>
     <button class="menu-btn btn-danger stagger-in" id="abort-run-btn">[ ABORT RUN ]</button>
 </div>
 <div id="victory-screen" class="overlay-screen">
@@ -777,6 +780,13 @@
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
     <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:18px;"></div>
     <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ NEXT SECTOR &gt; ]</button>
+    <button class="menu-btn stagger-in" id="vs-replay-level-btn" style="margin-top:6px;">[ REPLAY LEVEL ]</button>
+    <button class="menu-btn stagger-in" id="vs-level-select-btn" style="margin-top:6px;color:#ff69b4;border-color:#ff69b4;">[ LEVEL SELECT ]</button>
+</div>
+<div id="level-select-screen" class="overlay-screen" style="display:none;">
+    <h1 class="screen-title" style="font-family:'Press Start 2P',monospace;font-size:clamp(14px,3.5vw,20px);color:#00ffcc;letter-spacing:3px;margin-bottom:18px;">LEVEL SELECT</h1>
+    <div id="level-select-grid" style="display:flex;flex-direction:column;gap:14px;width:90%;max-width:360px;margin-bottom:20px;"></div>
+    <button class="menu-btn" id="level-select-back-btn" style="width:auto;padding:10px 24px;">[ BACK ]</button>
 </div>
 
 <!-- Finale Screen -->
@@ -4408,10 +4418,15 @@ window.onload = function() {
         // Delay game-over screen so explosion plays out
         setTimeout(function() {
             document.getElementById('go-score').innerText = 'SCORE: ' + score.toString().padStart(6, '0');
-            document.getElementById('initials-entry').style.display = 'block';
+            var _trQual = (typeof _trQualifiesForLeaderboard === 'function') ? _trQualifiesForLeaderboard(score) : (score > 0);
+            document.getElementById('initials-entry').style.display = _trQual ? 'block' : 'none';
             document.getElementById('go-post-submit').style.display = 'none';
             document.getElementById('retry-sector-btn').style.display = '';
             document.getElementById('abort-run-btn').style.display = '';
+            var _goRL = document.getElementById('go-replay-level-btn');
+            if (_goRL) _goRL.style.display = '';
+            var _goLS = document.getElementById('go-level-select-btn');
+            if (_goLS) _goLS.style.display = (typeof _trAnyCompleted === 'function' && _trAnyCompleted()) ? '' : 'none';
             ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
             document.getElementById('game-over-screen').style.display = 'flex';
             document.getElementById('retry-sector-btn').innerText = "[ RETRY SECTOR " + currentSector + " ]";
@@ -4499,6 +4514,7 @@ window.onload = function() {
     function triggerVictory() {
         _sendTelemetry('victory');
         gameState = 'victory';
+        try { _trSaveMaxPassed(currentSector, currentLevel); } catch(e) {}
         document.getElementById('speedrun-clock').style.display = 'none';
         AudioEngine.playSFX('victory');
         flash('#00ffaa');
@@ -5697,7 +5713,7 @@ window.onload = function() {
 
 
     // ══════════════════════════════════════════════════════════════════════════
-    function initializeFlight(isFullReset) {
+    function initializeFlight(isFullReset, startSector, startLevel) {
         AudioEngine.init();
 
         items.forEach(item => scene.remove(item));
@@ -5708,10 +5724,14 @@ window.onload = function() {
             _comboX4Count = 0;
             currentSector = 1;
             currentLevel = 1;
+            if (typeof startSector === 'number' && typeof startLevel === 'number') {
+                currentSector = startSector;
+                currentLevel = startLevel;
+            }
             introSpawned = false;
             contentSpawnedThisRun = [];
             collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
-            var zone0 = getLevelScaledZone(1);
+            var zone0 = getLevelScaledZone(currentSector);
             baseSpeed = zone0.speed;
             sectorDistance = zone0.length;
             sectorStartScore = 0;
@@ -5721,7 +5741,7 @@ window.onload = function() {
             try { localStorage.removeItem('trUnlockedZones'); } catch(e) {}
             rebuildUnlockedMenu();
             throttle = 0; throttleSmooth = 0; shipZOffset = -18;
-            document.getElementById('sector-text').innerText = '1-1';
+            document.getElementById('sector-text').innerText = currentSector + '-' + currentLevel;
             document.getElementById('zone-name').innerText = zone0.name;
             document.getElementById('zone-name').style.color = zone0.color;
             wireMat.color.setHex(zone0.wireColor);
@@ -6409,6 +6429,7 @@ window.onload = function() {
     bindTap('go-inventory', function() { openInventory('gameover'); });
     bindTap('go-title-btn', function() {
         document.getElementById('game-over-screen').style.display = 'none';
+        try { if (typeof _trRefreshTitleReplayBtn === 'function') _trRefreshTitleReplayBtn(); } catch(e) {}
         initializeFlight(true);
     });
     bindTap('inventory-back', function() { closeInventory(); });
@@ -6638,7 +6659,7 @@ window.onload = function() {
         try {
             var _ts = document.getElementById('cine-title-stack');
             if (_ts) {
-                var _scl = 1 + 0.2 * Math.min(1, T / 7.0);
+                var _scl = 1 + 0.5 * Math.min(1, T / 9.0);
                 _ts.style.transformOrigin = 'center center';
                 _ts.style.transform = 'scale(' + _scl + ')';
             }
@@ -7567,6 +7588,143 @@ window.onload = function() {
     window.addEventListener('resize', function() { resize(); init(); });
     resize(); init(); draw();
 })();
+
+    // ── Level progress tracking + level select ─────────────────────────────
+    var _TR_LEVELS = [
+        { s: 1, levels: 4 },
+        { s: 2, levels: 4 },
+        { s: 3, levels: 4 },
+        { s: 4, levels: 4 },
+        { s: 5, levels: 4 }
+    ];
+    function _trLoadMaxPassed() {
+        try {
+            var raw = localStorage.getItem('tunnelrunner.maxLevelPassed');
+            if (!raw) return { s: 0, l: 0 };
+            var m = raw.match(/^S(\d+)L(\d+)$/);
+            if (!m) return { s: 0, l: 0 };
+            return { s: parseInt(m[1]), l: parseInt(m[2]) };
+        } catch (e) { return { s: 0, l: 0 }; }
+    }
+    function _trSaveMaxPassed(s, l) {
+        try {
+            var cur = _trLoadMaxPassed();
+            if (s > cur.s || (s === cur.s && l > cur.l)) {
+                localStorage.setItem('tunnelrunner.maxLevelPassed', 'S' + s + 'L' + l);
+                _trRefreshTitleReplayBtn();
+            }
+        } catch (e) {}
+    }
+    function _trAnyCompleted() {
+        var m = _trLoadMaxPassed();
+        return m.s > 0 && m.l > 0;
+    }
+    function _trRefreshTitleReplayBtn() {
+        var btn = document.getElementById('title-level-select-btn');
+        if (!btn) return;
+        btn.style.display = _trAnyCompleted() ? 'block' : 'none';
+    }
+    function _trBuildLevelSelect() {
+        var grid = document.getElementById('level-select-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        var m = _trLoadMaxPassed();
+        _TR_LEVELS.forEach(function(sec) {
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;flex-direction:column;align-items:center;gap:6px;';
+            var label = document.createElement('div');
+            label.style.cssText = "font-family:'Press Start 2P',monospace;font-size:9px;color:#ffe000;letter-spacing:2px;";
+            label.innerText = 'SECTOR ' + sec.s;
+            row.appendChild(label);
+            var btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex;gap:6px;flex-wrap:wrap;justify-content:center;';
+            for (var li = 1; li <= sec.levels; li++) {
+                (function(sNum, lNum) {
+                    var b = document.createElement('button');
+                    b.className = 'menu-btn';
+                    var unlocked = (sNum < m.s) || (sNum === m.s && lNum <= m.l) || (sNum === 1 && lNum === 1);
+                    b.style.cssText = "width:auto;padding:8px 12px;font-size:8px;" + (unlocked ? '' : 'opacity:0.3;pointer-events:none;filter:grayscale(1);');
+                    b.innerText = 'L' + lNum;
+                    if (unlocked) {
+                        var lastTap = 0;
+                        var handler = function(e) {
+                            e.preventDefault(); e.stopPropagation();
+                            var now = Date.now();
+                            if (now - lastTap < 300) return;
+                            lastTap = now;
+                            _trLaunchLevel(sNum, lNum);
+                        };
+                        b.addEventListener('touchend', handler, {passive:false});
+                        b.addEventListener('mouseup', handler, {passive:false});
+                    }
+                    btnRow.appendChild(b);
+                })(sec.s, li);
+            }
+            row.appendChild(btnRow);
+            grid.appendChild(row);
+        });
+    }
+    function _trOpenLevelSelect() {
+        _trBuildLevelSelect();
+        document.querySelectorAll('.overlay-screen').forEach(function(el) { el.style.display = 'none'; });
+        var el = document.getElementById('level-select-screen');
+        if (el) el.style.display = 'flex';
+    }
+    function _trCloseLevelSelect() {
+        var el = document.getElementById('level-select-screen');
+        if (el) el.style.display = 'none';
+        var ss = document.getElementById('start-screen');
+        if (ss) ss.style.display = 'flex';
+        _trRefreshTitleReplayBtn();
+    }
+    function _trLaunchLevel(s, l) {
+        var el = document.getElementById('level-select-screen');
+        if (el) el.style.display = 'none';
+        try { initializeFlight(true, s, l); }
+        catch(err) { console.error('level launch err', err); }
+    }
+    function _trQualifiesForLeaderboard(s) {
+        try {
+            var arr = JSON.parse(localStorage.getItem('cyberTubeScores') || '[]');
+            if (arr.length < 10) return s > 0;
+            var min = arr.reduce(function(acc, r) { return (r.score < acc) ? r.score : acc; }, Infinity);
+            return s > min;
+        } catch (e) { return s > 0; }
+    }
+    (function _trBindLevelSelect() {
+        function bind(id, fn) {
+            var el = document.getElementById(id);
+            if (!el) return;
+            var lastTap = 0;
+            var handler = function(e) {
+                e.preventDefault(); e.stopPropagation();
+                var now = Date.now();
+                if (now - lastTap < 300) return;
+                lastTap = now;
+                fn();
+            };
+            el.addEventListener('touchend', handler, {passive:false});
+            el.addEventListener('mouseup', handler, {passive:false});
+        }
+        bind('title-level-select-btn', _trOpenLevelSelect);
+        bind('vs-level-select-btn', _trOpenLevelSelect);
+        bind('go-level-select-btn', _trOpenLevelSelect);
+        bind('level-select-back-btn', _trCloseLevelSelect);
+        bind('vs-replay-level-btn', function() {
+            var s = currentSector, l = currentLevel;
+            var vs = document.getElementById('victory-screen');
+            if (vs) vs.style.display = 'none';
+            try { initializeFlight(true, s, l); } catch(err) {}
+        });
+        bind('go-replay-level-btn', function() {
+            var s = currentSector, l = currentLevel;
+            var gos = document.getElementById('game-over-screen');
+            if (gos) gos.style.display = 'none';
+            try { initializeFlight(true, s, l); } catch(err) {}
+        });
+        _trRefreshTitleReplayBtn();
+    })();
+
 (function() {
     function triggerStagger(el) {
         var items = el.querySelectorAll('.stagger-in');
