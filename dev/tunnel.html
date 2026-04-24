@@ -777,11 +777,6 @@
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
     <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:0;"></div>
 </div>
-<div id="level-select-screen" class="overlay-screen" style="display:none;">
-    <h1 class="screen-title" style="font-family:'Press Start 2P',monospace;font-size:clamp(14px,3.5vw,20px);color:#00ffcc;letter-spacing:3px;margin-bottom:18px;">LEVEL SELECT</h1>
-    <div id="level-select-grid" style="display:flex;flex-direction:column;gap:14px;width:90%;max-width:360px;margin-bottom:20px;"></div>
-    <button class="menu-btn" id="level-select-back-btn" style="width:auto;padding:10px 24px;">[ BACK ]</button>
-</div>
 
 <!-- Finale Screen -->
 <div id="finale-screen">
@@ -829,7 +824,14 @@
     <button id="tr-carousel-continue">[ PLAY NEXT SECTOR &gt; ]</button>
     <div id="tr-carousel-abort-nav" style="display:none;position:absolute;left:0;right:0;bottom:88px;z-index:3;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:auto;">
         <button class="menu-btn" id="tr-abort-retry-level-btn" style="width:auto;padding:12px 22px;font-size:10px;">[ RETRY LEVEL ]</button>
-        <div id="tr-abort-grid" style="width:100%;max-width:360px;"></div>
+        <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#888;letter-spacing:2px;margin-top:4px;">TRY ANOTHER SECTOR</div>
+        <div id="tr-abort-sector-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
+            <button class="menu-btn" data-abort-sector="1" style="width:auto;padding:8px 14px;font-size:9px;">S1</button>
+            <button class="menu-btn" data-abort-sector="2" style="width:auto;padding:8px 14px;font-size:9px;">S2</button>
+            <button class="menu-btn" data-abort-sector="3" style="width:auto;padding:8px 14px;font-size:9px;">S3</button>
+            <button class="menu-btn" data-abort-sector="4" style="width:auto;padding:8px 14px;font-size:9px;">S4</button>
+            <button class="menu-btn" data-abort-sector="5" style="width:auto;padding:8px 14px;font-size:9px;">S5</button>
+        </div>
     </div>
 </div>
 
@@ -915,7 +917,6 @@
         <button class="menu-btn" id="dev-s5" style="width:auto;padding:6px 12px;font-size:9px;">S5</button>
       </div>
     </div>
-    <div id="pause-sector-nav" style="width:100%;max-width:320px;margin:18px auto 0;display:flex;flex-direction:column;gap:10px;"></div>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
 </div>
 
@@ -2485,7 +2486,6 @@ window.onload = function() {
         overlay.style.display = 'flex';
         var _abortNav = document.getElementById('tr-carousel-abort-nav');
         if (_abortNav) {
-            if (_carouselFromAbort) { try { _trBuildAbortGrid(); } catch(e) {} }
             _abortNav.style.display = _carouselFromAbort ? 'flex' : 'none';
         }
         if (contBtn) contBtn.style.display = _carouselFromAbort ? 'none' : '';
@@ -6002,7 +6002,6 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
-            _trBuildPauseSectorNav();
             // Show pause on top of all content overlays
             document.getElementById('pause-screen').style.zIndex = '650';
             document.getElementById('pause-screen').style.display = 'flex';
@@ -6014,7 +6013,6 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
-            _trBuildPauseSectorNav();
             document.getElementById('pause-screen').style.display = 'flex';
             var fireBtn = document.getElementById('fire-btn');
             if (fireBtn) fireBtn.style.display = 'none';
@@ -6027,7 +6025,6 @@ window.onload = function() {
             AudioEngine.suspend();
             rebuildUnlockedMenu();
             rebuildShipSelector();
-            _trBuildPauseSectorNav();
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (gameState === 'paused') {
             document.getElementById('pause-screen').style.display = 'none';
@@ -6278,6 +6275,31 @@ window.onload = function() {
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
         try { initializeFlight(true, s, l); } catch(err) {}
     });
+    (function() {
+        var row = document.getElementById('tr-abort-sector-row');
+        if (!row) return;
+        var btns = row.querySelectorAll('button[data-abort-sector]');
+        btns.forEach(function(b) {
+            var n = parseInt(b.getAttribute('data-abort-sector'), 10);
+            var lastTap = 0;
+            var handler = function(e) {
+                e.preventDefault(); e.stopPropagation();
+                var now = Date.now();
+                if (now - lastTap < 300) return;
+                lastTap = now;
+                _carouselFromAbort = false;
+                var ov = document.getElementById('tr-carousel-overlay');
+                if (ov) ov.style.display = 'none';
+                var nav = document.getElementById('tr-carousel-abort-nav');
+                if (nav) nav.style.display = 'none';
+                document.body.style.touchAction = 'none';
+                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+                try { initializeFlight(true, n, 1); } catch(err) {}
+            };
+            b.addEventListener('touchend', handler, {passive:false});
+            b.addEventListener('mouseup', handler, {passive:false});
+        });
+    })();
 
     // Dev sector jump buttons
     function devJumpSector(n) {
@@ -7674,9 +7696,7 @@ window.onload = function() {
     resize(); init(); draw();
 })();
 
-    // ── Level progress tracking + level select ─────────────────────────────
-    var _TR_SECTORS = 5;
-    var _TR_LEVELS_PER = 4;
+    // ── Level progress tracking ────────────────────────────────────────────
     function _trLoadMaxPassed() {
         try {
             var raw = localStorage.getItem('tunnelrunner.maxLevelPassed');
@@ -7726,154 +7746,6 @@ window.onload = function() {
         var r = _trLoadMaxReached();
         return (s < r.s) || (s === r.s && l <= r.l);
     }
-    function _trBuildLevelGrid(container, opts) {
-        if (!container) return;
-        container.innerHTML = '';
-        opts = opts || {};
-        var passedMark = _trLoadMaxPassed();
-        var grid = document.createElement('div');
-        grid.style.cssText = "display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;width:100%;max-width:360px;margin:0 auto;";
-        for (var s = 1; s <= _TR_SECTORS; s++) {
-            (function(sNum) {
-                var col = document.createElement('div');
-                col.style.cssText = "display:flex;flex-direction:column;align-items:stretch;gap:6px;";
-                var header = document.createElement('button');
-                header.className = 'menu-btn';
-                var hReached = _trIsReached(sNum, 1);
-                var hBase = "width:auto;margin:0;padding:6px 4px;font-size:9px;letter-spacing:1px;text-align:center;";
-                if (hReached) {
-                    header.style.cssText = hBase + "border-color:#ffe000;color:#ffe000;background:rgba(255,224,0,0.06);";
-                } else {
-                    header.style.cssText = hBase + "opacity:0.25;filter:grayscale(1);pointer-events:none;";
-                }
-                header.innerText = 'S' + sNum;
-                if (hReached) {
-                    header.style.touchAction = 'manipulation';
-                    header.style.pointerEvents = 'auto';
-                    var hLast = 0;
-                    var hBlock = function(e) { e.stopPropagation(); };
-                    var hHandler = function(e) {
-                        e.preventDefault(); e.stopPropagation();
-                        var now = Date.now();
-                        if (now - hLast < 300) return;
-                        hLast = now;
-                        if (opts.onPick) opts.onPick(sNum, 1);
-                    };
-                    header.addEventListener('touchstart', hBlock, {passive:true});
-                    header.addEventListener('touchend', hHandler, {passive:false});
-                    header.addEventListener('mouseup', hHandler, {passive:false});
-                    header.addEventListener('click', hHandler, {passive:false});
-                }
-                col.appendChild(header);
-                for (var l = 1; l <= _TR_LEVELS_PER; l++) {
-                    (function(lNum) {
-                        var b = document.createElement('button');
-                        b.className = 'menu-btn';
-                        var reached = _trIsReached(sNum, lNum);
-                        var passed = (sNum < passedMark.s) || (sNum === passedMark.s && lNum <= passedMark.l);
-                        var base = "width:auto;margin:0;padding:8px 4px;font-size:8px;letter-spacing:1px;text-align:center;";
-                        if (reached) {
-                            b.style.cssText = base + "border-color:#ffe000;color:#ffe000;background:rgba(255,224,0,0.06);box-shadow:0 0 8px rgba(255,224,0,0.15);";
-                        } else {
-                            b.style.cssText = base + "opacity:0.25;filter:grayscale(1);pointer-events:none;";
-                        }
-                        b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
-                        if (reached) {
-                            b.style.touchAction = 'manipulation';
-                            b.style.pointerEvents = 'auto';
-                            var lastTap = 0;
-                            var bBlock = function(e) { e.stopPropagation(); };
-                            var handler = function(e) {
-                                e.preventDefault(); e.stopPropagation();
-                                var now = Date.now();
-                                if (now - lastTap < 300) return;
-                                lastTap = now;
-                                if (opts.onPick) opts.onPick(sNum, lNum);
-                            };
-                            b.addEventListener('touchstart', bBlock, {passive:true});
-                            b.addEventListener('touchend', handler, {passive:false});
-                            b.addEventListener('mouseup', handler, {passive:false});
-                            b.addEventListener('click', handler, {passive:false});
-                        }
-                        col.appendChild(b);
-                    })(l);
-                }
-                grid.appendChild(col);
-            })(s);
-        }
-        container.appendChild(grid);
-    }
-    function _trBuildLevelSelect() {
-        var grid = document.getElementById('level-select-grid');
-        if (!grid) return;
-        _trBuildLevelGrid(grid, {
-            onPick: function(s, l) { _trLaunchLevel(s, l); }
-        });
-    }
-    function _trBuildPauseSectorNav() {
-        var host = document.getElementById('pause-sector-nav');
-        if (!host) return;
-        _trBuildLevelGrid(host, {
-            onPick: function(s, l) { _trLaunchLevel(s, l); }
-        });
-    }
-    function _trBuildAbortGrid() {
-        var host = document.getElementById('tr-abort-grid');
-        if (!host) return;
-        _trBuildLevelGrid(host, {
-            onPick: function(s, l) { _trLaunchLevel(s, l); }
-        });
-    }
-    function _trOpenLevelSelect() {
-        _trBuildLevelSelect();
-        document.querySelectorAll('.overlay-screen').forEach(function(el) { el.style.display = 'none'; });
-        var el = document.getElementById('level-select-screen');
-        if (el) el.style.display = 'flex';
-    }
-    function _trCloseLevelSelect() {
-        var el = document.getElementById('level-select-screen');
-        if (el) el.style.display = 'none';
-        var ss = document.getElementById('start-screen');
-        if (ss) ss.style.display = 'flex';
-    }
-    function _trLaunchLevel(s, l) {
-        try {
-            document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; el.style.zIndex = ''; });
-            var _ids = ['tr-carousel-overlay','tr-carousel-abort-nav','tr-video-player','tr-lightbox','tr-design-viewer','inventory-picker','level-select-screen','pause-screen','pause-overlay','game-over-screen','victory-screen','finale-screen'];
-            for (var i = 0; i < _ids.length; i++) {
-                var _el = document.getElementById(_ids[i]);
-                if (_el) { _el.style.display = 'none'; _el.style.zIndex = ''; }
-            }
-            var _si = document.getElementById('sector-intro-splash');
-            if (_si) { if (_si._spinCanvases) _si._spinCanvases.forEach(function(c){ if(c._stopSpin) c._stopSpin(); }); _si.remove(); }
-            try { document.body.classList.remove('cinematic-active'); } catch(e) {}
-        } catch(e) {}
-        _carouselFromAbort = false;
-        carouselFromVictory = false;
-        if (typeof carouselFromPause !== 'undefined') carouselFromPause = false;
-        _prePauseState = null;
-        _prePauseScreen = null;
-        if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
-        document.body.style.touchAction = 'none';
-        currentSector = s;
-        currentLevel = l;
-        contentSpawnedThisRun = [];
-        try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
-        var zone = getLevelScaledZone(currentSector);
-        sectorDistance = zone.length;
-        baseSpeed = zone.speed;
-        document.getElementById('sector-text').innerText = currentSector + '-' + currentLevel;
-        document.getElementById('zone-name').innerText = zone.name;
-        document.getElementById('zone-name').style.color = zone.color;
-        wireMat.color.setHex(zone.wireColor);
-        scene.fog.color.setHex(zone.fogColor);
-        scene.background.setHex(zone.fogColor);
-        sectorStartScore = score;
-        combo = 0;
-        shieldsUp = false; shieldsUpTimer = 0;
-        updateCollectionHUD();
-        try { initializeFlight(false); } catch(err) { console.error('launch level err', err); }
-    }
     function _trQualifiesForLeaderboard(s) {
         try {
             var arr = JSON.parse(localStorage.getItem('cyberTubeScores') || '[]');
@@ -7882,23 +7754,6 @@ window.onload = function() {
             return s > min;
         } catch (e) { return s > 0; }
     }
-    (function _trBindLevelSelect() {
-        function bind(id, fn) {
-            var el = document.getElementById(id);
-            if (!el) return;
-            var lastTap = 0;
-            var handler = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                var now = Date.now();
-                if (now - lastTap < 300) return;
-                lastTap = now;
-                fn();
-            };
-            el.addEventListener('touchend', handler, {passive:false});
-            el.addEventListener('mouseup', handler, {passive:false});
-        }
-        bind('level-select-back-btn', _trCloseLevelSelect);
-    })();
 
 (function() {
     function triggerStagger(el) {
