@@ -6354,8 +6354,6 @@ window.onload = function() {
             // during the cinematic.
             try {
                 if (typeof musicGainNode !== 'undefined' && musicGainNode) {
-                    _cine.prevMusicGain = musicGainNode.gain.value;
-                    _cine.prevMood = (typeof _songIndex !== 'undefined') ? _songIndex : 0;
                     if (!_musicMuted) {
                         try {
                             var _gNow = audioCtx ? audioCtx.currentTime : 0;
@@ -6375,15 +6373,9 @@ window.onload = function() {
             }
             try {
                 if (typeof audioCtx !== 'undefined' && audioCtx) {
-                    if (audioCtx.state === 'suspended') {
-                        audioCtx.resume().then(_cineStartAudio).catch(function(e) {
-                            console.error('cine audioCtx.resume err', e);
-                            _cineStartAudio();
-                        });
-                    } else {
-                        _cineStartAudio();
-                    }
+                    try { audioCtx.resume(); } catch (eR) {}
                 }
+                _cineStartAudio();
             } catch (e) { console.error('cine audio chain err', e); }
             _cine.active = true;
             _cine.t = 0;
@@ -6559,40 +6551,6 @@ window.onload = function() {
             wireMat.color.setRGB(0, 1, 136/255);
             tracerGroup.visible = false;
             cameraShake = 0;
-            try {
-                if (typeof musicGainNode !== 'undefined' && musicGainNode && typeof _cine.prevMusicGain === 'number') {
-                    var _prevG = _cine.prevMusicGain;
-                    var _prevM = (typeof _cine.prevMood === 'number') ? _cine.prevMood : 0;
-                    if (audioCtx && !_musicMuted) {
-                        try {
-                            var _now = audioCtx.currentTime;
-                            musicGainNode.gain.cancelScheduledValues(_now);
-                            musicGainNode.gain.setValueAtTime(musicGainNode.gain.value, _now);
-                            musicGainNode.gain.linearRampToValueAtTime(0.0001, _now + 0.25);
-                            setTimeout(function() {
-                                try {
-                                    if (typeof playSong === 'function') playSong(_prevM);
-                                    if (audioCtx && !_musicMuted) {
-                                        var _t2 = audioCtx.currentTime;
-                                        musicGainNode.gain.cancelScheduledValues(_t2);
-                                        musicGainNode.gain.setValueAtTime(0.0001, _t2);
-                                        musicGainNode.gain.linearRampToValueAtTime(_prevG, _t2 + 0.55);
-                                    } else if (musicGainNode) {
-                                        musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
-                                    }
-                                } catch (eX) { console.error('cine music crossfade err', eX); }
-                            }, 260);
-                        } catch (eY) {
-                            musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
-                            if (typeof playSong === 'function') { try { playSong(_prevM); } catch(eZ) {} }
-                        }
-                    } else {
-                        musicGainNode.gain.value = _musicMuted ? 0 : _prevG;
-                    }
-                    _cine.prevMusicGain = null;
-                    _cine.prevMood = null;
-                }
-            } catch (e) { console.error('cine music restore err', e); }
         } catch (e) { console.error('cinematic reset err', e); }
         try { document.body.classList.remove('cinematic-active'); } catch (e) {}
         var cb = _cine.onDone;
