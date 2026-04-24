@@ -775,9 +775,7 @@
     <div id="victory-unlocks" style="display:none;text-align:center;margin-bottom:14px;"></div>
     <h1 class="screen-title stagger-in">SECTOR CLEARED</h1>
     <div id="victory-score" class="stagger-in">SCORE: 000000</div>
-    <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:18px;"></div>
-    <button class="menu-btn btn-gold stagger-in" id="next-level-btn">[ BROWSE CONTENT ]</button>
-    <button class="menu-btn stagger-in" id="vs-replay-level-btn" style="margin-top:6px;">[ REPLAY LEVEL ]</button>
+    <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:0;"></div>
 </div>
 <div id="level-select-screen" class="overlay-screen" style="display:none;">
     <h1 class="screen-title" style="font-family:'Press Start 2P',monospace;font-size:clamp(14px,3.5vw,20px);color:#00ffcc;letter-spacing:3px;margin-bottom:18px;">LEVEL SELECT</h1>
@@ -4745,11 +4743,18 @@ window.onload = function() {
         } else {
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
         }
-        document.getElementById('next-level-btn').innerText = '[ BROWSE CONTENT ]';
         document.getElementById('victory-screen').style.display = 'flex';
         AudioEngine.stopEngine();
         stopMusic();
         setTimeout(function(){ pauseMusic(); }, 1500);
+        setTimeout(function(){
+            if (gameState !== 'victory') return;
+            var vs = document.getElementById('victory-screen');
+            if (vs) vs.style.display = 'none';
+            _carouselFromAbort = false;
+            carouselFromVictory = true;
+            try { showCarousel(currentSector); } catch(err) {}
+        }, 1500);
     }
 
 
@@ -5252,7 +5257,6 @@ window.onload = function() {
             TUT.done=false; TUT.skipNext=true;
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
             document.getElementById('victory-score').innerText = 'SCORE: 000000';
-            document.getElementById('next-level-btn').innerText = '[ NEXT SECTOR > ]';
             document.getElementById('mission-banner').style.opacity = '1';
             initializeFlight(true);
             return;
@@ -6251,12 +6255,6 @@ window.onload = function() {
 
     bindTap('play-btn', () => initializeFlight(true));
     bindTap('skip-tutorial-btn', skipTutorial);
-    bindTap('next-level-btn', function() {
-        document.getElementById('victory-screen').style.display = 'none';
-        _carouselFromAbort = false;
-        carouselFromVictory = true;
-        showCarousel(currentSector);
-    });
     bindTap('go-retry-level-btn', function() {
         var s = currentSector, l = currentLevel;
         var gos = document.getElementById('game-over-screen');
@@ -7125,8 +7123,13 @@ window.onload = function() {
                         document.getElementById('victory-score').innerText = 'YOU ARE READY';
                         document.getElementById('victory-time').innerText = '';
                         document.getElementById('victory-unlocks').style.display = 'none';
-                        document.getElementById('next-level-btn').innerText = '[ BEGIN GAME ]';
                         vs.style.display = 'flex';
+                        setTimeout(function(){
+                            if (vs) vs.style.display = 'none';
+                            _carouselFromAbort = false;
+                            carouselFromVictory = true;
+                            try { showCarousel(currentSector); } catch(err) {}
+                        }, 1500);
                     } else {
                         triggerVictory();
                     }
@@ -7804,10 +7807,18 @@ window.onload = function() {
             onPick: function(s, l) {
                 var ps = document.getElementById('pause-screen');
                 if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
-                gameState = 'playing';
+                document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
+                var _ov = document.getElementById('tr-carousel-overlay');
+                if (_ov) _ov.style.display = 'none';
+                var _an = document.getElementById('tr-carousel-abort-nav');
+                if (_an) _an.style.display = 'none';
+                _carouselFromAbort = false;
+                carouselFromVictory = false;
                 _prePauseState = null;
                 _prePauseScreen = null;
-                try { initializeFlight(true, s, l); } catch(err) {}
+                gameState = 'title';
+                if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
+                setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('pause grid launch err', err); } }, 30);
             }
         });
     }
@@ -7817,13 +7828,18 @@ window.onload = function() {
         _trBuildLevelGrid(host, {
             onPick: function(s, l) {
                 _carouselFromAbort = false;
+                carouselFromVictory = false;
                 var ov = document.getElementById('tr-carousel-overlay');
                 if (ov) ov.style.display = 'none';
                 var nav = document.getElementById('tr-carousel-abort-nav');
                 if (nav) nav.style.display = 'none';
+                document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
                 document.body.style.touchAction = 'none';
-                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
-                try { initializeFlight(true, s, l); } catch(err) {}
+                if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
+                _prePauseState = null;
+                _prePauseScreen = null;
+                gameState = 'title';
+                setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('abort grid launch err', err); } }, 30);
             }
         });
     }
@@ -7840,10 +7856,18 @@ window.onload = function() {
         if (ss) ss.style.display = 'flex';
     }
     function _trLaunchLevel(s, l) {
-        var el = document.getElementById('level-select-screen');
-        if (el) el.style.display = 'none';
-        try { initializeFlight(true, s, l); }
-        catch(err) { console.error('level launch err', err); }
+        document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
+        var _ov = document.getElementById('tr-carousel-overlay');
+        if (_ov) _ov.style.display = 'none';
+        var _an = document.getElementById('tr-carousel-abort-nav');
+        if (_an) _an.style.display = 'none';
+        _carouselFromAbort = false;
+        carouselFromVictory = false;
+        _prePauseState = null;
+        _prePauseScreen = null;
+        gameState = 'title';
+        if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
+        setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('level-select launch err', err); } }, 30);
     }
     function _trQualifiesForLeaderboard(s) {
         try {
@@ -7869,12 +7893,6 @@ window.onload = function() {
             el.addEventListener('mouseup', handler, {passive:false});
         }
         bind('level-select-back-btn', _trCloseLevelSelect);
-        bind('vs-replay-level-btn', function() {
-            var s = currentSector, l = currentLevel;
-            var vs = document.getElementById('victory-screen');
-            if (vs) vs.style.display = 'none';
-            try { initializeFlight(true, s, l); } catch(err) {}
-        });
     })();
 
 (function() {
