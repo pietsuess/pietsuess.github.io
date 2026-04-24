@@ -1671,33 +1671,63 @@ var AudioEngine = {
         aOsc.connect(aG); aG.connect(cmBus);
         aOsc.start(aStart); aOsc.stop(aEnd2 + 0.02);
       }
-      var stabTimes = [3.5, 5.5];
-      for (var si2 = 0; si2 < stabTimes.length; si2++) {
-        var stFreq = ROOT * 2 * _cmFr(AMIN[0]);
-        var stStart = t + stabTimes[si2];
-        var stEnd = stStart + 0.35;
-        var stOsc = audioCtx.createOscillator();
-        var stG = audioCtx.createGain();
-        stOsc.type = 'sawtooth';
-        stOsc.frequency.setValueAtTime(stFreq, stStart);
-        stG.gain.setValueAtTime(0.0001, stStart);
-        stG.gain.linearRampToValueAtTime(STAB_GAIN, stStart + 0.01);
-        stG.gain.exponentialRampToValueAtTime(0.0001, stEnd);
-        stOsc.connect(stG); stG.connect(cmBus);
-        stOsc.start(stStart); stOsc.stop(stEnd + 0.03);
+      function _cmBeat(t0, rootHz, octHz, dur, level) {
+        var bLpF = audioCtx.createBiquadFilter();
+        bLpF.type = 'lowpass';
+        bLpF.frequency.value = 700;
+        bLpF.Q.value = 0.9;
+        bLpF.connect(cmBus);
+        var oSaw = audioCtx.createOscillator();
+        var gSaw = audioCtx.createGain();
+        oSaw.type = 'sawtooth';
+        oSaw.frequency.setValueAtTime(rootHz, t0);
+        gSaw.gain.setValueAtTime(0.0001, t0);
+        gSaw.gain.linearRampToValueAtTime(level * 0.7, t0 + 0.008);
+        gSaw.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        oSaw.connect(gSaw); gSaw.connect(bLpF);
+        oSaw.start(t0); oSaw.stop(t0 + dur + 0.03);
+        var oSin = audioCtx.createOscillator();
+        var gSin = audioCtx.createGain();
+        oSin.type = 'sine';
+        oSin.frequency.setValueAtTime(octHz, t0);
+        gSin.gain.setValueAtTime(0.0001, t0);
+        gSin.gain.linearRampToValueAtTime(level * 0.9, t0 + 0.008);
+        gSin.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
+        oSin.connect(gSin); gSin.connect(cmBus);
+        oSin.start(t0); oSin.stop(t0 + dur + 0.03);
       }
-      var shStart = t + 6.5;
-      var shEnd = t + 6.9;
-      var shOsc = audioCtx.createOscillator();
-      var shG = audioCtx.createGain();
-      shOsc.type = 'triangle';
-      shOsc.frequency.setValueAtTime(3520, shStart);
-      shOsc.frequency.linearRampToValueAtTime(5500, shEnd);
-      shG.gain.setValueAtTime(0.0001, shStart);
-      shG.gain.linearRampToValueAtTime(SHIM_GAIN, shStart + 0.05);
-      shG.gain.exponentialRampToValueAtTime(0.0001, shEnd);
-      shOsc.connect(shG); shG.connect(cmBus);
-      shOsc.start(shStart); shOsc.stop(shEnd + 0.03);
+      function _cmWhoosh(t0, dur, fStart, fMid, fEnd, level) {
+        var nbLen = Math.max(1, Math.floor(audioCtx.sampleRate * (dur + 0.05)));
+        var nbBuf = audioCtx.createBuffer(1, nbLen, audioCtx.sampleRate);
+        var nbData = nbBuf.getChannelData(0);
+        for (var ni = 0; ni < nbLen; ni++) nbData[ni] = Math.random() * 2 - 1;
+        var nbSrc = audioCtx.createBufferSource();
+        nbSrc.buffer = nbBuf;
+        var nbFilt = audioCtx.createBiquadFilter();
+        nbFilt.type = 'bandpass';
+        nbFilt.Q.value = 4;
+        nbFilt.frequency.setValueAtTime(fStart, t0);
+        if (fMid != null) {
+          nbFilt.frequency.linearRampToValueAtTime(fMid, t0 + dur * 0.5);
+          nbFilt.frequency.linearRampToValueAtTime(fEnd, t0 + dur);
+        } else {
+          nbFilt.frequency.linearRampToValueAtTime(fEnd, t0 + dur);
+        }
+        var nbG = audioCtx.createGain();
+        nbG.gain.setValueAtTime(0, t0);
+        nbG.gain.linearRampToValueAtTime(level, t0 + 0.05);
+        nbG.gain.linearRampToValueAtTime(level * 0.7, t0 + dur * 0.6);
+        nbG.gain.linearRampToValueAtTime(0, t0 + dur);
+        nbSrc.connect(nbFilt); nbFilt.connect(nbG); nbG.connect(cmBus);
+        nbSrc.start(t0); nbSrc.stop(t0 + dur + 0.05);
+      }
+      _cmBeat(t + 3.5, 55.0, 110.0, 0.3, 0.55);
+      _cmWhoosh(t + 3.35, 0.55, 200, null, 2000, 0.45);
+      _cmBeat(t + 5.5, 82.4, 164.8, 0.45, 0.6);
+      _cmWhoosh(t + 5.3, 0.7, 2000, 400, 1800, 0.55);
+      var cmBusEnd = t + TOTAL + 0.05;
+      cmBus.gain.setValueAtTime(1.6, cmBusEnd - 0.2);
+      cmBus.gain.linearRampToValueAtTime(0.0001, cmBusEnd);
     }
   },
   // --- Persistent engine hum ---
@@ -1751,8 +1781,9 @@ var AudioEngine = {
     // Sub-bass gets louder with speed
     n.sub.frequency.value = 22 + hyperFrac * 18;
     n.subGain.gain.value = 0.01 + throttleSmooth * 0.007 + hyperFrac * 0.015;
-    // Boost rumble — active during hyper boost or flip
-    var rumble = isFlipping ? 0.045 : hyperFrac * 0.04;
+    // Boost rumble — gated by throttle so idle = near-silent, no static hiss
+    var _thrGate = Math.max(0, throttleSmooth - 0.1);
+    var rumble = isFlipping ? 0.045 : hyperFrac * 0.04 * _thrGate;
     n.noiseGain.gain.value += (rumble - n.noiseGain.gain.value) * 0.15;
     n.noiseFilter.frequency.value = 200 + hyperFrac * 300 + (isFlipping ? 400 : 0);
   },
@@ -6528,8 +6559,8 @@ window.onload = function() {
             }
         } catch (eTitle) {}
 
-        if (T < 0.6) {
-            var f = T / 0.6;
+        if (T < 2.0) {
+            var f = T / 2.0;
             speed = 40 + (600 - 40) * f;
             throttleSmooth = 1.5 * f;
             camera.position.x = _cine.camStart.x;
