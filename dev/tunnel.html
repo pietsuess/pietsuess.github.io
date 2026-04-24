@@ -1610,6 +1610,7 @@ var AudioEngine = {
       var BAR_DUR = 1.6;
       var BARS = 4;
       var TOTAL = BAR_DUR * BARS;
+      var EXT_TOTAL = 9.4;
       var BASS_GAIN = 0.5;
       var PAD_GAIN = 0.4;
       var ARP_GAIN = 0.35;
@@ -1634,11 +1635,41 @@ var AudioEngine = {
         bOsc.connect(bLp); bLp.connect(bG); bG.connect(cmBus);
         bOsc.start(bStart); bOsc.stop(bEnd + 0.03);
       }
+      function _cmBassNote(tStart, tEnd, freq, doubleHz) {
+        var lp = audioCtx.createBiquadFilter();
+        lp.type = 'lowpass';
+        lp.frequency.value = 320;
+        lp.Q.value = 0.7;
+        var o = audioCtx.createOscillator();
+        var g = audioCtx.createGain();
+        o.type = 'sawtooth';
+        o.frequency.setValueAtTime(freq, tStart);
+        g.gain.setValueAtTime(0.0001, tStart);
+        g.gain.linearRampToValueAtTime(BASS_GAIN, tStart + 0.05);
+        g.gain.setValueAtTime(BASS_GAIN, tEnd - 0.4);
+        g.gain.exponentialRampToValueAtTime(0.0001, tEnd);
+        o.connect(lp); lp.connect(g); g.connect(cmBus);
+        o.start(tStart); o.stop(tEnd + 0.05);
+        if (doubleHz) {
+          var o2 = audioCtx.createOscillator();
+          var g2 = audioCtx.createGain();
+          o2.type = 'sine';
+          o2.frequency.setValueAtTime(doubleHz, tStart);
+          g2.gain.setValueAtTime(0.0001, tStart);
+          g2.gain.linearRampToValueAtTime(BASS_GAIN * 0.7, tStart + 0.08);
+          g2.gain.setValueAtTime(BASS_GAIN * 0.7, tEnd - 0.4);
+          g2.gain.exponentialRampToValueAtTime(0.0001, tEnd);
+          o2.connect(g2); g2.connect(cmBus);
+          o2.start(tStart); o2.stop(tEnd + 0.05);
+        }
+      }
+      _cmBassNote(t + 6.0, t + 7.8, 55.0, null);
+      _cmBassNote(t + 7.8, t + 9.4, 110.0, 110.0);
       var padChordSemis = PROG[0];
       for (var pi2 = 0; pi2 < padChordSemis.length; pi2++) {
         var pFreq = ROOT * _cmFr(padChordSemis[pi2]);
         var pStart = t + pi2 * 0.04;
-        var pEnd = t + TOTAL - 0.05;
+        var pEnd = t + EXT_TOTAL - 0.1;
         var pOsc = audioCtx.createOscillator();
         var pG = audioCtx.createGain();
         pOsc.type = 'sine';
@@ -1653,11 +1684,11 @@ var AudioEngine = {
       var ARP = [0,3,7,12,7,3,0,7,3,12,7,0,3,7,12,3];
       var ARP_STEP = 60 / 160 / 4;
       var ARP_NOTE_LEN = 0.08;
-      var ARP_COUNT = 64;
+      var ARP_COUNT = 80;
       for (var ai = 0; ai < ARP_COUNT; ai++) {
         var semi = ARP[ai % ARP.length];
         var aStart = t + ai * ARP_STEP;
-        if (aStart > t + TOTAL - 0.05) break;
+        if (aStart > t + 7.5) break;
         var octMul = ((ai % 16) > 8) ? 2 : 1;
         var aFreq = ROOT * octMul * _cmFr(semi);
         var aEnd2 = aStart + ARP_NOTE_LEN;
@@ -1696,8 +1727,27 @@ var AudioEngine = {
         oSin.connect(gSin); gSin.connect(cmBus);
         oSin.start(t0); oSin.stop(t0 + dur + 0.03);
       }
-      function _cmWhoosh(t0, dur, fStart, fMid, fEnd, level) {
-        var nbLen = Math.max(1, Math.floor(audioCtx.sampleRate * (dur + 0.05)));
+      function _cmBigWhoosh(t0, dur, subHz, subSweepDown, subSweepUpMul, bpStart, bpMid, bpEnd, bpQ, withImpactAt) {
+        var subLp = audioCtx.createBiquadFilter();
+        subLp.type = 'lowpass';
+        subLp.frequency.value = 80;
+        subLp.Q.value = 1.5;
+        subLp.connect(cmBus);
+        var subOsc = audioCtx.createOscillator();
+        var subG = audioCtx.createGain();
+        subOsc.type = 'sawtooth';
+        var subMid = subHz * (1 - subSweepDown);
+        var subPeak = subMid * (1 + subSweepUpMul);
+        subOsc.frequency.setValueAtTime(subHz, t0);
+        subOsc.frequency.linearRampToValueAtTime(subMid, t0 + dur * 0.5);
+        subOsc.frequency.linearRampToValueAtTime(subPeak, t0 + dur);
+        subG.gain.setValueAtTime(0.0001, t0);
+        subG.gain.linearRampToValueAtTime(0.5, t0 + 0.015);
+        subG.gain.setValueAtTime(0.5, t0 + dur * 0.55);
+        subG.gain.linearRampToValueAtTime(0.0001, t0 + dur + 0.4);
+        subOsc.connect(subG); subG.connect(subLp);
+        subOsc.start(t0); subOsc.stop(t0 + dur + 0.45);
+        var nbLen = Math.max(1, Math.floor(audioCtx.sampleRate * (dur + 0.1)));
         var nbBuf = audioCtx.createBuffer(1, nbLen, audioCtx.sampleRate);
         var nbData = nbBuf.getChannelData(0);
         for (var ni = 0; ni < nbLen; ni++) nbData[ni] = Math.random() * 2 - 1;
@@ -1705,29 +1755,70 @@ var AudioEngine = {
         nbSrc.buffer = nbBuf;
         var nbFilt = audioCtx.createBiquadFilter();
         nbFilt.type = 'bandpass';
-        nbFilt.Q.value = 4;
-        nbFilt.frequency.setValueAtTime(fStart, t0);
-        if (fMid != null) {
-          nbFilt.frequency.linearRampToValueAtTime(fMid, t0 + dur * 0.5);
-          nbFilt.frequency.linearRampToValueAtTime(fEnd, t0 + dur);
+        nbFilt.Q.value = bpQ;
+        nbFilt.frequency.setValueAtTime(bpStart, t0);
+        if (bpMid != null) {
+          nbFilt.frequency.linearRampToValueAtTime(bpMid, t0 + dur * 0.5);
+          nbFilt.frequency.linearRampToValueAtTime(bpEnd, t0 + dur);
         } else {
-          nbFilt.frequency.linearRampToValueAtTime(fEnd, t0 + dur);
+          nbFilt.frequency.linearRampToValueAtTime(bpEnd, t0 + dur);
         }
         var nbG = audioCtx.createGain();
         nbG.gain.setValueAtTime(0, t0);
-        nbG.gain.linearRampToValueAtTime(level, t0 + 0.05);
-        nbG.gain.linearRampToValueAtTime(level * 0.7, t0 + dur * 0.6);
+        nbG.gain.linearRampToValueAtTime(0.55, t0 + 0.08);
+        nbG.gain.linearRampToValueAtTime(0.4, t0 + dur * 0.7);
         nbG.gain.linearRampToValueAtTime(0, t0 + dur);
         nbSrc.connect(nbFilt); nbFilt.connect(nbG); nbG.connect(cmBus);
-        nbSrc.start(t0); nbSrc.stop(t0 + dur + 0.05);
+        nbSrc.start(t0); nbSrc.stop(t0 + dur + 0.1);
+        var crkLen = Math.max(1, Math.floor(audioCtx.sampleRate * (dur + 0.1)));
+        var crkBuf = audioCtx.createBuffer(1, crkLen, audioCtx.sampleRate);
+        var crkData = crkBuf.getChannelData(0);
+        for (var ci = 0; ci < crkLen; ci++) crkData[ci] = Math.random() * 2 - 1;
+        var crkSrc = audioCtx.createBufferSource();
+        crkSrc.buffer = crkBuf;
+        var crkHp = audioCtx.createBiquadFilter();
+        crkHp.type = 'highpass';
+        crkHp.frequency.value = 4000;
+        crkHp.Q.value = 0.7;
+        var mainNoiseGain = audioCtx.createGain();
+        mainNoiseGain.gain.setValueAtTime(0.0001, t0);
+        mainNoiseGain.gain.linearRampToValueAtTime(0.25, t0 + 0.04);
+        mainNoiseGain.gain.linearRampToValueAtTime(0.18, t0 + dur * 0.6);
+        mainNoiseGain.gain.linearRampToValueAtTime(0.0001, t0 + dur);
+        var lfo = audioCtx.createOscillator();
+        lfo.type = 'sawtooth';
+        lfo.frequency.value = 30;
+        var lfoGain = audioCtx.createGain();
+        lfoGain.gain.value = 0.3;
+        lfo.connect(lfoGain);
+        lfoGain.connect(mainNoiseGain.gain);
+        crkSrc.connect(crkHp); crkHp.connect(mainNoiseGain); mainNoiseGain.connect(cmBus);
+        crkSrc.start(t0); crkSrc.stop(t0 + dur + 0.1);
+        lfo.start(t0); lfo.stop(t0 + dur + 0.1);
+        if (withImpactAt != null) {
+          var imLp = audioCtx.createBiquadFilter();
+          imLp.type = 'lowpass';
+          imLp.frequency.value = 90;
+          imLp.Q.value = 1.2;
+          imLp.connect(cmBus);
+          var imOsc = audioCtx.createOscillator();
+          var imG = audioCtx.createGain();
+          imOsc.type = 'sawtooth';
+          imOsc.frequency.setValueAtTime(28, withImpactAt);
+          imG.gain.setValueAtTime(0.0001, withImpactAt);
+          imG.gain.linearRampToValueAtTime(0.6, withImpactAt + 0.01);
+          imG.gain.exponentialRampToValueAtTime(0.0001, withImpactAt + 0.2);
+          imOsc.connect(imG); imG.connect(imLp);
+          imOsc.start(withImpactAt); imOsc.stop(withImpactAt + 0.25);
+        }
       }
       _cmBeat(t + 3.5, 55.0, 110.0, 0.3, 0.55);
-      _cmWhoosh(t + 3.35, 0.55, 200, null, 2000, 0.45);
+      _cmBigWhoosh(t + 3.2, 1.6, 50, 0.15, 0.25, 400, null, 1800, 2, null);
       _cmBeat(t + 5.5, 82.4, 164.8, 0.45, 0.6);
-      _cmWhoosh(t + 5.3, 0.7, 2000, 400, 1800, 0.55);
-      var cmBusEnd = t + TOTAL + 0.05;
-      cmBus.gain.setValueAtTime(1.6, cmBusEnd - 0.2);
-      cmBus.gain.linearRampToValueAtTime(0.0001, cmBusEnd);
+      _cmBigWhoosh(t + 5.2, 2.4, 35, 0.15, 0.25, 2200, 200, 2800, 1.5, t + 5.5);
+      var cmBusEnd = t + EXT_TOTAL - 0.1;
+      cmBus.gain.setValueAtTime(1.6, cmBusEnd);
+      cmBus.gain.linearRampToValueAtTime(0.0001, cmBusEnd + 0.2);
     }
   },
   // --- Persistent engine hum ---
