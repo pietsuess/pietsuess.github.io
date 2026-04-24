@@ -67,7 +67,7 @@
           100% { opacity: 0; transform: translate(-50%, -180%) scale(1.0); }
         }
         .combo-multiplier-burst {
-          position: fixed; top: 45%; left: 50%;
+          position: fixed; top: 15%; left: 50%;
           z-index: 700; pointer-events: none;
           font-family: 'Press Start 2P', monospace;
           font-size: clamp(38px, 9.5vw, 80px);
@@ -1773,7 +1773,7 @@ var AudioEngine = {
   },
   updateEngine: function(throttleSmooth, isFlipping) {
     var n = this._engineNodes;
-    if (!n || _sfxMuted) return;
+    if (!n || _sfxMuted || this._engineMuted) return;
     var hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
     // Engine pitch rises with throttle
     n.eng.frequency.value = 32 + throttleSmooth * 25 + hyperFrac * 35;
@@ -1794,6 +1794,24 @@ var AudioEngine = {
     try { n.sub.stop(); } catch(e) {}
     try { n.noise.stop(); } catch(e) {}
     this._engineNodes = null;
+  },
+  _engineMuted: false,
+  muteEngine: function() {
+    var n = this._engineNodes;
+    if (!n || !audioCtx) return;
+    var t = audioCtx.currentTime;
+    try { n.engGain.gain.cancelScheduledValues(t); n.engGain.gain.setValueAtTime(n.engGain.gain.value, t); n.engGain.gain.linearRampToValueAtTime(0.0001, t + 0.15); } catch(e) {}
+    try { n.subGain.gain.cancelScheduledValues(t); n.subGain.gain.setValueAtTime(n.subGain.gain.value, t); n.subGain.gain.linearRampToValueAtTime(0.0001, t + 0.15); } catch(e) {}
+    try { n.noiseGain.gain.cancelScheduledValues(t); n.noiseGain.gain.setValueAtTime(n.noiseGain.gain.value, t); n.noiseGain.gain.linearRampToValueAtTime(0.0001, t + 0.15); } catch(e) {}
+    this._engineMuted = true;
+  },
+  unmuteEngine: function() {
+    var n = this._engineNodes;
+    if (!n || !audioCtx) { this._engineMuted = false; return; }
+    var t = audioCtx.currentTime;
+    try { n.engGain.gain.cancelScheduledValues(t); n.engGain.gain.setValueAtTime(n.engGain.gain.value, t); n.engGain.gain.linearRampToValueAtTime(0.004, t + 0.15); } catch(e) {}
+    try { n.subGain.gain.cancelScheduledValues(t); n.subGain.gain.setValueAtTime(n.subGain.gain.value, t); n.subGain.gain.linearRampToValueAtTime(0.012, t + 0.15); } catch(e) {}
+    this._engineMuted = false;
   },
   suspend: function() { stopMusic(); pauseMusic(); this.stopEngine(); },
   resume: function() { resumeMusic(); },
@@ -4145,7 +4163,10 @@ window.onload = function() {
         setTimeout(() => el.classList.remove('show'), 4000);
     }
 
+    var _comboX4Count = 0;
     function spawnComboBadge(mult) {
+        if (_comboX4Count >= 2) return;
+        if (mult >= 4) _comboX4Count++;
         var el = document.createElement('div');
         el.className = 'combo-multiplier-burst';
         el.textContent = 'x' + mult + '!';
@@ -5010,6 +5031,7 @@ window.onload = function() {
             startCountdown(function(){
                 _countdownActive = false;
                 AudioEngine.startEngine();
+                try { AudioEngine.unmuteEngine(); } catch(e) {}
                 spawnIntroWave();
                 sectorTime = 0;
             });
@@ -5557,18 +5579,6 @@ window.onload = function() {
             el.appendChild(prog);
         }
 
-        // Tap to begin
-        var tap = document.createElement('div');
-        tap.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,16px);color:#fff;opacity:0.5;letter-spacing:3px;margin-top:16px;animation:introTapPulse 1.5s ease-in-out infinite;text-align:center;width:100%;';
-        tap.innerText = 'TAP TO BEGIN';
-        el.appendChild(tap);
-        if (!document.getElementById('intro-tap-pulse-style')) {
-            var style = document.createElement('style');
-            style.id = 'intro-tap-pulse-style';
-            style.textContent = '@keyframes introTapPulse{0%,100%{opacity:0.4}50%{opacity:1}}';
-            document.head.appendChild(style);
-        }
-
         document.body.appendChild(el);
         requestAnimationFrame(function() { el.style.opacity = '1'; });
 
@@ -5581,13 +5591,7 @@ window.onload = function() {
             }, 400);
         }
 
-        function dismissIntro() {
-            el.removeEventListener('touchend', dismissIntro);
-            el.removeEventListener('mouseup', dismissIntro);
-            cleanup();
-        }
-        el.addEventListener('touchend', dismissIntro, { passive: true });
-        el.addEventListener('mouseup', dismissIntro);
+        setTimeout(cleanup, 1800);
     }
 
     // ── Collection HUD — horizontal row of zone-shaped icons above carousel area ──
@@ -5623,6 +5627,7 @@ window.onload = function() {
         
         if (isFullReset) {
             _analyticsStartTime = Date.now(); _analyticsDeathCount = 0; _sendTelemetry('session_start');
+            _comboX4Count = 0;
             currentSector = 1;
             currentLevel = 1;
             introSpawned = false;
@@ -5725,6 +5730,7 @@ window.onload = function() {
                         _countdownActive = false;
                         AudioEngine.resume();
                         AudioEngine.startEngine();
+                        try { AudioEngine.unmuteEngine(); } catch(e) {}
                         spawnIntroWave();
                         sectorTime = 0;
                     });
@@ -5769,6 +5775,7 @@ window.onload = function() {
                             }, 220);
                         }
                     } catch (e) { console.error('cine-title-stack remove err', e); }
+                    try { AudioEngine.muteEngine(); } catch(e) {}
                     _runIntroChain();
                 });
             }
