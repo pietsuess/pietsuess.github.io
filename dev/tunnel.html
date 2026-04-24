@@ -7748,7 +7748,10 @@ window.onload = function() {
                 }
                 header.innerText = 'S' + sNum;
                 if (hReached) {
+                    header.style.touchAction = 'manipulation';
+                    header.style.pointerEvents = 'auto';
                     var hLast = 0;
+                    var hBlock = function(e) { e.stopPropagation(); };
                     var hHandler = function(e) {
                         e.preventDefault(); e.stopPropagation();
                         var now = Date.now();
@@ -7756,8 +7759,10 @@ window.onload = function() {
                         hLast = now;
                         if (opts.onPick) opts.onPick(sNum, 1);
                     };
+                    header.addEventListener('touchstart', hBlock, {passive:true});
                     header.addEventListener('touchend', hHandler, {passive:false});
                     header.addEventListener('mouseup', hHandler, {passive:false});
+                    header.addEventListener('click', hHandler, {passive:false});
                 }
                 col.appendChild(header);
                 for (var l = 1; l <= _TR_LEVELS_PER; l++) {
@@ -7774,7 +7779,10 @@ window.onload = function() {
                         }
                         b.innerText = 'L' + lNum + (passed ? ' ✓' : '');
                         if (reached) {
+                            b.style.touchAction = 'manipulation';
+                            b.style.pointerEvents = 'auto';
                             var lastTap = 0;
+                            var bBlock = function(e) { e.stopPropagation(); };
                             var handler = function(e) {
                                 e.preventDefault(); e.stopPropagation();
                                 var now = Date.now();
@@ -7782,8 +7790,10 @@ window.onload = function() {
                                 lastTap = now;
                                 if (opts.onPick) opts.onPick(sNum, lNum);
                             };
+                            b.addEventListener('touchstart', bBlock, {passive:true});
                             b.addEventListener('touchend', handler, {passive:false});
                             b.addEventListener('mouseup', handler, {passive:false});
+                            b.addEventListener('click', handler, {passive:false});
                         }
                         col.appendChild(b);
                     })(l);
@@ -7804,43 +7814,14 @@ window.onload = function() {
         var host = document.getElementById('pause-sector-nav');
         if (!host) return;
         _trBuildLevelGrid(host, {
-            onPick: function(s, l) {
-                var ps = document.getElementById('pause-screen');
-                if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
-                document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
-                var _ov = document.getElementById('tr-carousel-overlay');
-                if (_ov) _ov.style.display = 'none';
-                var _an = document.getElementById('tr-carousel-abort-nav');
-                if (_an) _an.style.display = 'none';
-                _carouselFromAbort = false;
-                carouselFromVictory = false;
-                _prePauseState = null;
-                _prePauseScreen = null;
-                gameState = 'title';
-                if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
-                setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('pause grid launch err', err); } }, 30);
-            }
+            onPick: function(s, l) { _trLaunchLevel(s, l); }
         });
     }
     function _trBuildAbortGrid() {
         var host = document.getElementById('tr-abort-grid');
         if (!host) return;
         _trBuildLevelGrid(host, {
-            onPick: function(s, l) {
-                _carouselFromAbort = false;
-                carouselFromVictory = false;
-                var ov = document.getElementById('tr-carousel-overlay');
-                if (ov) ov.style.display = 'none';
-                var nav = document.getElementById('tr-carousel-abort-nav');
-                if (nav) nav.style.display = 'none';
-                document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
-                document.body.style.touchAction = 'none';
-                if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
-                _prePauseState = null;
-                _prePauseScreen = null;
-                gameState = 'title';
-                setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('abort grid launch err', err); } }, 30);
-            }
+            onPick: function(s, l) { _trLaunchLevel(s, l); }
         });
     }
     function _trOpenLevelSelect() {
@@ -7856,18 +7837,28 @@ window.onload = function() {
         if (ss) ss.style.display = 'flex';
     }
     function _trLaunchLevel(s, l) {
-        document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; });
-        var _ov = document.getElementById('tr-carousel-overlay');
-        if (_ov) _ov.style.display = 'none';
-        var _an = document.getElementById('tr-carousel-abort-nav');
-        if (_an) _an.style.display = 'none';
+        try {
+            document.querySelectorAll('.overlay-screen').forEach(function(el){ el.style.display = 'none'; el.style.zIndex = ''; });
+            var _ids = ['tr-carousel-overlay','tr-carousel-abort-nav','tr-video-player','tr-lightbox','tr-design-viewer','inventory-picker','level-select-screen','pause-screen','pause-overlay','game-over-screen','victory-screen','finale-screen','start-screen'];
+            for (var _i = 0; _i < _ids.length; _i++) {
+                var _el = document.getElementById(_ids[_i]);
+                if (_el) { _el.style.display = 'none'; _el.style.zIndex = ''; }
+            }
+            var _si = document.getElementById('sector-intro-splash');
+            if (_si) { if (_si._spinCanvases) _si._spinCanvases.forEach(function(c){ if(c._stopSpin) c._stopSpin(); }); _si.remove(); }
+            var _cts = document.getElementById('cine-title-stack');
+            if (_cts && _cts.parentNode) _cts.parentNode.removeChild(_cts);
+            try { document.body.classList.remove('cinematic-active'); } catch(e) {}
+        } catch(e) {}
         _carouselFromAbort = false;
         carouselFromVictory = false;
+        if (typeof carouselFromPause !== 'undefined') carouselFromPause = false;
         _prePauseState = null;
         _prePauseScreen = null;
-        gameState = 'title';
         if (_carouselScrollCleanup) { try { _carouselScrollCleanup(); } catch(e){} _carouselScrollCleanup = null; }
-        setTimeout(function(){ try { initializeFlight(true, s, l); } catch(err) { console.error('level-select launch err', err); } }, 30);
+        document.body.style.touchAction = 'none';
+        gameState = 'title';
+        try { initializeFlight(true, s, l); } catch(err) { console.error('launch level err', err); }
     }
     function _trQualifiesForLeaderboard(s) {
         try {
