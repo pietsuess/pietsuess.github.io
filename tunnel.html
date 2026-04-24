@@ -825,13 +825,7 @@
     <div id="tr-carousel-abort-nav" style="display:none;position:absolute;left:0;right:0;bottom:88px;z-index:3;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:auto;">
         <button class="menu-btn" id="tr-abort-retry-level-btn" style="width:auto;padding:12px 22px;font-size:10px;">[ RETRY LEVEL ]</button>
         <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#888;letter-spacing:2px;margin-top:4px;">TRY ANOTHER SECTOR</div>
-        <div id="tr-abort-sector-row" style="display:flex;gap:8px;justify-content:center;flex-wrap:wrap;">
-            <button class="menu-btn" data-abort-sector="1" style="width:auto;padding:8px 14px;font-size:9px;">S1</button>
-            <button class="menu-btn" data-abort-sector="2" style="width:auto;padding:8px 14px;font-size:9px;">S2</button>
-            <button class="menu-btn" data-abort-sector="3" style="width:auto;padding:8px 14px;font-size:9px;">S3</button>
-            <button class="menu-btn" data-abort-sector="4" style="width:auto;padding:8px 14px;font-size:9px;">S4</button>
-            <button class="menu-btn" data-abort-sector="5" style="width:auto;padding:8px 14px;font-size:9px;">S5</button>
-        </div>
+        <div id="tr-abort-level-grid" style="display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;max-width:360px;margin:0 auto;"></div>
     </div>
 </div>
 
@@ -2486,6 +2480,7 @@ window.onload = function() {
         overlay.style.display = 'flex';
         var _abortNav = document.getElementById('tr-carousel-abort-nav');
         if (_abortNav) {
+            if (_carouselFromAbort) { try { _trRebuildAbortLevelGrid(); } catch(e){} }
             _abortNav.style.display = _carouselFromAbort ? 'flex' : 'none';
         }
         if (contBtn) contBtn.style.display = _carouselFromAbort ? 'none' : '';
@@ -6275,30 +6270,63 @@ window.onload = function() {
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
         try { initializeFlight(true, s, l); } catch(err) {}
     });
+    function _trRebuildAbortLevelGrid() {
+        var grid = document.getElementById('tr-abort-level-grid');
+        if (!grid) return;
+        grid.innerHTML = '';
+        for (var s = 1; s <= 5; s++) {
+            var col = document.createElement('div');
+            col.style.cssText = 'display:flex;flex-direction:column;gap:6px;';
+            var head = document.createElement('div');
+            head.style.cssText = 'font-size:9px;letter-spacing:1px;color:#888;text-align:center;padding:4px 0;';
+            head.textContent = 'S' + s;
+            col.appendChild(head);
+            for (var l = 1; l <= 4; l++) {
+                var btn = document.createElement('button');
+                btn.className = 'menu-btn';
+                btn.setAttribute('data-sector', String(s));
+                btn.setAttribute('data-level', String(l));
+                var reached = _trIsReached(s, l);
+                var passed = _trIsUnlocked(s, l);
+                var label = 'L' + l + (passed ? ' \u2713' : '');
+                btn.textContent = label;
+                var base = 'width:auto;margin:0;padding:8px 4px;font-size:8px;letter-spacing:1px;text-align:center;border-color:#ffe000;color:#ffe000;background:rgba(255,224,0,0.06);box-shadow:0 0 8px rgba(255,224,0,0.15);';
+                if (!reached) {
+                    base += 'opacity:0.25;filter:grayscale(1);pointer-events:none;';
+                    btn.setAttribute('disabled', 'disabled');
+                }
+                btn.style.cssText = base;
+                col.appendChild(btn);
+            }
+            grid.appendChild(col);
+        }
+    }
     (function() {
-        var row = document.getElementById('tr-abort-sector-row');
-        if (!row) return;
-        var btns = row.querySelectorAll('button[data-abort-sector]');
-        btns.forEach(function(b) {
-            var n = parseInt(b.getAttribute('data-abort-sector'), 10);
-            var lastTap = 0;
-            var handler = function(e) {
-                e.preventDefault(); e.stopPropagation();
-                var now = Date.now();
-                if (now - lastTap < 300) return;
-                lastTap = now;
-                _carouselFromAbort = false;
-                var ov = document.getElementById('tr-carousel-overlay');
-                if (ov) ov.style.display = 'none';
-                var nav = document.getElementById('tr-carousel-abort-nav');
-                if (nav) nav.style.display = 'none';
-                document.body.style.touchAction = 'none';
-                if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
-                try { initializeFlight(true, n, 1); } catch(err) {}
-            };
-            b.addEventListener('touchend', handler, {passive:false});
-            b.addEventListener('mouseup', handler, {passive:false});
-        });
+        var grid = document.getElementById('tr-abort-level-grid');
+        if (!grid) return;
+        var lastTap = 0;
+        var handler = function(e) {
+            var tgt = e.target && e.target.closest ? e.target.closest('[data-sector]') : null;
+            if (!tgt) return;
+            if (!grid.contains(tgt)) return;
+            e.preventDefault(); e.stopPropagation();
+            var now = Date.now();
+            if (now - lastTap < 300) return;
+            lastTap = now;
+            var s = parseInt(tgt.getAttribute('data-sector'), 10);
+            var l = parseInt(tgt.getAttribute('data-level'), 10);
+            if (!_trIsReached(s, l)) return;
+            _carouselFromAbort = false;
+            var ov = document.getElementById('tr-carousel-overlay');
+            if (ov) ov.style.display = 'none';
+            var nav = document.getElementById('tr-carousel-abort-nav');
+            if (nav) nav.style.display = 'none';
+            document.body.style.touchAction = 'none';
+            if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
+            try { initializeFlight(true, s, l); } catch(err) {}
+        };
+        grid.addEventListener('touchend', handler, {passive:false});
+        grid.addEventListener('mouseup', handler, {passive:false});
     })();
 
     // Dev sector jump buttons
