@@ -1788,9 +1788,9 @@ var AudioEngine = {
         }
       }
       _cmBeat(t + 3.5, 55.0, 110.0, 0.3, 0.55);
-      _cmBigWhoosh(t + 3.2, 1.6, 50, 0.15, 0.25, 400, null, 1800, 2, null);
-      _cmBeat(t + 5.5, 82.4, 164.8, 0.45, 0.6);
-      _cmBigWhoosh(t + 5.2, 2.4, 35, 0.15, 0.25, 2200, 200, 2800, 1.5, t + 5.5);
+      _cmBigWhoosh(t + 3.3, 1.6, 50, 0.15, 0.25, 400, null, 1800, 2, null);
+      _cmBeat(t + 7.5, 82.4, 164.8, 0.45, 0.6);
+      _cmBigWhoosh(t + 7.3, 2.4, 35, 0.15, 0.25, 2200, 200, 2800, 1.5, t + 7.5);
       var cmBusEnd = t + EXT_TOTAL - 0.1;
       cmBus.gain.setValueAtTime(1.6, cmBusEnd);
       cmBus.gain.linearRampToValueAtTime(0.0001, cmBusEnd + 0.2);
@@ -6665,7 +6665,7 @@ window.onload = function() {
             return;
         }
 
-        if (T < 5.5) {
+        if (T < 5.0) {
             speed = 600;
             throttleSmooth = 1.5;
             if (!_cine.bSnapped) {
@@ -6685,7 +6685,7 @@ window.onload = function() {
                 camera.quaternion.copy(_saveQ);
             }
             shipContainer.position.z -= speed * delta;
-            var t = (T - 3.5) / 2.0;
+            var t = (T - 3.5) / 1.5;
             if (t < 0) t = 0; else if (t > 1) t = 1;
             var ease = t < 0.5 ? 2 * t * t : 1 - Math.pow(-2 * t + 2, 2) / 2;
             var endZ = shipContainer.position.z + 55;
@@ -6699,18 +6699,43 @@ window.onload = function() {
             return;
         }
 
-        if (T < 7.0) {
+        if (T < 7.5) {
             speed = 600;
             throttleSmooth = 1.5;
             shipContainer.position.z -= speed * delta;
+            camera.position.x = _cine.sideTarget.x;
+            camera.position.y = _cine.sideTarget.y;
+            camera.position.z = shipContainer.position.z + 55;
+            camera.lookAt(shipContainer.position);
+            shipContainer.updateMatrixWorld(true);
+            _applyShipVisuals(delta);
+            return;
+        }
+
+        if (T < 8.3) {
+            speed = 600;
+            throttleSmooth = 1.5;
+            if (_cine.cFrozenZ == null) {
+                _cine.cFrozenZ = camera.position.z;
+            }
+            shipContainer.position.z -= speed * delta;
             shipContainer.position.x += (600 - shipContainer.position.x) * Math.min(1, delta * 3.5);
             shipContainer.rotation.z += (0.8 - shipContainer.rotation.z) * Math.min(1, delta * 3.0);
-            camera.position.x += (_cine.sideTarget.x - camera.position.x) * Math.min(1, delta * 2.0);
-            camera.position.y += (_cine.sideTarget.y - camera.position.y) * Math.min(1, delta * 2.0);
+            camera.position.x = _cine.sideTarget.x;
+            camera.position.y = _cine.sideTarget.y;
+            camera.position.z = _cine.cFrozenZ;
             if (Math.abs(shipContainer.position.x) < 400) {
                 camera.lookAt(shipContainer.position);
             }
             shipContainer.updateMatrixWorld(true);
+            _applyShipVisuals(delta);
+            return;
+        }
+
+        if (T < 9.0) {
+            speed = 600;
+            throttleSmooth = 1.5;
+            camera.position.z -= speed * delta;
             _applyShipVisuals(delta);
             return;
         }
@@ -6724,19 +6749,6 @@ window.onload = function() {
             shipContainer.rotation.x = 0;
             shipContainer.rotation.y = 0;
             shipContainer.rotation.z = 0;
-            // Phase B/C call camera.lookAt which writes full Euler (x, y, z).
-            // Gameplay only writes rotation.z, so any residual x/y persists and
-            // skews the view. Zero them explicitly here.
-            camera.rotation.x = 0;
-            camera.rotation.y = 0;
-            camera.rotation.z = Math.PI / 2;
-            camera.position.x = Math.cos(0) * (tubeRadius - 16);
-            camera.position.y = Math.sin(0) * (tubeRadius - 16);
-            // Belt-and-suspenders: sync quaternion to Euler + refresh world
-            // matrix before the first gameplay frame reads it.
-            camera.quaternion.setFromEuler(camera.rotation);
-            camera.updateMatrixWorld();
-            // Reset boost driver + visuals so gameplay starts idle.
             throttleSmooth = 0;
             shipZOffset = -18;
             engineLight.intensity = 3.0;
