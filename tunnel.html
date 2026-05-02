@@ -7798,12 +7798,15 @@ window.onload = function() {
         return (s < r.s) || (s === r.s && l <= r.l);
     }
     function _trQualifiesForLeaderboard(s) {
+        // Gate the initials prompt by the GLOBAL leaderboard top 10. Local board
+        // ignored on purpose — only true global high scores get the prompt.
         try {
-            var arr = JSON.parse(localStorage.getItem('cyberTubeScores') || '[]');
-            if (arr.length < 10) return s > 0;
-            var min = arr.reduce(function(acc, r) { return (r.score < acc) ? r.score : acc; }, Infinity);
-            return s > min;
-        } catch (e) { return s > 0; }
+            var globals = (typeof _globalScoresCache !== 'undefined' && Array.isArray(_globalScoresCache)) ? _globalScoresCache : [];
+            if (!globals.length) return false; // global not loaded yet → don't prompt
+            var sorted = globals.slice().sort(function(a,b){ return b.score - a.score; });
+            if (sorted.length < 10) return s > 0; // global board not yet full → any positive score takes a slot
+            return s > sorted[9].score; // must beat 10th place
+        } catch (e) { return false; }
     }
 
 (function() {
