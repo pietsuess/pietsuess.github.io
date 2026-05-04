@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
+<title>Victory Screen Test</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="preload" as="style" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block">
+<style>
+html, body { margin: 0; padding: 0; background: #000; }
+body {
+    font-family: 'Press Start 2P', monospace;
+    color: #fff;
+    overflow: hidden;
+    -webkit-user-select: none;
+    user-select: none;
+}
+
+.overlay-screen {
+    position: fixed; inset: 0; background: #000;
+    z-index: 500; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    text-align: center; pointer-events: auto; padding: 20px;
+}
+
+#victory-screen { display: none; }
+
+.screen-title {
+    font-family: 'Press Start 2P', monospace;
+    letter-spacing: 3px; line-height: 1.6; margin-bottom: 6px;
+}
+
+#victory-screen .screen-title {
+    font-size: clamp(14px,3.5vw,20px);
+    color: #00ffcc;
+    animation: victoryPulse 0.9s ease-in-out infinite;
+}
+
+@keyframes victoryPulse {
+    0%,100% { text-shadow: 0 0 10px rgba(0,255,204,0.5); }
+    50%     { text-shadow: 0 0 34px rgba(0,255,204,1), 0 0 70px rgba(0,255,204,0.4); }
+}
+
+@keyframes fadeSlideUp {
+    from { opacity: 0; transform: translateY(12px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.stagger-in { animation: fadeSlideUp 0.45s ease-out both; opacity: 0; }
+
+#victory-score {
+    font-family: 'Press Start 2P', monospace;
+    font-size: 13px; color: #ffe000;
+    text-shadow: 0 0 10px rgba(255,224,0,0.7);
+    margin-bottom: 28px; letter-spacing: 2px;
+}
+
+#start-btn {
+    position: fixed; inset: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Press Start 2P', monospace;
+    color: #ffe000; font-size: 14px;
+    background: #000; cursor: pointer;
+    letter-spacing: 3px; text-shadow: 0 0 10px rgba(255,224,0,0.6);
+    z-index: 1000;
+    text-align: center; padding: 20px;
+}
+
+#start-btn:active { color: #fff; text-shadow: 0 0 14px #fff; }
+</style>
+</head>
+<body>
+
+<div id="start-btn">[ CLICK TO TRIGGER VICTORY ]</div>
+
+<div id="victory-screen" class="overlay-screen">
+    <div id="victory-unlocks" style="display:none;text-align:center;margin-bottom:14px;"></div>
+    <h1 class="screen-title stagger-in">SECTOR CLEARED</h1>
+    <div id="victory-score" class="stagger-in">SCORE: 000000</div>
+    <div id="victory-time" class="stagger-in" style="width:90%;max-width:280px;margin-bottom:0;"></div>
+</div>
+
+<script>
+(function(){
+    var MOCK = {
+        currentSector: 2,
+        currentLevel: 3,
+        sectorScore: 4250,
+        sectorTime: 28.4,
+        bestTimes: { 1: 22.1, 2: 28.4 },
+        sectorRunTimes: { 1: 25, 2: 28.4 },
+        isPerfect: true,
+        gunshipJustUnlocked: true,
+        bonusUnlockedTitles: ['ARCHIVE A', 'ARCHIVE B'],
+        zoneName: 'KEATING',
+        zoneColor: '#ff69b4',
+        collected: 5,
+        total: 9
+    };
+
+    function fmtTime(t) {
+        var mm = Math.floor(t/60), ss = Math.floor(t%60), tt = Math.floor((t%1)*10);
+        return mm + ':' + (ss<10 ? '0' : '') + ss + '.' + tt;
+    }
+
+    var startBtn = document.getElementById('start-btn');
+    var vsRoot = document.getElementById('victory-screen');
+
+    function renderVictory() {
+        var sectorScore = MOCK.sectorScore;
+        var currentSector = MOCK.currentSector;
+        var sectorTime = MOCK.sectorTime;
+        var bestTimes = MOCK.bestTimes;
+        var sectorRunTimes = MOCK.sectorRunTimes;
+
+        document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
+
+        var timesHtml = '';
+        for (var sec = 1; sec <= currentSector; sec++) {
+            var rt = sectorRunTimes[sec];
+            var bt = bestTimes[sec];
+            var isCurrentSector = (sec === currentSector);
+            var isSectorBest = bt && rt && rt <= bt;
+            var runStr = rt ? fmtTime(rt) : '--';
+            var bestStr = bt ? fmtTime(bt) : '--';
+            var color = isCurrentSector ? (isSectorBest ? '#ffee00' : '#00ffcc') : '#888';
+            var star = (isCurrentSector && isSectorBest) ? ' \u2605' : '';
+            timesHtml += '<div style="display:flex;justify-content:space-between;font-family:\'Press Start 2P\',monospace;font-size:12px;color:' + color + ';padding:3px 0;letter-spacing:1px;">'
+                + '<span>S' + sec + '</span><span>' + runStr + '</span><span>' + bestStr + star + '</span></div>';
+        }
+        var timeEl = document.getElementById('victory-time');
+        timeEl.innerHTML = '<div style="width:100%;max-width:260px;margin:0 auto;">'
+            + '<div style="display:flex;justify-content:space-between;font-family:\'Press Start 2P\',monospace;font-size:9px;color:#555;padding:0 0 6px;letter-spacing:2px;border-bottom:1px solid #333;margin-bottom:6px;">'
+            + '<span>SECTOR</span><span>RUN</span><span>BEST</span></div>'
+            + timesHtml + '</div>';
+
+        var unlockHtml = '';
+        if (MOCK.gunshipJustUnlocked) {
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#00ccff;text-shadow:0 0 20px rgba(0,204,255,0.8);letter-spacing:4px;margin-bottom:4px;animation:fadeSlideUp 0.5s ease-out both;">GUNSHIP UNLOCKED</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(6px,1.5vw,9px);color:#ff8800;letter-spacing:2px;opacity:0.8;animation:fadeSlideUp 0.5s ease-out 0.15s both;">SWITCH IN PAUSE MENU</div>';
+        }
+        var contentLabel = MOCK.zoneName;
+        var zoneColor = MOCK.zoneColor;
+        var collected = MOCK.collected;
+        var total = MOCK.total;
+        unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,3.5vw,22px);color:' + zoneColor + ';text-shadow:0 0 20px ' + zoneColor + ';letter-spacing:3px;margin-top:' + (MOCK.gunshipJustUnlocked ? '16px' : '0') + ';animation:fadeSlideUp 0.5s ease-out 0.3s both;">' + collected + ' / ' + total + ' ' + contentLabel + '</div>';
+        if (MOCK.bonusUnlockedTitles.length > 0) {
+            unlockHtml += '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,16px);color:#ffe000;text-shadow:0 0 16px rgba(255,224,0,0.6);letter-spacing:3px;margin-top:12px;animation:fadeSlideUp 0.5s ease-out 0.5s both;">SCORE BONUS!</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,13px);color:#ffe000;letter-spacing:2px;opacity:0.8;margin-top:6px;animation:fadeSlideUp 0.5s ease-out 0.6s both;">+' + MOCK.bonusUnlockedTitles.length + ' CONTENT UNLOCKED</div>';
+        }
+
+        var unlockEl = document.getElementById('victory-unlocks');
+        unlockEl.innerHTML = unlockHtml;
+        unlockEl.style.display = unlockHtml ? 'block' : 'none';
+
+        vsRoot.querySelector('.screen-title').innerText = 'SECTOR CLEARED';
+
+        var oldPrompt = vsRoot.querySelector('.vs-tap-prompt');
+        if (oldPrompt) oldPrompt.remove();
+        var tap = document.createElement('div');
+        tap.className = 'vs-tap-prompt';
+        tap.textContent = 'TAP TO CONTINUE';
+        tap.style.cssText = "font-family:'Press Start 2P',monospace; font-size:clamp(11px,2.5vw,14px); letter-spacing:3px; color:#ffe000; text-align:center; margin-top:24px; animation:victoryPulse 1.2s ease-in-out infinite;";
+        vsRoot.appendChild(tap);
+
+        if (MOCK.isPerfect) {
+            var pf = document.createElement('div');
+            pf.id = 'perfect-banner';
+            pf.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
+            pf.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(18px,5vw,36px);color:#ffee00;text-shadow:0 0 30px rgba(255,238,0,0.9),0 0 60px rgba(255,170,0,0.6);letter-spacing:6px;animation:fadeSlideUp 0.6s ease-out both;">PERFECT SCORE</div>'
+                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#ffcc00;letter-spacing:3px;margin-top:14px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">ALL COLLECTIBLES</div>';
+            document.body.appendChild(pf);
+            setTimeout(function(){ pf.style.transition = 'opacity 0.8s'; pf.style.opacity = '0'; }, 2000);
+            setTimeout(function(){ if (pf.parentNode) pf.remove(); }, 3000);
+        }
+    }
+
+    var dismissArmed = false;
+    var armAt = 0;
+
+    function showVictory() {
+        renderVictory();
+        startBtn.style.display = 'none';
+        vsRoot.style.display = 'flex';
+        dismissArmed = true;
+        armAt = Date.now() + 300;
+    }
+
+    function hideVictory() {
+        if (!dismissArmed) return;
+        if (Date.now() < armAt) return;
+        dismissArmed = false;
+        vsRoot.style.display = 'none';
+        var tp = vsRoot.querySelector('.vs-tap-prompt');
+        if (tp) tp.remove();
+        var pb = document.getElementById('perfect-banner');
+        if (pb) pb.remove();
+        startBtn.style.display = 'flex';
+    }
+
+    startBtn.addEventListener('click', showVictory);
+    startBtn.addEventListener('touchend', function(e){ e.preventDefault(); showVictory(); }, {passive:false});
+
+    vsRoot.addEventListener('click', hideVictory);
+    vsRoot.addEventListener('touchend', hideVictory, {passive:true});
+})();
+</script>
+
+</body>
+</html>
