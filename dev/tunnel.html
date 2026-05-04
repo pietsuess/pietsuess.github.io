@@ -915,6 +915,7 @@
         <button class="menu-btn" id="dev-s5" style="width:auto;padding:6px 12px;font-size:9px;">S5</button>
       </div>
     </div>
+    <button class="menu-btn" id="prev-games-btn" style="border-color:#00ffcc;color:#00ffcc;text-shadow:0 0 8px rgba(0,255,204,0.6);">[ PREVIOUS GAMES ]</button>
     <button class="menu-btn" id="store-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ STORE ]</button>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
 </div>
@@ -942,10 +943,13 @@
 <!-- Fire Button (gunship only) -->
 <button id="fire-btn" style="display:none;position:fixed;bottom:100px;left:20px;z-index:460;width:84px;height:84px;border-radius:50%;background:#ff8800;border:none;font-family:'Press Start 2P',monospace;font-size:11px;color:#000;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:0 0 0 6px transparent,0 0 0 8px #ff8800;pointer-events:all;">FIRE</button>
 <!-- Session Picker (Resume or New Game) -->
-<div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
-    <div style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:18px;text-align:center;width:100%;">RESUME OR NEW GAME</div>
-    <button id="tr-session-new" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);margin-bottom:18px;">[ NEW GAME ]</button>
-    <div id="tr-session-list" style="width:100%;max-width:460px;display:flex;flex-direction:column;gap:8px;"></div>
+<div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;padding-bottom:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
+    <div id="tr-session-resume-header" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:24px;text-align:center;width:100%;">RESUME</div>
+    <div id="tr-session-list" style="width:100%;max-width:460px;display:flex;flex-direction:column;gap:8px;margin-bottom:30px;"></div>
+    <div id="tr-session-or" style="font-family:'Press Start 2P',monospace;font-size:14px;color:#888;letter-spacing:3px;margin-bottom:24px;text-align:center;width:100%;">OR</div>
+    <div style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:18px;text-align:center;width:100%;">NEW GAME</div>
+    <button id="tr-session-new" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);margin-bottom:30px;">[ START NEW GAME ]</button>
+    <button id="tr-session-close" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:12px;border-color:#888;color:#aaa;display:none;">[ CLOSE ]</button>
 </div>
 
 
@@ -2021,7 +2025,7 @@ window.onload = function() {
     var weaponTier = _loadWeaponTier();
 
     var SHIELD_PRICES = [null, 25, 60, 150, 350, 800];
-    var WEAPON_PRICES = [null, 50, 100, 400, 1500];
+    var WEAPON_PRICES = [null, 50, 200, 600, 900];
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TITANIUM', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-30% DAMAGE', '-40% DAMAGE', '-50% DAMAGE (MAX)'];
@@ -2056,8 +2060,10 @@ window.onload = function() {
         var s = {
             id: _sessionGenId(),
             ringBank: 0,
-            shieldTier: 0,
-            weaponTier: 0,
+            ownedShields: [],
+            ownedWeapons: [],
+            activeShield: 0,
+            activeWeapon: 0,
             maxReached: 'S1L1',
             maxPassed: null,
             lastPlayed: Date.now()
@@ -2078,8 +2084,22 @@ window.onload = function() {
         _activeSessionId = id;
         try { localStorage.setItem('tunnelrunner.activeSessionId', id); } catch(e) {}
         ringBank = s.ringBank || 0;
-        shieldTier = Math.max(0, Math.min(5, s.shieldTier || 0));
-        weaponTier = Math.max(0, Math.min(4, s.weaponTier || 0));
+        if (!Array.isArray(s.ownedShields)) {
+            var _legacyST = Math.max(0, Math.min(5, s.shieldTier || 0));
+            s.ownedShields = [];
+            for (var _i = 1; _i <= _legacyST; _i++) s.ownedShields.push(_i);
+            s.activeShield = _legacyST;
+        }
+        if (!Array.isArray(s.ownedWeapons)) {
+            var _legacyWT = Math.max(0, Math.min(4, s.weaponTier || 0));
+            s.ownedWeapons = [];
+            for (var _j = 1; _j <= _legacyWT; _j++) s.ownedWeapons.push(_j);
+            s.activeWeapon = _legacyWT;
+        }
+        if (typeof s.activeShield !== 'number') s.activeShield = 0;
+        if (typeof s.activeWeapon !== 'number') s.activeWeapon = 0;
+        shieldTier = Math.max(0, Math.min(5, s.activeShield || 0));
+        weaponTier = Math.max(0, Math.min(4, s.activeWeapon || 0));
         try {
             if (s.maxReached) localStorage.setItem('tunnelrunner.maxLevelReached', s.maxReached);
             if (s.maxPassed) localStorage.setItem('tunnelrunner.maxLevelPassed', s.maxPassed);
@@ -2105,6 +2125,10 @@ window.onload = function() {
                 arr[i].ringBank = ringBank;
                 arr[i].shieldTier = shieldTier;
                 arr[i].weaponTier = weaponTier;
+                arr[i].activeShield = shieldTier;
+                arr[i].activeWeapon = weaponTier;
+                if (!Array.isArray(arr[i].ownedShields)) arr[i].ownedShields = [];
+                if (!Array.isArray(arr[i].ownedWeapons)) arr[i].ownedWeapons = [];
                 try {
                     var mr = localStorage.getItem('tunnelrunner.maxLevelReached');
                     if (mr) arr[i].maxReached = mr;
@@ -2125,19 +2149,65 @@ window.onload = function() {
             try { localStorage.removeItem('tunnelrunner.activeSessionId'); } catch(e) {}
         }
     }
+    function _getOwnedShields() {
+        if (!_activeSessionId) return [];
+        var s = _sessionFind(_activeSessionId);
+        if (!s || !Array.isArray(s.ownedShields)) return [];
+        return s.ownedShields.slice();
+    }
+    function _getOwnedWeapons() {
+        if (!_activeSessionId) return [];
+        var s = _sessionFind(_activeSessionId);
+        if (!s || !Array.isArray(s.ownedWeapons)) return [];
+        return s.ownedWeapons.slice();
+    }
+    function _setOwnedShields(arr2) {
+        if (!_activeSessionId) return;
+        var arr = _sessionsLoad();
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].id === _activeSessionId) { arr[i].ownedShields = arr2.slice(); break; }
+        }
+        _sessionsSave(arr);
+    }
+    function _setOwnedWeapons(arr2) {
+        if (!_activeSessionId) return;
+        var arr = _sessionsLoad();
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].id === _activeSessionId) { arr[i].ownedWeapons = arr2.slice(); break; }
+        }
+        _sessionsSave(arr);
+    }
+    function _setActiveShield(idx) {
+        shieldTier = Math.max(0, Math.min(5, idx | 0));
+        _saveShieldTier(shieldTier);
+        try { _sessionSync(); } catch(e) {}
+    }
+    function _setActiveWeapon(idx) {
+        weaponTier = Math.max(0, Math.min(4, idx | 0));
+        _saveWeaponTier(weaponTier);
+        try { _sessionSync(); } catch(e) {}
+        try {
+            var _fb = document.getElementById('fire-btn');
+            if (_fb) _fb.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
+        } catch(e) {}
+    }
 
     function _sessionScreenRender() {
         var listEl = document.getElementById('tr-session-list');
         if (!listEl) return;
         listEl.innerHTML = '';
         var arr = _sessionsLoad().slice().sort(function(a,b){ return (b.lastPlayed||0) - (a.lastPlayed||0); });
+        var resumeHdr = document.getElementById('tr-session-resume-header');
+        var orEl = document.getElementById('tr-session-or');
         if (arr.length === 0) {
-            var empty = document.createElement('div');
-            empty.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;color:#666;text-align:center;padding:14px;letter-spacing:1px;';
-            empty.innerText = 'NO SAVED RUNS';
-            listEl.appendChild(empty);
+            if (resumeHdr) resumeHdr.style.display = 'none';
+            if (orEl) orEl.style.display = 'none';
+            listEl.style.display = 'none';
             return;
         }
+        if (resumeHdr) resumeHdr.style.display = 'block';
+        if (orEl) orEl.style.display = 'block';
+        listEl.style.display = 'flex';
         arr.forEach(function(s) {
             var row = document.createElement('div');
             row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;border:1px solid #ffe000;background:rgba(0,0,0,0.4);cursor:pointer;-webkit-tap-highlight-color:rgba(255,224,0,0.3);touch-action:manipulation;';
@@ -2181,6 +2251,7 @@ window.onload = function() {
                 _rowLast = now;
                 _sessionLoad(s.id);
                 _hideSessionScreen();
+                _sessionCancelCallback = null;
                 if (typeof _sessionResumeCallback === 'function') {
                     var cb = _sessionResumeCallback; _sessionResumeCallback = null; cb();
                 }
@@ -2191,11 +2262,15 @@ window.onload = function() {
         });
     }
     var _sessionResumeCallback = null;
-    function _showSessionScreen(onPicked) {
+    var _sessionCancelCallback = null;
+    function _showSessionScreen(onPicked, onCancel) {
         _sessionResumeCallback = onPicked || null;
+        _sessionCancelCallback = onCancel || null;
         _sessionScreenRender();
         var el = document.getElementById('tr-session-screen');
         if (el) el.style.display = 'flex';
+        var closeBtn = document.getElementById('tr-session-close');
+        if (closeBtn) closeBtn.style.display = onCancel ? 'block' : 'none';
         try { var _hb = document.getElementById('hamburger-btn'); if (_hb) _hb.style.display = 'none'; } catch(e) {}
         try { document.body.style.touchAction = 'pan-y'; } catch(e) {}
     }
@@ -6896,11 +6971,32 @@ window.onload = function() {
             var s = _sessionCreate();
             _sessionLoad(s.id);
             _hideSessionScreen();
+            _sessionCancelCallback = null;
             if (typeof _sessionResumeCallback === 'function') {
                 var cb = _sessionResumeCallback; _sessionResumeCallback = null; cb();
             }
         });
+        var cb2 = document.getElementById('tr-session-close');
+        if (cb2) cb2.addEventListener('click', function(e) {
+            e.stopPropagation();
+            _hideSessionScreen();
+            _sessionResumeCallback = null;
+            if (typeof _sessionCancelCallback === 'function') {
+                var cc = _sessionCancelCallback; _sessionCancelCallback = null; cc();
+            }
+        });
     })();
+    bindTap('prev-games-btn', function(){
+        document.getElementById('pause-screen').style.display = 'none';
+        var _restorePause = function(){
+            document.getElementById('pause-screen').style.display = 'flex';
+        };
+        _showSessionScreen(function(){
+            try { _prePauseState = null; _prePauseScreen = null; } catch(e) {}
+            try { AudioEngine.suspend(); } catch(e) {}
+            initializeFlight(true);
+        }, _restorePause);
+    });
 
 
     // ── STORE / Upgrades ───────────────────────────────────────────
@@ -6910,11 +7006,41 @@ window.onload = function() {
         var name = isShield ? SHIELD_NAMES[idx] : WEAPON_NAMES[idx];
         var desc = isShield ? SHIELD_DESC[idx] : WEAPON_DESC[idx];
         var cost = isShield ? SHIELD_PRICES[idx] : WEAPON_PRICES[idx];
-        var ownedTier = isShield ? shieldTier : weaponTier;
-        var owned = (idx <= ownedTier);
+        var ownedArr = isShield ? _getOwnedShields() : _getOwnedWeapons();
+        var owned = (ownedArr.indexOf(idx) !== -1);
+        var activeIdx = isShield ? shieldTier : weaponTier;
+        var isActive = (owned && idx === activeIdx);
         var canAfford = (cost != null && ringBank >= cost);
         var row = document.createElement('div');
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + (owned ? '#00ff88' : (canAfford ? '#ffe000' : '#444')) + ';background:rgba(0,0,0,0.35);touch-action:pan-y;';
+        var dot = document.createElement('div');
+        dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
+        if (owned) {
+            if (isActive) {
+                dot.style.background = '#ffe000';
+                dot.style.boxShadow = '0 0 8px rgba(255,224,0,0.8)';
+                dot.style.border = '2px solid #ffe000';
+            } else {
+                dot.style.background = 'transparent';
+                dot.style.border = '2px solid #ffe000';
+                dot.style.cursor = 'pointer';
+                dot.style.touchAction = 'manipulation';
+                (function(_idx, _isShield){
+                    var _h = function(e) {
+                        e.stopPropagation(); e.preventDefault();
+                        if (_isShield) { _setActiveShield(_idx); }
+                        else { _setActiveWeapon(_idx); }
+                        _refreshStorePanels();
+                    };
+                    dot.addEventListener('click', _h);
+                    dot.addEventListener('touchend', _h, {passive:false});
+                })(idx, isShield);
+            }
+        } else {
+            dot.style.background = 'transparent';
+            dot.style.border = '2px solid #333';
+        }
+        row.appendChild(dot);
         var info = document.createElement('div');
         info.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;touch-action:pan-y;';
         var nm = document.createElement('div');
@@ -6928,8 +7054,8 @@ window.onload = function() {
         row.appendChild(info);
         if (owned) {
             var ow = document.createElement('div');
-            ow.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:#00ff88;flex-shrink:0;';
-            ow.innerText = '✓ OWNED';
+            ow.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:' + (isActive ? '#ffe000' : '#00ff88') + ';flex-shrink:0;text-shadow:0 0 6px ' + (isActive ? 'rgba(255,224,0,0.6)' : 'transparent') + ';';
+            ow.innerText = isActive ? 'ACTIVE' : 'OWNED';
             row.appendChild(ow);
         } else {
             var btn = document.createElement('button');
@@ -6986,29 +7112,31 @@ window.onload = function() {
         if (typeof ret === 'function') ret();
     }
     function _buyShield(idx) {
-        if (typeof idx !== 'number') idx = shieldTier + 1;
-        if (idx <= shieldTier) return;
+        if (typeof idx !== 'number') return;
         if (idx < 1 || idx > 5) return;
+        var owned = _getOwnedShields();
+        if (owned.indexOf(idx) !== -1) return;
         var cost = SHIELD_PRICES[idx];
         if (cost == null) return;
         if (!_ringsSpend(cost)) return;
-        shieldTier = idx;
-        _saveShieldTier(shieldTier);
-        try { _sessionSync(); } catch(e) {}
+        owned.push(idx);
+        _setOwnedShields(owned);
+        _setActiveShield(idx);
         try { AudioEngine.playSFX('shield'); } catch(e) {}
         updateRingHUD();
         _refreshStorePanels();
     }
     function _buyWeapon(idx) {
-        if (typeof idx !== 'number') idx = weaponTier + 1;
-        if (idx <= weaponTier) return;
+        if (typeof idx !== 'number') return;
         if (idx < 1 || idx > 4) return;
+        var owned = _getOwnedWeapons();
+        if (owned.indexOf(idx) !== -1) return;
         var cost = WEAPON_PRICES[idx];
         if (cost == null) return;
         if (!_ringsSpend(cost)) return;
-        weaponTier = idx;
-        _saveWeaponTier(weaponTier);
-        try { _sessionSync(); } catch(e) {}
+        owned.push(idx);
+        _setOwnedWeapons(owned);
+        _setActiveWeapon(idx);
         try { AudioEngine.playSFX('content_collect'); } catch(e) { try { AudioEngine.playSFX('shield'); } catch(e2) {} }
         updateRingHUD();
         _refreshStorePanels();
