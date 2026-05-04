@@ -5420,19 +5420,44 @@ window.onload = function() {
         } else {
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
         }
-        document.getElementById('victory-screen').style.display = 'flex';
+        var _vsRoot = document.getElementById('victory-screen');
+        _vsRoot.style.display = 'flex';
         AudioEngine.stopEngine();
         stopMusic();
         setTimeout(function(){ pauseMusic(); }, 1500);
-        setTimeout(function(){
+
+        var _vsOldPrompt = _vsRoot.querySelector('.vs-tap-prompt');
+        if (_vsOldPrompt) _vsOldPrompt.remove();
+        var _vsTap = document.createElement('div');
+        _vsTap.className = 'vs-tap-prompt';
+        _vsTap.textContent = 'TAP TO CONTINUE';
+        _vsTap.style.cssText = "font-family:'Press Start 2P',monospace; font-size:clamp(11px,2.5vw,14px); letter-spacing:3px; color:#ffe000; text-align:center; margin-top:24px; animation:victoryPulse 1.2s ease-in-out infinite;";
+        _vsRoot.appendChild(_vsTap);
+
+        var _vsAdvanced = false;
+        var _vsAdvanceAt = Date.now() + 300;
+        var _vsFallbackTimer = null;
+        var _vsAdvance = function(e){
+            if (_vsAdvanced) return;
+            if (Date.now() < _vsAdvanceAt) return;
+            _vsAdvanced = true;
+            if (_vsFallbackTimer) { clearTimeout(_vsFallbackTimer); _vsFallbackTimer = null; }
+            _vsRoot.removeEventListener('touchend', _vsAdvance);
+            _vsRoot.removeEventListener('mouseup', _vsAdvance);
+            _vsRoot.removeEventListener('click', _vsAdvance);
             if (gameState !== 'victory') return;
-            var vs = document.getElementById('victory-screen');
-            if (vs) vs.style.display = 'none';
+            _vsRoot.style.display = 'none';
+            var _tp = _vsRoot.querySelector('.vs-tap-prompt');
+            if (_tp) _tp.remove();
             _carouselFromAbort = false;
             document.body.classList.remove('abort-carousel');
             carouselFromVictory = true;
             try { showCarousel(currentSector); } catch(err) {}
-        }, 1500);
+        };
+        _vsRoot.addEventListener('touchend', _vsAdvance, {passive:true});
+        _vsRoot.addEventListener('mouseup', _vsAdvance);
+        _vsRoot.addEventListener('click', _vsAdvance);
+        _vsFallbackTimer = setTimeout(_vsAdvance, 8000);
     }
 
 
