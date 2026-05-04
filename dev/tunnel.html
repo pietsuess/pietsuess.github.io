@@ -284,6 +284,7 @@
         body.cinematic-active #mission-divider,
         body.cinematic-active #collection-hud,
         body.cinematic-active #fire-btn,
+        body.cinematic-active #jump-btn,
         body.cinematic-active #ring-display,
         body.cinematic-active #tut-title,
         body.cinematic-active #tut-hud,
@@ -959,6 +960,7 @@
 
 <!-- Fire Button (gunship only) -->
 <button id="fire-btn" style="display:none;position:fixed;bottom:100px;left:20px;z-index:460;width:84px;height:84px;border-radius:50%;background:#ff8800;border:none;font-family:'Press Start 2P',monospace;font-size:11px;color:#000;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:0 0 0 6px transparent,0 0 0 8px #ff8800;pointer-events:all;">FIRE</button>
+<button id="jump-btn" style="display:none;position:fixed;bottom:100px;right:20px;z-index:460;width:84px;height:84px;border-radius:50%;background:#00ffcc;border:none;font-family:'Press Start 2P',monospace;font-size:11px;color:#000;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:0 0 0 6px transparent,0 0 0 8px #00ffcc;pointer-events:all;">JUMP</button>
 <!-- Session Picker (Resume or New Game) -->
 <div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;padding-bottom:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
     <div id="tr-session-resume-header" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:24px;text-align:center;width:100%;">RESUME</div>
@@ -3841,6 +3843,8 @@ window.onload = function() {
         gunshipGroup.visible = (type === 'gunship');
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
+        var jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn) jumpBtn.style.display = (gameState === 'playing') ? 'block' : 'none';
         try { localStorage.setItem('trActiveShip', JSON.stringify(type)); } catch(e) {}
     }
     setActiveShip(activeShip);
@@ -5331,6 +5335,8 @@ window.onload = function() {
         shipContainer.visible = false;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
+        var jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn) jumpBtn.style.display = 'none';
 
         // Delay game-over screen so explosion plays out
         setTimeout(function() {
@@ -5434,6 +5440,8 @@ window.onload = function() {
         flash('#00ffaa');
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
+        var jumpBtn = document.getElementById('jump-btn');
+        if (jumpBtn) jumpBtn.style.display = 'none';
 
         const isPerfect = sectorCollectiblesSpawned > 0 && sectorCollectiblesCollected >= sectorCollectiblesSpawned;
 
@@ -6750,6 +6758,8 @@ window.onload = function() {
                     gameState = 'playing';
                     var _fb = document.getElementById('fire-btn');
                     if (_fb) _fb.style.display = (weaponTier >= 1) ? 'block' : 'none';
+                    var _jb = document.getElementById('jump-btn');
+                    if (_jb) _jb.style.display = 'block';
                     _countdownActive = true;
                     document.getElementById('hamburger-btn').style.display = 'flex';
                     // Only resume raw audio context for countdown tick/go SFX
@@ -6893,6 +6903,8 @@ window.onload = function() {
             document.getElementById('pause-screen').style.display = 'flex';
             var fireBtn = document.getElementById('fire-btn');
             if (fireBtn) fireBtn.style.display = 'none';
+            var jumpBtn = document.getElementById('jump-btn');
+            if (jumpBtn) jumpBtn.style.display = 'none';
         } else if (gameState === 'victory' || gameState === 'dead' || gameState === 'finale') {
             // Pause from overlay screens — hide current screen, show pause menu
             _prePauseState = gameState;
@@ -6915,6 +6927,8 @@ window.onload = function() {
                 {
                     var fireBtn = document.getElementById('fire-btn');
                     if (fireBtn) fireBtn.style.display = (weaponTier >= 1) ? 'block' : 'none';
+                    var jumpBtn = document.getElementById('jump-btn');
+                    if (jumpBtn) jumpBtn.style.display = 'block';
                 }
                 AudioEngine.resume();
                 AudioEngine.startEngine();
@@ -7378,6 +7392,37 @@ window.onload = function() {
         }
     }, {passive: true});
     _fireBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); fireProjectile(); });
+    function _triggerJump() {
+        if (gameState !== 'playing') return;
+        if (isJumping || isFlipping) return;
+        isJumping = true;
+        jumpTimer = 0;
+        try { AudioEngine.playSFX('jump'); } catch(e) {}
+    }
+    var _jumpBtn = document.getElementById('jump-btn');
+    if (_jumpBtn) {
+        _jumpBtn.addEventListener('touchstart', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+                window._fireTouchIds.add(e.changedTouches[i].identifier);
+            }
+            _triggerJump();
+        }, {passive: false});
+        _jumpBtn.addEventListener('touchend', function(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            for (var i = 0; i < e.changedTouches.length; i++) {
+                window._fireTouchIds.delete(e.changedTouches[i].identifier);
+            }
+        }, {passive: false});
+        _jumpBtn.addEventListener('touchcancel', function(e) {
+            for (var i = 0; i < e.changedTouches.length; i++) {
+                window._fireTouchIds.delete(e.changedTouches[i].identifier);
+            }
+        }, {passive: true});
+        _jumpBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); _triggerJump(); });
+    }
     // Session NEW GAME button
     (function(){
         var nb = document.getElementById('tr-session-new');
@@ -8281,7 +8326,7 @@ window.onload = function() {
             try { document.body.classList.remove('cinematic-active'); } catch(e){}
             setTimeout(function(){
                 _finalCine.redirected = true;
-                window.location.href = 'navigator-victory.html';
+                window.location.href = '../navigator-victory.html';
             }, 220);
         }
         el.addEventListener('click', go);
@@ -8329,7 +8374,7 @@ window.onload = function() {
         } catch (err) {
             console.error('runFinalCinematic fatal', err);
             _finalCine.active = false;
-            window.location.href = 'navigator-victory.html';
+            window.location.href = '../navigator-victory.html';
         }
     }
 
