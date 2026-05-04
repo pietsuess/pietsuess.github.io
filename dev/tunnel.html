@@ -3020,7 +3020,7 @@ window.onload = function() {
             carouselFromPause = false;
             document.getElementById('pause-screen').style.display = 'flex';
         } else if (allZonesComplete()) {
-            window.location.href = 'navigator-victory.html';
+            runFinalCinematic();
         } else {
             startNextSector();
         }
@@ -5960,7 +5960,7 @@ window.onload = function() {
             // Advance to next sector
             if (currentSector >= 5) {
                 // All 5 zones done → victory!
-                window.location.href = 'navigator-victory.html';
+                runFinalCinematic();
                 return;
             }
             currentSector++;
@@ -7981,6 +7981,161 @@ window.onload = function() {
         }
     }
 
+    var _finalCine = { active:false, t:0, fwSpawn:0, fws:[], group:null, redirected:false };
+
+    function _spawnFirework(worldPos, color) {
+        try {
+            if (!_finalCine.group) {
+                _finalCine.group = new THREE.Group();
+                scene.add(_finalCine.group);
+            }
+            var geo = new THREE.SphereGeometry(0.6, 6, 6);
+            var n = 16;
+            for (var i = 0; i < n; i++) {
+                var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1 });
+                var p = new THREE.Mesh(geo, mat);
+                p.position.copy(worldPos);
+                var theta = Math.random() * Math.PI * 2;
+                var phi = Math.acos(2 * Math.random() - 1);
+                var spd = 8 + Math.random() * 7;
+                p.userData.vel = new THREE.Vector3(
+                    Math.sin(phi) * Math.cos(theta) * spd,
+                    Math.sin(phi) * Math.sin(theta) * spd,
+                    Math.cos(phi) * spd
+                );
+                p.userData._life = 1.5;
+                _finalCine.group.add(p);
+                _finalCine.fws.push(p);
+            }
+        } catch (e) { console.error('firework spawn err', e); }
+    }
+
+    function _disposeFireworkParticle(p) {
+        try {
+            if (_finalCine.group) _finalCine.group.remove(p);
+            if (p.material) p.material.dispose();
+        } catch (e) {}
+    }
+
+    function _buildFinalScreen() {
+        if (document.getElementById('tr-final-screen')) return;
+        var el = document.createElement('div');
+        el.id = 'tr-final-screen';
+        el.style.cssText = "position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:8vh 16px 4vh;pointer-events:auto;opacity:0;transition:opacity 400ms ease;";
+        var scoreStr = (typeof score === 'number' ? score : 0).toString().padStart(6, '0');
+        el.innerHTML =
+            '<div style="text-align:center;">' +
+              '<div id="tr-final-score" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(11px,2.5vw,16px);color:#aaa;letter-spacing:3px;margin-bottom:8px;">FINAL SCORE: ' + scoreStr + '</div>' +
+              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#666;letter-spacing:2px;">ALL ZONES COMPLETE</div>' +
+            '</div>' +
+            '<div style="text-align:center;">' +
+              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(28px,9vw,64px);color:#ffe000;text-shadow:0 0 30px rgba(255,224,0,0.9),0 0 60px rgba(255,170,0,0.6);letter-spacing:8px;animation:victoryPulse 1s ease-in-out infinite;margin-bottom:18px;">VICTORY!</div>' +
+              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:#00ffcc;text-shadow:0 0 20px rgba(0,255,204,0.8);letter-spacing:5px;">GAME OVER</div>' +
+            '</div>' +
+            '<div id="tr-final-tap" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,14px);color:#ffe000;letter-spacing:3px;animation:victoryPulse 1.2s ease-in-out infinite;">TAP TO CONTINUE</div>';
+        document.body.appendChild(el);
+        requestAnimationFrame(function(){ el.style.opacity = '1'; });
+        var fired = false;
+        function go() {
+            if (fired) return; fired = true;
+            try { el.style.opacity = '0'; } catch(e){}
+            setTimeout(function(){
+                _finalCine.redirected = true;
+                window.location.href = 'navigator-victory.html';
+            }, 220);
+        }
+        el.addEventListener('click', go);
+        el.addEventListener('touchend', function(e){ try { e.preventDefault(); } catch(_){} go(); }, { passive:false });
+        el.addEventListener('mouseup', go);
+    }
+
+    function runFinalCinematic() {
+        try {
+            if (_finalCine.active) return;
+            _finalCine.active = true;
+            _finalCine.t = 0;
+            _finalCine.fwSpawn = 0;
+            _finalCine.fws = [];
+            _finalCine.redirected = false;
+            gameState = 'final-cinematic';
+            try {
+                ['victory-screen','game-over-screen','finale-screen','pause-screen','tr-carousel-overlay','tr-store-screen','tr-session-screen','inventory-picker'].forEach(function(id){
+                    var n = document.getElementById(id); if (n) n.style.display = 'none';
+                });
+            } catch(e){}
+            try { AudioEngine.playSFX('cinematic_music'); } catch(e){}
+            try { AudioEngine.startEngine(); } catch(e){}
+            try {
+                camera.position.x = Math.cos(0) * (tubeRadius - 16);
+                camera.position.y = Math.sin(0) * (tubeRadius - 16);
+                camera.rotation.z = Math.PI / 2;
+                shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+                shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
+                shipContainer.position.z = camera.position.z - 18;
+                shipContainer.rotation.set(0, 0, 0);
+                shipContainer.visible = true;
+                throttleSmooth = 1.5;
+                shipZOffset = -18;
+                speed = 600;
+            } catch(e) { console.error('finalCine setup err', e); }
+            try { clock.getDelta(); } catch(e){}
+            _buildFinalScreen();
+        } catch (err) {
+            console.error('runFinalCinematic fatal', err);
+            _finalCine.active = false;
+            window.location.href = 'navigator-victory.html';
+        }
+    }
+
+    function tickFinalCinematic(delta) {
+        if (!_finalCine.active) return;
+        if (delta > 0.1) delta = 0.1;
+        _finalCine.t += delta;
+        try {
+            speed = 600;
+            throttleSmooth = 1.5;
+            camera.position.x = Math.cos(0) * (tubeRadius - 16);
+            camera.position.y = Math.sin(0) * (tubeRadius - 16);
+            camera.rotation.z = Math.PI / 2;
+            camera.position.z -= speed * delta;
+            shipZOffset += ((-18 - throttleSmooth * 4) - shipZOffset) * 0.08;
+            shipContainer.position.x = Math.cos(0) * (tubeRadius - 6);
+            shipContainer.position.y = Math.sin(0) * (tubeRadius - 6);
+            shipContainer.position.z = camera.position.z + shipZOffset;
+            shipContainer.updateMatrixWorld(true);
+            _applyShipVisuals(delta);
+        } catch(e) {}
+        _finalCine.fwSpawn -= delta;
+        if (_finalCine.fwSpawn <= 0) {
+            _finalCine.fwSpawn = 0.18 + Math.random() * 0.18;
+            try {
+                var palette = [0xffe000, 0x00ffcc, 0xff66cc, 0x00ccff, 0xff8800];
+                var color = palette[Math.floor(Math.random() * palette.length)];
+                var theta = Math.random() * Math.PI * 2;
+                var pos = new THREE.Vector3(
+                    Math.cos(theta) * tubeRadius * 0.9,
+                    Math.sin(theta) * tubeRadius * 0.9,
+                    camera.position.z - 80 - Math.random() * 200
+                );
+                _spawnFirework(pos, color);
+            } catch(e){}
+        }
+        for (var i = _finalCine.fws.length - 1; i >= 0; i--) {
+            var p = _finalCine.fws[i];
+            try {
+                p.position.addScaledVector(p.userData.vel, delta);
+                p.userData._life -= delta;
+                if (p.material) p.material.opacity = Math.max(0, p.userData._life / 1.5);
+                if (p.userData._life <= 0 || (p.material && p.material.opacity < 0.05)) {
+                    _disposeFireworkParticle(p);
+                    _finalCine.fws.splice(i, 1);
+                }
+            } catch(e) {
+                _finalCine.fws.splice(i, 1);
+            }
+        }
+    }
+
     function animate() {
         requestAnimationFrame(animate);
         
@@ -7988,6 +8143,10 @@ window.onload = function() {
 
         if (gameState === 'cinematic') {
             tickCinematic(delta);
+        }
+
+        if (gameState === 'final-cinematic') {
+            tickFinalCinematic(delta);
         }
 
         if (gameState === 'playing') {
