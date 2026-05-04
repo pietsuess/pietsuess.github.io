@@ -3958,32 +3958,66 @@ window.onload = function() {
     window.addEventListener('mousemove', e => handleInputMove(e.clientX, e.clientY));
     window.addEventListener('mouseup', handleInputEnd);
     
+    window._fireTouchIds = window._fireTouchIds || new Set();
+    window._steerTouchId = (typeof window._steerTouchId === 'undefined') ? null : window._steerTouchId;
+    function _firstNonFireTouch(touchList) {
+        for (var i = 0; i < touchList.length; i++) {
+            if (!window._fireTouchIds.has(touchList[i].identifier)) return touchList[i];
+        }
+        return null;
+    }
+    function _findTouchById(touchList, id) {
+        for (var i = 0; i < touchList.length; i++) {
+            if (touchList[i].identifier === id) return touchList[i];
+        }
+        return null;
+    }
     window.addEventListener('touchstart', e => {
         if (gameState === 'title') return;
-
         var tag = e.target.tagName;
         var isHB = e.target.closest('#hamburger-btn');
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !isHB) {
             e.preventDefault();
-            handleInputStart(e.touches[0].clientX, e.touches[0].clientY);
+            var t = _firstNonFireTouch(e.changedTouches) || _firstNonFireTouch(e.touches);
+            if (!t) return;
+            window._steerTouchId = t.identifier;
+            handleInputStart(t.clientX, t.clientY);
         }
     }, {passive: false});
     window.addEventListener('touchmove', e => {
-
         var tag = e.target.tagName;
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
             e.preventDefault();
-            handleInputMove(e.touches[0].clientX, e.touches[0].clientY);
+            var t = null;
+            if (window._steerTouchId !== null) t = _findTouchById(e.touches, window._steerTouchId);
+            if (!t) t = _firstNonFireTouch(e.touches);
+            if (!t) return;
+            window._steerTouchId = t.identifier;
+            handleInputMove(t.clientX, t.clientY);
         }
     }, {passive: false});
-
     window.addEventListener('touchend', e => {
-
         if (e.target.tagName !== 'BUTTON' && !e.target.closest('#hamburger-btn')) {
             e.preventDefault();
-            handleInputEnd();
+            if (window._steerTouchId !== null) {
+                var ended = _findTouchById(e.changedTouches, window._steerTouchId);
+                if (ended) window._steerTouchId = null;
+            }
+            var still = _firstNonFireTouch(e.touches);
+            if (still) {
+                window._steerTouchId = still.identifier;
+                handleInputMove(still.clientX, still.clientY);
+            } else {
+                handleInputEnd();
+            }
         }
     }, {passive: false});
+    window.addEventListener('touchcancel', e => {
+        if (window._steerTouchId !== null) {
+            var ended = _findTouchById(e.changedTouches, window._steerTouchId);
+            if (ended) window._steerTouchId = null;
+        }
+    }, {passive: true});
 
     window.addEventListener('resize', () => {
         camera.aspect = window.innerWidth / window.innerHeight;
@@ -4824,7 +4858,6 @@ window.onload = function() {
         var p = new THREE.Mesh(geo, mat);
         p.position.copy(shipContainer.position);
         if (offsetX) {
-            // Local X offset relative to ship orbit angle
             var perpX = -Math.sin(shipAngle);
             var perpY = Math.cos(shipAngle);
             p.position.x += perpX * offsetX;
@@ -4836,9 +4869,13 @@ window.onload = function() {
         }
         scene.add(p);
         p.userData.spawnZ = p.position.z;
+        p.userData._spawnZ = p.position.z;
         p.userData.angle = shipAngle;
         p.userData._speed = opts.speed || PROJECTILE_SPEED;
         p.userData._baseY = p.position.y;
+        p.userData._tier = opts.tier || 1;
+        p.userData._reach = opts.reach || 600;
+        p.userData._pierce = (typeof opts.pierce === 'number') ? opts.pierce : 1;
         if (opts.wave) {
             p.userData._isWave = true;
             p.userData._wavePhase = opts.wavePhase || 0;
@@ -4847,22 +4884,22 @@ window.onload = function() {
     }
 
     function _fireT1() {
-        _spawnSingle(0, {});
+        _spawnSingle(0, { tier: 1, reach: 600, pierce: 1 });
         try { AudioEngine.playSFX('fire_gun'); } catch(e) {}
     }
     function _fireT2() {
-        _spawnSingle(-0.8, { speed: 900 });
-        _spawnSingle(0.8, { speed: 900 });
+        _spawnSingle(-1.6, { speed: 900, tier: 2, reach: 700, pierce: 1 });
+        _spawnSingle(1.6, { speed: 900, tier: 2, reach: 700, pierce: 1 });
         try { AudioEngine.playSFX('fire_twin'); } catch(e) {}
     }
     function _fireT3() {
-        _spawnSingle(0, { geo: laserGeo, mat: laserMat, speed: 1800, lightColor: 0xff00ff });
+        _spawnSingle(0, { geo: laserGeo, mat: laserMat, speed: 1800, lightColor: 0xff00ff, tier: 3, reach: 1400, pierce: 3 });
         try { AudioEngine.playSFX('fire_laser'); } catch(e) {}
     }
     function _fireT4() {
-        _spawnSingle(-1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: 0 });
-        _spawnSingle(0, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 2 / 3 });
-        _spawnSingle(1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 4 / 3 });
+        _spawnSingle(-1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: 0, tier: 4, reach: 1800, pierce: 5 });
+        _spawnSingle(0, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 2 / 3, tier: 4, reach: 1800, pierce: 5 });
+        _spawnSingle(1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 4 / 3, tier: 4, reach: 1800, pierce: 5 });
         try { AudioEngine.playSFX('fire_wave'); } catch(e) {}
     }
 
@@ -4882,59 +4919,58 @@ window.onload = function() {
         for (var pi = projectiles.length - 1; pi >= 0; pi--) {
             var p = projectiles[pi];
             var spd = p.userData._speed || PROJECTILE_SPEED;
-            // Projectiles travel forward (negative Z in world, same as camera direction)
             p.position.z -= spd * delta;
-            // Also move with tunnel like items do
             p.position.z += moveDist;
             if (p.userData._isWave) {
                 var travelled = (p.userData.spawnZ - p.position.z);
                 p.position.y = p.userData._baseY + Math.sin(travelled * 0.05 + p.userData._wavePhase) * 4;
             }
 
-            // Remove if too far
-            if (Math.abs(p.position.z - shipContainer.position.z) > 1000) {
+            var reach = p.userData._reach || 600;
+            var spawnZ = (typeof p.userData._spawnZ === 'number') ? p.userData._spawnZ : p.userData.spawnZ;
+            if (Math.abs(p.position.z - spawnZ) > reach) {
+                scene.remove(p);
+                projectiles.splice(pi, 1);
+                continue;
+            }
+            if (Math.abs(p.position.z - shipContainer.position.z) > 2200) {
                 scene.remove(p);
                 projectiles.splice(pi, 1);
                 continue;
             }
 
-            // Check collision with items
+            var disposed = false;
             for (var ii = items.length - 1; ii >= 0; ii--) {
                 var item = items[ii];
                 var itype = item.userData.type;
-                // Only destroy hazards and laser walls
                 if (itype !== 'hazard' && itype !== 'laser_wall') continue;
 
+                var hit = false;
                 if (itype === 'laser_wall') {
-                    // Check Z proximity and angle match
-                    if (Math.abs(p.position.z - item.position.z) < 8) {
-                        AudioEngine.playSFX('destroy');
-                        flash('#ff8800');
-                        spawnPointBurst('DESTROYED', 'c-gold');
-                        score += 35;
-                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
-                        scene.remove(item);
-                        items.splice(ii, 1);
-                        scene.remove(p);
-                        projectiles.splice(pi, 1);
-                        break;
-                    }
+                    if (Math.abs(p.position.z - item.position.z) < 8) hit = true;
                 } else {
                     var dist = p.position.distanceTo(item.position);
-                    if (dist < (item.userData.hitRadius || 4) + 1.5) {
-                        AudioEngine.playSFX('destroy');
-                        flash('#ff8800');
-                        spawnPointBurst('DESTROYED', 'c-gold');
-                        score += 35;
-                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
-                        scene.remove(item);
-                        items.splice(ii, 1);
+                    if (dist < (item.userData.hitRadius || 4) + 1.5) hit = true;
+                }
+
+                if (hit) {
+                    AudioEngine.playSFX('destroy');
+                    flash('#ff8800');
+                    spawnPointBurst('DESTROYED', 'c-gold');
+                    score += 35;
+                    document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                    scene.remove(item);
+                    items.splice(ii, 1);
+                    p.userData._pierce = (p.userData._pierce || 1) - 1;
+                    if (p.userData._pierce <= 0) {
                         scene.remove(p);
                         projectiles.splice(pi, 1);
+                        disposed = true;
                         break;
                     }
                 }
             }
+            if (disposed) continue;
         }
     }
 
@@ -6993,9 +7029,27 @@ window.onload = function() {
     bindTap('sfx-toggle-row', toggleSfxMute);
     _updateMuteUI();
 
-    // Fire button
     var _fireBtn = document.getElementById('fire-btn');
-    _fireBtn.addEventListener('touchstart', function(e) { e.preventDefault(); e.stopPropagation(); fireProjectile(); }, {passive: false});
+    _fireBtn.addEventListener('touchstart', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            window._fireTouchIds.add(e.changedTouches[i].identifier);
+        }
+        fireProjectile();
+    }, {passive: false});
+    _fireBtn.addEventListener('touchend', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            window._fireTouchIds.delete(e.changedTouches[i].identifier);
+        }
+    }, {passive: false});
+    _fireBtn.addEventListener('touchcancel', function(e) {
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            window._fireTouchIds.delete(e.changedTouches[i].identifier);
+        }
+    }, {passive: true});
     _fireBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); fireProjectile(); });
     // Session NEW GAME button
     (function(){
