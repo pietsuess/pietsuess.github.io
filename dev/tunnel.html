@@ -1686,7 +1686,7 @@ var AudioEngine = {
       function _fvFr(semi){ return Math.pow(2, semi/12); }
       var FV_BAR = 60 / 140 * 4;
       var FV_BARS = 4;
-      var FV_TOTAL = FV_BAR * FV_BARS + 1.2;
+      var FV_TOTAL = FV_BAR * FV_BARS;
       var FV_PROG_ROOT = [0, 5, 9, 5];
       var FV_PROG_TRIAD = [[0,4,7],[5,9,12],[9,12,16],[5,9,12]];
       var FV_BASS_GAIN = 0.55;
@@ -1790,49 +1790,10 @@ var AudioEngine = {
         asOsc.connect(asG); asG.connect(fvBus);
         asOsc.start(asT); asOsc.stop(asEnd + 0.02);
       }
-      var stabT = t + FV_BAR * FV_BARS;
-      var stabChord = [0, 4, 7, 12, 16, 19];
-      for (var si = 0; si < stabChord.length; si++) {
-        var sFreq = FV_ROOT * _fvFr(stabChord[si]);
-        var sOsc = audioCtx.createOscillator();
-        var sG = audioCtx.createGain();
-        sOsc.type = (si < 2) ? 'sawtooth' : (si < 4 ? 'sine' : 'triangle');
-        sOsc.frequency.setValueAtTime(sFreq, stabT);
-        sG.gain.setValueAtTime(0.0001, stabT);
-        sG.gain.linearRampToValueAtTime(FV_STAB_GAIN * (1 - si * 0.1), stabT + 0.02);
-        sG.gain.linearRampToValueAtTime(FV_STAB_GAIN * 0.6 * (1 - si * 0.1), stabT + 0.5);
-        sG.gain.exponentialRampToValueAtTime(0.0001, stabT + 1.2);
-        sOsc.connect(sG); sG.connect(fvBus);
-        sOsc.start(stabT); sOsc.stop(stabT + 1.25);
-      }
-      var stabSubO = audioCtx.createOscillator();
-      var stabSubG = audioCtx.createGain();
-      stabSubO.type = 'sawtooth';
-      stabSubO.frequency.setValueAtTime(FV_ROOT * 0.5, stabT);
-      stabSubG.gain.setValueAtTime(0.0001, stabT);
-      stabSubG.gain.linearRampToValueAtTime(0.7, stabT + 0.015);
-      stabSubG.gain.exponentialRampToValueAtTime(0.0001, stabT + 1.2);
-      stabSubO.connect(stabSubG); stabSubG.connect(fvBus);
-      stabSubO.start(stabT); stabSubO.stop(stabT + 1.25);
-      var stabNbLen = Math.max(1, Math.floor(audioCtx.sampleRate * 0.6));
-      var stabNbBuf = audioCtx.createBuffer(1, stabNbLen, audioCtx.sampleRate);
-      var stabNbData = stabNbBuf.getChannelData(0);
-      for (var sni = 0; sni < stabNbLen; sni++) stabNbData[sni] = Math.random() * 2 - 1;
-      var stabNb = audioCtx.createBufferSource();
-      stabNb.buffer = stabNbBuf;
-      var stabNbF = audioCtx.createBiquadFilter();
-      stabNbF.type = 'bandpass';
-      stabNbF.frequency.value = 5500;
-      stabNbF.Q.value = 1.5;
-      var stabNbG = audioCtx.createGain();
-      stabNbG.gain.setValueAtTime(0, stabT);
-      stabNbG.gain.linearRampToValueAtTime(0.32, stabT + 0.02);
-      stabNbG.gain.exponentialRampToValueAtTime(0.0001, stabT + 0.5);
-      stabNb.connect(stabNbF); stabNbF.connect(stabNbG); stabNbG.connect(fvBus);
-      stabNb.start(stabT); stabNb.stop(stabT + 0.6);
-      var fvBusEnd = t + FV_TOTAL - 0.05;
-      fvBus.gain.setValueAtTime(1.7, fvBusEnd);
-      fvBus.gain.linearRampToValueAtTime(0.0001, fvBusEnd + 0.25);
+      var fvLoopEnd = t + FV_BAR * FV_BARS;
+      var fvFadeStart = fvLoopEnd - 1.5;
+      fvBus.gain.setValueAtTime(0.85, fvFadeStart);
+      fvBus.gain.linearRampToValueAtTime(0.0001, fvLoopEnd);
     } else if (type === 'cinematic_music') {
       var cmBus = audioCtx.createGain(); cmBus.gain.value = 1.6; cmBus.connect(sfxGainNode);
       var ROOT = 110.0;
@@ -8257,7 +8218,7 @@ window.onload = function() {
     function _scheduleVictoryMusic() {
         if (!_finalCine.active) return;
         try { AudioEngine.playSFX('final_victory'); } catch(e){}
-        _finalCine.musicTimer = setTimeout(_scheduleVictoryMusic, 7800);
+        _finalCine.musicTimer = setTimeout(_scheduleVictoryMusic, 6800);
     }
 
     function _buildFinalScreen() {
@@ -8267,25 +8228,26 @@ window.onload = function() {
         el.style.cssText = "position:fixed;inset:0;z-index:610;pointer-events:auto;opacity:0;transition:opacity 400ms ease;";
         var scoreStr = (typeof score === 'number' ? score : 0).toString().padStart(6, '0');
         el.innerHTML =
-            '<div style="position:absolute;top:8vh;left:0;right:0;text-align:center;">' +
-              '<div id="tr-final-score" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(11px,2.5vw,16px);color:#aaa;letter-spacing:3px;margin-bottom:8px;">FINAL SCORE: ' + scoreStr + '</div>' +
+            '<div style="position:absolute;top:6vh;left:0;right:0;text-align:center;">' +
+              '<div id="tr-final-score" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(11px,2.5vw,16px);color:#aaa;letter-spacing:3px;margin-bottom:4px;">FINAL SCORE: ' + scoreStr + '</div>' +
               '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#666;letter-spacing:2px;">ALL ZONES COMPLETE</div>' +
             '</div>' +
-            '<div style="position:absolute;top:22vh;left:0;right:0;text-align:center;">' +
+            '<div style="position:absolute;top:14vh;left:0;right:0;text-align:center;">' +
               '<div id="tr-final-victory-text" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(25px,8.1vw,58px);color:#ffe000;letter-spacing:8px;display:inline-block;">VICTORY!</div>' +
             '</div>' +
-            '<div style="position:absolute;top:30vh;left:0;right:0;text-align:center;">' +
+            '<div style="position:absolute;top:22vh;left:0;right:0;text-align:center;">' +
               '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:#00ffcc;text-shadow:0 0 20px rgba(0,255,204,0.8);letter-spacing:5px;">GAME OVER</div>' +
             '</div>' +
-            '<div id="tr-final-initials-wrap" style="position:absolute;top:42vh;left:0;right:0;text-align:center;">' +
-              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,1.8vw,11px);color:#888;letter-spacing:3px;margin-bottom:10px;">ENTER INITIALS</div>' +
+            '<div id="tr-final-initials-wrap" style="position:absolute;top:28vh;left:0;right:0;text-align:center;">' +
+              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,1.8vw,11px);color:#888;letter-spacing:3px;margin-bottom:6px;">ENTER INITIALS</div>' +
               '<div style="display:inline-flex;gap:8px;justify-content:center;">' +
                 '<input id="tr-final-ini-1" maxlength="1" autocomplete="off" style="width:42px;height:48px;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:22px;background:#111;color:#ffe000;border:2px solid #ffe000;text-transform:uppercase;box-shadow:0 0 12px rgba(255,224,0,0.5);outline:none;touch-action:auto;-webkit-user-select:text;user-select:text;">' +
                 '<input id="tr-final-ini-2" maxlength="1" autocomplete="off" style="width:42px;height:48px;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:22px;background:#111;color:#ffe000;border:2px solid #ffe000;text-transform:uppercase;box-shadow:0 0 12px rgba(255,224,0,0.5);outline:none;touch-action:auto;-webkit-user-select:text;user-select:text;">' +
                 '<input id="tr-final-ini-3" maxlength="1" autocomplete="off" style="width:42px;height:48px;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:22px;background:#111;color:#ffe000;border:2px solid #ffe000;text-transform:uppercase;box-shadow:0 0 12px rgba(255,224,0,0.5);outline:none;touch-action:auto;-webkit-user-select:text;user-select:text;">' +
               '</div>' +
+              '<div id="tr-final-status" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,1.6vw,10px);color:#888;letter-spacing:2px;margin-top:10px;min-height:12px;"></div>' +
             '</div>' +
-            '<div id="tr-final-tap" style="position:absolute;bottom:5vh;left:0;right:0;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,14px);color:#ffe000;letter-spacing:3px;animation:victoryPulse 1.2s ease-in-out infinite;">TAP TO CONTINUE</div>';
+            '<div id="tr-final-skip" style="position:absolute;bottom:5vh;left:0;right:0;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,1.8vw,11px);color:#666;letter-spacing:3px;cursor:pointer;">[ SKIP ]</div>';
         document.body.appendChild(el);
         requestAnimationFrame(function(){ el.style.opacity = '1'; });
         var fired = false;
@@ -8323,6 +8285,14 @@ window.onload = function() {
                         var nx = document.getElementById(ids[i+1]);
                         if (nx) nx.focus();
                     }
+                    if (i === 2 && inp.value.length === 1) {
+                        try { inp.blur(); } catch(_){}
+                        try {
+                            var st = document.getElementById('tr-final-status');
+                            if (st) st.textContent = 'SUBMITTING...';
+                        } catch(_){}
+                        setTimeout(go, 600);
+                    }
                 });
                 inp.addEventListener('click', function(e){ e.stopPropagation(); });
                 inp.addEventListener('touchend', function(e){ e.stopPropagation(); inp.focus(); }, {passive:true});
@@ -8333,17 +8303,21 @@ window.onload = function() {
                 });
             });
         })();
-        el.addEventListener('click', go);
-        el.addEventListener('touchend', function(e){ try { e.preventDefault(); } catch(_){} go(); }, { passive:false });
-        el.addEventListener('mouseup', go);
+        var skipEl = document.getElementById('tr-final-skip');
+        if (skipEl) {
+            skipEl.addEventListener('click', function(e){ e.stopPropagation(); go(); });
+            skipEl.addEventListener('touchend', function(e){ try { e.preventDefault(); } catch(_){} e.stopPropagation(); go(); }, { passive:false });
+        }
     }
 
     function runFinalCinematic() {
         try {
             if (_finalCine.active) return;
             try { AudioEngine.init(); } catch(e){}
+            try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e){}
             try { stopMusic(); } catch(e){}
             _finalCine.active = true;
+            _scheduleVictoryMusic();
             _finalCine.t = 0;
             _finalCine.fwSpawn = 0;
             _finalCine.fws = [];
@@ -8355,9 +8329,7 @@ window.onload = function() {
                 });
             } catch(e){}
             try { document.body.classList.add('cinematic-active'); } catch(e){}
-            try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e){}
             try { throttleSmooth = 1.5; } catch(e){}
-            _scheduleVictoryMusic();
             try { AudioEngine.startEngine(); } catch(e){}
             try { AudioEngine.updateEngine(1.5, false); } catch(e){}
             try {
