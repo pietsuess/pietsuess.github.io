@@ -2285,6 +2285,7 @@ window.onload = function() {
         weaponTier = Math.max(0, Math.min(4, s.activeWeapon || 0));
         speedTier = Math.max(0, Math.min(4, s.activeSpeed || 0));
         _saveSpeedTier(speedTier);
+        try { _applyFlameTier(speedTier); } catch(e){}
         try {
             if (s.maxReached) localStorage.setItem('tunnelrunner.maxLevelReached', s.maxReached);
             if (s.maxPassed) localStorage.setItem('tunnelrunner.maxLevelPassed', s.maxPassed);
@@ -2406,6 +2407,7 @@ window.onload = function() {
         speedTier = Math.max(0, Math.min(4, idx | 0));
         _saveSpeedTier(speedTier);
         try { _sessionSync(); } catch(e) {}
+        try { _applyFlameTier(speedTier); } catch(e){}
     }
 
     function _sessionScreenRender() {
@@ -3521,6 +3523,21 @@ window.onload = function() {
     bankGroup.add(flameOuter);
     bankGroup.add(flameInner);
     const engine = flameInner;
+    var _flameTierScale = 1.0;
+    function _applyFlameTier(tier) {
+        var palettes = [
+            {inner: 0xff8800, outer: 0xffaa00, scale: 0.4},
+            {inner: 0xff8800, outer: 0xffaa00, scale: 1.0},
+            {inner: 0xff6600, outer: 0xffdd44, scale: 1.3},
+            {inner: 0x00aaff, outer: 0x88ddff, scale: 1.5},
+            {inner: 0xcc44ff, outer: 0xff66cc, scale: 1.8}
+        ];
+        var p = palettes[Math.max(0, Math.min(4, tier|0))];
+        try { flameInner.material.color.setHex(p.inner); } catch(e){}
+        try { flameOuter.material.color.setHex(p.outer); } catch(e){}
+        _flameTierScale = p.scale;
+    }
+    try { _applyFlameTier(typeof speedTier === 'number' ? speedTier : 0); } catch(e){}
 
     const engineLight = new THREE.PointLight(0xff8833, 3.0, 12);
     engineLight.position.set(0, -0.1, 7.0);
@@ -7388,11 +7405,16 @@ window.onload = function() {
     function _renderStoreItem(kind, idx) {
         var isShield = (kind === 'shield');
         var isSpeed = (kind === 'speed');
-        var name = isShield ? SHIELD_NAMES[idx] : (isSpeed ? SPEED_NAMES[idx] : WEAPON_NAMES[idx]);
-        var desc = isShield ? SHIELD_DESC[idx] : (isSpeed ? SPEED_DESC[idx] : WEAPON_DESC[idx]);
-        var cost = isShield ? SHIELD_PRICES[idx] : (isSpeed ? SPEED_PRICES[idx] : WEAPON_PRICES[idx]);
+        var isNone = (idx === 0);
+        var name;
+        if (isNone) { name = 'NONE'; }
+        else { name = isShield ? SHIELD_NAMES[idx] : (isSpeed ? SPEED_NAMES[idx] : WEAPON_NAMES[idx]); }
+        var desc;
+        if (isNone) { desc = isShield ? 'NO SHIELD' : (isSpeed ? 'NO SPEED BOOST' : 'NO WEAPON'); }
+        else { desc = isShield ? SHIELD_DESC[idx] : (isSpeed ? SPEED_DESC[idx] : WEAPON_DESC[idx]); }
+        var cost = isNone ? null : (isShield ? SHIELD_PRICES[idx] : (isSpeed ? SPEED_PRICES[idx] : WEAPON_PRICES[idx]));
         var ownedArr = isShield ? _getOwnedShields() : (isSpeed ? _getOwnedSpeeds() : _getOwnedWeapons());
-        var owned = (ownedArr.indexOf(idx) !== -1);
+        var owned = isNone ? true : (ownedArr.indexOf(idx) !== -1);
         var activeIdx = isShield ? shieldTier : (isSpeed ? speedTier : weaponTier);
         var isActive = (owned && idx === activeIdx);
         var canAfford = (cost != null && ringBank >= cost);
@@ -7439,10 +7461,12 @@ window.onload = function() {
         info.appendChild(ds);
         row.appendChild(info);
         if (owned) {
-            var ow = document.createElement('div');
-            ow.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:' + (isActive ? '#ffe000' : '#00ff88') + ';flex-shrink:0;text-shadow:0 0 6px ' + (isActive ? 'rgba(255,224,0,0.6)' : 'transparent') + ';';
-            ow.innerText = isActive ? 'ACTIVE' : 'OWNED';
-            row.appendChild(ow);
+            if (!isNone) {
+                var ow = document.createElement('div');
+                ow.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:' + (isActive ? '#ffe000' : '#00ff88') + ';flex-shrink:0;text-shadow:0 0 6px ' + (isActive ? 'rgba(255,224,0,0.6)' : 'transparent') + ';';
+                ow.innerText = isActive ? 'ACTIVE' : 'OWNED';
+                row.appendChild(ow);
+            }
         } else {
             var btn = document.createElement('button');
             btn.className = 'menu-btn';
@@ -7475,16 +7499,19 @@ window.onload = function() {
         var spl = document.getElementById('tr-store-speed-list');
         if (spl) {
             spl.innerHTML = '';
+            spl.appendChild(_renderStoreItem('speed', 0));
             for (var k = 1; k <= 4; k++) spl.appendChild(_renderStoreItem('speed', k));
         }
         var sl = document.getElementById('tr-store-shield-list');
         if (sl) {
             sl.innerHTML = '';
+            sl.appendChild(_renderStoreItem('shield', 0));
             for (var i = 1; i <= 5; i++) sl.appendChild(_renderStoreItem('shield', i));
         }
         var wl = document.getElementById('tr-store-weapon-list');
         if (wl) {
             wl.innerHTML = '';
+            wl.appendChild(_renderStoreItem('weapon', 0));
             for (var j = 1; j <= 4; j++) wl.appendChild(_renderStoreItem('weapon', j));
         }
     }
@@ -8070,15 +8097,15 @@ window.onload = function() {
         gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
         var flameLen = 0.3 + throttleSmooth * 0.7 + hyperFrac * 0.8;
         var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
-        var fz = flameLen * flicker;
-        var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1);
+        var _ftMul = (typeof _flameTierScale === 'number' ? _flameTierScale : 1.0);
+        if (speedTier === 4) { _ftMul *= (1 + Math.sin(Date.now() * 0.012) * 0.08); }
+        var fz = flameLen * flicker * _ftMul;
+        var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1) * _ftMul;
         flameInner.scale.set(fx, fx, fz);
         flameOuter.scale.set(fx * 1.3, fx * 1.3, fz * 1.05);
         var bright = Math.min(1, throttleSmooth + hyperFrac * 0.5);
-        matFlameInner.color.setRGB(1.0, 0.8 + bright * 0.2, 0.4 + bright * 0.6);
-        matFlameInner.opacity = 0.8 + bright * 0.2;
-        matFlameOuter.color.setRGB(1.0, 0.4 + bright * 0.3, bright * 0.2);
-        matFlameOuter.opacity = 0.4 + bright * 0.2;
+        if (speedTier === 0) { matFlameInner.opacity = 0.3; matFlameOuter.opacity = 0.2; }
+        else { matFlameInner.opacity = 0.8 + bright * 0.2; matFlameOuter.opacity = 0.4 + bright * 0.2; }
         gEngine.scale.set(1, 1 + Math.sin(Date.now() * 0.008) * 0.12, 1);
         if (hyperFrac > 0.1) {
             var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
@@ -8784,18 +8811,15 @@ window.onload = function() {
             // Thruster flame: length scales with throttle, constant flicker
             var flameLen = 0.3 + throttleSmooth * 0.7 + hyperFrac * 0.8;
             var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
-            var fz = flameLen * flicker;
-            var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1);
+            var _ftMul = (typeof _flameTierScale === 'number' ? _flameTierScale : 1.0);
+            if (speedTier === 4) { _ftMul *= (1 + Math.sin(Date.now() * 0.012) * 0.08); }
+            var fz = flameLen * flicker * _ftMul;
+            var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1) * _ftMul;
             flameInner.scale.set(fx, fx, fz);
             flameOuter.scale.set(fx * 1.3, fx * 1.3, fz * 1.05);
-            // Color: orange → orange-white as speed increases
             var bright = Math.min(1, throttleSmooth + hyperFrac * 0.5);
-            var ir = 1.0, ig = 0.8 + bright * 0.2, ib = 0.4 + bright * 0.6;
-            matFlameInner.color.setRGB(ir, ig, ib);
-            matFlameInner.opacity = 0.8 + bright * 0.2;
-            var or2 = 1.0, og = 0.4 + bright * 0.3, ob = bright * 0.2;
-            matFlameOuter.color.setRGB(or2, og, ob);
-            matFlameOuter.opacity = 0.4 + bright * 0.2;
+            if (speedTier === 0) { matFlameInner.opacity = 0.3; matFlameOuter.opacity = 0.2; }
+            else { matFlameInner.opacity = 0.8 + bright * 0.2; matFlameOuter.opacity = 0.4 + bright * 0.2; }
             gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
 
             // ── Exhaust particle trail — hyperdrive only ─────────────
