@@ -920,7 +920,7 @@
 </div>
 
 <!-- Store / Upgrades Overlay -->
-<div id="tr-store-screen" class="overlay-screen" style="display:none;z-index:550;background:linear-gradient(180deg,#000 0%,#0a0014 100%);justify-content:flex-start;padding-top:6vh;">
+<div id="tr-store-screen" class="overlay-screen" style="display:none;z-index:550;background:linear-gradient(180deg,#000 0%,#0a0014 100%);justify-content:flex-start;padding-top:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
     <div style="width:100%;max-width:480px;display:flex;justify-content:space-between;align-items:center;padding:0 18px;margin-bottom:18px;">
         <div style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;">UPGRADES</div>
         <div style="display:flex;align-items:center;gap:8px;font-family:'Press Start 2P',monospace;font-size:14px;color:#00ccff;text-shadow:0 0 8px rgba(0,204,255,0.6);">
@@ -936,13 +936,13 @@
         <div style="font-family:'Press Start 2P',monospace;font-size:12px;color:#ff66cc;letter-spacing:2px;margin-bottom:12px;">WEAPONS</div>
         <div id="tr-store-weapon-list" style="display:flex;flex-direction:column;gap:8px;"></div>
     </div>
-    <button id="tr-store-continue" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ CONTINUE ]</button>
+    <button id="tr-store-continue" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);position:sticky;bottom:0;background:linear-gradient(180deg,rgba(10,0,20,0.5) 0%,#0a0014 40%);margin-top:auto;">[ CONTINUE ]</button>
 </div>
 
 <!-- Fire Button (gunship only) -->
 <button id="fire-btn" style="display:none;position:fixed;bottom:100px;left:20px;z-index:460;width:84px;height:84px;border-radius:50%;background:#ff8800;border:none;font-family:'Press Start 2P',monospace;font-size:11px;color:#000;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:0 0 0 6px transparent,0 0 0 8px #ff8800;pointer-events:all;">FIRE</button>
 <!-- Session Picker (Resume or New Game) -->
-<div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;">
+<div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
     <div style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:18px;text-align:center;width:100%;">RESUME OR NEW GAME</div>
     <button id="tr-session-new" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);margin-bottom:18px;">[ NEW GAME ]</button>
     <div id="tr-session-list" style="width:100%;max-width:460px;display:flex;flex-direction:column;gap:8px;"></div>
@@ -2140,9 +2140,9 @@ window.onload = function() {
         }
         arr.forEach(function(s) {
             var row = document.createElement('div');
-            row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;border:1px solid #ffe000;background:rgba(0,0,0,0.4);cursor:pointer;';
+            row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px;border:1px solid #ffe000;background:rgba(0,0,0,0.4);cursor:pointer;-webkit-tap-highlight-color:rgba(255,224,0,0.3);touch-action:manipulation;';
             var info = document.createElement('div');
-            info.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;';
+            info.style.cssText = 'display:flex;flex-direction:column;gap:4px;flex:1;pointer-events:none;';
             var idLine = document.createElement('div');
             idLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:13px;color:#ffe000;letter-spacing:3px;text-shadow:0 0 8px rgba(255,224,0,0.5);';
             idLine.innerText = s.id;
@@ -2156,21 +2156,37 @@ window.onload = function() {
             row.appendChild(info);
             var del = document.createElement('button');
             del.className = 'menu-btn';
-            del.style.cssText = 'width:auto;padding:8px 12px;font-size:8px;border-color:#ff4444;color:#ff6666;';
+            del.style.cssText = 'width:auto;padding:8px 12px;font-size:8px;border-color:#ff4444;color:#ff6666;touch-action:manipulation;';
             del.innerText = 'DELETE';
-            del.addEventListener('click', function(e) {
-                e.stopPropagation();
+            var _delLast = 0;
+            var _delHandler = function(e) {
+                e.stopPropagation(); e.preventDefault();
+                var now = Date.now();
+                if (now - _delLast < 300) return;
+                _delLast = now;
                 _sessionDelete(s.id);
                 _sessionScreenRender();
-            });
+            };
+            del.addEventListener('touchend', _delHandler, {passive:false});
+            del.addEventListener('mouseup', _delHandler, {passive:false});
+            del.addEventListener('touchstart', function(e){ e.stopPropagation(); }, {passive:true});
+            del.addEventListener('mousedown', function(e){ e.stopPropagation(); });
             row.appendChild(del);
-            row.addEventListener('click', function() {
+            var _rowLast = 0;
+            var _rowHandler = function(e) {
+                if (del.contains(e.target)) return;
+                e.preventDefault(); e.stopPropagation();
+                var now = Date.now();
+                if (now - _rowLast < 300) return;
+                _rowLast = now;
                 _sessionLoad(s.id);
                 _hideSessionScreen();
                 if (typeof _sessionResumeCallback === 'function') {
                     var cb = _sessionResumeCallback; _sessionResumeCallback = null; cb();
                 }
-            });
+            };
+            row.addEventListener('touchend', _rowHandler, {passive:false});
+            row.addEventListener('mouseup', _rowHandler, {passive:false});
             listEl.appendChild(row);
         });
     }
@@ -2180,10 +2196,12 @@ window.onload = function() {
         _sessionScreenRender();
         var el = document.getElementById('tr-session-screen');
         if (el) el.style.display = 'flex';
+        try { document.body.style.touchAction = 'pan-y'; } catch(e) {}
     }
     function _hideSessionScreen() {
         var el = document.getElementById('tr-session-screen');
         if (el) el.style.display = 'none';
+        try { document.body.style.touchAction = 'none'; } catch(e) {}
     }
 
 
@@ -6952,9 +6970,11 @@ window.onload = function() {
         _storeReturn = returnAction || null;
         _refreshStorePanels();
         document.getElementById('tr-store-screen').style.display = 'flex';
+        try { document.body.style.touchAction = 'pan-y'; } catch(e) {}
     }
     function closeStore() {
         document.getElementById('tr-store-screen').style.display = 'none';
+        try { document.body.style.touchAction = 'none'; } catch(e) {}
         var ret = _storeReturn;
         _storeReturn = null;
         if (typeof ret === 'function') ret();
