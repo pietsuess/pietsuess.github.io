@@ -4023,14 +4023,28 @@ window.onload = function() {
         }
         return null;
     }
+    function _touchIsInOverlay(touch) {
+        var t = touch && (touch.target || (touch.changedTouches && touch.changedTouches[0] && touch.changedTouches[0].target));
+        if (!t || !t.closest) return false;
+        return !!(t.closest('#tr-store-screen, #tr-session-screen, #tr-carousel-overlay, #pause-screen, #game-over-screen, #victory-screen, #finale-screen, .overlay-screen, #tr-video-player, #tr-lightbox, #tr-design-viewer, #inventory-picker'));
+    }
+    function _firstNonFireNonOverlayTouch(touchList) {
+        for (var i = 0; i < touchList.length; i++) {
+            if (window._fireTouchIds.has(touchList[i].identifier)) continue;
+            if (_touchIsInOverlay(touchList[i])) continue;
+            return touchList[i];
+        }
+        return null;
+    }
     window.addEventListener('touchstart', e => {
         if (gameState === 'title') return;
         var tag = e.target.tagName;
         var isHB = e.target.closest('#hamburger-btn');
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !isHB) {
-            e.preventDefault();
-            var t = _firstNonFireTouch(e.changedTouches) || _firstNonFireTouch(e.touches);
+            if (_touchIsInOverlay(e)) return;
+            var t = _firstNonFireNonOverlayTouch(e.changedTouches) || _firstNonFireNonOverlayTouch(e.touches);
             if (!t) return;
+            e.preventDefault();
             window._steerTouchId = t.identifier;
             handleInputStart(t.clientX, t.clientY);
         }
@@ -4038,11 +4052,21 @@ window.onload = function() {
     window.addEventListener('touchmove', e => {
         var tag = e.target.tagName;
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !e.target.closest('#hamburger-btn')) {
-            e.preventDefault();
+            if (_touchIsInOverlay(e)) {
+                if (window._steerTouchId !== null) {
+                    var st = _findTouchById(e.touches, window._steerTouchId);
+                    if (!st || _touchIsInOverlay(st)) window._steerTouchId = null;
+                }
+                return;
+            }
             var t = null;
-            if (window._steerTouchId !== null) t = _findTouchById(e.touches, window._steerTouchId);
-            if (!t) t = _firstNonFireTouch(e.touches);
+            if (window._steerTouchId !== null) {
+                t = _findTouchById(e.touches, window._steerTouchId);
+                if (t && _touchIsInOverlay(t)) { window._steerTouchId = null; t = null; }
+            }
+            if (!t) t = _firstNonFireNonOverlayTouch(e.touches);
             if (!t) return;
+            e.preventDefault();
             window._steerTouchId = t.identifier;
             handleInputMove(t.clientX, t.clientY);
         }
