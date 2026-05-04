@@ -408,17 +408,15 @@
         #victory-screen .screen-title { font-size: clamp(14px,3.5vw,20px); color: #00ffcc; animation: victoryPulse 0.9s ease-in-out infinite; }
         @keyframes victoryGlow {
           0%, 100% {
-            transform: scale(1);
             text-shadow: 0 0 30px rgba(255,224,0,0.9), 0 0 60px rgba(255,170,0,0.6), 0 0 100px rgba(255,150,0,0.4);
             filter: brightness(1);
           }
           50% {
-            transform: scale(1.02);
             text-shadow: 0 0 40px rgba(255,255,180,1), 0 0 80px rgba(255,224,0,0.9), 0 0 130px rgba(255,170,0,0.7);
             filter: brightness(1.15);
           }
         }
-        #tr-final-victory-text { animation: victoryGlow 1.4s ease-in-out infinite; will-change: transform, filter, text-shadow; }
+        #tr-final-victory-text { animation: victoryGlow 1.4s ease-in-out infinite; will-change: filter, text-shadow; transform: none; }
         @keyframes victoryPulse {
             0%,100% { text-shadow: 0 0 10px rgba(0,255,204,0.5); }
             50%     { text-shadow: 0 0 34px rgba(0,255,204,1), 0 0 70px rgba(0,255,204,0.4); }
@@ -8323,11 +8321,31 @@ window.onload = function() {
     function runFinalCinematic() {
         try {
             if (_finalCine.active) return;
-            try { AudioEngine.init(); } catch(e){}
-            try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e){}
             _finalCine.active = true;
-            _scheduleVictoryMusic();
+            function _fcStartAudioActual() {
+              try { _scheduleVictoryMusic(); } catch(e){}
+              try { AudioEngine.startEngine(); } catch(e){}
+            }
+            function _fcTryStart() {
+              if (typeof audioCtx === 'undefined' || !audioCtx) return false;
+              if (audioCtx.state === 'running') { _fcStartAudioActual(); return true; }
+              return false;
+            }
+            try { AudioEngine.init(); } catch(e){}
             try { stopMusic(); } catch(e){}
+            if (!_fcTryStart()) {
+              if (typeof audioCtx !== 'undefined' && audioCtx) {
+                var _fcOnState = function() {
+                  if (audioCtx.state === 'running') {
+                    try { audioCtx.removeEventListener('statechange', _fcOnState); } catch(e){}
+                    _fcStartAudioActual();
+                  }
+                };
+                try { audioCtx.addEventListener('statechange', _fcOnState); } catch(e){}
+                try { audioCtx.resume(); } catch(e){}
+                setTimeout(function(){ _fcStartAudioActual(); }, 800);
+              }
+            }
             _finalCine.t = 0;
             _finalCine.fwSpawn = 0;
             _finalCine.fws = [];
@@ -8340,7 +8358,6 @@ window.onload = function() {
             } catch(e){}
             try { document.body.classList.add('cinematic-active'); } catch(e){}
             try { throttleSmooth = 1.5; } catch(e){}
-            try { AudioEngine.startEngine(); } catch(e){}
             try { AudioEngine.updateEngine(1.5, false); } catch(e){}
             try {
                 camera.position.x = Math.cos(0) * (tubeRadius - 16);
