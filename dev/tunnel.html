@@ -713,6 +713,30 @@
 
     </style>
 
+<style id="fire-btn-style">
+#fire-btn {
+  display:none; position:fixed; bottom:100px; left:20px;
+  width:80px; height:80px; padding:0; border:none; background:transparent;
+  cursor:pointer; -webkit-tap-highlight-color:transparent; touch-action:manipulation;
+  outline:none; appearance:none; -webkit-appearance:none;
+  z-index:460; pointer-events:all;
+}
+#fire-btn::before {
+  content:''; position:absolute; inset:0;
+  border:2px solid #ff66cc; border-radius:50%;
+  box-shadow: 0 0 12px rgba(255,102,204,0.4);
+}
+#fire-btn::after {
+  content:''; position:absolute; inset:14px;
+  background:#ff66cc; border-radius:50%;
+  box-shadow: 0 0 14px rgba(255,102,204,0.5);
+}
+#fire-btn span.fire-text {
+  position:absolute; inset:0; display:flex; align-items:center; justify-content:center;
+  font-family:'Press Start 2P',monospace; font-size:11px; color:#000;
+  z-index:2; pointer-events:none; letter-spacing:1px;
+}
+</style>
 </head>
 <body>
 <canvas id="starfield-canvas"></canvas>
@@ -956,7 +980,7 @@
 </div>
 
 <!-- Fire Button (gunship only) -->
-<button id="fire-btn" style="display:none;position:fixed;bottom:100px;left:20px;z-index:460;width:84px;height:84px;border-radius:50%;background:#ff8800;border:none;font-family:'Press Start 2P',monospace;font-size:11px;color:#000;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;box-shadow:0 0 0 6px transparent,0 0 0 8px #ff8800;pointer-events:all;">FIRE</button>
+<button id="fire-btn"><span class="fire-text">FIRE</span></button>
 <!-- Session Picker (Resume or New Game) -->
 <div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;padding-bottom:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
     <div id="tr-session-resume-header" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:24px;text-align:center;width:100%;">RESUME</div>
@@ -4194,10 +4218,21 @@ window.onload = function() {
         if (!t || !t.closest) return false;
         return !!(t.closest('#tr-store-screen, #tr-session-screen, #tr-carousel-overlay, #pause-screen, #game-over-screen, #victory-screen, #finale-screen, .overlay-screen, #tr-video-player, #tr-lightbox, #tr-design-viewer, #inventory-picker'));
     }
+    function _touchInFireZone(touch) {
+        var btn = document.getElementById('fire-btn');
+        if (!btn || btn.style.display === 'none') return false;
+        var rect = btn.getBoundingClientRect();
+        if (rect.width === 0) return false;
+        var pad = 10;
+        var x = touch.clientX, y = touch.clientY;
+        return x >= rect.left - pad && x <= rect.right + pad
+            && y >= rect.top - pad && y <= rect.bottom + pad;
+    }
     function _firstNonFireNonOverlayTouch(touchList) {
         for (var i = 0; i < touchList.length; i++) {
             if (window._fireTouchIds.has(touchList[i].identifier)) continue;
             if (_touchIsInOverlay(touchList[i])) continue;
+            if (_touchInFireZone(touchList[i])) continue;
             return touchList[i];
         }
         return null;
@@ -4208,6 +4243,11 @@ window.onload = function() {
         var isHB = e.target.closest('#hamburger-btn');
         if (tag !== 'BUTTON' && tag !== 'INPUT' && tag !== 'SELECT' && tag !== 'TEXTAREA' && !isHB) {
             if (_touchIsInOverlay(e)) return;
+            for (var _ci = 0; _ci < e.changedTouches.length; _ci++) {
+                if (_touchInFireZone(e.changedTouches[_ci])) {
+                    window._fireTouchIds.add(e.changedTouches[_ci].identifier);
+                }
+            }
             var t = _firstNonFireNonOverlayTouch(e.changedTouches) || _firstNonFireNonOverlayTouch(e.touches);
             if (!t) return;
             e.preventDefault();
