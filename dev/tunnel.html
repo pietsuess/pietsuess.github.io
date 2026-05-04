@@ -929,6 +929,10 @@
             <span id="tr-store-balance">0</span>
         </div>
     </div>
+    <div id="tr-store-speed-panel" style="width:100%;max-width:460px;border:1px solid #ffe000;background:rgba(60,50,0,0.3);padding:14px 14px;margin-bottom:14px;box-shadow:0 0 8px rgba(255,224,0,0.2);display:flex;flex-direction:column;justify-content:flex-start;flex-shrink:0;touch-action:pan-y;">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ffe000;letter-spacing:2px;margin-bottom:10px;">SPEED</div>
+        <div id="tr-store-speed-list" style="display:flex;flex-direction:column;gap:8px;touch-action:pan-y;"></div>
+    </div>
     <div id="tr-store-shield-panel" style="width:100%;max-width:460px;border:1px solid #00ccff;background:rgba(0,30,60,0.3);padding:14px 14px;margin-bottom:14px;box-shadow:0 0 8px rgba(0,204,255,0.2);display:flex;flex-direction:column;justify-content:flex-start;flex-shrink:0;touch-action:pan-y;">
         <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#00ccff;letter-spacing:2px;margin-bottom:10px;">SHIELDS</div>
         <div id="tr-store-shield-list" style="display:flex;flex-direction:column;gap:8px;touch-action:pan-y;"></div>
@@ -2050,16 +2054,23 @@ window.onload = function() {
     function _saveShieldTier(n) { try { localStorage.setItem('tunnelrunner.shieldTier', String(n)); } catch(e) {} }
     function _loadWeaponTier() { try { var v = parseInt(localStorage.getItem('tunnelrunner.weaponTier') || '0', 10); return isNaN(v) ? 0 : Math.max(0, Math.min(4, v)); } catch(e) { return 0; } }
     function _saveWeaponTier(n) { try { localStorage.setItem('tunnelrunner.weaponTier', String(n)); } catch(e) {} }
+    function _loadSpeedTier() { try { var v = parseInt(localStorage.getItem('tunnelrunner.speedTier') || '0', 10); return isNaN(v) ? 0 : Math.max(0, Math.min(4, v)); } catch(e) { return 0; } }
+    function _saveSpeedTier(n) { try { localStorage.setItem('tunnelrunner.speedTier', String(n)); } catch(e) {} }
     var shieldTier = _loadShieldTier();
     var weaponTier = _loadWeaponTier();
+    var speedTier = _loadSpeedTier();
 
     var SHIELD_PRICES = [null, 25, 60, 150, 350, 800];
     var WEAPON_PRICES = [null, 50, 200, 600, 900];
+    var SPEED_PRICES = [null, 75, 250, 700, 1500];
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TITANIUM', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
+    var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
     var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-30% DAMAGE', '-40% DAMAGE', '-50% DAMAGE (MAX)'];
     var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
+    var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.35];
+    var SPEED_MULTIPLIERS = [0.85, 1.0, 1.15, 1.30, 1.50];
 
     // Session system — per-session ringBank + shieldTier + weaponTier.
     // Sessions stored as JSON array under 'tunnelrunner.sessions'.
@@ -2091,8 +2102,10 @@ window.onload = function() {
             ringBank: 0,
             ownedShields: [],
             ownedWeapons: [],
+            ownedSpeeds: [],
             activeShield: 0,
             activeWeapon: 0,
+            activeSpeed: 0,
             maxReached: 'S1L1',
             maxPassed: null,
             lastPlayed: Date.now()
@@ -2125,10 +2138,17 @@ window.onload = function() {
             for (var _j = 1; _j <= _legacyWT; _j++) s.ownedWeapons.push(_j);
             s.activeWeapon = _legacyWT;
         }
+        if (!Array.isArray(s.ownedSpeeds)) {
+            s.ownedSpeeds = [];
+            s.activeSpeed = 0;
+        }
         if (typeof s.activeShield !== 'number') s.activeShield = 0;
         if (typeof s.activeWeapon !== 'number') s.activeWeapon = 0;
+        if (typeof s.activeSpeed !== 'number') s.activeSpeed = 0;
         shieldTier = Math.max(0, Math.min(5, s.activeShield || 0));
         weaponTier = Math.max(0, Math.min(4, s.activeWeapon || 0));
+        speedTier = Math.max(0, Math.min(4, s.activeSpeed || 0));
+        _saveSpeedTier(speedTier);
         try {
             if (s.maxReached) localStorage.setItem('tunnelrunner.maxLevelReached', s.maxReached);
             if (s.maxPassed) localStorage.setItem('tunnelrunner.maxLevelPassed', s.maxPassed);
@@ -2154,10 +2174,13 @@ window.onload = function() {
                 arr[i].ringBank = ringBank;
                 arr[i].shieldTier = shieldTier;
                 arr[i].weaponTier = weaponTier;
+                arr[i].speedTier = speedTier;
                 arr[i].activeShield = shieldTier;
                 arr[i].activeWeapon = weaponTier;
+                arr[i].activeSpeed = speedTier;
                 if (!Array.isArray(arr[i].ownedShields)) arr[i].ownedShields = [];
                 if (!Array.isArray(arr[i].ownedWeapons)) arr[i].ownedWeapons = [];
+                if (!Array.isArray(arr[i].ownedSpeeds)) arr[i].ownedSpeeds = [];
                 try {
                     var mr = localStorage.getItem('tunnelrunner.maxLevelReached');
                     if (mr) arr[i].maxReached = mr;
@@ -2206,6 +2229,20 @@ window.onload = function() {
         }
         _sessionsSave(arr);
     }
+    function _getOwnedSpeeds() {
+        if (!_activeSessionId) return [];
+        var s = _sessionFind(_activeSessionId);
+        if (!s || !Array.isArray(s.ownedSpeeds)) return [];
+        return s.ownedSpeeds.slice();
+    }
+    function _setOwnedSpeeds(arr2) {
+        if (!_activeSessionId) return;
+        var arr = _sessionsLoad();
+        for (var i = 0; i < arr.length; i++) {
+            if (arr[i].id === _activeSessionId) { arr[i].ownedSpeeds = arr2.slice(); break; }
+        }
+        _sessionsSave(arr);
+    }
     function _setActiveShield(idx) {
         shieldTier = Math.max(0, Math.min(5, idx | 0));
         _saveShieldTier(shieldTier);
@@ -2219,6 +2256,11 @@ window.onload = function() {
             var _fb = document.getElementById('fire-btn');
             if (_fb) _fb.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
         } catch(e) {}
+    }
+    function _setActiveSpeed(idx) {
+        speedTier = Math.max(0, Math.min(4, idx | 0));
+        _saveSpeedTier(speedTier);
+        try { _sessionSync(); } catch(e) {}
     }
 
     function _sessionScreenRender() {
@@ -5846,6 +5888,7 @@ window.onload = function() {
         var zone = getLevelScaledZone(currentSector);
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
+        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
         document.getElementById('sector-text').innerText = currentSector + '-' + currentLevel;
         document.getElementById('zone-name').innerText = zone.name;
         document.getElementById('zone-name').style.color = zone.color;
@@ -6352,6 +6395,7 @@ window.onload = function() {
             collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), DESIGN:new Set() };
             var zone0 = getLevelScaledZone(currentSector);
             baseSpeed = zone0.speed;
+            baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
             sectorDistance = zone0.length;
             sectorStartScore = 0;
             combo = 0;
@@ -6924,6 +6968,7 @@ window.onload = function() {
         contentSpawnedThisRun = [];
         var zone = getLevelScaledZone(n);
         baseSpeed = zone.speed;
+        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
         sectorDistance = zone.length;
         sectorStartScore = score;
         combo = 0;
@@ -7091,12 +7136,13 @@ window.onload = function() {
     var _storeReturn = null;
     function _renderStoreItem(kind, idx) {
         var isShield = (kind === 'shield');
-        var name = isShield ? SHIELD_NAMES[idx] : WEAPON_NAMES[idx];
-        var desc = isShield ? SHIELD_DESC[idx] : WEAPON_DESC[idx];
-        var cost = isShield ? SHIELD_PRICES[idx] : WEAPON_PRICES[idx];
-        var ownedArr = isShield ? _getOwnedShields() : _getOwnedWeapons();
+        var isSpeed = (kind === 'speed');
+        var name = isShield ? SHIELD_NAMES[idx] : (isSpeed ? SPEED_NAMES[idx] : WEAPON_NAMES[idx]);
+        var desc = isShield ? SHIELD_DESC[idx] : (isSpeed ? SPEED_DESC[idx] : WEAPON_DESC[idx]);
+        var cost = isShield ? SHIELD_PRICES[idx] : (isSpeed ? SPEED_PRICES[idx] : WEAPON_PRICES[idx]);
+        var ownedArr = isShield ? _getOwnedShields() : (isSpeed ? _getOwnedSpeeds() : _getOwnedWeapons());
         var owned = (ownedArr.indexOf(idx) !== -1);
-        var activeIdx = isShield ? shieldTier : weaponTier;
+        var activeIdx = isShield ? shieldTier : (isSpeed ? speedTier : weaponTier);
         var isActive = (owned && idx === activeIdx);
         var canAfford = (cost != null && ringBank >= cost);
         var row = document.createElement('div');
@@ -7113,16 +7159,17 @@ window.onload = function() {
                 dot.style.border = '2px solid #ffe000';
                 dot.style.cursor = 'pointer';
                 dot.style.touchAction = 'manipulation';
-                (function(_idx, _isShield){
+                (function(_idx, _isShield, _isSpeed){
                     var _h = function(e) {
                         e.stopPropagation(); e.preventDefault();
                         if (_isShield) { _setActiveShield(_idx); }
+                        else if (_isSpeed) { _setActiveSpeed(_idx); }
                         else { _setActiveWeapon(_idx); }
                         _refreshStorePanels();
                     };
                     dot.addEventListener('click', _h);
                     dot.addEventListener('touchend', _h, {passive:false});
-                })(idx, isShield);
+                })(idx, isShield, isSpeed);
             }
         } else {
             dot.style.background = 'transparent';
@@ -7158,6 +7205,7 @@ window.onload = function() {
                 btn.addEventListener('click', function(e) {
                     e.stopPropagation();
                     if (isShield) { _buyShield(idx); }
+                    else if (isSpeed) { _buySpeed(idx); }
                     else { _buyWeapon(idx); }
                 });
             } else {
@@ -7173,6 +7221,11 @@ window.onload = function() {
     function _refreshStorePanels() {
         var bal = document.getElementById('tr-store-balance');
         if (bal) bal.innerText = String(ringBank);
+        var spl = document.getElementById('tr-store-speed-list');
+        if (spl) {
+            spl.innerHTML = '';
+            for (var k = 1; k <= 4; k++) spl.appendChild(_renderStoreItem('speed', k));
+        }
         var sl = document.getElementById('tr-store-shield-list');
         if (sl) {
             sl.innerHTML = '';
@@ -7223,6 +7276,21 @@ window.onload = function() {
         owned.push(idx);
         _setOwnedWeapons(owned);
         _setActiveWeapon(idx);
+        try { AudioEngine.playSFX('content_collect'); } catch(e) { try { AudioEngine.playSFX('shield'); } catch(e2) {} }
+        updateRingHUD();
+        _refreshStorePanels();
+    }
+    function _buySpeed(idx) {
+        if (typeof idx !== 'number') return;
+        if (idx < 1 || idx > 4) return;
+        var owned = _getOwnedSpeeds();
+        if (owned.indexOf(idx) !== -1) return;
+        var cost = SPEED_PRICES[idx];
+        if (cost == null) return;
+        if (!_ringsSpend(cost)) return;
+        owned.push(idx);
+        _setOwnedSpeeds(owned);
+        _setActiveSpeed(idx);
         try { AudioEngine.playSFX('content_collect'); } catch(e) { try { AudioEngine.playSFX('shield'); } catch(e2) {} }
         updateRingHUD();
         _refreshStorePanels();
