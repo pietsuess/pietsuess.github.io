@@ -1667,6 +1667,159 @@ var AudioEngine = {
       var o2=audioCtx.createOscillator(),g2=audioCtx.createGain(); o2.connect(g2); g2.connect(sfxGainNode);
       o2.type='sine'; o2.frequency.setValueAtTime(1760,t+0.05);
       g2.gain.setValueAtTime(0.05,t+0.05); g2.gain.linearRampToValueAtTime(0,t+0.3); o2.start(t+0.05); o2.stop(t+0.3);
+    } else if (type === 'final_victory') {
+      var fvBus = audioCtx.createGain(); fvBus.gain.value = 1.7; fvBus.connect(sfxGainNode);
+      var FV_ROOT = 110.0;
+      function _fvFr(semi){ return Math.pow(2, semi/12); }
+      var FV_BAR = 60 / 140 * 4;
+      var FV_BARS = 4;
+      var FV_TOTAL = FV_BAR * FV_BARS + 1.2;
+      var FV_PROG_ROOT = [0, 5, 9, 5];
+      var FV_PROG_TRIAD = [[0,4,7],[5,9,12],[9,12,16],[5,9,12]];
+      var FV_BASS_GAIN = 0.55;
+      var FV_PAD_GAIN = 0.42;
+      var FV_ARP_GAIN = 0.4;
+      var FV_STAB_GAIN = 0.7;
+      for (var fbi = 0; fbi < FV_BARS; fbi++) {
+        var fbStart = t + fbi * FV_BAR;
+        var fbEnd = fbStart + FV_BAR - 0.02;
+        var fbBassFreq = FV_ROOT * 0.5 * _fvFr(FV_PROG_ROOT[fbi]);
+        var fbLp = audioCtx.createBiquadFilter();
+        fbLp.type = 'lowpass';
+        fbLp.frequency.value = 360;
+        fbLp.Q.value = 0.7;
+        var fbOsc = audioCtx.createOscillator();
+        var fbG = audioCtx.createGain();
+        fbOsc.type = 'sawtooth';
+        fbOsc.frequency.setValueAtTime(fbBassFreq, fbStart);
+        fbG.gain.setValueAtTime(0.0001, fbStart);
+        fbG.gain.linearRampToValueAtTime(FV_BASS_GAIN, fbStart + 0.025);
+        fbG.gain.setValueAtTime(FV_BASS_GAIN, fbEnd - 0.2);
+        fbG.gain.exponentialRampToValueAtTime(0.0001, fbEnd);
+        fbOsc.connect(fbLp); fbLp.connect(fbG); fbG.connect(fvBus);
+        fbOsc.start(fbStart); fbOsc.stop(fbEnd + 0.03);
+        var fbBeatStep = FV_BAR / 4;
+        for (var bp = 0; bp < 4; bp++) {
+          var bpT = fbStart + bp * fbBeatStep;
+          var bpDur = 0.16;
+          var bpO = audioCtx.createOscillator();
+          var bpG = audioCtx.createGain();
+          bpO.type = 'sine';
+          bpO.frequency.setValueAtTime(fbBassFreq, bpT);
+          bpG.gain.setValueAtTime(0.0001, bpT);
+          bpG.gain.linearRampToValueAtTime(0.32, bpT + 0.008);
+          bpG.gain.exponentialRampToValueAtTime(0.0001, bpT + bpDur);
+          bpO.connect(bpG); bpG.connect(fvBus);
+          bpO.start(bpT); bpO.stop(bpT + bpDur + 0.02);
+        }
+        var fpChord = FV_PROG_TRIAD[fbi];
+        for (var pi = 0; pi < fpChord.length; pi++) {
+          var pFreq = FV_ROOT * _fvFr(fpChord[pi]);
+          var pStart = fbStart + pi * 0.03;
+          var pEnd = fbEnd;
+          var pOsc = audioCtx.createOscillator();
+          var pG = audioCtx.createGain();
+          pOsc.type = 'sine';
+          pOsc.frequency.setValueAtTime(pFreq, pStart);
+          pG.gain.setValueAtTime(0.0001, pStart);
+          pG.gain.linearRampToValueAtTime(FV_PAD_GAIN * (1 - pi * 0.1), pStart + 0.18);
+          pG.gain.setValueAtTime(FV_PAD_GAIN * (1 - pi * 0.1), pEnd - 0.25);
+          pG.gain.exponentialRampToValueAtTime(0.0001, pEnd);
+          pOsc.connect(pG); pG.connect(fvBus);
+          pOsc.start(pStart); pOsc.stop(pEnd + 0.03);
+          var pOsc5 = audioCtx.createOscillator();
+          var pG5 = audioCtx.createGain();
+          pOsc5.type = 'sine';
+          pOsc5.frequency.setValueAtTime(pFreq * 1.5, pStart);
+          pG5.gain.setValueAtTime(0.0001, pStart);
+          pG5.gain.linearRampToValueAtTime(FV_PAD_GAIN * 0.3, pStart + 0.22);
+          pG5.gain.setValueAtTime(FV_PAD_GAIN * 0.3, pEnd - 0.25);
+          pG5.gain.exponentialRampToValueAtTime(0.0001, pEnd);
+          pOsc5.connect(pG5); pG5.connect(fvBus);
+          pOsc5.start(pStart); pOsc5.stop(pEnd + 0.03);
+        }
+      }
+      var FV_ARP_PATTERN = [0,4,7,12,16,12,7,4,0,7,12,16,19,16,12,7];
+      var FV_ARP_STEP = 60 / 140 / 4;
+      var FV_ARP_NOTE = 0.09;
+      var fvArpEnd = t + FV_BAR * FV_BARS - 0.1;
+      var ai = 0;
+      while (true) {
+        var aT = t + ai * FV_ARP_STEP;
+        if (aT >= fvArpEnd) break;
+        var aSemi = FV_ARP_PATTERN[ai % FV_ARP_PATTERN.length];
+        var barIdx = Math.min(FV_BARS - 1, Math.floor((aT - t) / FV_BAR));
+        var aFreq = FV_ROOT * 2 * _fvFr(FV_PROG_ROOT[barIdx] + aSemi);
+        var aEnd = aT + FV_ARP_NOTE;
+        var aOsc = audioCtx.createOscillator();
+        var aG = audioCtx.createGain();
+        aOsc.type = 'triangle';
+        aOsc.frequency.setValueAtTime(aFreq, aT);
+        aG.gain.setValueAtTime(0.0001, aT);
+        aG.gain.linearRampToValueAtTime(FV_ARP_GAIN, aT + 0.005);
+        aG.gain.exponentialRampToValueAtTime(0.0001, aEnd);
+        aOsc.connect(aG); aG.connect(fvBus);
+        aOsc.start(aT); aOsc.stop(aEnd + 0.02);
+        ai++;
+      }
+      var FV_ASCEND = [0, 7, 12, 16, 19, 24];
+      for (var asi = 0; asi < FV_ASCEND.length; asi++) {
+        var asT = t + FV_BAR * FV_BARS - 0.6 + asi * 0.06;
+        var asFreq = FV_ROOT * 2 * _fvFr(FV_ASCEND[asi]);
+        var asEnd = asT + 0.18;
+        var asOsc = audioCtx.createOscillator();
+        var asG = audioCtx.createGain();
+        asOsc.type = 'triangle';
+        asOsc.frequency.setValueAtTime(asFreq, asT);
+        asG.gain.setValueAtTime(0.0001, asT);
+        asG.gain.linearRampToValueAtTime(FV_ARP_GAIN * 1.3, asT + 0.01);
+        asG.gain.exponentialRampToValueAtTime(0.0001, asEnd);
+        asOsc.connect(asG); asG.connect(fvBus);
+        asOsc.start(asT); asOsc.stop(asEnd + 0.02);
+      }
+      var stabT = t + FV_BAR * FV_BARS;
+      var stabChord = [0, 4, 7, 12, 16, 19];
+      for (var si = 0; si < stabChord.length; si++) {
+        var sFreq = FV_ROOT * _fvFr(stabChord[si]);
+        var sOsc = audioCtx.createOscillator();
+        var sG = audioCtx.createGain();
+        sOsc.type = (si < 2) ? 'sawtooth' : (si < 4 ? 'sine' : 'triangle');
+        sOsc.frequency.setValueAtTime(sFreq, stabT);
+        sG.gain.setValueAtTime(0.0001, stabT);
+        sG.gain.linearRampToValueAtTime(FV_STAB_GAIN * (1 - si * 0.1), stabT + 0.02);
+        sG.gain.linearRampToValueAtTime(FV_STAB_GAIN * 0.6 * (1 - si * 0.1), stabT + 0.5);
+        sG.gain.exponentialRampToValueAtTime(0.0001, stabT + 1.2);
+        sOsc.connect(sG); sG.connect(fvBus);
+        sOsc.start(stabT); sOsc.stop(stabT + 1.25);
+      }
+      var stabSubO = audioCtx.createOscillator();
+      var stabSubG = audioCtx.createGain();
+      stabSubO.type = 'sawtooth';
+      stabSubO.frequency.setValueAtTime(FV_ROOT * 0.5, stabT);
+      stabSubG.gain.setValueAtTime(0.0001, stabT);
+      stabSubG.gain.linearRampToValueAtTime(0.7, stabT + 0.015);
+      stabSubG.gain.exponentialRampToValueAtTime(0.0001, stabT + 1.2);
+      stabSubO.connect(stabSubG); stabSubG.connect(fvBus);
+      stabSubO.start(stabT); stabSubO.stop(stabT + 1.25);
+      var stabNbLen = Math.max(1, Math.floor(audioCtx.sampleRate * 0.6));
+      var stabNbBuf = audioCtx.createBuffer(1, stabNbLen, audioCtx.sampleRate);
+      var stabNbData = stabNbBuf.getChannelData(0);
+      for (var sni = 0; sni < stabNbLen; sni++) stabNbData[sni] = Math.random() * 2 - 1;
+      var stabNb = audioCtx.createBufferSource();
+      stabNb.buffer = stabNbBuf;
+      var stabNbF = audioCtx.createBiquadFilter();
+      stabNbF.type = 'bandpass';
+      stabNbF.frequency.value = 5500;
+      stabNbF.Q.value = 1.5;
+      var stabNbG = audioCtx.createGain();
+      stabNbG.gain.setValueAtTime(0, stabT);
+      stabNbG.gain.linearRampToValueAtTime(0.32, stabT + 0.02);
+      stabNbG.gain.exponentialRampToValueAtTime(0.0001, stabT + 0.5);
+      stabNb.connect(stabNbF); stabNbF.connect(stabNbG); stabNbG.connect(fvBus);
+      stabNb.start(stabT); stabNb.stop(stabT + 0.6);
+      var fvBusEnd = t + FV_TOTAL - 0.05;
+      fvBus.gain.setValueAtTime(1.7, fvBusEnd);
+      fvBus.gain.linearRampToValueAtTime(0.0001, fvBusEnd + 0.25);
     } else if (type === 'cinematic_music') {
       var cmBus = audioCtx.createGain(); cmBus.gain.value = 1.6; cmBus.connect(sfxGainNode);
       var ROOT = 110.0;
@@ -7992,27 +8145,80 @@ window.onload = function() {
 
     var _finalCine = { active:false, t:0, fwSpawn:0, fws:[], group:null, redirected:false };
 
+    var _FW_PALETTE = [0xffe000, 0xff66cc, 0x00ffcc, 0x00ccff, 0xff8800, 0x88ff00, 0xff00ff];
+    var _FW_GEO_PRIMARY = null;
+    var _FW_GEO_SECONDARY = null;
+    var _FW_GEO_TRAIL = null;
+
+    function _fwGeoPrimary() {
+        if (!_FW_GEO_PRIMARY) _FW_GEO_PRIMARY = new THREE.SphereGeometry(1.2, 8, 8);
+        return _FW_GEO_PRIMARY;
+    }
+    function _fwGeoSecondary() {
+        if (!_FW_GEO_SECONDARY) _FW_GEO_SECONDARY = new THREE.SphereGeometry(0.5, 6, 6);
+        return _FW_GEO_SECONDARY;
+    }
+    function _fwGeoTrail() {
+        if (!_FW_GEO_TRAIL) _FW_GEO_TRAIL = new THREE.SphereGeometry(0.85, 6, 6);
+        return _FW_GEO_TRAIL;
+    }
+
+    function _spawnSecondaryBurst(worldPos, color, primaryVelDir) {
+        try {
+            if (!_finalCine.group) return;
+            var sn = 6;
+            for (var si = 0; si < sn; si++) {
+                var sMat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+                var sp = new THREE.Mesh(_fwGeoSecondary(), sMat);
+                sp.position.copy(worldPos);
+                var stheta = Math.random() * Math.PI * 2;
+                var sphi = Math.acos(2 * Math.random() - 1);
+                var sspd = 6 + Math.random() * 6;
+                sp.userData.vel = new THREE.Vector3(
+                    Math.sin(sphi) * Math.cos(stheta) * sspd,
+                    Math.sin(sphi) * Math.sin(stheta) * sspd,
+                    Math.cos(sphi) * sspd
+                );
+                sp.userData._life = 1.0;
+                sp.userData._maxLife = 1.0;
+                sp.userData._stage = 'secondary';
+                sp.userData._phase = Math.random() * Math.PI * 2;
+                sp.userData._trails = [];
+                sp.userData._trailTimer = 0;
+                _finalCine.group.add(sp);
+                _finalCine.fws.push(sp);
+            }
+        } catch (e) {}
+    }
+
     function _spawnFirework(worldPos, color) {
         try {
             if (!_finalCine.group) {
                 _finalCine.group = new THREE.Group();
                 scene.add(_finalCine.group);
             }
-            var geo = new THREE.SphereGeometry(0.6, 6, 6);
-            var n = 16;
+            var n = 40;
             for (var i = 0; i < n; i++) {
-                var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1 });
-                var p = new THREE.Mesh(geo, mat);
+                var mat = new THREE.MeshBasicMaterial({ color: color, transparent: true, opacity: 1, blending: THREE.AdditiveBlending, depthWrite: false });
+                var p = new THREE.Mesh(_fwGeoPrimary(), mat);
                 p.position.copy(worldPos);
                 var theta = Math.random() * Math.PI * 2;
                 var phi = Math.acos(2 * Math.random() - 1);
-                var spd = 8 + Math.random() * 7;
+                var spd = 12 + Math.random() * 13;
                 p.userData.vel = new THREE.Vector3(
                     Math.sin(phi) * Math.cos(theta) * spd,
                     Math.sin(phi) * Math.sin(theta) * spd,
                     Math.cos(phi) * spd
                 );
-                p.userData._life = 1.5;
+                p.userData._life = 2.0;
+                p.userData._maxLife = 2.0;
+                p.userData._stage = 'primary';
+                p.userData._color = color;
+                p.userData._splitAt = 1.0;
+                p.userData._didSplit = false;
+                p.userData._phase = Math.random() * Math.PI * 2;
+                p.userData._trails = [];
+                p.userData._trailTimer = 0;
                 _finalCine.group.add(p);
                 _finalCine.fws.push(p);
             }
@@ -8021,6 +8227,14 @@ window.onload = function() {
 
     function _disposeFireworkParticle(p) {
         try {
+            if (p.userData && p.userData._trails) {
+                for (var ti = 0; ti < p.userData._trails.length; ti++) {
+                    var tr = p.userData._trails[ti];
+                    if (_finalCine.group) _finalCine.group.remove(tr);
+                    if (tr.material) tr.material.dispose();
+                }
+                p.userData._trails.length = 0;
+            }
             if (_finalCine.group) _finalCine.group.remove(p);
             if (p.material) p.material.dispose();
         } catch (e) {}
@@ -8030,24 +8244,27 @@ window.onload = function() {
         if (document.getElementById('tr-final-screen')) return;
         var el = document.createElement('div');
         el.id = 'tr-final-screen';
-        el.style.cssText = "position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:space-between;padding:8vh 16px 4vh;pointer-events:auto;opacity:0;transition:opacity 400ms ease;";
+        el.style.cssText = "position:fixed;inset:0;z-index:610;pointer-events:auto;opacity:0;transition:opacity 400ms ease;";
         var scoreStr = (typeof score === 'number' ? score : 0).toString().padStart(6, '0');
         el.innerHTML =
-            '<div style="text-align:center;">' +
+            '<div style="position:absolute;top:8vh;left:0;right:0;text-align:center;">' +
               '<div id="tr-final-score" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(11px,2.5vw,16px);color:#aaa;letter-spacing:3px;margin-bottom:8px;">FINAL SCORE: ' + scoreStr + '</div>' +
               '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#666;letter-spacing:2px;">ALL ZONES COMPLETE</div>' +
             '</div>' +
-            '<div style="text-align:center;">' +
-              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(28px,9vw,64px);color:#ffe000;text-shadow:0 0 30px rgba(255,224,0,0.9),0 0 60px rgba(255,170,0,0.6);letter-spacing:8px;animation:victoryPulse 1s ease-in-out infinite;margin-bottom:18px;">VICTORY!</div>' +
+            '<div style="position:absolute;top:22vh;left:0;right:0;text-align:center;">' +
+              '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(28px,9vw,64px);color:#ffe000;text-shadow:0 0 30px rgba(255,224,0,0.9),0 0 60px rgba(255,170,0,0.6);letter-spacing:8px;animation:victoryPulse 1s ease-in-out infinite;">VICTORY!</div>' +
+            '</div>' +
+            '<div style="position:absolute;top:34vh;left:0;right:0;text-align:center;">' +
               '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:#00ffcc;text-shadow:0 0 20px rgba(0,255,204,0.8);letter-spacing:5px;">GAME OVER</div>' +
             '</div>' +
-            '<div id="tr-final-tap" style="font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,14px);color:#ffe000;letter-spacing:3px;animation:victoryPulse 1.2s ease-in-out infinite;">TAP TO CONTINUE</div>';
+            '<div id="tr-final-tap" style="position:absolute;bottom:5vh;left:0;right:0;text-align:center;font-family:\'Press Start 2P\',monospace;font-size:clamp(10px,2.5vw,14px);color:#ffe000;letter-spacing:3px;animation:victoryPulse 1.2s ease-in-out infinite;">TAP TO CONTINUE</div>';
         document.body.appendChild(el);
         requestAnimationFrame(function(){ el.style.opacity = '1'; });
         var fired = false;
         function go() {
             if (fired) return; fired = true;
             try { el.style.opacity = '0'; } catch(e){}
+            try { document.body.classList.remove('cinematic-active'); } catch(e){}
             setTimeout(function(){
                 _finalCine.redirected = true;
                 window.location.href = 'navigator-victory.html';
@@ -8072,7 +8289,9 @@ window.onload = function() {
                     var n = document.getElementById(id); if (n) n.style.display = 'none';
                 });
             } catch(e){}
-            try { AudioEngine.playSFX('cinematic_music'); } catch(e){}
+            try { document.body.classList.add('cinematic-active'); } catch(e){}
+            try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'suspended') audioCtx.resume(); } catch(e){}
+            try { AudioEngine.playSFX('final_victory'); } catch(e){}
             try { AudioEngine.startEngine(); } catch(e){}
             try {
                 camera.position.x = Math.cos(0) * (tubeRadius - 16);
@@ -8116,26 +8335,72 @@ window.onload = function() {
         } catch(e) {}
         _finalCine.fwSpawn -= delta;
         if (_finalCine.fwSpawn <= 0) {
-            _finalCine.fwSpawn = 0.18 + Math.random() * 0.18;
+            _finalCine.fwSpawn = 0.10 + Math.random() * 0.08;
             try {
-                var palette = [0xffe000, 0x00ffcc, 0xff66cc, 0x00ccff, 0xff8800];
-                var color = palette[Math.floor(Math.random() * palette.length)];
+                var color = _FW_PALETTE[Math.floor(Math.random() * _FW_PALETTE.length)];
                 var theta = Math.random() * Math.PI * 2;
+                var rMul = 0.7 + Math.random() * 0.25;
                 var pos = new THREE.Vector3(
-                    Math.cos(theta) * tubeRadius * 0.9,
-                    Math.sin(theta) * tubeRadius * 0.9,
-                    camera.position.z - 80 - Math.random() * 200
+                    Math.cos(theta) * tubeRadius * rMul,
+                    Math.sin(theta) * tubeRadius * rMul,
+                    camera.position.z - 50 - Math.random() * 450
                 );
                 _spawnFirework(pos, color);
             } catch(e){}
         }
+        var fwTime = _finalCine.t;
         for (var i = _finalCine.fws.length - 1; i >= 0; i--) {
             var p = _finalCine.fws[i];
             try {
+                p.userData.vel.x += -p.position.x * 0.5 * delta;
+                p.userData.vel.y += -p.position.y * 0.5 * delta;
                 p.position.addScaledVector(p.userData.vel, delta);
                 p.userData._life -= delta;
-                if (p.material) p.material.opacity = Math.max(0, p.userData._life / 1.5);
-                if (p.userData._life <= 0 || (p.material && p.material.opacity < 0.05)) {
+                p.userData._trailTimer = (p.userData._trailTimer || 0) - delta;
+                if (p.userData._trailTimer <= 0 && p.userData._life > 0.2) {
+                    p.userData._trailTimer = 0.04;
+                    var trMat = new THREE.MeshBasicMaterial({ color: p.material.color.getHex(), transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending, depthWrite: false });
+                    var trGeo = (p.userData._stage === 'primary') ? _fwGeoTrail() : _fwGeoSecondary();
+                    var tr = new THREE.Mesh(trGeo, trMat);
+                    tr.position.copy(p.position);
+                    tr.userData._trailLife = 0.35;
+                    tr.userData._trailMax = 0.35;
+                    tr.userData._isTrail = true;
+                    if (_finalCine.group) _finalCine.group.add(tr);
+                    p.userData._trails.push(tr);
+                    if (p.userData._trails.length > 4) {
+                        var oldTr = p.userData._trails.shift();
+                        if (_finalCine.group) _finalCine.group.remove(oldTr);
+                        if (oldTr.material) oldTr.material.dispose();
+                    }
+                }
+                if (p.userData._trails && p.userData._trails.length) {
+                    for (var ti = p.userData._trails.length - 1; ti >= 0; ti--) {
+                        var trN = p.userData._trails[ti];
+                        trN.userData._trailLife -= delta;
+                        if (trN.userData._trailLife <= 0) {
+                            if (_finalCine.group) _finalCine.group.remove(trN);
+                            if (trN.material) trN.material.dispose();
+                            p.userData._trails.splice(ti, 1);
+                        } else if (trN.material) {
+                            trN.material.opacity = Math.max(0, (trN.userData._trailLife / trN.userData._trailMax) * 0.5);
+                        }
+                    }
+                }
+                if (p.userData._stage === 'primary' && !p.userData._didSplit) {
+                    var elapsed = (p.userData._maxLife || 2.0) - p.userData._life;
+                    if (elapsed >= (p.userData._splitAt || 1.0)) {
+                        p.userData._didSplit = true;
+                        var splitColor = _FW_PALETTE[Math.floor(Math.random() * _FW_PALETTE.length)];
+                        _spawnSecondaryBurst(p.position, splitColor, p.userData.vel);
+                    }
+                }
+                if (p.material) {
+                    var lifeFrac = Math.max(0, p.userData._life / (p.userData._maxLife || 1.5));
+                    var sparkle = 0.7 + Math.sin(fwTime * 25 + (p.userData._phase || 0)) * 0.3;
+                    p.material.opacity = lifeFrac * sparkle;
+                }
+                if (p.userData._life <= 0 || (p.material && p.material.opacity < 0.02 && p.userData._life < 0.3)) {
                     _disposeFireworkParticle(p);
                     _finalCine.fws.splice(i, 1);
                 }
