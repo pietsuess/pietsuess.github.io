@@ -193,11 +193,22 @@
     width:130px; height:130px; z-index:50; touch-action:none;
   }
   #dpad canvas{ width:130px; height:130px; }
+  #jump-btn{
+    display:none; position:fixed; bottom:16px; left:16px;
+    width:84px; height:84px; border-radius:50%;
+    background:#00ffcc; border:none;
+    box-shadow: 0 0 0 6px transparent, 0 0 0 8px #00ffcc;
+    font-family:'Press Start 2P',monospace; font-size:11px; color:#000; letter-spacing:1px;
+    align-items:center; justify-content:center;
+    z-index:50; touch-action:manipulation; -webkit-tap-highlight-color:transparent;
+    cursor:pointer;
+  }
 </style>
 </head>
 <body>
 <div id="mute-btn" onclick="toggleMute();event.stopPropagation()" title="Toggle Audio">🔊</div>
 <div id="dpad"><canvas id="dpad-c" width="260" height="260"></canvas></div>
+<button id="jump-btn">JUMP</button>
 <canvas id="c"></canvas>
 <div id="popup">
   <div id="popup-title">OBJECT</div>
@@ -1784,6 +1795,7 @@ const isMobile = /Mobi|Android|iPhone|iPad/.test(navigator.userAgent);
 if(isMobile){
   document.getElementById('prompt-text').textContent = 'TAP TO INTERACT';
   document.getElementById('dpad').style.display = 'block';
+  document.getElementById('jump-btn').style.display = 'flex';
 }
 let touchJoyDx = 0, touchJoyDy = 0;
 
@@ -1957,6 +1969,23 @@ _dpadEl.addEventListener('touchcancel', e => {
     if(t.identifier === _dpadTouchId) clearDpad();
   }
 });
+var _jumpBtn = document.getElementById('jump-btn');
+if (_jumpBtn) {
+  var jumpHandler = function(e) {
+    e.preventDefault();
+    e.stopPropagation();
+    tryStartMusic();
+    if (editorMode || contentViewOpen || popupOpen || _kneelPending) return;
+    if (pilot.nearObj !== null) {
+      _kneelPending = pilot.nearObj;
+      setOrigAnim('kneel');
+    } else {
+      _jumpPressed = true;
+    }
+  };
+  _jumpBtn.addEventListener('touchstart', jumpHandler, {passive:false});
+  _jumpBtn.addEventListener('mousedown', jumpHandler);
+}
 // Canvas tap = interact (close overlays or kneel+popup)
 canvas.addEventListener('touchstart', e => {
   tryStartMusic();
@@ -2561,6 +2590,7 @@ function loop(time){
   // Hide d-pad during overlays (mobile)
   if(isMobile){
     document.getElementById('dpad').style.display = (popupOpen || contentViewOpen) ? 'none' : 'block';
+    document.getElementById('jump-btn').style.display = (popupOpen || contentViewOpen) ? 'none' : 'flex';
   }
 }
 
