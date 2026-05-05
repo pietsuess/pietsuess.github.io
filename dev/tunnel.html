@@ -992,6 +992,10 @@
         <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ff66cc;letter-spacing:2px;margin-bottom:10px;">WEAPONS</div>
         <div id="tr-store-weapon-list" style="display:flex;flex-direction:column;gap:8px;overflow:visible;touch-action:pan-y;"></div>
     </div>
+    <div id="tr-store-ammo-panel" style="width:100%;max-width:460px;border:1px solid #ff66cc;background:rgba(60,0,40,0.3);padding:14px 14px;margin-bottom:14px;box-shadow:0 0 8px rgba(255,102,204,0.2);display:flex;flex-direction:column;justify-content:flex-start;flex-shrink:0;overflow:visible;touch-action:pan-y;">
+        <div style="font-family:'Press Start 2P',monospace;font-size:10px;color:#ff66cc;letter-spacing:2px;margin-bottom:10px;">AMMO</div>
+        <div id="tr-store-ammo-list" style="display:flex;flex-direction:column;gap:8px;overflow:visible;touch-action:pan-y;"></div>
+    </div>
     <button id="tr-store-continue" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 6px rgba(255,224,0,0.6);background:#0a0014;margin-top:18px;margin-bottom:24px;flex-shrink:0;touch-action:manipulation;">[ CONTINUE ]</button>
 </div>
 
@@ -2247,6 +2251,7 @@ window.onload = function() {
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.35];
     var WEAPON_MAX_AMMO = [0, 50, 30, 20, 10];
+    var WEAPON_REFILL_PRICES = [0, 15, 25, 50, 75];
     var weaponAmmo = 0;
     var SPEED_MULTIPLIERS = [0.85, 1.0, 1.15, 1.30, 1.50];
     var SPEED_CAPS = [450, 600, 700, 820, 950];
@@ -7611,6 +7616,81 @@ window.onload = function() {
         }
         return row;
     }
+    function _renderAmmoPanel() {
+        var wrap = document.getElementById('tr-store-ammo-list');
+        if (!wrap) return;
+        wrap.innerHTML = '';
+        var row = document.createElement('div');
+        var hasWeapon = (weaponTier >= 1);
+        var max = hasWeapon ? (WEAPON_MAX_AMMO[weaponTier] || 0) : 0;
+        var cost = hasWeapon ? (WEAPON_REFILL_PRICES[weaponTier] || 0) : 0;
+        var isFull = hasWeapon && (weaponAmmo >= max);
+        var canAfford = hasWeapon && !isFull && (ringBank >= cost);
+        var borderColor = !hasWeapon ? '#444' : (isFull ? '#00ff88' : (canAfford ? '#ffe000' : '#444'));
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + borderColor + ';background:rgba(0,0,0,0.35);touch-action:pan-y;';
+        var info = document.createElement('div');
+        info.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;touch-action:pan-y;';
+        var nm = document.createElement('div');
+        var nameColor = !hasWeapon ? '#666' : (isFull ? '#00ff88' : (canAfford ? '#ffe000' : '#666'));
+        var nameGlow = !hasWeapon ? 'transparent' : (isFull ? 'rgba(0,255,136,0.5)' : (canAfford ? 'rgba(255,224,0,0.5)' : 'transparent'));
+        nm.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:11px;letter-spacing:1px;color:' + nameColor + ';text-shadow:0 0 6px ' + nameGlow + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        nm.innerText = hasWeapon ? (WEAPON_NAMES[weaponTier] || 'WEAPON') : 'NO WEAPON';
+        info.appendChild(nm);
+        var ds = document.createElement('div');
+        ds.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+        ds.innerText = hasWeapon ? (String(weaponAmmo) + ' / ' + String(max)) : 'BUY A WEAPON FIRST';
+        info.appendChild(ds);
+        row.appendChild(info);
+        var btn = document.createElement('button');
+        btn.className = 'menu-btn';
+        btn.style.cssText = 'margin:0;width:auto;font-size:9px;padding:6px 10px;flex-shrink:0;touch-action:pan-y;';
+        if (!hasWeapon) {
+            btn.innerText = 'NO WEAPON';
+            btn.style.borderColor = '#444';
+            btn.style.color = '#666';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+        } else if (isFull) {
+            btn.innerText = 'FULL';
+            btn.style.borderColor = '#00ff88';
+            btn.style.color = '#00ff88';
+            btn.style.textShadow = '0 0 6px rgba(0,255,136,0.6)';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+        } else if (canAfford) {
+            btn.innerText = 'REFILL (' + cost + ')';
+            btn.style.borderColor = '#ffe000';
+            btn.style.color = '#ffe000';
+            btn.style.cursor = 'pointer';
+            btn.disabled = false;
+            btn.addEventListener('click', function(e) {
+                e.stopPropagation();
+                _buyAmmoRefill();
+            });
+        } else {
+            btn.innerText = 'REFILL (' + cost + ')';
+            btn.style.borderColor = '#ff4444';
+            btn.style.color = '#ff6666';
+            btn.style.cursor = 'not-allowed';
+            btn.disabled = true;
+        }
+        row.appendChild(btn);
+        wrap.appendChild(row);
+    }
+    function _buyAmmoRefill() {
+        if (weaponTier <= 0) return;
+        var max = WEAPON_MAX_AMMO[weaponTier];
+        if (weaponAmmo >= max) return;
+        var cost = WEAPON_REFILL_PRICES[weaponTier];
+        if (ringBank < cost) return;
+        if (!_ringsSpend(cost)) return;
+        weaponAmmo = max;
+        try { _sessionSync(); } catch(e) {}
+        try { _updateFireBtnAmmoState(); } catch(e) {}
+        updateRingHUD();
+        _refreshStorePanels();
+        try { AudioEngine.playSFX('shield'); } catch(e) {}
+    }
     function _refreshStorePanels() {
         var bal = document.getElementById('tr-store-balance');
         if (bal) bal.innerText = String(ringBank);
@@ -7632,6 +7712,7 @@ window.onload = function() {
             wl.appendChild(_renderStoreItem('weapon', 0));
             for (var j = 1; j <= 4; j++) wl.appendChild(_renderStoreItem('weapon', j));
         }
+        _renderAmmoPanel();
     }
     function showStore(returnAction) {
         _storeReturn = returnAction || null;
