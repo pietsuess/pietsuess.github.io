@@ -1849,6 +1849,7 @@ var AudioEngine = {
       fvBus.gain.linearRampToValueAtTime(0.0001, fvLoopEnd);
     } else if (type === 'cinematic_music') {
       var cmBus = audioCtx.createGain(); cmBus.gain.value = 1.6; cmBus.connect(sfxGainNode);
+      try { AudioEngine._cmBus = cmBus; } catch(eCm){}
       var ROOT = 110.0;
       var AMIN = [0,2,3,5,7,8,10];
       function _cmFr(semi){ return Math.pow(2, semi/12); }
@@ -8078,6 +8079,52 @@ window.onload = function() {
     //   P3 3.0-4.0s: ship zooms off right + forward, slight roll.
     // At end, call onDone() without resetting; the splash hides the frame
     // and the 'playing' block overwrites positions on first frame.
+    function _skipOpeningCinematic() {
+        if (!_cine.active) return;
+        _cine.active = false;
+        try { var skipBtn = document.getElementById('cine-skip-btn'); if (skipBtn && skipBtn.parentNode) skipBtn.parentNode.removeChild(skipBtn); } catch(e){}
+        try { var cts = document.getElementById('cine-title-stack'); if (cts && cts.parentNode) cts.parentNode.removeChild(cts); } catch(e){}
+        try { document.body.classList.remove('cinematic-active'); } catch(e){}
+        try {
+            shipContainer.position.x = 0;
+            shipContainer.position.y = 0;
+            shipContainer.rotation.x = 0;
+            shipContainer.rotation.y = 0;
+            shipContainer.rotation.z = 0;
+            throttleSmooth = 0;
+            shipZOffset = -18;
+            engineLight.intensity = 3.0;
+            gEngLight.intensity = 4.0;
+            flameInner.scale.set(0.5, 0.5, 0.3);
+            flameOuter.scale.set(0.65, 0.65, 0.315);
+            matFlameInner.opacity = 0.9;
+            matFlameOuter.opacity = 0.5;
+            for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
+            currentFov = BASE_FOV;
+            camera.fov = BASE_FOV;
+            camera.updateProjectionMatrix();
+            wireMat.opacity = 0.55;
+            wireMat.color.setRGB(0, 1, 136/255);
+            tracerGroup.visible = false;
+            cameraShake = 0;
+        } catch(e) { console.error('skip cinematic reset err', e); }
+        try {
+            var _cmB = (typeof AudioEngine !== 'undefined' && AudioEngine && AudioEngine._cmBus) ? AudioEngine._cmBus : null;
+            if (_cmB && typeof audioCtx !== 'undefined' && audioCtx) {
+                var _now = audioCtx.currentTime;
+                _cmB.gain.cancelScheduledValues(_now);
+                _cmB.gain.setValueAtTime(_cmB.gain.value || 0.0001, _now);
+                _cmB.gain.linearRampToValueAtTime(0.0001, _now + 0.15);
+            }
+        } catch(e){}
+        try { AudioEngine.muteEngine(); } catch(e){}
+        if (_cine.onDone) {
+            var _cb = _cine.onDone;
+            _cine.onDone = null;
+            try { _cb(); } catch(e) { console.error('skip cinematic onDone err', e); }
+        }
+    }
+
     function runCinematic(onDone) {
         try {
             function _cineStartAudio() {
@@ -8086,6 +8133,28 @@ window.onload = function() {
             }
             _cineStartAudio();
             _cine.active = true;
+            try {
+                var _existSkip = document.getElementById('cine-skip-btn');
+                if (_existSkip && _existSkip.parentNode) _existSkip.parentNode.removeChild(_existSkip);
+                var _skipBtn = document.createElement('button');
+                _skipBtn.id = 'cine-skip-btn';
+                _skipBtn.type = 'button';
+                _skipBtn.textContent = 'SKIP';
+                _skipBtn.style.cssText = "position:fixed;bottom:16px;right:16px;z-index:620;padding:8px 14px;font-size:9px;font-family:'Press Start 2P',monospace;color:#999;background:transparent;border:1px solid #666;letter-spacing:2px;touch-action:manipulation;cursor:pointer;-webkit-tap-highlight-color:transparent;";
+                var _skipLast = 0;
+                var _onSkipTap = function(ev){
+                    try { if (ev && ev.preventDefault) ev.preventDefault(); } catch(e){}
+                    try { if (ev && ev.stopPropagation) ev.stopPropagation(); } catch(e){}
+                    var _nowMs = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
+                    if (_nowMs - _skipLast < 300) return;
+                    _skipLast = _nowMs;
+                    try { _skipOpeningCinematic(); } catch(e) { console.error('skip handler err', e); }
+                };
+                _skipBtn.addEventListener('touchend', _onSkipTap, { passive: false });
+                _skipBtn.addEventListener('mouseup', _onSkipTap);
+                _skipBtn.addEventListener('click', _onSkipTap);
+                document.body.appendChild(_skipBtn);
+            } catch(eSkip) { console.error('cine-skip-btn create err', eSkip); }
             _cine.t = 0;
             _cine.phase = 1;
             _cine.onDone = onDone;
@@ -8117,6 +8186,7 @@ window.onload = function() {
             console.error('runCinematic fatal', err);
             _cine.active = false;
             try { document.body.classList.remove('cinematic-active'); } catch (e) {}
+            try { var _sb2 = document.getElementById('cine-skip-btn'); if (_sb2 && _sb2.parentNode) _sb2.parentNode.removeChild(_sb2); } catch (e) {}
             var cb = onDone; _cine.onDone = null;
             if (cb) { try { cb(); } catch (e) {} }
         }
@@ -8272,6 +8342,7 @@ window.onload = function() {
             cameraShake = 0;
         } catch (e) { console.error('cinematic reset err', e); }
         try { document.body.classList.remove('cinematic-active'); } catch (e) {}
+        try { var _sb = document.getElementById('cine-skip-btn'); if (_sb && _sb.parentNode) _sb.parentNode.removeChild(_sb); } catch (e) {}
         var cb = _cine.onDone;
         _cine.onDone = null;
         if (cb) { try { cb(); } catch (e) { console.error('cinematic onDone err', e); } }
