@@ -2251,7 +2251,7 @@ window.onload = function() {
     var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-30% DAMAGE', '-40% DAMAGE', '-50% DAMAGE (MAX)'];
     var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
-    var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.35];
+    var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.20];
     var WEAPON_MAX_AMMO = [0, 100, 60, 40, 20];
     var WEAPON_PER_ROUND_COST = [0, 0.5, 0.8, 3, 5];
     var weaponAmmo = 0;
@@ -5026,9 +5026,9 @@ window.onload = function() {
             } else {
                 const hRand = Math.random();
                 // Hazard types gate per sector+level
-                if      (knotsEnabled && hRand < 0.25) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; }
-                else if (blocksEnabled && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; }
-                else if (minesEnabled)                  { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; }
+                if      (knotsEnabled && hRand < 0.25) { mesh = new THREE.Mesh(knotGeo,  hazardMat); type = 'hazard'; hitRadius = 5.0; mesh._isKnot = true; mesh._hazardHp = 4; }
+                else if (blocksEnabled && hRand < 0.50) { mesh = new THREE.Mesh(blockGeo, hazardMat); type = 'hazard'; hitRadius = 6.0; mesh._hazardHp = 3; }
+                else if (minesEnabled)                  { mesh = new THREE.Mesh(mineGeo,  hazardMat); type = 'hazard'; hitRadius = 5.5; mesh._hazardHp = 2; }
                 else                                    { mesh = new THREE.Mesh(ringGeo,  ringMat);   type = 'score';  hitRadius = 6.5; }
             }
         } else {
@@ -5050,6 +5050,8 @@ window.onload = function() {
         // Knots sway back and forth along the tube wall
         var isKnot = mesh._isKnot;
         delete mesh._isKnot;
+        var hazHp = mesh._hazardHp;
+        delete mesh._hazardHp;
         mesh.userData = { type: type, hitRadius: hitRadius,
             rotSpeedX: 0,
             rotSpeedY: 0,
@@ -5058,6 +5060,7 @@ window.onload = function() {
             knotBaseAngle: isKnot ? angle : 0,
             knotSwaySpeed: isKnot ? (1.5 + Math.random() * 1.0) : 0,
             knotSwayRange: isKnot ? (0.4 + Math.random() * 0.3) : 0 };
+        if (type === 'hazard' && typeof hazHp === 'number') mesh.userData._hp = hazHp;
         if (type === 'score' || type === 'health') sectorCollectiblesSpawned++;
         scene.add(mesh); items.push(mesh);
     }
@@ -5189,6 +5192,9 @@ window.onload = function() {
         p.userData._reach = opts.reach || 600;
         p.userData._pierce = (typeof opts.pierce === 'number') ? opts.pierce : 1;
         p.userData._damage = (typeof opts.damage === 'number') ? opts.damage : 1;
+        p.userData._life = (typeof opts.life === 'number') ? opts.life : 0.6;
+        p.userData._radialAccel = (typeof opts.radialAccel === 'number') ? opts.radialAccel : 0;
+        p.userData._radialVel = 0;
         if (opts.wave) {
             p.userData._isWave = true;
             p.userData._wavePhase = opts.wavePhase || 0;
@@ -5197,22 +5203,22 @@ window.onload = function() {
     }
 
     function _fireT1() {
-        _spawnSingle(0, { tier: 1, reach: 250, pierce: 1, damage: 1 });
+        _spawnSingle(0, { tier: 1, reach: 250, pierce: 1, damage: 1, life: 0.5, radialAccel: 18 });
         try { AudioEngine.playSFX('fire_gun'); } catch(e) {}
     }
     function _fireT2() {
-        _spawnSingle(-1.6, { speed: 900, tier: 2, reach: 400, pierce: 1, damage: 1.4 });
-        _spawnSingle(1.6, { speed: 900, tier: 2, reach: 400, pierce: 1, damage: 1.4 });
+        _spawnSingle(-1.6, { speed: 900, tier: 2, reach: 400, pierce: 1, damage: 1, life: 0.6, radialAccel: 18 });
+        _spawnSingle(1.6, { speed: 900, tier: 2, reach: 400, pierce: 1, damage: 1, life: 0.6, radialAccel: 18 });
         try { AudioEngine.playSFX('fire_twin'); } catch(e) {}
     }
     function _fireT3() {
-        _spawnSingle(0, { geo: laserGeo, mat: laserMat, speed: 1800, lightColor: 0xff00ff, tier: 3, reach: 700, pierce: 3, damage: 2 });
+        _spawnSingle(0, { geo: laserGeo, mat: laserMat, speed: 1800, lightColor: 0xff00ff, tier: 3, reach: 700, pierce: 1, damage: 1, life: 1.0, radialAccel: 0 });
         try { AudioEngine.playSFX('fire_laser'); } catch(e) {}
     }
     function _fireT4() {
-        _spawnSingle(-1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: 0, tier: 4, reach: 1100, pierce: 5, damage: 4 });
-        _spawnSingle(0, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 2 / 3, tier: 4, reach: 1100, pierce: 5, damage: 4 });
-        _spawnSingle(1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 4 / 3, tier: 4, reach: 1100, pierce: 5, damage: 4 });
+        _spawnSingle(-1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: 0, tier: 4, reach: 1100, pierce: 1, damage: 1, life: 1.4, radialAccel: 0 });
+        _spawnSingle(0, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 2 / 3, tier: 4, reach: 1100, pierce: 1, damage: 1, life: 1.4, radialAccel: 0 });
+        _spawnSingle(1.2, { geo: waveGeo, mat: waveMat, speed: 1000, lightColor: 0x00ffff, wave: true, wavePhase: Math.PI * 4 / 3, tier: 4, reach: 1100, pierce: 1, damage: 1, life: 1.4, radialAccel: 0 });
         try { AudioEngine.playSFX('fire_wave'); } catch(e) {}
     }
 
@@ -5263,6 +5269,30 @@ window.onload = function() {
                 p.position.y = p.userData._baseY + Math.sin(travelled * 0.05 + p.userData._wavePhase) * 4;
             }
 
+            if (typeof p.userData._life === 'number') {
+                p.userData._life -= delta;
+                if (p.userData._life <= 0) {
+                    scene.remove(p);
+                    projectiles.splice(pi, 1);
+                    continue;
+                }
+            }
+
+            if (p.userData._radialAccel && p.userData._radialAccel > 0) {
+                p.userData._radialVel += p.userData._radialAccel * delta;
+                var px = p.position.x, py = p.position.y;
+                var rNow = Math.sqrt(px * px + py * py);
+                var theta = Math.atan2(py, px);
+                rNow += p.userData._radialVel * delta;
+                p.position.x = rNow * Math.cos(theta);
+                p.position.y = rNow * Math.sin(theta);
+                if (rNow >= tubeRadius - 1) {
+                    scene.remove(p);
+                    projectiles.splice(pi, 1);
+                    continue;
+                }
+            }
+
             var reach = p.userData._reach || 600;
             var spawnZ = (typeof p.userData._spawnZ === 'number') ? p.userData._spawnZ : p.userData.spawnZ;
             if (Math.abs(p.position.z - spawnZ) > reach) {
@@ -5294,7 +5324,6 @@ window.onload = function() {
                     var dmg = p.userData._damage || 1;
                     if (typeof item.userData._hp === 'number') {
                         item.userData._hp -= dmg;
-                        p.userData._pierce = (p.userData._pierce || 1) - 1;
                         if (item.userData._hp <= 0) {
                             AudioEngine.playSFX('destroy');
                             flash('#ff8800');
@@ -5313,12 +5342,6 @@ window.onload = function() {
                                 }
                             } catch(e) {}
                         }
-                        if (p.userData._pierce <= 0) {
-                            scene.remove(p);
-                            projectiles.splice(pi, 1);
-                            disposed = true;
-                            break;
-                        }
                     } else {
                         AudioEngine.playSFX('destroy');
                         flash('#ff8800');
@@ -5327,14 +5350,11 @@ window.onload = function() {
                         document.getElementById('score').innerText = score.toString().padStart(6, '0');
                         scene.remove(item);
                         items.splice(ii, 1);
-                        p.userData._pierce = (p.userData._pierce || 1) - 1;
-                        if (p.userData._pierce <= 0) {
-                            scene.remove(p);
-                            projectiles.splice(pi, 1);
-                            disposed = true;
-                            break;
-                        }
                     }
+                    scene.remove(p);
+                    projectiles.splice(pi, 1);
+                    disposed = true;
+                    break;
                 }
             }
             if (disposed) continue;
@@ -5743,6 +5763,11 @@ window.onload = function() {
                 }
                 mesh.userData = { type: utype, hitRadius: hitRadius, rotSpeedZ: (utype === 'laser_wall' ? 0 : 0.3), arcLength: (obj.type === 'barrier' ? (obj.arcLength || Math.PI * 2) : undefined) };
                 if (utype === 'laser_wall') mesh.userData._hp = 8;
+                else if (utype === 'hazard') {
+                    if (obj.type === 'knot') mesh.userData._hp = 4;
+                    else if (obj.type === 'hazard') mesh.userData._hp = 3;
+                    else mesh.userData._hp = 2;
+                }
                 scene.add(mesh); items.push(mesh);
             });
             return; // baked layout replaces procedural spawn
@@ -6021,6 +6046,7 @@ window.onload = function() {
             var a = -Math.PI / 2, r = tubeRadius - 6;
             mesh.position.set(Math.cos(a)*r, Math.sin(a)*r, startZ - n * 120);
             mesh.userData = { type:utype, hitRadius:hr, rotSpeedX:0.01, rotSpeedY:0.02, isTut:true };
+            if (utype === 'hazard') mesh.userData._hp = 2;
             scene.add(mesh); items.push(mesh);
             TUT.targets.push(mesh);
         }
