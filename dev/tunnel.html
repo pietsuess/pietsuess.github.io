@@ -736,6 +736,22 @@
   font-family:'Press Start 2P',monospace; font-size:11px; color:#000;
   z-index:2; pointer-events:none; letter-spacing:1px;
 }
+#fire-btn.empty::before {
+  border-color:#666; box-shadow:0 0 8px rgba(102,102,102,0.3);
+}
+#fire-btn.empty::after {
+  background:#666; box-shadow:0 0 8px rgba(102,102,102,0.3);
+}
+#fire-btn.empty span.fire-text {
+  color:#222; font-size:9px;
+}
+#ammo-count {
+  display:none; position:fixed; bottom:194px; left:20px;
+  width:80px; text-align:center;
+  font-family:'Press Start 2P',monospace; font-size:11px; color:#ff66cc;
+  text-shadow:0 0 6px rgba(255,102,204,0.6); letter-spacing:1px;
+  z-index:460; pointer-events:none;
+}
 </style>
 </head>
 <body>
@@ -981,6 +997,7 @@
 
 <!-- Fire Button (gunship only) -->
 <button id="fire-btn"><span class="fire-text">FIRE</span></button>
+<div id="ammo-count">0</div>
 <!-- Session Picker (Resume or New Game) -->
 <div id="tr-session-screen" class="overlay-screen" style="display:none;z-index:615;background:linear-gradient(180deg,#000 0%,#0a0a18 100%);justify-content:flex-start;padding-top:6vh;padding-bottom:6vh;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;">
     <div id="tr-session-resume-header" style="font-family:'Press Start 2P',monospace;font-size:18px;color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:3px;margin-bottom:24px;text-align:center;width:100%;">RESUME</div>
@@ -2229,6 +2246,8 @@ window.onload = function() {
     var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.35];
+    var WEAPON_MAX_AMMO = [0, 50, 30, 20, 10];
+    var weaponAmmo = 0;
     var SPEED_MULTIPLIERS = [0.85, 1.0, 1.15, 1.30, 1.50];
     var SPEED_CAPS = [450, 600, 700, 820, 950];
 
@@ -2266,6 +2285,7 @@ window.onload = function() {
             activeShield: 0,
             activeWeapon: 0,
             activeSpeed: 0,
+            weaponAmmo: 0,
             maxReached: 'S1L1',
             maxPassed: null,
             lastPlayed: Date.now()
@@ -2308,6 +2328,9 @@ window.onload = function() {
         shieldTier = Math.max(0, Math.min(5, s.activeShield || 0));
         weaponTier = Math.max(0, Math.min(4, s.activeWeapon || 0));
         speedTier = Math.max(0, Math.min(4, s.activeSpeed || 0));
+        if (typeof s.weaponAmmo !== 'number') s.weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
+        weaponAmmo = s.weaponAmmo;
+        if (weaponTier > 0 && weaponAmmo === 0) weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         _saveSpeedTier(speedTier);
         try { _applyFlameTier(speedTier); } catch(e){}
         try {
@@ -2348,6 +2371,7 @@ window.onload = function() {
                 arr[i].activeShield = shieldTier;
                 arr[i].activeWeapon = weaponTier;
                 arr[i].activeSpeed = speedTier;
+                arr[i].weaponAmmo = weaponAmmo;
                 if (!Array.isArray(arr[i].ownedShields)) arr[i].ownedShields = [];
                 if (!Array.isArray(arr[i].ownedWeapons)) arr[i].ownedWeapons = [];
                 if (!Array.isArray(arr[i].ownedSpeeds)) arr[i].ownedSpeeds = [];
@@ -2420,12 +2444,14 @@ window.onload = function() {
     }
     function _setActiveWeapon(idx) {
         weaponTier = Math.max(0, Math.min(4, idx | 0));
+        weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         _saveWeaponTier(weaponTier);
         try { _sessionSync(); } catch(e) {}
         try {
             var _fb = document.getElementById('fire-btn');
             if (_fb) _fb.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
         } catch(e) {}
+        try { _updateFireBtnAmmoState(); } catch(e) {}
     }
     function _setActiveSpeed(idx) {
         speedTier = Math.max(0, Math.min(4, idx | 0));
@@ -3851,6 +3877,7 @@ window.onload = function() {
         gunshipGroup.visible = (type === 'gunship');
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
+        try { _updateFireBtnAmmoState(); } catch(e) {}
         try { localStorage.setItem('trActiveShip', JSON.stringify(type)); } catch(e) {}
     }
     setActiveShip(activeShip);
@@ -3866,6 +3893,7 @@ window.onload = function() {
 
     const coreGeo  = new THREE.OctahedronGeometry(2.5, 0);
     const coreMat  = new THREE.MeshStandardMaterial({ color: 0x88ccff, emissive: 0x44aaff, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
+    const ammoMat  = new THREE.MeshStandardMaterial({ color: 0xff66cc, emissive: 0xff00aa, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
 
     const ringGeo  = new THREE.TorusGeometry(4.5, 0.7, 8, 28);
     const ringMat  = new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
@@ -5188,12 +5216,36 @@ window.onload = function() {
     function fireProjectile() {
         if (gameState !== 'playing') return;
         if (fireCooldownTimer > 0) return;
+        if (weaponTier < 1) return;
+        if (weaponAmmo <= 0) { try { _updateFireBtnAmmoState(); } catch(e) {} return; }
         var cd = WEAPON_COOLDOWN[weaponTier] || FIRE_COOLDOWN;
         fireCooldownTimer = cd;
         if (weaponTier >= 4) _fireT4();
         else if (weaponTier === 3) _fireT3();
         else if (weaponTier === 2) _fireT2();
         else _fireT1();
+        weaponAmmo = Math.max(0, weaponAmmo - 1);
+        try { _sessionSync(); } catch(e) {}
+        try { _updateFireBtnAmmoState(); } catch(e) {}
+    }
+    function _updateFireBtnAmmoState() {
+        var fb = document.getElementById('fire-btn');
+        var ac = document.getElementById('ammo-count');
+        if (fb) {
+            var txt = fb.querySelector('span.fire-text');
+            if (weaponAmmo <= 0 && weaponTier >= 1) {
+                fb.classList.add('empty');
+                if (txt) txt.innerText = 'EMPTY';
+            } else {
+                fb.classList.remove('empty');
+                if (txt) txt.innerText = 'FIRE';
+            }
+        }
+        if (ac) {
+            var showAmmo = (gameState === 'playing' && weaponTier >= 1);
+            ac.style.display = showAmmo ? 'block' : 'none';
+            ac.innerText = String(weaponAmmo);
+        }
     }
 
     function updateProjectiles(delta, moveDist) {
@@ -5357,6 +5409,7 @@ window.onload = function() {
         shipContainer.visible = false;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
+        var _ac = document.getElementById('ammo-count'); if (_ac) _ac.style.display = 'none';
 
         // Delay game-over screen so explosion plays out
         setTimeout(function() {
@@ -5460,6 +5513,7 @@ window.onload = function() {
         flash('#00ffaa');
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = 'none';
+        var _ac = document.getElementById('ammo-count'); if (_ac) _ac.style.display = 'none';
 
         const isPerfect = sectorCollectiblesSpawned > 0 && sectorCollectiblesCollected >= sectorCollectiblesSpawned;
 
@@ -5668,7 +5722,7 @@ window.onload = function() {
                 else if (obj.type === 'hazard') { mesh = new THREE.Mesh(blockGeo, hazardMat); hitRadius = 6.0; utype = 'hazard'; }
                 else if (obj.type === 'mine')   { mesh = new THREE.Mesh(mineGeo,  hazardMat); hitRadius = 5.5; utype = 'hazard'; }
                 else if (obj.type === 'knot')   { mesh = new THREE.Mesh(knotGeo,  hazardMat); hitRadius = 5.0; utype = 'hazard'; }
-                else if (obj.type === 'shield')   { mesh = new THREE.Mesh(coreGeo,  coreMat);   hitRadius = 5.5; utype = 'health'; }
+                else if (obj.type === 'shield')   { mesh = new THREE.Mesh(coreGeo,  ammoMat);   hitRadius = 5.5; utype = 'ammo'; }
                 else if (obj.type === 'star')   { mesh = new THREE.Mesh(starGeo,  starMat.clone()); hitRadius = 5.5; utype = 'star'; }
                 else if (obj.type === 'ramp')    { mesh = new THREE.Mesh(rampGeo,      rampMat);      hitRadius = 16.0;         utype = 'ramp';       }
                 else if (obj.type === 'barrier') {
@@ -6776,6 +6830,8 @@ window.onload = function() {
                     gameState = 'playing';
                     var _fb = document.getElementById('fire-btn');
                     if (_fb) _fb.style.display = (weaponTier >= 1) ? 'block' : 'none';
+                    if (weaponTier > 0 && weaponAmmo === 0) weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
+                    try { _updateFireBtnAmmoState(); } catch(e) {}
                     _countdownActive = true;
                     document.getElementById('hamburger-btn').style.display = 'flex';
                     // Only resume raw audio context for countdown tick/go SFX
@@ -6919,6 +6975,7 @@ window.onload = function() {
             document.getElementById('pause-screen').style.display = 'flex';
             var fireBtn = document.getElementById('fire-btn');
             if (fireBtn) fireBtn.style.display = 'none';
+            var _ac = document.getElementById('ammo-count'); if (_ac) _ac.style.display = 'none';
         } else if (gameState === 'victory' || gameState === 'dead' || gameState === 'finale') {
             // Pause from overlay screens — hide current screen, show pause menu
             _prePauseState = gameState;
@@ -6941,6 +6998,7 @@ window.onload = function() {
                 {
                     var fireBtn = document.getElementById('fire-btn');
                     if (fireBtn) fireBtn.style.display = (weaponTier >= 1) ? 'block' : 'none';
+                    try { _updateFireBtnAmmoState(); } catch(e) {}
                 }
                 AudioEngine.resume();
                 AudioEngine.startEngine();
@@ -7617,6 +7675,9 @@ window.onload = function() {
         owned.push(idx);
         _setOwnedWeapons(owned);
         _setActiveWeapon(idx);
+        weaponAmmo = WEAPON_MAX_AMMO[idx] || 0;
+        try { _sessionSync(); } catch(e) {}
+        try { _updateFireBtnAmmoState(); } catch(e) {}
         try { AudioEngine.playSFX('content_collect'); } catch(e) { try { AudioEngine.playSFX('shield'); } catch(e2) {} }
         updateRingHUD();
         _refreshStorePanels();
@@ -9104,6 +9165,17 @@ window.onload = function() {
                                         }, 200);
                                     }
                                 }
+                            }
+                            else if (item.userData.type === 'ammo') {
+                                sectorCollectiblesCollected++;
+                                var _maxAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
+                                weaponAmmo = _maxAmmo;
+                                try { AudioEngine.playSFX('shield'); } catch(e) {}
+                                flash('#ff66cc');
+                                spawnPointBurst('+ AMMO', 'c-magenta');
+                                score += 50;
+                                try { _updateFireBtnAmmoState(); } catch(e) {}
+                                try { _sessionSync(); } catch(e) {}
                             }
                             else if (item.userData.type === 'health') {
                                 sectorCollectiblesCollected++;
