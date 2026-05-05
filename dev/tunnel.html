@@ -4256,12 +4256,8 @@ window.onload = function() {
     function _touchInFireZone(touch) {
         var btn = document.getElementById('fire-btn');
         if (!btn || btn.style.display === 'none') return false;
-        var rect = btn.getBoundingClientRect();
-        if (rect.width === 0) return false;
-        var pad = 10;
         var x = touch.clientX, y = touch.clientY;
-        return x >= rect.left - pad && x <= rect.right + pad
-            && y >= rect.top - pad && y <= rect.bottom + pad;
+        return x < window.innerWidth * 0.30 && y > window.innerHeight * 0.75;
     }
     function _firstNonFireNonOverlayTouch(touchList) {
         for (var i = 0; i < touchList.length; i++) {
@@ -7469,6 +7465,28 @@ window.onload = function() {
         }
     }, {passive: true});
     _fireBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); fireProjectile(); });
+
+    function _isCornerFire(t) { return t.clientX < window.innerWidth * 0.30 && t.clientY > window.innerHeight * 0.75; }
+    window.addEventListener('touchstart', function(e) {
+        if (gameState !== 'playing') return;
+        var btn = document.getElementById('fire-btn');
+        if (!btn || btn.style.display === 'none') return;
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var t = e.changedTouches[i];
+            if (_isCornerFire(t)) {
+                window._fireTouchIds = window._fireTouchIds || new Set();
+                window._fireTouchIds.add(t.identifier);
+                if (typeof fireProjectile === 'function') fireProjectile();
+            }
+        }
+    }, {passive: true, capture: true});
+    window.addEventListener('touchend', function(e) {
+        if (!window._fireTouchIds) return;
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            window._fireTouchIds.delete(e.changedTouches[i].identifier);
+        }
+    }, {passive: true, capture: true});
+
     // Session NEW GAME button
     (function(){
         var nb = document.getElementById('tr-session-new');
@@ -8701,6 +8719,13 @@ window.onload = function() {
             shipContainer.position.z = camera.position.z + shipZOffset;
             shipContainer.updateMatrixWorld(true);
             _applyShipVisuals(delta);
+            try {
+                var _md = (typeof speed !== 'undefined' ? speed : 600) * delta;
+                tube1.position.z += _md;
+                tube2.position.z += _md;
+                if (tube1.position.z > tubeLen / 2) tube1.position.z = tube2.position.z - tubeLen;
+                if (tube2.position.z > tubeLen / 2) tube2.position.z = tube1.position.z - tubeLen;
+            } catch(e){}
         } catch(e) {}
         _finalCine.fwSpawn -= delta;
         if (_finalCine.fwSpawn <= 0) {
