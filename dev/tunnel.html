@@ -2166,6 +2166,7 @@ window.onload = function() {
     let sectorDistance = baseSectorDistance; // updated after ZONES init below
     let sectorStartScore = 0;
     let sectorTime = 0;       // seconds elapsed this sector
+    let _speedRunFailed = false;
     let bestTimes = {};       // best time per sector number — persisted
     let sectorRunTimes = {};  // times for current run
     try { var _bt = localStorage.getItem('trBestTimes'); if (_bt) bestTimes = JSON.parse(_bt); } catch(e) {}
@@ -6754,6 +6755,7 @@ window.onload = function() {
         speed = baseSpeed;
         distanceTraveled = 0;
         sectorTime = 0;
+        _speedRunFailed = false;
         sectorCollectiblesSpawned = 0;
         sectorCollectiblesCollected = 0;
         finishRingSpawned = false;
@@ -8858,6 +8860,10 @@ window.onload = function() {
                     // Countdown timer for speed runs
                     var srTarget = getSpeedRunTarget();
                     var remaining = Math.max(0, srTarget - sectorTime);
+                    if (remaining <= 0 && !_speedRunFailed) {
+                        _speedRunFailed = true;
+                        triggerGameOver();
+                    }
                     var rm = Math.floor(remaining/60), rs = Math.floor(remaining%60), rt = Math.floor((remaining%1)*10);
                     var timeStr = rm+':'+(rs<10?'0':'')+rs+'.'+rt;
                     timerEl.innerText = timeStr;
@@ -9385,14 +9391,23 @@ window.onload = function() {
                                 _ringsAdd(1); updateRingHUD();
                             }
                             else if (item.userData.type === 'pylon_left' || item.userData.type === 'pylon_right') {
-                                // SOFT BUMP — fires once per pylon. Pylon stays so you can pass through,
-                                // and pass-detection still scores correct/wrong side at the actual crossing.
                                 if (!item.userData._bumped) {
                                     item.userData._bumped = true;
-                                    speed = Math.max(150, speed * 0.92);
                                     AudioEngine.playSFX('jump');
                                     flash('#ff9900');
                                     cameraShake = Math.max(cameraShake || 0, 1.2);
+                                    var _pAng = item.userData.pylonAngle;
+                                    var _correctAnchor = _pAng + ((item.userData.type === 'pylon_left') ? Math.PI / 2 : -Math.PI / 2);
+                                    var _ddA = shipAngle - _correctAnchor;
+                                    while (_ddA > Math.PI) _ddA -= Math.PI * 2;
+                                    while (_ddA < -Math.PI) _ddA += Math.PI * 2;
+                                    if (Math.abs(_ddA) < Math.PI / 2) {
+                                        item.userData._passChecked = true;
+                                        score += 400;
+                                        AudioEngine.playSFX('ring');
+                                        spawnPointBurst('PYLON +400', 'c-green');
+                                        document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                                    }
                                 }
                             }
 
@@ -9439,6 +9454,10 @@ window.onload = function() {
                         flash('#ff4444');
                         spawnPointBurst('WRONG SIDE -200', 'c-red');
                         document.getElementById('score').innerText = score.toString().padStart(6, '0');
+                        if (isSpeedRunSector(currentSector, currentLevel)) {
+                            sectorTime += 2;
+                            spawnPointBurst('-2s', 'c-red');
+                        }
                     }
                     // else: NEUTRAL middle third — silent, no score change.
                 }
