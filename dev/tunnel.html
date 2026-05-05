@@ -2251,8 +2251,9 @@ window.onload = function() {
     var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.35];
-    var WEAPON_MAX_AMMO = [0, 50, 30, 20, 10];
-    var WEAPON_REFILL_PRICES = [0, 15, 25, 50, 75];
+    var WEAPON_MAX_AMMO = [0, 100, 60, 40, 20];
+    var WEAPON_PACK_SIZES = [0, 10, 10, 5, 5];
+    var WEAPON_PACK_PRICES = [0, 5, 8, 15, 25];
     var weaponAmmo = 0;
     var SPEED_MULTIPLIERS = [0.85, 1.0, 1.15, 1.30, 1.50];
     var SPEED_CAPS = [450, 600, 700, 820, 950];
@@ -7624,9 +7625,10 @@ window.onload = function() {
         var row = document.createElement('div');
         var hasWeapon = (weaponTier >= 1);
         var max = hasWeapon ? (WEAPON_MAX_AMMO[weaponTier] || 0) : 0;
-        var cost = hasWeapon ? (WEAPON_REFILL_PRICES[weaponTier] || 0) : 0;
+        var packSize = hasWeapon ? (WEAPON_PACK_SIZES[weaponTier] || 0) : 0;
+        var packCost = hasWeapon ? (WEAPON_PACK_PRICES[weaponTier] || 0) : 0;
         var isFull = hasWeapon && (weaponAmmo >= max);
-        var canAfford = hasWeapon && !isFull && (ringBank >= cost);
+        var canAfford = hasWeapon && !isFull && (ringBank >= packCost);
         var borderColor = !hasWeapon ? '#444' : (isFull ? '#00ff88' : (canAfford ? '#ffe000' : '#444'));
         row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + borderColor + ';background:rgba(0,0,0,0.35);touch-action:pan-y;';
         var info = document.createElement('div');
@@ -7635,11 +7637,11 @@ window.onload = function() {
         var nameColor = !hasWeapon ? '#666' : (isFull ? '#00ff88' : (canAfford ? '#ffe000' : '#666'));
         var nameGlow = !hasWeapon ? 'transparent' : (isFull ? 'rgba(0,255,136,0.5)' : (canAfford ? 'rgba(255,224,0,0.5)' : 'transparent'));
         nm.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:11px;letter-spacing:1px;color:' + nameColor + ';text-shadow:0 0 6px ' + nameGlow + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        nm.innerText = hasWeapon ? (WEAPON_NAMES[weaponTier] || 'WEAPON') : 'NO WEAPON';
+        nm.innerText = hasWeapon ? ((WEAPON_NAMES[weaponTier] || 'WEAPON') + ' ' + String(weaponAmmo) + ' / ' + String(max)) : 'NO WEAPON';
         info.appendChild(nm);
         var ds = document.createElement('div');
         ds.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        ds.innerText = hasWeapon ? (String(weaponAmmo) + ' / ' + String(max)) : 'BUY A WEAPON FIRST';
+        ds.innerText = hasWeapon ? ('PACK: ' + String(packSize) + ' ROUNDS') : 'BUY A WEAPON FIRST';
         info.appendChild(ds);
         row.appendChild(info);
         var btn = document.createElement('button');
@@ -7659,17 +7661,17 @@ window.onload = function() {
             btn.style.cursor = 'not-allowed';
             btn.disabled = true;
         } else if (canAfford) {
-            btn.innerText = 'REFILL (' + cost + ')';
+            btn.innerText = '+' + String(packSize) + ' ROUNDS (' + String(packCost) + ' RINGS)';
             btn.style.borderColor = '#ffe000';
             btn.style.color = '#ffe000';
             btn.style.cursor = 'pointer';
             btn.disabled = false;
             btn.addEventListener('click', function(e) {
                 e.stopPropagation();
-                _buyAmmoRefill();
+                _buyAmmoPack();
             });
         } else {
-            btn.innerText = 'REFILL (' + cost + ')';
+            btn.innerText = '+' + String(packSize) + ' ROUNDS (' + String(packCost) + ' RINGS)';
             btn.style.borderColor = '#ff4444';
             btn.style.color = '#ff6666';
             btn.style.cursor = 'not-allowed';
@@ -7678,14 +7680,15 @@ window.onload = function() {
         row.appendChild(btn);
         wrap.appendChild(row);
     }
-    function _buyAmmoRefill() {
+    function _buyAmmoPack() {
         if (weaponTier <= 0) return;
         var max = WEAPON_MAX_AMMO[weaponTier];
         if (weaponAmmo >= max) return;
-        var cost = WEAPON_REFILL_PRICES[weaponTier];
-        if (ringBank < cost) return;
-        if (!_ringsSpend(cost)) return;
-        weaponAmmo = max;
+        var packSize = WEAPON_PACK_SIZES[weaponTier];
+        var packCost = WEAPON_PACK_PRICES[weaponTier];
+        if (ringBank < packCost) return;
+        if (!_ringsSpend(packCost)) return;
+        weaponAmmo = Math.min(max, weaponAmmo + packSize);
         try { _sessionSync(); } catch(e) {}
         try { _updateFireBtnAmmoState(); } catch(e) {}
         updateRingHUD();
