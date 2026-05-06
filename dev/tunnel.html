@@ -994,7 +994,6 @@
             <span style="color:#ff88dd;">TOP SPEED</span><span id="tr-prev-top" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;">CLASS</span><span id="tr-prev-class" style="color:#44ff66;text-align:right;">--</span>
         </div>
-        <div id="tr-prev-debug" style="font-family:'Press Start 2P',monospace;font-size:8px;color:#888;margin-top:4px;line-height:1.4;word-break:break-all;">init…</div>
     </div>
     </div>
     <div id="tr-store-speed-panel" style="width:100%;max-width:460px;border:1px solid #ffe000;background:rgba(60,50,0,0.3);padding:14px 14px;margin-bottom:14px;box-shadow:0 0 8px rgba(255,224,0,0.2);display:flex;flex-direction:column;justify-content:flex-start;flex-shrink:0;overflow:visible;touch-action:pan-y;">
@@ -13910,24 +13909,18 @@ illum 3
 
 <script>
 (function tunnelStoreShipPreview(){
-  var canvas    = document.getElementById('tr-store-ship-canvas');
-  var massEl    = document.getElementById('tr-prev-mass');
-  var topEl     = document.getElementById('tr-prev-top');
-  var classEl   = document.getElementById('tr-prev-class');
-  var dbgEl     = document.getElementById('tr-prev-debug');
-  function _setDbg(s){ if (dbgEl) dbgEl.textContent = s; }
-  if (!canvas) { _setDbg('ERR no canvas'); return; }
-  if (!massEl)  console.warn('tr-prev-mass element missing');
-  if (!topEl)   console.warn('tr-prev-top element missing');
-  if (!classEl) console.warn('tr-prev-class element missing');
-  if (!window.THREE) { _setDbg('ERR THREE missing'); return; }
+  var canvas  = document.getElementById('tr-store-ship-canvas');
+  var massEl  = document.getElementById('tr-prev-mass');
+  var topEl   = document.getElementById('tr-prev-top');
+  var classEl = document.getElementById('tr-prev-class');
+  if (!canvas || !window.THREE) return;
 
   var SHIP_KG_HULL = 4500;
   var WEAPON_KG    = [0, 150, 320, 280, 850];
   var SHIELD_KG    = [0, 200, 800, 2400, 60];
   var SPEED_TOP    = [180, 320, 420, 540, 720];
 
-  function _migrateShield(v){ v = v|0; if (v <= 2) return Math.max(0, v); if (v === 3) return 3; if (v === 4) return 3; if (v >= 5) return 4; return 0; }
+  function _migrateShield(v){ v = v|0; if (v >= 0 && v <= 4) return v; if (v >= 5) return 4; return 0; }
   function _readTier(key, def, max){
     try {
       var v = parseInt(localStorage.getItem(key) || String(def), 10);
@@ -13936,24 +13929,26 @@ illum 3
     } catch(e) { return def; }
   }
   function getActive(){
-    var w  = _readTier('tunnelrunner.weaponTier', 0, 4);
-    var sp = _readTier('tunnelrunner.speedTier',  1, 4);
-    var s  = _migrateShield(_readTier('tunnelrunner.shieldTier', 0, 5));
-    return { w: w, s: s, sp: sp };
+    return {
+      w:  _readTier('tunnelrunner.weaponTier', 0, 4),
+      sp: _readTier('tunnelrunner.speedTier',  1, 4),
+      s:  _migrateShield(_readTier('tunnelrunner.shieldTier', 0, 5))
+    };
   }
 
   var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:false});
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
-  var camera = new THREE.PerspectiveCamera(40, 2, 0.1, 500);
-  camera.position.set(0, 4, 22); camera.lookAt(0, 0, 0);
+  // Camera further back so 10-unit-wide ship fits comfortably with margin.
+  var camera = new THREE.PerspectiveCamera(35, 2, 0.1, 500);
+  camera.position.set(0, 3, 26); camera.lookAt(0, 0, 0);
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   var key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(6,10,8); scene.add(key);
-  scene.add(new THREE.PointLight(0xff44ff, 1.2, 40)).position.set(-8,4,-6);
+  var rim = new THREE.PointLight(0xff44ff, 1.2, 40); rim.position.set(-8,4,-6); scene.add(rim);
   var turntable = new THREE.Group(); scene.add(turntable);
   var shipGroup = new THREE.Group(); turntable.add(shipGroup);
-  shipGroup.rotation.x = 0.15; shipGroup.scale.setScalar(0.55);
+  shipGroup.rotation.x = 0.2;
   var bankGroup = new THREE.Group(); shipGroup.add(bankGroup);
 
   var objMeshes = { base:[], weapons:{1:[],2:[],3:[],4:[]}, shields:{1:[],2:[],3:[],4:[]}, speeds:{0:[],1:[],2:[],3:[],4:[]} };
@@ -13981,26 +13976,40 @@ illum 3
         ol.setMaterials(materials);
         var root = ol.parse(objEl.textContent);
         root.rotation.y = Math.PI;
-        root.position.y = -0.3;
+        root.position.y = -0.6;
         root.traverse(function(o){ if (o.isMesh) classify(o); });
+        // No fog in this scene but match in-flight settings for safety.
+        root.traverse(function(o){
+          if (!o.isMesh || !o.material) return;
+          if (Array.isArray(o.material)) o.material.forEach(function(mm){ if (mm) mm.fog = false; });
+          else o.material.fog = false;
+        });
         Object.keys(objMeshes.shields).forEach(function(k){
-          objMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.0); });
+          objMeshes.shields[k].forEach(function(m){ m.visible = false; });
         });
         [objMeshes.weapons, objMeshes.speeds].forEach(function(map){
           Object.keys(map).forEach(function(k){ map[k].forEach(function(m){ m.visible = false; }); });
         });
+        // Re-style hull + windows to match in-flight ship.
         objMeshes.base.forEach(function(m){
           if (!m.material) return;
           var nm = (m.name||'').toUpperCase();
           var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
-          if (nm.includes('DELTAWING')) apply(function(mat){ if (mat&&mat.color) mat.color.setHex(0xd044bb); if ('shininess' in mat) mat.shininess = 18; if (mat.specular&&mat.specular.setHex) mat.specular.setHex(0x222222); if ('roughness' in mat) mat.roughness = 0.78; if ('metalness' in mat) mat.metalness = 0.0; });
+          if (nm.includes('DELTAWING')) apply(function(mat){
+            if (!mat) return;
+            if (mat.color) mat.color.setHex(0xd044bb);
+            if ('shininess' in mat) mat.shininess = 18;
+            if (mat.specular && mat.specular.setHex) mat.specular.setHex(0x222222);
+            if ('roughness' in mat) mat.roughness = 0.78;
+            if ('metalness' in mat) mat.metalness = 0.0;
+          });
           else if (nm.includes('WINDOW')) {
             if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
             apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
             apply(function(mat){ if (mat&&mat.color) mat.color.setHex(0x2c4a6e); if (mat.emissive) mat.emissive.setHex(0x0a1a2c); });
-            m.scale.setScalar(1.0);
           }
         });
+        // STEEL shield darker blue (clone first; Material.005 shared with windows).
         objMeshes.shields[2].forEach(function(m){
           if (!m.material) return;
           if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
@@ -14009,10 +14018,9 @@ illum 3
         });
         bankGroup.add(root);
         objLoaded = true;
-        console.log('store turntable OBJ classified:', { weapons: Object.keys(objMeshes.weapons).reduce(function(a,k){a[k]=objMeshes.weapons[k].length;return a;},{}), shields: Object.keys(objMeshes.shields).reduce(function(a,k){a[k]=objMeshes.shields[k].length;return a;},{}), speeds: Object.keys(objMeshes.speeds).reduce(function(a,k){a[k]=objMeshes.speeds[k].length;return a;},{}) });
       }
     }
-  } catch(e) { console.warn('store preview OBJ load failed', e); }
+  } catch(e) {}
 
   function setObjTier(map, idx){
     Object.keys(map).forEach(function(k){
@@ -14044,44 +14052,8 @@ illum 3
     camera.aspect = w / h;
     camera.updateProjectionMatrix();
   }
-  // Drag rotation. Bind to canvas only; capture pointer to avoid parent steal.
-  var drag = { active:false, lastX:0, lastY:0, pid:null };
-  var autoPaused = false, autoResumeAt = 0;
-  canvas.style.touchAction = 'none';
-  canvas.style.cursor = 'grab';
-  function ds(e){
-    var x, y, pid;
-    if (e.touches && e.touches.length){ x = e.touches[0].clientX; y = e.touches[0].clientY; pid = e.touches[0].identifier; }
-    else { x = e.clientX; y = e.clientY; pid = 'mouse'; }
-    drag.active = true; drag.lastX = x; drag.lastY = y; drag.pid = pid;
-    autoPaused = true; canvas.style.cursor = 'grabbing';
-    if (e.preventDefault) e.preventDefault();
-    if (e.stopPropagation) e.stopPropagation();
-  }
-  function dm(e){
-    if (!drag.active) return;
-    var x, y;
-    if (e.touches && e.touches.length){
-      var t = null;
-      for (var i = 0; i < e.touches.length; i++){ if (e.touches[i].identifier === drag.pid) { t = e.touches[i]; break; } }
-      if (!t) return; x = t.clientX; y = t.clientY;
-    } else { x = e.clientX; y = e.clientY; }
-    var dx = x - drag.lastX, dy = y - drag.lastY;
-    drag.lastX = x; drag.lastY = y;
-    turntable.rotation.y += dx * 0.01;
-    shipGroup.rotation.x = Math.max(-1.0, Math.min(1.0, shipGroup.rotation.x + dy * 0.01));
-    if (e.preventDefault) e.preventDefault();
-  }
-  function de(){ if (!drag.active) return; drag.active = false; canvas.style.cursor = 'grab'; autoResumeAt = performance.now() + 1500; }
-  canvas.addEventListener('mousedown', ds);
-  window.addEventListener('mousemove', dm);
-  window.addEventListener('mouseup', de);
-  canvas.addEventListener('touchstart', ds, {passive:false});
-  canvas.addEventListener('touchmove', dm, {passive:false});
-  canvas.addEventListener('touchend', de);
-  canvas.addEventListener('touchcancel', de);
 
-  var ROT_SPEED = (10 * Math.PI / 180);
+  var ROT_SPEED = (12 * Math.PI / 180);
   var lastT = performance.now();
   function tick(now){
     requestAnimationFrame(tick);
@@ -14089,19 +14061,11 @@ illum 3
     if (!ss || ss.style.display === 'none') return;
     resize();
     var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
-    if (autoPaused && !drag.active && now >= autoResumeAt) autoPaused = false;
-    if (!autoPaused) turntable.rotation.y += ROT_SPEED * dt;
-    try { refresh(); } catch(refErr){ _setDbg('refresh err: ' + (refErr && refErr.message)); }
-    if (!window.__trStoreFirstFrameLogged) {
-      window.__trStoreFirstFrameLogged = true;
-      var t = getActive();
-      _setDbg('OK obj=' + (objLoaded?'Y':'N') + ' mass=' + (!!massEl) + ' top=' + (!!topEl) + ' cls=' + (!!classEl) + ' w='+t.w+' s='+t.s+' sp='+t.sp);
-    }
+    turntable.rotation.y += ROT_SPEED * dt;
+    refresh();
     renderer.render(scene, camera);
   }
   requestAnimationFrame(tick);
-  window.__trStoreShipRefresh = refresh;
-  console.log('store ship preview ready; objLoaded=', objLoaded);
 })();
 </script>
 </body>
