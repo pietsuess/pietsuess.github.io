@@ -763,7 +763,6 @@
 </style>
 </head>
 <body>
-<div id="tr-build-stamp" style="position:fixed;top:4px;right:6px;font-family:monospace;font-size:9px;color:#666;z-index:99999;pointer-events:none;">v9</div>
 
 <canvas id="starfield-canvas"></canvas>
 <div id="scanlines"></div>
@@ -3725,16 +3724,26 @@ window.onload = function() {
             // Match the procedural delta-wing's vertical anchor.
             root.position.y = -1.0;
             root.traverse(function(o){ if (o.isMesh) _inflightClassify(o); });
-            // Replace every ship material with a flat MeshBasicMaterial (no lighting, no fog).
-            // Game scene's 0x222244 dark-blue ambient was tinting Phong materials — Basic ignores all that.
-            function _toBasic(srcMat){
-                var c = (srcMat && srcMat.color) ? srcMat.color.getHex() : 0xcccccc;
-                return new THREE.MeshBasicMaterial({ color: c, fog: false });
+            // Convert every ship material to a tuned MeshPhongMaterial.
+            // Self-emissive ~40% of the diffuse colour so the scene's 0x222244 dark-blue ambient
+            // can't tint shadowed areas blue — but Phong shading still gives form via specular.
+            function _toLit(srcMat){
+                var c = (srcMat && srcMat.color) ? srcMat.color.clone() : new THREE.Color(0xcccccc);
+                var em = c.clone().multiplyScalar(0.5);
+                return new THREE.MeshPhongMaterial({
+                    color: c,
+                    emissive: em,
+                    emissiveIntensity: 0.85,
+                    specular: new THREE.Color(0x222222),
+                    shininess: 24,
+                    flatShading: true,
+                    fog: false
+                });
             }
             root.traverse(function(o){
                 if (!o.isMesh) return;
-                if (Array.isArray(o.material)) o.material = o.material.map(_toBasic);
-                else o.material = _toBasic(o.material);
+                if (Array.isArray(o.material)) o.material = o.material.map(_toLit);
+                else o.material = _toLit(o.material);
             });
             // Hide all tier-specific groups; loadout reveals one per category.
             Object.keys(inflightObjMeshes.shields).forEach(function(k){
