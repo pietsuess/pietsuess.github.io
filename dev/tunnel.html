@@ -3699,10 +3699,10 @@ window.onload = function() {
     }
     function _inflightApplyLoadout() {
         if (!inflightObjLoaded) return;
-        var w = (typeof weaponTier === 'number') ? weaponTier : 0;
         var s = (typeof shieldTier === 'number') ? shieldTier : 0;
         var sp = (typeof speedTier === 'number') ? speedTier : 1;
-        _inflightSetTier(inflightObjMeshes.weapons, w);
+        // Weapons disabled on the ship visually — keep every weapon mesh hidden regardless of weaponTier.
+        _inflightSetTier(inflightObjMeshes.weapons, -1);
         _inflightSetTier(inflightObjMeshes.shields, s);
         _inflightSetTier(inflightObjMeshes.speeds, sp);
     }
@@ -3729,13 +3729,12 @@ window.onload = function() {
             // can't tint shadowed areas blue — but Phong shading still gives form via specular.
             function _toLit(srcMat){
                 var c = (srcMat && srcMat.color) ? srcMat.color.clone() : new THREE.Color(0xcccccc);
-                var em = c.clone().multiplyScalar(0.5);
                 return new THREE.MeshPhongMaterial({
                     color: c,
-                    emissive: em,
-                    emissiveIntensity: 0.85,
-                    specular: new THREE.Color(0x222222),
-                    shininess: 24,
+                    emissive: c.clone(),
+                    emissiveIntensity: 0.7,
+                    specular: new THREE.Color(0x555555),
+                    shininess: 40,
                     flatShading: true,
                     fog: false
                 });
@@ -13996,6 +13995,24 @@ illum 3
         root.rotation.y = Math.PI;
         root.position.y = -0.6;
         root.traverse(function(o){ if (o.isMesh) classify(o); });
+        // Match in-flight lighting: punchier MeshPhongMaterial with self-emissive.
+        function _toLit(srcMat){
+          var c = (srcMat && srcMat.color) ? srcMat.color.clone() : new THREE.Color(0xcccccc);
+          return new THREE.MeshPhongMaterial({
+            color: c,
+            emissive: c.clone(),
+            emissiveIntensity: 0.7,
+            specular: new THREE.Color(0x555555),
+            shininess: 40,
+            flatShading: true,
+            fog: false
+          });
+        }
+        root.traverse(function(o){
+          if (!o.isMesh) return;
+          if (Array.isArray(o.material)) o.material = o.material.map(_toLit);
+          else o.material = _toLit(o.material);
+        });
         // No fog in this scene but match in-flight settings for safety.
         root.traverse(function(o){
           if (!o.isMesh || !o.material) return;
@@ -14049,7 +14066,7 @@ illum 3
   function refresh(){
     var a = getActive();
     if (objLoaded) {
-      setObjTier(objMeshes.weapons, a.w);
+      setObjTier(objMeshes.weapons, -1);
       setObjTier(objMeshes.shields, a.s);
       setObjTier(objMeshes.speeds, a.sp);
     }
@@ -14082,8 +14099,8 @@ illum 3
     else { x = e.clientX; y = e.clientY; pid = 'mouse'; }
     drag.active = true; drag.lastX = x; drag.lastY = y; drag.pid = pid;
     autoPaused = true; canvas.style.cursor = 'grabbing';
-    if (e.preventDefault) e.preventDefault();
-    if (e.stopPropagation) e.stopPropagation();
+    // Don't preventDefault on touchstart — that triggers Chrome's "scrolling cannot be interrupted" warning.
+    // touchmove handler preventDefaults only when actually dragging.
   }
   function dm(e){
     if (!drag.active) return;
