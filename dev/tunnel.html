@@ -3725,7 +3725,7 @@ window.onload = function() {
             root.traverse(function(o){ if (o.isMesh) _inflightClassify(o); });
             // Hide all tier-specific groups; loadout reveals one per category.
             Object.keys(inflightObjMeshes.shields).forEach(function(k){
-                inflightObjMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.08); });
+                inflightObjMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.0); });
             });
             [inflightObjMeshes.weapons, inflightObjMeshes.speeds].forEach(function(map){
                 Object.keys(map).forEach(function(k){ map[k].forEach(function(m){ m.visible = false; }); });
@@ -5477,9 +5477,15 @@ window.onload = function() {
                             AudioEngine.playSFX('destroy');
                             try {
                                 if (item.material && item.material.emissive) {
-                                    var origEm = item.material.emissive.getHex();
+                                    if (item.userData._origEm === undefined) {
+                                        item.userData._origEm = item.material.emissive.getHex();
+                                    }
+                                    if (item.userData._flashT) { clearTimeout(item.userData._flashT); }
                                     item.material.emissive.setHex(0xffffff);
-                                    setTimeout(function(){ try { item.material.emissive.setHex(origEm); } catch(e) {} }, 80);
+                                    item.userData._flashT = setTimeout(function(){
+                                        try { item.material.emissive.setHex(item.userData._origEm); } catch(e) {}
+                                        item.userData._flashT = null;
+                                    }, 80);
                                 }
                             } catch(e) {}
                         }
@@ -13938,7 +13944,7 @@ illum 3
   scene.add(new THREE.PointLight(0xff44ff, 1.2, 40)).position.set(-8,4,-6);
   var turntable = new THREE.Group(); scene.add(turntable);
   var shipGroup = new THREE.Group(); turntable.add(shipGroup);
-  shipGroup.rotation.x = 0.15; shipGroup.scale.setScalar(0.9);
+  shipGroup.rotation.x = 0.15; shipGroup.scale.setScalar(0.55);
   var bankGroup = new THREE.Group(); shipGroup.add(bankGroup);
 
   var objMeshes = { base:[], weapons:{1:[],2:[],3:[],4:[]}, shields:{1:[],2:[],3:[],4:[]}, speeds:{0:[],1:[],2:[],3:[],4:[]} };
@@ -13966,10 +13972,10 @@ illum 3
         ol.setMaterials(materials);
         var root = ol.parse(objEl.textContent);
         root.rotation.y = Math.PI;
-        root.position.y = -1.0;
+        root.position.y = -0.3;
         root.traverse(function(o){ if (o.isMesh) classify(o); });
         Object.keys(objMeshes.shields).forEach(function(k){
-          objMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.08); });
+          objMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.0); });
         });
         [objMeshes.weapons, objMeshes.speeds].forEach(function(map){
           Object.keys(map).forEach(function(k){ map[k].forEach(function(m){ m.visible = false; }); });
@@ -13994,6 +14000,7 @@ illum 3
         });
         bankGroup.add(root);
         objLoaded = true;
+        console.log('store turntable OBJ classified:', { weapons: Object.keys(objMeshes.weapons).reduce(function(a,k){a[k]=objMeshes.weapons[k].length;return a;},{}), shields: Object.keys(objMeshes.shields).reduce(function(a,k){a[k]=objMeshes.shields[k].length;return a;},{}), speeds: Object.keys(objMeshes.speeds).reduce(function(a,k){a[k]=objMeshes.speeds[k].length;return a;},{}) });
       }
     }
   } catch(e) { console.warn('store preview OBJ load failed', e); }
@@ -14075,7 +14082,11 @@ illum 3
     var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
     if (autoPaused && !drag.active && now >= autoResumeAt) autoPaused = false;
     if (!autoPaused) turntable.rotation.y += ROT_SPEED * dt;
-    refresh();
+    try { refresh(); } catch(refErr){ console.warn('refresh err', refErr); }
+    if (!window.__trStoreFirstFrameLogged) {
+      window.__trStoreFirstFrameLogged = true;
+      console.log('store turntable first frame: massEl=', !!massEl, 'topEl=', !!topEl, 'classEl=', !!classEl, 'tier=', getActive());
+    }
     renderer.render(scene, camera);
   }
   requestAnimationFrame(tick);
