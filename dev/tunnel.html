@@ -976,20 +976,23 @@
       </div>
     </div>
     <button class="menu-btn" id="prev-games-btn" style="border-color:#00ffcc;color:#00ffcc;text-shadow:0 0 8px rgba(0,255,204,0.6);">[ PREVIOUS GAMES ]</button>
-    <button class="menu-btn" id="store-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ STORE ]</button>
+    <button class="menu-btn" id="store-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ ARMOURY ]</button>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
 </div>
 
 <!-- Store / Upgrades Overlay -->
 <div id="tr-store-screen" class="overlay-screen" style="display:none;z-index:580;background:linear-gradient(180deg,#000 0%,#0a0014 100%);flex-direction:column;justify-content:flex-start;align-items:center;height:100vh;max-height:100vh;padding:16px;padding-bottom:32px;overflow-y:auto;overflow-x:hidden;-webkit-overflow-scrolling:touch;touch-action:pan-y;box-sizing:border-box;overscroll-behavior:contain;">
     <div style="width:100%;max-width:480px;display:flex;flex-direction:column;align-items:center;padding:0 14px;margin-top:8px;margin-bottom:14px;flex-shrink:0;touch-action:pan-y;gap:8px;">
-        <div style="font-family:'Press Start 2P',monospace;font-size:13px;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);letter-spacing:2px;text-align:center;width:100%;">UPGRADES</div>
+        <div style="font-family:'Press Start 2P',monospace;font-size:13px;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);letter-spacing:2px;text-align:center;width:100%;">ARMOURY</div>
         <div style="display:flex;align-items:center;justify-content:center;gap:6px;font-family:'Press Start 2P',monospace;font-size:11px;color:#00ccff;text-shadow:0 0 6px rgba(0,204,255,0.5);width:100%;text-align:center;">
             <span style="font-size:13px;line-height:1;">◯</span>
             <span id="tr-store-balance">0</span>
         </div>
     <div id="tr-store-ship-preview" style="width:100%;max-width:460px;margin:8px 0 14px 0;border:1px solid #ff66cc;background:rgba(20,0,30,0.5);box-shadow:0 0 8px rgba(255,102,204,0.25);padding:10px;display:flex;flex-direction:column;gap:8px;flex-shrink:0;">
-        <canvas id="tr-store-ship-canvas" style="position:static !important;width:100%;height:200px;display:block;background:#000;border:1px solid #441044;touch-action:none;"></canvas>
+        <div id="tr-store-ship-stack" style="position:relative;width:100%;height:200px;border:1px solid #441044;background:#1a0033;overflow:hidden;flex-shrink:0;">
+            <canvas id="tr-store-ship-stars" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;pointer-events:none;"></canvas>
+            <canvas id="tr-store-ship-canvas" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;background:transparent;touch-action:none;"></canvas>
+        </div>
         <div id="tr-store-ship-stats" style="font-family:'Press Start 2P',monospace;font-size:11px;line-height:1.7;color:#00ffcc;display:grid;grid-template-columns:1fr 1fr;gap:6px 12px;">
             <span style="color:#ff88dd;">SHIP MASS</span><span id="tr-prev-mass" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;">TOP SPEED</span><span id="tr-prev-top" style="color:#ffcc66;text-align:right;">--</span>
@@ -1016,7 +1019,7 @@
     <button id="tr-store-continue" class="menu-btn" style="width:100%;max-width:460px;font-size:11px;padding:14px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 6px rgba(255,224,0,0.6);background:#0a0014;margin-top:18px;margin-bottom:24px;flex-shrink:0;touch-action:manipulation;">[ CONTINUE ]</button>
 </div>
 
-<!-- Fire Button (gunship only) -->
+<!-- Fire Button -->
 <button id="fire-btn"><span class="fire-text">FIRE</span></button>
 <div id="ammo-count">0</div>
 <!-- Session Picker (Resume or New Game) -->
@@ -2227,13 +2230,9 @@ window.onload = function() {
         return sector === 3 || (sector === 5 && level === 1);
     }
 
-    // Ship system
-    const GUNSHIP_ENABLED = false;
+    // Ship system (single ship — vars kept so legacy callers stay safe)
     let activeShip = 'default';
     let unlockedShips = { default: true };
-    try { var _us = localStorage.getItem('trUnlockedShips'); if (_us) unlockedShips = JSON.parse(_us); } catch(e) {}
-    try { var _as = localStorage.getItem('trActiveShip'); if (_as) activeShip = _as; } catch(e) {}
-    if (!unlockedShips[activeShip]) activeShip = 'default';
 
     // Projectile system
     let projectiles = [];
@@ -2386,8 +2385,8 @@ window.onload = function() {
             }
         } catch(e) {}
         try {
-            var _isDevPath = (location.pathname.indexOf('/dev/') !== -1);
-            if (_isDevPath && ringBank < 4000) {
+            // HARDCODED: always start with 4000 rings for testing.
+            if (ringBank < 4000) {
                 ringBank = 4000;
                 _ringsSave(ringBank);
                 _sessionSync();
@@ -3415,6 +3414,7 @@ window.onload = function() {
     scene.background = new THREE.Color(0x000810);
 
     const camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 30000);
+    camera.layers.enable(1); // Layer 1 = ship-only lighting (clean white spot + ambient, isolated from cyan/magenta scene wash)
     scene.add(camera);
     const renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
     renderer.setSize(window.innerWidth, window.innerHeight);
@@ -3433,7 +3433,7 @@ window.onload = function() {
     let ghostingActive = false;
 
     // --- Lighting ---
-    const ambientLight = new THREE.AmbientLight(0x222244, 1.5);
+    const ambientLight = new THREE.AmbientLight(0x222244, 0);
     scene.add(ambientLight);
     const cyanLight = new THREE.DirectionalLight(0x00ffcc, 1.0);
     cyanLight.position.set(0, 10, -50);
@@ -3597,34 +3597,40 @@ window.onload = function() {
     // no matter how big fz gets. This fixes "flame ahead of ship" —
     // previously, origin-centred geometry moved the base in -Z as fz
     // grew, so a boosted flame poked through the nose.
+    const flameGeoCore = new THREE.ConeGeometry(0.85, 9.0, 10);
+    flameGeoCore.rotateX(Math.PI / 2);
+    flameGeoCore.translate(0, 0, 4.5);
     const flameGeoInner = new THREE.ConeGeometry(1.4, 12.0, 10);
     flameGeoInner.rotateX(Math.PI / 2); // apex at +Z after rotate
     flameGeoInner.translate(0, 0, 6.0); // base at Z=0, apex at Z=+12
     const flameGeoOuter = new THREE.ConeGeometry(2.0, 14.0, 10);
     flameGeoOuter.rotateX(Math.PI / 2);
     flameGeoOuter.translate(0, 0, 7.0); // base at Z=0, apex at Z=+14
-    const matFlameInner = new THREE.MeshBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.9 });
+    const matFlameCore = new THREE.MeshBasicMaterial({ color: 0xffffee, transparent: true, opacity: 1.0 });
+    const matFlameInner = new THREE.MeshBasicMaterial({ color: 0xffcc66, transparent: true, opacity: 0.45 });
     const matFlameOuter = new THREE.MeshBasicMaterial({ color: 0xff6600, transparent: true, opacity: 0.5 });
+    const flameCore = new THREE.Mesh(flameGeoCore, matFlameCore);
     const flameInner = new THREE.Mesh(flameGeoInner, matFlameInner);
     const flameOuter = new THREE.Mesh(flameGeoOuter, matFlameOuter);
-    // Position is the BASE anchor now (was mesh centre previously).
-    // Original base sat at bank-local Z=1.0 (inner: 7.0-6.0) and Z=0.3
-    // (outer: 7.3-7.0). Keep those values so fz=1 matches prior visual.
+    flameCore.position.set(0, -0.1, 4.3);
     flameInner.position.set(0, -0.1, 4.3);
     flameOuter.position.set(0, -0.1, 4.3);
+    flameCore.layers.set(1); flameInner.layers.set(1); flameOuter.layers.set(1);
     bankGroup.add(flameOuter);
     bankGroup.add(flameInner);
+    bankGroup.add(flameCore);
     const engine = flameInner;
     var _flameTierScale = 1.0;
     function _applyFlameTier(tier) {
         var palettes = [
-            {inner: 0xff8800, outer: 0xffaa00, scale: 0.4},
-            {inner: 0xff8800, outer: 0xffaa00, scale: 1.0},
-            {inner: 0xff6600, outer: 0xffdd44, scale: 1.3},
-            {inner: 0x00aaff, outer: 0x88ddff, scale: 1.5},
-            {inner: 0xcc44ff, outer: 0xff66cc, scale: 1.8}
+            {core: 0xffeecc, inner: 0xff8800, outer: 0xffaa00, scale: 0.4},
+            {core: 0xffeecc, inner: 0xff8800, outer: 0xffaa00, scale: 1.0},
+            {core: 0xfff2cc, inner: 0xff6600, outer: 0xffdd44, scale: 1.3},
+            {core: 0xeaf8ff, inner: 0x00aaff, outer: 0x88ddff, scale: 1.5},
+            {core: 0xffeaff, inner: 0xcc44ff, outer: 0xff66cc, scale: 1.8}
         ];
         var p = palettes[Math.max(0, Math.min(4, tier|0))];
+        try { flameCore.material.color.setHex(p.core); } catch(e){}
         try { flameInner.material.color.setHex(p.inner); } catch(e){}
         try { flameOuter.material.color.setHex(p.outer); } catch(e){}
         // Sync engine point-light to current flame inner colour so it lights the ship the right hue.
@@ -3633,20 +3639,35 @@ window.onload = function() {
     }
     try { _applyFlameTier(typeof speedTier === 'number' ? speedTier : 0); } catch(e){}
 
-    const engineLight = new THREE.PointLight(0xff8833, 1.2, 14);
-    engineLight.position.set(0, -0.1, 7.0);
+    const engineLight = new THREE.PointLight(0xff8833, 1.2, 10);
+    engineLight.position.set(0, -0.1, 5.5);
+    engineLight.layers.set(1);
     shipGroup.add(engineLight);
-    // Soft fill so the engine light isn't the only thing lighting the ship.
-    const shipFillLight = new THREE.PointLight(0xffeedd, 0.9, 18);
-    shipFillLight.position.set(0, 4, -2);
-    shipGroup.add(shipFillLight);
-    const shipFillRim = new THREE.PointLight(0xff99cc, 0.6, 22);
-    shipFillRim.position.set(-6, 1, -2);
-    shipGroup.add(shipFillRim);
+    // Match turntable look: spot from upper-right, parented to bankGroup so it banks with the ship for sweep.
+    const shipKeySpot = new THREE.SpotLight(0xffffff, 2.0, 0, 0.75, 0.97, 0);
+    shipKeySpot.position.set(8, 12, 3);
+    shipKeySpot.target.position.set(0, 0, 0);
+    shipKeySpot.layers.set(1);
+    shipKeySpot.visible = false;
+    bankGroup.add(shipKeySpot);
+    bankGroup.add(shipKeySpot.target);
+    // Mirror turntable's small white ambient — ship-only.
+    const shipAmbient = new THREE.AmbientLight(0xffffff, 0.04);
+    shipAmbient.layers.set(1);
+    shipGroup.add(shipAmbient);
 
     const shieldLight = new THREE.PointLight(0xff44ff, 0, 30);
     shieldLight.position.set(0, 0, 0);
+    shieldLight.layers.set(1);
     shipGroup.add(shieldLight);
+
+    // Front rim spot — ahead-and-above the ship, slightly pink, narrow cone for edge rim catch.
+    const shipFrontSpot = new THREE.SpotLight(0xffffff, 3.0, 0, 0.22, 0.9864, 0);
+    shipFrontSpot.position.set(24, 10, -18);
+    shipFrontSpot.target.position.set(0, 0, 0);
+    shipFrontSpot.layers.set(1);
+    bankGroup.add(shipFrontSpot);
+    bankGroup.add(shipFrontSpot.target);
 
     // Force field bubble — visible only when force field is active
     const forceFieldGeo = new THREE.SphereGeometry(6, 16, 12);
@@ -3741,7 +3762,7 @@ window.onload = function() {
                 return new THREE.MeshPhongMaterial({
                     color: c,
                     emissive: c.clone(),
-                    emissiveIntensity: 0.12,
+                    emissiveIntensity: 0,
                     specular: new THREE.Color(0x333333),
                     shininess: 12,
                     flatShading: false,
@@ -3752,6 +3773,11 @@ window.onload = function() {
                 if (!o.isMesh) return;
                 if (Array.isArray(o.material)) o.material = o.material.map(_toLit);
                 else o.material = _toLit(o.material);
+                o.layers.set(1); // Ship-only lighting layer.
+                // Force recompute normals + double-side to fix flipped/missing normals on cylinder caps (e.g. ION drive).
+                if (o.geometry) { o.geometry.computeVertexNormals(); }
+                var sideFix = function(mm){ if (mm) mm.side = THREE.DoubleSide; };
+                if (Array.isArray(o.material)) o.material.forEach(sideFix); else sideFix(o.material);
             });
             // Hide all tier-specific groups; loadout reveals one per category.
             Object.keys(inflightObjMeshes.shields).forEach(function(k){
@@ -3771,7 +3797,7 @@ window.onload = function() {
                         if (mat.color) mat.color.setHex(0xd044bb);
                         // Game scene has 0x222244 ambient (navy) — without emissive the hull tints blue in shadow.
                         // Add pink-purple emissive to keep the hull's true colour everywhere on the ship.
-                        if (mat.emissive) { mat.emissive.setHex(0xff2266); mat.emissiveIntensity = 0.45; }
+                        if (mat.emissive) { mat.emissive.setHex(0x000000); mat.emissiveIntensity = 0; }
                         if ('shininess' in mat) mat.shininess = 18;
                         if (mat.specular && mat.specular.setHex) mat.specular.setHex(0x222222);
                         if ('roughness' in mat) mat.roughness = 0.78;
@@ -3784,7 +3810,7 @@ window.onload = function() {
                         if (mat.color) mat.color.setHex(0x2c4a6e);
                         if (mat.emissive) mat.emissive.setHex(0x0a1a2c);
                     });
-                    m.scale.setScalar(1.01);
+                    m.scale.setScalar(1.065);
                 }
             });
             // STEEL shield darker blue (clone first; Material.005 shared with windows).
@@ -3792,7 +3818,20 @@ window.onload = function() {
                 if (!m.material) return;
                 if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
                 var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
-                apply(function(mat){ if (mat && mat.color) mat.color.setHex(0x10243f); });
+                apply(function(mat){ if (mat && mat.color) mat.color.setHex(0x6e8aae); });
+            });
+            // GRAPHENE shield WAY more shiny — bright specular, high shininess, low emissive. Slate-grey base.
+            inflightObjMeshes.shields[4].forEach(function(m){
+                if (!m.material) return;
+                if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
+                var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
+                apply(function(mat){
+                    if (!mat) return;
+                    if (mat.color && mat.color.setHex) mat.color.setHex(0x5b6573);
+                    if ('shininess' in mat) mat.shininess = 200;
+                    if (mat.specular && mat.specular.setHex) mat.specular.setHex(0xffffff);
+                    if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.04;
+                });
             });
             inflightObjShipRoot.add(root);
             proceduralBody.visible = false;
@@ -3804,99 +3843,9 @@ window.onload = function() {
     })();
 
 
-    // --- Gunship (alt ship) ---
-    const gunshipGroup = new THREE.Group();
-    const gunBankGroup = new THREE.Group();
-    gunshipGroup.add(gunBankGroup);
-
-    const matGunBody = new THREE.MeshStandardMaterial({
-        color: 0x006699, emissive: 0x00ccff, emissiveIntensity: 0.4,
-        metalness: 0.0, roughness: 1.0, flatShading: true
-    });
-    const matGunUnder = new THREE.MeshStandardMaterial({
-        color: 0x003355, emissive: 0x0088cc, emissiveIntensity: 0.2,
-        metalness: 0.0, roughness: 1.0, flatShading: true
-    });
-    const matGunCockpit = new THREE.MeshStandardMaterial({
-        color: 0xff8800, emissive: 0xff8800, emissiveIntensity: 1.0,
-        transparent: true, opacity: 0.75, roughness: 1.0, metalness: 0.0
-    });
-    const matGunEngine = new THREE.MeshBasicMaterial({ color: 0x00ccff });
-    const matGunBarrel = new THREE.MeshStandardMaterial({
-        color: 0xcccccc, emissive: 0xff8800, emissiveIntensity: 0.3,
-        metalness: 0.3, roughness: 0.7, flatShading: true
-    });
-
-    // Blocky angular hull — wider, flatter than delta wing
-    const gv = new Float32Array([
-        // TOP — flat angular panel
-        0, 0.3, -4.5,  -6.0, 0.4, 3.0,   6.0, 0.4, 3.0,
-        // BOTTOM
-        0, -0.2, -4.5,  6.0, -0.3, 3.0,  -6.0, -0.3, 3.0,
-        // LEFT EDGE
-        0, 0.3, -4.5,   0, -0.2, -4.5,  -6.0, 0.4, 3.0,
-        0, -0.2, -4.5, -6.0, -0.3, 3.0,  -6.0, 0.4, 3.0,
-        // RIGHT EDGE
-        0, 0.3, -4.5,   6.0, 0.4, 3.0,   0, -0.2, -4.5,
-        0, -0.2, -4.5,  6.0, 0.4, 3.0,   6.0, -0.3, 3.0,
-        // BACK
-        -6.0, 0.4, 3.0, -6.0, -0.3, 3.0,  6.0, -0.3, 3.0,
-        -6.0, 0.4, 3.0,  6.0, -0.3, 3.0,  6.0, 0.4, 3.0,
-    ]);
-    const gGeo = new THREE.BufferGeometry();
-    gGeo.setAttribute('position', new THREE.BufferAttribute(gv, 3));
-    gGeo.computeVertexNormals();
-    gunBankGroup.add(new THREE.Mesh(gGeo, matGunBody));
-
-    // Center ridge
-    const gSpine = new THREE.Mesh(new THREE.BoxGeometry(1.2, 0.6, 6.0), matGunUnder);
-    gSpine.position.set(0, 0.45, -0.5);
-    gunBankGroup.add(gSpine);
-
-    // Cockpit — angular (box, not sphere)
-    const gCockpit = new THREE.Mesh(new THREE.BoxGeometry(1.0, 0.5, 1.8), matGunCockpit);
-    gCockpit.position.set(0, 0.55, -1.5);
-    gunBankGroup.add(gCockpit);
-
-    // Engine nozzle
-    const gEngGeo = new THREE.CylinderGeometry(0.5, 0.6, 1.0, 6);
-    gEngGeo.rotateX(Math.PI / 2);
-    const gEngine = new THREE.Mesh(gEngGeo, matGunEngine);
-    gEngine.position.set(0, 0.1, 3.5);
-    gunBankGroup.add(gEngine);
-
-    // Gun barrels — two cylinders at wing tips
-    const barrelGeo = new THREE.CylinderGeometry(0.2, 0.2, 3.5, 6);
-    barrelGeo.rotateX(Math.PI / 2);
-    const lBarrel = new THREE.Mesh(barrelGeo, matGunBarrel);
-    lBarrel.position.set(-5.2, 0.1, -1.5);
-    gunBankGroup.add(lBarrel);
-    const rBarrel = new THREE.Mesh(barrelGeo, matGunBarrel);
-    rBarrel.position.set(5.2, 0.1, -1.5);
-    gunBankGroup.add(rBarrel);
-
-    // Barrel tip glow
-    const tipGeo = new THREE.SphereGeometry(0.3, 6, 4);
-    const matTip = new THREE.MeshBasicMaterial({ color: 0xff8800 });
-    const lTip = new THREE.Mesh(tipGeo, matTip);
-    lTip.position.set(-5.2, 0.1, -3.2);
-    gunBankGroup.add(lTip);
-    const rTip = new THREE.Mesh(tipGeo, matTip);
-    rTip.position.set(5.2, 0.1, -3.2);
-    gunBankGroup.add(rTip);
-
-    const gEngLight = new THREE.PointLight(0x00ccff, 4.0, 18);
-    gEngLight.position.set(0, 0, 4.2);
-    gunshipGroup.add(gEngLight);
-    gunshipGroup.add(new THREE.PointLight(0x00ccff, 2.0, 24));
-
-    gunshipGroup.scale.set(0.55, 0.55, 0.55);
-    gunshipGroup.visible = false;
-
     // --- Ship Container (shared parent for positioning) ---
     const shipContainer = new THREE.Group();
     shipContainer.add(shipGroup);
-    shipContainer.add(gunshipGroup);
     scene.add(shipContainer);
 
     // --- Explosion particle system ---
@@ -4053,14 +4002,11 @@ window.onload = function() {
     }
 
     function setActiveShip(type) {
-        if (!GUNSHIP_ENABLED) type = 'default';
-        activeShip = type;
-        shipGroup.visible = (type === 'default');
-        gunshipGroup.visible = (type === 'gunship');
+        activeShip = 'default';
+        shipGroup.visible = true;
         var fireBtn = document.getElementById('fire-btn');
         if (fireBtn) fireBtn.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
         try { _updateFireBtnAmmoState(); } catch(e) {}
-        try { localStorage.setItem('trActiveShip', JSON.stringify(type)); } catch(e) {}
     }
     setActiveShip(activeShip);
 
@@ -5529,35 +5475,10 @@ window.onload = function() {
         }
     }
 
-    // --- Ship Selector ---
+    // --- Ship Selector --- (no-op: only one ship)
     function rebuildShipSelector() {
         var container = document.getElementById('ship-selector');
-        var btns = document.getElementById('ship-selector-btns');
-        if (!container || !btns) return;
-        if (!GUNSHIP_ENABLED) { container.style.display = 'none'; return; }
-        var shipCount = Object.keys(unlockedShips).length;
-        if (shipCount <= 1) { container.style.display = 'none'; return; }
-        container.style.display = 'block';
-        btns.innerHTML = '';
-        var ships = [
-            { id: 'default', label: 'DEFAULT', color: '#ff69b4' },
-            { id: 'gunship', label: 'GUNSHIP', color: '#00ccff' }
-        ];
-        ships.forEach(function(s) {
-            if (!unlockedShips[s.id]) return;
-            var btn = document.createElement('button');
-            btn.innerText = s.label;
-            var isActive = (activeShip === s.id);
-            btn.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;padding:8px 14px;'
-                + 'background:' + (isActive ? 'rgba(255,255,255,0.1)' : 'transparent') + ';'
-                + 'border:2px solid ' + (isActive ? s.color : '#444') + ';'
-                + 'color:' + (isActive ? s.color : '#666') + ';'
-                + 'cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;'
-                + 'text-shadow:' + (isActive ? '0 0 8px ' + s.color : 'none') + ';';
-            btn.addEventListener('touchend', function(e) { e.preventDefault(); e.stopPropagation(); setActiveShip(s.id); rebuildShipSelector(); }, {passive: false});
-            btn.addEventListener('mouseup', function(e) { e.stopPropagation(); setActiveShip(s.id); rebuildShipSelector(); });
-            btns.appendChild(btn);
-        });
+        if (container) container.style.display = 'none';
     }
 
     function takeDamage() {
@@ -8311,6 +8232,14 @@ window.onload = function() {
     function _skipOpeningCinematic() {
         if (!_cine.active) return;
         _cine.active = false;
+        // Restore real loadout (cinematic forced twin/no-shield/warp).
+        try {
+            if (typeof _cine._savedW === 'number') weaponTier = _cine._savedW;
+            if (typeof _cine._savedS === 'number') shieldTier = _cine._savedS;
+            if (typeof _cine._savedSp === 'number') speedTier = _cine._savedSp;
+            _inflightApplyLoadout();
+            _applyFlameTier(speedTier);
+        } catch(e) {}
         try { var skipBtn = document.getElementById('cine-skip-btn'); if (skipBtn && skipBtn.parentNode) skipBtn.parentNode.removeChild(skipBtn); } catch(e){}
         try { var cts = document.getElementById('cine-title-stack'); if (cts && cts.parentNode) cts.parentNode.removeChild(cts); } catch(e){}
         try { document.body.classList.remove('cinematic-active'); } catch(e){}
@@ -8322,11 +8251,12 @@ window.onload = function() {
             shipContainer.rotation.z = 0;
             throttleSmooth = 0;
             shipZOffset = -18;
-            engineLight.intensity = 3.0;
-            gEngLight.intensity = 4.0;
+            engineLight.intensity = 1.5;
+            flameCore.scale.set(0.32, 0.32, 0.255);
             flameInner.scale.set(0.5, 0.5, 0.3);
             flameOuter.scale.set(0.65, 0.65, 0.315);
-            matFlameInner.opacity = 0.9;
+            matFlameCore.opacity = 1.0;
+            matFlameInner.opacity = 0.45;
             matFlameOuter.opacity = 0.5;
             for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
             currentFov = BASE_FOV;
@@ -8361,6 +8291,13 @@ window.onload = function() {
                 try { AudioEngine.startEngine(); } catch(e){}
             }
             _cineStartAudio();
+            // Force opening-cinematic loadout: twin guns / no shield / warp drive. Save current to restore on exit.
+            _cine._savedW = (typeof weaponTier === 'number') ? weaponTier : 0;
+            _cine._savedS = (typeof shieldTier === 'number') ? shieldTier : 0;
+            _cine._savedSp = (typeof speedTier === 'number') ? speedTier : 1;
+            try { weaponTier = 2; shieldTier = 0; speedTier = 2; } catch(e) {}
+            try { _inflightApplyLoadout(); } catch(e) {}
+            try { _applyFlameTier(2); } catch(e) {}
             _cine.active = true;
             try {
                 var _existSkip = document.getElementById('cine-skip-btn');
@@ -8545,6 +8482,14 @@ window.onload = function() {
         }
 
         _cine.active = false;
+        // Restore real loadout (cinematic forced twin/no-shield/warp).
+        try {
+            if (typeof _cine._savedW === 'number') weaponTier = _cine._savedW;
+            if (typeof _cine._savedS === 'number') shieldTier = _cine._savedS;
+            if (typeof _cine._savedSp === 'number') speedTier = _cine._savedSp;
+            _inflightApplyLoadout();
+            _applyFlameTier(speedTier);
+        } catch(e) {}
         // Reset ship + camera pose so gameplay ('playing') starts from the
         // tube-wall default. Splash (showSectorIntro) covers this frame.
         try {
@@ -8555,11 +8500,12 @@ window.onload = function() {
             shipContainer.rotation.z = 0;
             throttleSmooth = 0;
             shipZOffset = -18;
-            engineLight.intensity = 3.0;
-            gEngLight.intensity = 4.0;
+            engineLight.intensity = 1.5;
+            flameCore.scale.set(0.32, 0.32, 0.255);
             flameInner.scale.set(0.5, 0.5, 0.3);
             flameOuter.scale.set(0.65, 0.65, 0.315);
-            matFlameInner.opacity = 0.9;
+            matFlameCore.opacity = 1.0;
+            matFlameInner.opacity = 0.45;
             matFlameOuter.opacity = 0.5;
             for (var ti = 0; ti < TRAIL_COUNT; ti++) trailParticles[ti].visible = false;
             currentFov = BASE_FOV;
@@ -8579,8 +8525,7 @@ window.onload = function() {
 
     function _applyShipVisuals(delta) {
         var hyperFrac = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
-        engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
-        gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+        engineLight.intensity = Math.min(18, 4.5 + throttleSmooth * 3.6 + hyperFrac * 4.8);
         try { AudioEngine.updateEngine(throttleSmooth, false); } catch (e) {}
         var targetFov = BASE_FOV + (HYPER_FOV - BASE_FOV) * hyperFrac;
         currentFov += (targetFov - currentFov) * 0.12;
@@ -8595,20 +8540,18 @@ window.onload = function() {
         bankGroup._bank += (0 - bankGroup._bank) * Math.min(1, delta * 8);
         bankGroup.rotation.order = 'ZXY';
         bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
-        gunBankGroup.rotation.order = 'ZXY';
-        gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
         var flameLen = 0.3 + throttleSmooth * 0.7 + hyperFrac * 0.8;
         var flicker = 1 + Math.sin(Date.now() * 0.025) * 0.15 + Math.sin(Date.now() * 0.047) * 0.1 + Math.random() * 0.12;
         var _ftMul = (typeof _flameTierScale === 'number' ? _flameTierScale : 1.0);
         if (speedTier === 4) { _ftMul *= (1 + Math.sin(Date.now() * 0.012) * 0.08); }
         var fz = flameLen * flicker * _ftMul;
         var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1) * _ftMul;
+        flameCore.scale.set(fx * 0.65, fx * 0.65, fz * 0.85);
         flameInner.scale.set(fx, fx, fz);
         flameOuter.scale.set(fx * 1.3, fx * 1.3, fz * 1.05);
         var bright = Math.min(1, throttleSmooth + hyperFrac * 0.5);
-        if (speedTier === 0) { matFlameInner.opacity = 0.3; matFlameOuter.opacity = 0.2; }
-        else { matFlameInner.opacity = 0.8 + bright * 0.2; matFlameOuter.opacity = 0.4 + bright * 0.2; }
-        gEngine.scale.set(1, 1 + Math.sin(Date.now() * 0.008) * 0.12, 1);
+        if (speedTier === 0) { matFlameCore.opacity = 0.5; matFlameInner.opacity = 0.18; matFlameOuter.opacity = 0.2; }
+        else { matFlameCore.opacity = 0.9 + bright * 0.1; matFlameInner.opacity = 0.4 + bright * 0.15; matFlameOuter.opacity = 0.4 + bright * 0.2; }
         if (hyperFrac > 0.1) {
             var spawnCount = throttleSmooth > 0.5 ? 2 : 1;
             for (var si = 0; si < spawnCount; si++) {
@@ -9263,8 +9206,7 @@ window.onload = function() {
                 speed = BOOST_SPEED + (HYPER_SPEED - BOOST_SPEED) * hyperFrac;
             }
 
-            engineLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
-            gEngLight.intensity = 4 + throttleSmooth * 8 + hyperFrac * 6;
+            engineLight.intensity = Math.min(18, 4.5 + throttleSmooth * 3.6 + hyperFrac * 4.8);
             AudioEngine.updateEngine(throttleSmooth, isFlipping);
 
             // FOV widens proportionally with hyperFrac
@@ -9312,9 +9254,6 @@ window.onload = function() {
             shipContainer.rotation.set(0, 0, 0);
             bankGroup.rotation.order = 'ZXY';
             bankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
-            gunBankGroup.rotation.order = 'ZXY';
-            gunBankGroup.rotation.set(0.08, 0, shipAngle + Math.PI/2 + bankGroup._bank);
-
             // Camera holds in place during flip so you watch ship orbit the tunnel
             const camAngle = isFlipping ? flipCameraAngle : shipAngle;
             camera.position.x = Math.cos(camAngle) * (tubeRadius - 16);
@@ -9328,12 +9267,12 @@ window.onload = function() {
             if (speedTier === 4) { _ftMul *= (1 + Math.sin(Date.now() * 0.012) * 0.08); }
             var fz = flameLen * flicker * _ftMul;
             var fx = (0.5 + throttleSmooth * 0.3) * (1 + Math.random() * 0.1) * _ftMul;
+            flameCore.scale.set(fx * 0.65, fx * 0.65, fz * 0.85);
             flameInner.scale.set(fx, fx, fz);
             flameOuter.scale.set(fx * 1.3, fx * 1.3, fz * 1.05);
             var bright = Math.min(1, throttleSmooth + hyperFrac * 0.5);
-            if (speedTier === 0) { matFlameInner.opacity = 0.3; matFlameOuter.opacity = 0.2; }
-            else { matFlameInner.opacity = 0.8 + bright * 0.2; matFlameOuter.opacity = 0.4 + bright * 0.2; }
-            gEngine.scale.set(1, 1 + Math.sin(Date.now()*0.008)*0.12, 1);
+            if (speedTier === 0) { matFlameCore.opacity = 0.5; matFlameInner.opacity = 0.18; matFlameOuter.opacity = 0.2; }
+            else { matFlameCore.opacity = 0.9 + bright * 0.1; matFlameInner.opacity = 0.4 + bright * 0.15; matFlameOuter.opacity = 0.4 + bright * 0.2; }
 
             // ── Exhaust particle trail — hyperdrive only ─────────────
             if (hyperFrac > 0.1) {
@@ -13962,16 +13901,23 @@ illum 3
     };
   }
 
-  var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:false});
+  var renderer = new THREE.WebGLRenderer({canvas:canvas, antialias:true, alpha:true});
+  renderer.setClearColor(0x000000, 0);
   renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
   var scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x000000);
+  // scene.background removed — 2D star canvas behind WebGL provides backdrop.
   // Camera further back so 10-unit-wide ship fits comfortably with margin.
   var camera = new THREE.PerspectiveCamera(38, 2, 0.1, 500);
   camera.position.set(0, 3, 14); camera.lookAt(0, 0, 0);
-  scene.add(new THREE.AmbientLight(0xffffff, 0.55));
-  var key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(6,10,8); scene.add(key);
-  var rim = new THREE.PointLight(0xff44ff, 1.2, 40); rim.position.set(-8,4,-6); scene.add(rim);
+  // Key disabled — ambient (half-strength) + spot + rim.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.1375));
+  // var key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(6,10,8); scene.add(key);
+  var rim = new THREE.PointLight(0xffffff, 0, 40); rim.position.set(-3,6,-18); scene.add(rim);
+  // Top-down spot directly above the ship — narrow cone with soft penumbra so wing tips fall off slightly.
+  var topLight = new THREE.SpotLight(0xffffff, 2.0, 0, 0.75, 0.97, 0);
+  topLight.position.set(8, 12, 3); topLight.target.position.set(0, 0, 0);
+  scene.add(topLight); scene.add(topLight.target);
+// (Three.js Points starfield removed — replaced by 2D canvas underlay)
   var turntable = new THREE.Group(); scene.add(turntable);
   var shipGroup = new THREE.Group(); turntable.add(shipGroup);
   shipGroup.rotation.x = 0.2; shipGroup.scale.setScalar(1.45);
@@ -14021,6 +13967,9 @@ illum 3
           if (!o.isMesh) return;
           if (Array.isArray(o.material)) o.material = o.material.map(_toLit);
           else o.material = _toLit(o.material);
+          if (o.geometry) { o.geometry.computeVertexNormals(); }
+          var sideFix = function(mm){ if (mm) mm.side = THREE.DoubleSide; };
+          if (Array.isArray(o.material)) o.material.forEach(sideFix); else sideFix(o.material);
         });
         // No fog in this scene but match in-flight settings for safety.
         root.traverse(function(o){
@@ -14051,6 +14000,7 @@ illum 3
             if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
             apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
             apply(function(mat){ if (mat&&mat.color) mat.color.setHex(0x2c4a6e); if (mat.emissive) mat.emissive.setHex(0x0a1a2c); });
+            m.scale.setScalar(1.065);
           }
         });
         // STEEL shield darker blue (clone first; Material.005 shared with windows).
@@ -14058,7 +14008,20 @@ illum 3
           if (!m.material) return;
           if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
           var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
-          apply(function(mat){ if (mat&&mat.color) mat.color.setHex(0x10243f); });
+          apply(function(mat){ if (mat&&mat.color) mat.color.setHex(0x6e8aae); });
+        });
+        // GRAPHENE shield WAY more shiny. Slate-grey base.
+        objMeshes.shields[4].forEach(function(m){
+          if (!m.material) return;
+          if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
+          var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
+          apply(function(mat){
+            if (!mat) return;
+            if (mat.color && mat.color.setHex) mat.color.setHex(0x5b6573);
+            if ('shininess' in mat) mat.shininess = 200;
+            if (mat.specular && mat.specular.setHex) mat.specular.setHex(0xffffff);
+            if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0.04;
+          });
         });
         bankGroup.add(root);
         objLoaded = true;
@@ -14075,7 +14038,7 @@ illum 3
   function refresh(){
     var a = getActive();
     if (objLoaded) {
-      setObjTier(objMeshes.weapons, -1);
+      setObjTier(objMeshes.weapons, a.w);
       setObjTier(objMeshes.shields, a.s);
       setObjTier(objMeshes.speeds, a.sp);
     }
@@ -14134,13 +14097,15 @@ illum 3
   canvas.addEventListener('touchend', de);
   canvas.addEventListener('touchcancel', de);
 
-  var ROT_SPEED = (12 * Math.PI / 180);
+  var ROT_SPEED = (24 * Math.PI / 180);
   var lastT = performance.now();
+  var _lastCw = 0, _lastCh = 0;
   function tick(now){
     requestAnimationFrame(tick);
     var ss = document.getElementById('tr-store-screen');
     if (!ss || ss.style.display === 'none') return;
-    resize();
+    var cw = canvas.clientWidth || 320, ch = canvas.clientHeight || 200;
+    if (cw !== _lastCw || ch !== _lastCh) { _lastCw = cw; _lastCh = ch; resize(); }
     var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
     if (autoPaused && !drag.active && now >= autoResumeAt) autoPaused = false;
     if (!autoPaused) turntable.rotation.y += ROT_SPEED * dt;
@@ -14148,6 +14113,76 @@ illum 3
     renderer.render(scene, camera);
   }
   requestAnimationFrame(tick);
+})();
+</script>
+
+<script>
+(function tunnelStoreStars(){
+  var cv = document.getElementById('tr-store-ship-stars');
+  if (!cv) return;
+  var ctx = cv.getContext('2d');
+  var W = 0, H = 0, stars = [];
+  var NUM = 80;
+  function resize(){
+    W = cv.width = cv.clientWidth || 320;
+    H = cv.height = cv.clientHeight || 200;
+  }
+  function makeStar(seed){
+    var speed = 1.5 + Math.random()*4;
+    var size = 0.5 + Math.random()*1.5;
+    var brightness = 0.3 + Math.random()*0.7;
+    var hue = Math.random();
+    var r,g,b;
+    if (hue<0.15){ r=255;g=140+Math.random()*50;b=100+Math.random()*50; }
+    else if(hue<0.3){ r=110+Math.random()*50;g=150+Math.random()*50;b=255; }
+    else if(hue<0.4){ r=255;g=200+Math.random()*40;b=120+Math.random()*50; }
+    else if(hue<0.5){ r=255;g=120+Math.random()*50;b=140+Math.random()*60; }
+    else if(hue<0.6){ r=140+Math.random()*50;b=255;g=230+Math.random()*25; }
+    else if(hue<0.7){ r=200+Math.random()*40;g=140+Math.random()*50;b=255; }
+    else { r=220+Math.random()*35;g=220+Math.random()*35;b=220+Math.random()*35; }
+    var col = Math.round(r)+','+Math.round(g)+','+Math.round(b);
+    if (seed){
+      return {x:Math.random()*W, y:Math.random()*H, speed:speed, size:size, brightness:brightness, col:col};
+    }
+    if (Math.random()<0.5){
+      return {x:Math.random()*W, y:-5, speed:speed, size:size, brightness:brightness, col:col};
+    } else {
+      return {x:W+5, y:Math.random()*H, speed:speed, size:size, brightness:brightness, col:col};
+    }
+  }
+  function init(){
+    stars = [];
+    for (var i=0;i<NUM;i++) stars.push(makeStar(true));
+  }
+  function frame(){
+    requestAnimationFrame(frame);
+    var ss = document.getElementById('tr-store-screen');
+    if (!ss || ss.style.display === 'none') return;
+    if (cv.clientWidth !== W || cv.clientHeight !== H) { resize(); init(); }
+    ctx.clearRect(0,0,W,H);
+    for (var i=0;i<NUM;i++){
+      var s = stars[i];
+      s.x -= s.speed * 0.9;
+      s.y += s.speed * 0.7;
+      if (s.x < -10 || s.y > H+10) stars[i] = makeStar(false);
+      var len = s.speed * 2.5;
+      var tx = s.x + len*0.9, ty = s.y - len*0.7;
+      var grad = ctx.createLinearGradient(s.x, s.y, tx, ty);
+      grad.addColorStop(0, 'rgba('+s.col+','+s.brightness*0.6+')');
+      grad.addColorStop(1, 'rgba('+s.col+',0)');
+      ctx.strokeStyle = grad;
+      ctx.lineWidth = s.size * 0.8;
+      ctx.beginPath();
+      ctx.moveTo(s.x, s.y);
+      ctx.lineTo(tx, ty);
+      ctx.stroke();
+      ctx.fillStyle = 'rgba('+s.col+','+s.brightness+')';
+      ctx.beginPath();
+      ctx.arc(s.x, s.y, s.size*0.6, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+  resize(); init(); requestAnimationFrame(frame);
 })();
 </script>
 </body>
