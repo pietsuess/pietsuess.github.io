@@ -3726,8 +3726,9 @@ window.onload = function() {
             // Disable scene fog on the OBJ ship — fog colour is dark blue and was tinting the nose.
             root.traverse(function(o){
                 if (!o.isMesh || !o.material) return;
-                if (Array.isArray(o.material)) o.material.forEach(function(mm){ if (mm) mm.fog = false; });
-                else o.material.fog = false;
+                var apply = function(mm){ if (!mm) return; mm.fog = false; mm.needsUpdate = true; };
+                if (Array.isArray(o.material)) o.material.forEach(apply);
+                else apply(o.material);
             });
             // Hide all tier-specific groups; loadout reveals one per category.
             Object.keys(inflightObjMeshes.shields).forEach(function(k){
@@ -5481,19 +5482,8 @@ window.onload = function() {
                             items.splice(ii, 1);
                         } else {
                             AudioEngine.playSFX('destroy');
-                            try {
-                                if (item.material && item.material.emissive) {
-                                    if (item.userData._origEm === undefined) {
-                                        item.userData._origEm = item.material.emissive.getHex();
-                                    }
-                                    if (item.userData._flashT) { clearTimeout(item.userData._flashT); }
-                                    item.material.emissive.setHex(0xffffff);
-                                    item.userData._flashT = setTimeout(function(){
-                                        try { item.material.emissive.setHex(item.userData._origEm); } catch(e) {}
-                                        item.userData._flashT = null;
-                                    }, 80);
-                                }
-                            } catch(e) {}
+                            // White-flash disabled: obstacles share materials, so the flash leaks across instances.
+                            // Re-enable only if/when obstacle materials are cloned per-instance.
                         }
                     } else {
                         AudioEngine.playSFX('destroy');
@@ -13914,6 +13904,16 @@ illum 3
   var topEl   = document.getElementById('tr-prev-top');
   var classEl = document.getElementById('tr-prev-class');
   if (!canvas || !window.THREE) return;
+  // Mark elements we found so user sees something even if refresh loop fails later.
+  if (massEl)  massEl.textContent  = 'init…';
+  if (topEl)   topEl.textContent   = 'init…';
+  if (classEl) classEl.textContent = 'init…';
+  if (!massEl && canvas.parentNode) {
+    var miss = document.createElement('div');
+    miss.textContent = 'STATS DOM MISSING';
+    miss.style.cssText = 'color:#ff4444;font-size:11px;font-family:monospace;padding:4px;';
+    canvas.parentNode.appendChild(miss);
+  }
 
   var SHIP_KG_HULL = 4500;
   var WEAPON_KG    = [0, 150, 320, 280, 850];
@@ -13941,8 +13941,8 @@ illum 3
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   // Camera further back so 10-unit-wide ship fits comfortably with margin.
-  var camera = new THREE.PerspectiveCamera(35, 2, 0.1, 500);
-  camera.position.set(0, 3, 26); camera.lookAt(0, 0, 0);
+  var camera = new THREE.PerspectiveCamera(50, 2, 0.1, 500);
+  camera.position.set(0, 3, 18); camera.lookAt(0, 0, 0);
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   var key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(6,10,8); scene.add(key);
   var rim = new THREE.PointLight(0xff44ff, 1.2, 40); rim.position.set(-8,4,-6); scene.add(rim);
