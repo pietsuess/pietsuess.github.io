@@ -13959,14 +13959,14 @@ illum 3
   var scene = new THREE.Scene();
   scene.background = new THREE.Color(0x000000);
   // Camera further back so 10-unit-wide ship fits comfortably with margin.
-  var camera = new THREE.PerspectiveCamera(50, 2, 0.1, 500);
-  camera.position.set(0, 3, 18); camera.lookAt(0, 0, 0);
+  var camera = new THREE.PerspectiveCamera(38, 2, 0.1, 500);
+  camera.position.set(0, 3, 14); camera.lookAt(0, 0, 0);
   scene.add(new THREE.AmbientLight(0xffffff, 0.55));
   var key = new THREE.DirectionalLight(0xffffff, 0.9); key.position.set(6,10,8); scene.add(key);
   var rim = new THREE.PointLight(0xff44ff, 1.2, 40); rim.position.set(-8,4,-6); scene.add(rim);
   var turntable = new THREE.Group(); scene.add(turntable);
   var shipGroup = new THREE.Group(); turntable.add(shipGroup);
-  shipGroup.rotation.x = 0.2;
+  shipGroup.rotation.x = 0.2; shipGroup.scale.setScalar(1.45);
   var bankGroup = new THREE.Group(); shipGroup.add(bankGroup);
 
   var objMeshes = { base:[], weapons:{1:[],2:[],3:[],4:[]}, shields:{1:[],2:[],3:[],4:[]}, speeds:{0:[],1:[],2:[],3:[],4:[]} };
@@ -14003,7 +14003,7 @@ illum 3
           else o.material.fog = false;
         });
         Object.keys(objMeshes.shields).forEach(function(k){
-          objMeshes.shields[k].forEach(function(m){ m.visible = false; });
+          objMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.01); });
         });
         [objMeshes.weapons, objMeshes.speeds].forEach(function(map){
           Object.keys(map).forEach(function(k){ map[k].forEach(function(m){ m.visible = false; }); });
@@ -14071,6 +14071,43 @@ illum 3
     camera.updateProjectionMatrix();
   }
 
+  // Drag rotation. Bind to canvas only; stop event from being stolen by parent pan-y.
+  var drag = { active:false, lastX:0, lastY:0, pid:null };
+  var autoPaused = false, autoResumeAt = 0;
+  canvas.style.touchAction = 'none';
+  canvas.style.cursor = 'grab';
+  function ds(e){
+    var x, y, pid;
+    if (e.touches && e.touches.length){ x = e.touches[0].clientX; y = e.touches[0].clientY; pid = e.touches[0].identifier; }
+    else { x = e.clientX; y = e.clientY; pid = 'mouse'; }
+    drag.active = true; drag.lastX = x; drag.lastY = y; drag.pid = pid;
+    autoPaused = true; canvas.style.cursor = 'grabbing';
+    if (e.preventDefault) e.preventDefault();
+    if (e.stopPropagation) e.stopPropagation();
+  }
+  function dm(e){
+    if (!drag.active) return;
+    var x, y;
+    if (e.touches && e.touches.length){
+      var t = null;
+      for (var i = 0; i < e.touches.length; i++){ if (e.touches[i].identifier === drag.pid) { t = e.touches[i]; break; } }
+      if (!t) return; x = t.clientX; y = t.clientY;
+    } else { x = e.clientX; y = e.clientY; }
+    var dx = x - drag.lastX, dy = y - drag.lastY;
+    drag.lastX = x; drag.lastY = y;
+    turntable.rotation.y += dx * 0.01;
+    shipGroup.rotation.x = Math.max(-1.0, Math.min(1.0, shipGroup.rotation.x + dy * 0.01));
+    if (e.preventDefault) e.preventDefault();
+  }
+  function de(){ if (!drag.active) return; drag.active = false; canvas.style.cursor = 'grab'; autoResumeAt = performance.now() + 1500; }
+  canvas.addEventListener('mousedown', ds);
+  window.addEventListener('mousemove', dm);
+  window.addEventListener('mouseup', de);
+  canvas.addEventListener('touchstart', ds, {passive:false});
+  canvas.addEventListener('touchmove', dm, {passive:false});
+  canvas.addEventListener('touchend', de);
+  canvas.addEventListener('touchcancel', de);
+
   var ROT_SPEED = (12 * Math.PI / 180);
   var lastT = performance.now();
   function tick(now){
@@ -14079,7 +14116,8 @@ illum 3
     if (!ss || ss.style.display === 'none') return;
     resize();
     var dt = Math.min(0.05, (now - lastT) / 1000); lastT = now;
-    turntable.rotation.y += ROT_SPEED * dt;
+    if (autoPaused && !drag.active && now >= autoResumeAt) autoPaused = false;
+    if (!autoPaused) turntable.rotation.y += ROT_SPEED * dt;
     refresh();
     renderer.render(scene, camera);
   }
