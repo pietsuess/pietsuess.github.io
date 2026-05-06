@@ -969,16 +969,6 @@
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">UNLOCKED CONTENT</div>
       <div id="unlocked-zones-btns" style="display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:320px;"></div>
     </div>
-    <div id="dev-sector-jump" style="margin-top:18px;">
-      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;">JUMP TO SECTOR</div>
-      <div style="display:flex;gap:6px;justify-content:center;">
-        <button class="menu-btn" id="dev-s1" style="width:auto;padding:6px 12px;font-size:9px;">S1</button>
-        <button class="menu-btn" id="dev-s2" style="width:auto;padding:6px 12px;font-size:9px;">S2</button>
-        <button class="menu-btn" id="dev-s3" style="width:auto;padding:6px 12px;font-size:9px;">S3</button>
-        <button class="menu-btn" id="dev-s4" style="width:auto;padding:6px 12px;font-size:9px;">S4</button>
-        <button class="menu-btn" id="dev-s5" style="width:auto;padding:6px 12px;font-size:9px;">S5</button>
-      </div>
-    </div>
     <button class="menu-btn" id="prev-games-btn" style="border-color:#00ffcc;color:#00ffcc;text-shadow:0 0 8px rgba(0,255,204,0.6);">[ PREVIOUS GAMES ]</button>
     <button class="menu-btn" id="store-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ ARMOURY ]</button>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
@@ -2415,6 +2405,11 @@ window.onload = function() {
         speedTier = Math.max(0, Math.min(4, s.activeSpeed || 0));
         if (typeof s.weaponAmmo !== 'number') s.weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         weaponAmmo = s.weaponAmmo;
+        if (typeof s.score === 'number') score = s.score;
+        if (typeof s.sectorStartScore === 'number') sectorStartScore = s.sectorStartScore;
+        if (typeof s.currentSector === 'number') currentSector = s.currentSector;
+        if (typeof s.currentLevel === 'number') currentLevel = s.currentLevel;
+        try { var _scEl = document.getElementById('score'); if (_scEl) _scEl.innerText = score.toString().padStart(6, '0'); } catch(e) {}
         if (weaponTier > 0 && weaponAmmo === 0) weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         _saveSpeedTier(speedTier);
         try { _applyFlameTier(speedTier); } catch(e){}
@@ -2449,6 +2444,10 @@ window.onload = function() {
                 arr[i].activeWeapon = weaponTier;
                 arr[i].activeSpeed = speedTier;
                 arr[i].weaponAmmo = weaponAmmo;
+                arr[i].score = score;
+                arr[i].sectorStartScore = sectorStartScore;
+                arr[i].currentSector = currentSector;
+                arr[i].currentLevel = currentLevel;
                 if (!Array.isArray(arr[i].ownedShields)) arr[i].ownedShields = [];
                 if (!Array.isArray(arr[i].ownedWeapons)) arr[i].ownedWeapons = [];
                 if (!Array.isArray(arr[i].ownedSpeeds)) arr[i].ownedSpeeds = [];
@@ -2464,6 +2463,8 @@ window.onload = function() {
         }
         _sessionsSave(arr);
     }
+    // Auto-sync every 2s during gameplay so score persists across reloads even without ring/death events.
+    setInterval(function(){ if (gameState === 'playing' && _activeSessionId) { try { _sessionSync(); } catch(e) {} } }, 2000);
     function _sessionDelete(id) {
         var arr = _sessionsLoad().filter(function(s){ return s.id !== id; });
         _sessionsSave(arr);
@@ -5599,6 +5600,7 @@ window.onload = function() {
     function triggerGameOver() {
         _analyticsDeathCount++;
         _sendTelemetry('death');
+        try { _sessionSync(); } catch(e) {}
         gameState = 'dead';
         document.getElementById('speedrun-clock').style.display = 'none';
         // Capture speed-based intensity before resetting
@@ -6964,7 +6966,7 @@ window.onload = function() {
         }
         
         health = 100;
-        score = sectorStartScore;
+        if (!preserveScore) score = sectorStartScore;
         speed = baseSpeed;
         distanceTraveled = 0;
         sectorTime = 0;
@@ -7439,7 +7441,7 @@ window.onload = function() {
         el.addEventListener('mouseup', handler, {passive:false});
     };
 
-    bindTap('play-btn', () => initializeFlight(true));
+    bindTap('play-btn', () => initializeFlight(true, undefined, undefined, true));
     bindTap('skip-tutorial-btn', skipTutorial);
     bindTap('go-retry-level-btn', function() {
         var s = currentSector, l = currentLevel;
@@ -7519,36 +7521,12 @@ window.onload = function() {
             if (nav) nav.style.display = 'none';
             document.body.style.touchAction = 'none';
             if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
-            try { initializeFlight(true, s, l); } catch(err) {}
+            try { initializeFlight(true, s, l, true); } catch(err) {}
         };
         grid.addEventListener('touchend', handler, {passive:false});
         grid.addEventListener('mouseup', handler, {passive:false});
     })();
 
-    // Dev sector jump buttons
-    function devJumpSector(n) {
-        document.getElementById('pause-screen').style.display = 'none';
-        currentSector = n;
-        currentLevel = 1;
-        contentSpawnedThisRun = [];
-        var zone = getLevelScaledZone(n);
-        baseSpeed = zone.speed;
-        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
-        sectorDistance = zone.length;
-        sectorStartScore = score;
-        combo = 0;
-        document.getElementById('sector-text').innerText = n + '-' + currentLevel;
-        document.getElementById('zone-name').innerText = zone.name;
-        document.getElementById('zone-name').style.color = zone.color;
-        wireMat.color.setHex(zone.wireColor);
-        scene.fog.color.setHex(zone.fogColor);
-        scene.background.setHex(zone.fogColor);
-        updateCollectionHUD();
-        initializeFlight(false);
-    }
-    for (var si = 1; si <= 5; si++) {
-        (function(n) { bindTap('dev-s' + n, function() { devJumpSector(n); }); })(si);
-    }
     // Hamburger: isolate from global touch handlers + add click fallback
     window._dbg = function() {}; // no-op (debug removed)
     (function() {
@@ -7651,6 +7629,7 @@ window.onload = function() {
         _prePauseState = null;
         _prePauseScreen = null;
         _sendTelemetry('quit');
+        try { _sessionSync(); } catch(e) {}
         _carouselFromAbort = true;
         showCarousel(currentSector);
     });
