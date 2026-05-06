@@ -2368,6 +2368,7 @@ window.onload = function() {
         if (weaponTier > 0 && weaponAmmo === 0) weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         _saveSpeedTier(speedTier);
         try { _applyFlameTier(speedTier); } catch(e){}
+        try { window.__inflightApplyLoadout && window.__inflightApplyLoadout(); } catch(e) {}
         try {
             if (s.maxReached) localStorage.setItem('tunnelrunner.maxLevelReached', s.maxReached);
             if (s.maxPassed) localStorage.setItem('tunnelrunner.maxLevelPassed', s.maxPassed);
@@ -2476,12 +2477,14 @@ window.onload = function() {
         shieldTier = _migrateShieldIdx(idx | 0);
         _saveShieldTier(shieldTier);
         try { _sessionSync(); } catch(e) {}
+        try { window.__inflightApplyLoadout && window.__inflightApplyLoadout(); } catch(e) {}
     }
     function _setActiveWeapon(idx) {
         weaponTier = Math.max(0, Math.min(4, idx | 0));
         weaponAmmo = WEAPON_MAX_AMMO[weaponTier] || 0;
         _saveWeaponTier(weaponTier);
         try { _sessionSync(); } catch(e) {}
+        try { window.__inflightApplyLoadout && window.__inflightApplyLoadout(); } catch(e) {}
         try {
             var _fb = document.getElementById('fire-btn');
             if (_fb) _fb.style.display = (gameState === 'playing' && weaponTier >= 1) ? 'block' : 'none';
@@ -3493,6 +3496,9 @@ window.onload = function() {
     const shipGroup = new THREE.Group();  // handles orbit position
     const bankGroup = new THREE.Group();  // handles visual lean — child of shipGroup
     shipGroup.add(bankGroup);
+    // proceduralBody holds the original delta/spine/cockpit/thruster meshes; hidden once OBJ ship loads.
+    const proceduralBody = new THREE.Group();
+    bankGroup.add(proceduralBody);
 
     const matBody = new THREE.MeshStandardMaterial({
         color: 0xcc1155, emissive: 0xff2266, emissiveIntensity: 0.45,
@@ -3539,7 +3545,7 @@ window.onload = function() {
     const dGeo = new THREE.BufferGeometry();
     dGeo.setAttribute('position', new THREE.BufferAttribute(tv, 3));
     dGeo.computeVertexNormals();
-    bankGroup.add(new THREE.Mesh(dGeo, matBody));
+    proceduralBody.add(new THREE.Mesh(dGeo, matBody));
 
     // ── Fuselage: rounded front edges, ends before wing tip ──
     const spineGeo = new THREE.BoxGeometry(2.2, 1.4, 6.0, 4, 1, 1);
@@ -3567,13 +3573,13 @@ window.onload = function() {
     spineGeo.computeVertexNormals();
     const spine = new THREE.Mesh(spineGeo, matUnder);
     spine.position.set(0, 0.3, -0.5);
-    bankGroup.add(spine);
+    proceduralBody.add(spine);
 
     // ── Cockpit canopy ────────────────────────────────────────────────
     const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.65, 10, 7), matCockpit);
     cockpit.scale.set(0.9, 0.55, 1.6);
     cockpit.position.set(0, 0.62, -1.8);
-    bankGroup.add(cockpit);
+    proceduralBody.add(cockpit);
 
     // ── Thruster housing: large gray cylinder at the back ──────────────
     const thrusterGeo = new THREE.CylinderGeometry(1.75, 2.0, 3.0, 12);
@@ -3581,7 +3587,7 @@ window.onload = function() {
     const matThruster = new THREE.MeshStandardMaterial({ color: 0x888888, emissive: 0x333333, emissiveIntensity: 0.2, metalness: 0.7, roughness: 0.3, flatShading: true });
     const thruster = new THREE.Mesh(thrusterGeo, matThruster);
     thruster.position.set(0, -0.1, 2.8);
-    bankGroup.add(thruster);
+    proceduralBody.add(thruster);
 
     // ── Thruster flame: teardrop pointing back toward camera, 2x size ──
     // v8: translate geometry +half-height along Z so base sits at the
@@ -3656,6 +3662,114 @@ window.onload = function() {
     let trailIdx = 0;
 
     shipGroup.scale.set(0.55, 0.55, 0.55);
+
+    // ── OBJ ship: replaces procedural delta/spine/cockpit/thruster with the modelled DeltaWing.
+    const inflightObjShipRoot = new THREE.Group();
+    bankGroup.add(inflightObjShipRoot);
+    const inflightObjMeshes = {
+        base: [],
+        weapons: { 1: [], 2: [], 3: [], 4: [] },
+        shields: { 1: [], 2: [], 3: [], 4: [] },
+        speeds:  { 0: [], 1: [], 2: [], 3: [], 4: [] }
+    };
+    let inflightObjLoaded = false;
+    function _inflightClassify(o) {
+        const n = (o.name || '').toUpperCase();
+        const m = n.match(/^([0-9])_/);
+        if (m) {
+            const tier = parseInt(m[1], 10);
+            if (n.includes('SINGLE_GUN') || n.includes('TWIN_GUNS') || n.includes('LASERS') || n.includes('WAVE_CANNON')) {
+                if (inflightObjMeshes.weapons[tier]) { inflightObjMeshes.weapons[tier].push(o); return; }
+            }
+            if (n.includes('CERAMIC') || n.includes('STEEL') || n.includes('UNGSTEN') || n.includes('TUNGSTEN') || n.includes('GRAPHENE')) {
+                if (inflightObjMeshes.shields[tier]) { inflightObjMeshes.shields[tier].push(o); return; }
+            }
+            if (n.includes('NONE') || n.includes('THRUSTER') || n.includes('AFTERBURN') || n.includes('ION') || n.includes('WARP')) {
+                if (inflightObjMeshes.speeds[tier]) { inflightObjMeshes.speeds[tier].push(o); return; }
+            }
+        }
+        inflightObjMeshes.base.push(o);
+    }
+    function _inflightSetTier(map, idx) {
+        Object.keys(map).forEach(function(k){
+            const show = (parseInt(k, 10) === idx);
+            map[k].forEach(function(m){ m.visible = show; });
+        });
+    }
+    function _inflightApplyLoadout() {
+        if (!inflightObjLoaded) return;
+        var w = (typeof weaponTier === 'number') ? weaponTier : 0;
+        var s = (typeof shieldTier === 'number') ? shieldTier : 0;
+        var sp = (typeof speedTier === 'number') ? speedTier : 1;
+        _inflightSetTier(inflightObjMeshes.weapons, w);
+        _inflightSetTier(inflightObjMeshes.shields, s);
+        _inflightSetTier(inflightObjMeshes.speeds, sp);
+    }
+    window.__inflightApplyLoadout = _inflightApplyLoadout;
+    (function _loadInflightObjShip(){
+        try {
+            if (!window.THREE || !THREE.OBJLoader || !THREE.MTLLoader) return;
+            var mtlEl = document.getElementById('ship-loadout-mtl');
+            var objEl = document.getElementById('ship-loadout-obj');
+            if (!mtlEl || !objEl) return;
+            var mtlLoader = new THREE.MTLLoader();
+            var materials = mtlLoader.parse(mtlEl.textContent, '');
+            materials.preload();
+            var objLoader = new THREE.OBJLoader();
+            objLoader.setMaterials(materials);
+            var root = objLoader.parse(objEl.textContent);
+            // Blender exports nose at +Z; in-game ship nose at -Z (matches procedural delta's orientation).
+            root.rotation.y = Math.PI;
+            // Match the procedural delta-wing's vertical anchor.
+            root.position.y = -1.0;
+            root.traverse(function(o){ if (o.isMesh) _inflightClassify(o); });
+            // Hide all tier-specific groups; loadout reveals one per category.
+            Object.keys(inflightObjMeshes.shields).forEach(function(k){
+                inflightObjMeshes.shields[k].forEach(function(m){ m.visible = false; m.scale.setScalar(1.08); });
+            });
+            [inflightObjMeshes.weapons, inflightObjMeshes.speeds].forEach(function(map){
+                Object.keys(map).forEach(function(k){ map[k].forEach(function(m){ m.visible = false; }); });
+            });
+            // Recolour hull pink-purple, dim shininess to match design test viewer.
+            inflightObjMeshes.base.forEach(function(m){
+                if (!m.material) return;
+                var nm = (m.name || '').toUpperCase();
+                var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
+                if (nm.includes('DELTAWING')) {
+                    apply(function(mat){
+                        if (!mat) return;
+                        if (mat.color) mat.color.setHex(0xd044bb);
+                        if ('shininess' in mat) mat.shininess = 18;
+                        if (mat.specular && mat.specular.setHex) mat.specular.setHex(0x222222);
+                        if ('roughness' in mat) mat.roughness = 0.78;
+                        if ('metalness' in mat) mat.metalness = 0.0;
+                    });
+                } else if (nm.includes('WINDOW')) {
+                    if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
+                    apply(function(mat){
+                        if (!mat) return;
+                        if (mat.color) mat.color.setHex(0x2c4a6e);
+                        if (mat.emissive) mat.emissive.setHex(0x0a1a2c);
+                    });
+                    m.scale.setScalar(1.07);
+                }
+            });
+            // STEEL shield darker blue (clone first; Material.005 shared with windows).
+            inflightObjMeshes.shields[2].forEach(function(m){
+                if (!m.material) return;
+                if (Array.isArray(m.material)) m.material = m.material.map(function(mat){ return mat.clone(); }); else m.material = m.material.clone();
+                var apply = function(fn){ if (Array.isArray(m.material)) m.material.forEach(fn); else fn(m.material); };
+                apply(function(mat){ if (mat && mat.color) mat.color.setHex(0x10243f); });
+            });
+            inflightObjShipRoot.add(root);
+            proceduralBody.visible = false;
+            inflightObjLoaded = true;
+            try { _inflightApplyLoadout(); } catch(e){}
+        } catch (err) {
+            console.warn('In-flight OBJ ship load failed', err);
+        }
+    })();
+
 
     // --- Gunship (alt ship) ---
     const gunshipGroup = new THREE.Group();
@@ -7784,7 +7898,7 @@ window.onload = function() {
         if (sl) {
             sl.innerHTML = '';
             sl.appendChild(_renderStoreItem('shield', 0));
-            for (var i = 1; i <= 5; i++) sl.appendChild(_renderStoreItem('shield', i));
+            for (var i = 1; i <= 4; i++) sl.appendChild(_renderStoreItem('shield', i));
         }
         var wl = document.getElementById('tr-store-weapon-list');
         if (wl) {
@@ -7812,7 +7926,7 @@ window.onload = function() {
     }
     function _buyShield(idx) {
         if (typeof idx !== 'number') return;
-        if (idx < 1 || idx > 5) return;
+        if (idx < 1 || idx > 4) return;
         var owned = _getOwnedShields();
         if (owned.indexOf(idx) !== -1) return;
         var cost = SHIELD_PRICES[idx];
