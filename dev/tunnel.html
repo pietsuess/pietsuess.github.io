@@ -674,31 +674,31 @@
         /* ── Vibe Project Viewer ── */
         #tr-design-viewer {
             display:none; position:fixed; inset:0; z-index:590;
-            background:#FAFFA5; overflow-y:auto; -webkit-overflow-scrolling:touch;
+            background:#000; overflow-y:auto; -webkit-overflow-scrolling:touch;
             touch-action:pan-y; pointer-events:auto;
         }
         #tr-dv-inner {
             max-width:960px; width:100%; margin:0 auto; padding:20px 20px 80px;
         }
         #tr-dv-header {
-            background:#c8a000; padding:10px 16px;
+            background:rgba(0,0,0,0.85); padding:10px 16px;
             display:flex; justify-content:space-between; align-items:center;
             position:sticky; top:0; z-index:10;
         }
         #tr-dv-title {
-            font-family:'Press Start 2P',monospace; font-size:11px; color:#000;
+            font-family:'Press Start 2P',monospace; font-size:11px; color:#FAFFA5;
             letter-spacing:1px;
         }
         #tr-dv-close {
-            cursor:pointer; color:#000; font-size:10px; font-family:'Press Start 2P',monospace;
+            cursor:pointer; color:#fff; font-size:10px; font-family:'Press Start 2P',monospace;
             background:none; border:none; padding:0 4px; -webkit-tap-highlight-color:transparent;
         }
         #tr-dv-subtitle {
-            color:#666; font-family:'Press Start 2P',monospace; font-size:8px;
+            color:#FAFFA5; font-family:'Press Start 2P',monospace; font-size:8px;
             letter-spacing:2px; margin:16px 0 8px; font-weight:bold;
         }
         #tr-dv-text {
-            color:#333; font-size:11px; line-height:2.6; white-space:pre-line; margin:16px 0;
+            color:rgba(255,255,255,0.85); font-size:11px; line-height:2.6; white-space:pre-line; margin:16px 0;
             font-family:'Press Start 2P',monospace;
         }
         #tr-dv-gallery { display:flex; flex-direction:column; gap:6px; }
@@ -713,7 +713,7 @@
         }
         .tr-dv-thumb-label {
             position:absolute; bottom:0; left:0; right:0;
-            background:rgba(0,0,0,0.6); color:#FAFFA5; font-size:8px;
+            background:rgba(0,0,0,0.6); color:#fff; font-size:8px;
             padding:4px 6px; font-family:'Press Start 2P',monospace;
             transform:translateY(100%); transition:transform 0.15s;
         }
@@ -3232,9 +3232,8 @@ window.onload = function() {
         }
 
         var overlay = document.getElementById('tr-carousel-overlay');
-        var isVibe = (zone === 'VIBE');
-        overlay.style.background = isVibe ? '#FAFFA5' : '#000';
-        overlay.className = isVibe ? 'tr-vibe-bg' : '';
+        overlay.style.background = '#000';
+        overlay.className = '';
         overlay.style.zIndex = _inventoryCarouselActive ? '590' : '560';
         overlay.style.display = 'flex';
         var _abortNav = document.getElementById('tr-carousel-abort-nav');
@@ -3393,9 +3392,9 @@ window.onload = function() {
             img.src = trLbImages[idx].url;
             cap.innerText = trLbImages[idx].caption || '';
         }
-        lb.style.background = trLbIsVibe ? '#FAFFA5' : '#000';
-        cap.style.color = trLbIsVibe ? '#666' : '#888';
-        var btnColor = trLbIsVibe ? '#333' : '#fff';
+        lb.style.background = '#000';
+        cap.style.color = '#888';
+        var btnColor = '#fff';
         var _showNav = trLbImages.length > 1;
         document.getElementById('tr-lb-prev').style.display = _showNav ? '' : 'none';
         document.getElementById('tr-lb-next').style.display = _showNav ? '' : 'none';
@@ -3448,80 +3447,78 @@ window.onload = function() {
         document.getElementById('tr-dv-title').innerText = item.displayTitle || item.title || '';
         document.getElementById('tr-dv-subtitle').innerText = item.subtitle || '';
         var textEl = document.getElementById('tr-dv-text');
-        textEl.innerText = item.text || '';
-        textEl.style.display = item.text ? 'block' : 'none';
-
         var gallery = document.getElementById('tr-dv-gallery');
         gallery.innerHTML = '';
+        textEl.style.display = 'none'; // we'll inject text inside gallery in the right order
 
-        // Collect all images for lightbox
-        var allImgs = [];
-        var lbIdx = 0;
+        // Parse text for link patterns "<label> ↗ <url>" — extract into buttons, keep rest as description.
+        var rawText = item.text || '';
+        var links = [];
+        var descLines = [];
+        rawText.split('\n').forEach(function(line) {
+            var m = line.match(/^(.+?)\s*↗\s*(https?:\/\/\S+)\s*$/);
+            if (m) links.push({ label: m[1].trim(), url: m[2].trim() });
+            else descLines.push(line);
+        });
+        var description = descLines.join('\n').replace(/\n{3,}/g, '\n\n').trim();
 
-        if (item._rows && item._rows.length > 0) {
-            // Row-based layout matching NAVIGATOR
-            var heroCount = item._rows[0].length;
-            var defaultHW = heroCount === 1 ? '50%' : '100%';
-            var hw = item._heroWidth || defaultHW;
+        // 1. Hero thumb — first gallery image, full-width.
+        if (item.gallery && item.gallery.length > 0) {
+            var heroRow = document.createElement('div');
+            heroRow.className = 'tr-dv-row';
+            heroRow.style.cssText = 'margin:0 auto 16px; max-width:100%;';
+            var hero = item.gallery[0];
+            var heroThumb = document.createElement('div');
+            heroThumb.className = 'tr-dv-thumb';
+            heroThumb.style.cssText = 'flex:1; cursor:pointer;';
+            heroThumb.innerHTML = '<img src="' + hero.url + '" alt="' + (hero.caption||'') + '" loading="lazy" style="width:100%;height:auto;display:block;">';
+            heroThumb.addEventListener('touchend', function(e) { e.preventDefault(); trLbImages = item.gallery; trOpenLightbox(0); }, {passive:false});
+            heroThumb.addEventListener('click', function() { trLbImages = item.gallery; trOpenLightbox(0); });
+            heroRow.appendChild(heroThumb);
+            gallery.appendChild(heroRow);
+        }
 
-            item._rows.forEach(function(row, ri) {
-                var rowDiv = document.createElement('div');
-                rowDiv.className = 'tr-dv-row';
-                if (ri === 0) {
-                    rowDiv.style.justifyContent = 'center';
-                    rowDiv.style.maxWidth = hw;
-                    rowDiv.style.margin = '0 auto';
-                }
-                row.forEach(function(img) {
-                    var idx = lbIdx++;
-                    allImgs.push(img);
-                    var thumb = document.createElement('div');
-                    thumb.className = 'tr-dv-thumb';
-                    thumb.innerHTML = '<img src="' + img.url + '" alt="' + (img.caption||'') + '" loading="lazy">' +
-                        '<div class="tr-dv-thumb-label">' + (img.caption||'') + '</div>';
-                    (function(i) {
-                        thumb.addEventListener('touchend', function(e) { e.preventDefault(); trLbImages = allImgs; trLbIsVibe = true; trOpenLightbox(i); }, {passive:false});
-                        thumb.addEventListener('click', function() { trLbImages = allImgs; trLbIsVibe = true; trOpenLightbox(i); });
-                    })(idx);
-                    rowDiv.appendChild(thumb);
-                });
-                gallery.appendChild(rowDiv);
+        // 2. Description below hero.
+        if (description) {
+            textEl.innerText = description;
+            textEl.style.display = 'block';
+            gallery.appendChild(textEl);
+        }
 
-                // Insert text after first row
-                if (ri === 0 && item.text) {
-                    var spacer = document.createElement('div');
-                    spacer.style.height = '0';
-                    gallery.appendChild(spacer);
-                }
+        // 3. Link buttons below description.
+        if (links.length) {
+            var btnRow = document.createElement('div');
+            btnRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:10px; margin:18px 0 8px;';
+            links.forEach(function(lk) {
+                var a = document.createElement('a');
+                a.href = lk.url;
+                a.target = '_blank';
+                a.rel = 'noopener noreferrer';
+                a.innerText = lk.label;
+                a.className = 'menu-btn';
+                a.style.cssText = 'display:inline-block; text-decoration:none; padding:10px 18px; font-size:9px; border-color:#FAFFA5; color:#FAFFA5; text-shadow:0 0 6px rgba(250,255,165,0.4); cursor:pointer;';
+                btnRow.appendChild(a);
             });
-        } else if (item.gallery) {
-            // Fallback: simple grid
-            var rowDiv = document.createElement('div');
-            rowDiv.className = 'tr-dv-row';
-            rowDiv.style.flexWrap = 'wrap';
-            item.gallery.forEach(function(img) {
-                var idx = lbIdx++;
-                allImgs.push(img);
+            gallery.appendChild(btnRow);
+        }
+
+        // 4. Any remaining gallery images (rare for new shape — usually only 1 thumb).
+        if (item.gallery && item.gallery.length > 1) {
+            var moreRow = document.createElement('div');
+            moreRow.className = 'tr-dv-row';
+            moreRow.style.cssText = 'flex-wrap:wrap; margin-top:14px;';
+            item.gallery.slice(1).forEach(function(img, i) {
                 var thumb = document.createElement('div');
                 thumb.className = 'tr-dv-thumb';
                 thumb.style.flex = '0 0 calc(50% - 3px)';
-                thumb.innerHTML = '<img src="' + img.url + '" alt="' + (img.caption||'') + '" loading="lazy">' +
-                    '<div class="tr-dv-thumb-label">' + (img.caption||'') + '</div>';
-                (function(i) {
-                    thumb.addEventListener('touchend', function(e) { e.preventDefault(); trLbImages = allImgs; trLbIsVibe = true; trOpenLightbox(i); }, {passive:false});
-                    thumb.addEventListener('click', function() { trLbImages = allImgs; trLbIsVibe = true; trOpenLightbox(i); });
-                })(idx);
-                rowDiv.appendChild(thumb);
+                thumb.innerHTML = '<img src="' + img.url + '" alt="' + (img.caption||'') + '" loading="lazy">';
+                (function(idx) {
+                    thumb.addEventListener('touchend', function(e) { e.preventDefault(); trLbImages = item.gallery; trOpenLightbox(idx + 1); }, {passive:false});
+                    thumb.addEventListener('click', function() { trLbImages = item.gallery; trOpenLightbox(idx + 1); });
+                })(i);
+                moreRow.appendChild(thumb);
             });
-            gallery.appendChild(rowDiv);
-        }
-
-        // Move text element into gallery after hero row (NAVIGATOR style)
-        var subtitleEl = document.getElementById('tr-dv-subtitle');
-        var firstRowEl = gallery.children[0];
-        if (firstRowEl && item.text) {
-            gallery.insertBefore(textEl, firstRowEl.nextSibling);
-            if (item.subtitle) gallery.insertBefore(subtitleEl, textEl);
+            gallery.appendChild(moreRow);
         }
 
         dv.style.display = 'block';
@@ -18493,19 +18490,20 @@ illum 3
           });
         });
         // Greyed-out preview when ship is not owned — applies AFTER per-ship coloring.
+        // Solid grey desaturated finish (NOT transparent) so player can still see ship form clearly.
         var _isOwned = !!(window.__shipOwned && window.__shipOwned[shipId]);
         if (!_isOwned) {
           var _greyApply = function(mat){
             if (!mat) return;
-            if (mat.color && mat.color.setHex) mat.color.setHex(0x555555);
+            if (mat.color && mat.color.setHex) mat.color.setHex(0x707070);
             if (mat.emissive && mat.emissive.setHex) { mat.emissive.setHex(0x000000); }
             if ('emissiveIntensity' in mat) mat.emissiveIntensity = 0;
-            if ('shininess' in mat) mat.shininess = 8;
-            if (mat.specular && mat.specular.setHex) mat.specular.setHex(0x222222);
-            if ('roughness' in mat) mat.roughness = 0.85;
+            if ('shininess' in mat) mat.shininess = 12;
+            if (mat.specular && mat.specular.setHex) mat.specular.setHex(0x333333);
+            if ('roughness' in mat) mat.roughness = 0.8;
             if ('metalness' in mat) mat.metalness = 0.0;
-            mat.transparent = true;
-            mat.opacity = 0.55;
+            mat.transparent = false;
+            mat.opacity = 1.0;
             if (mat.needsUpdate !== undefined) mat.needsUpdate = true;
           };
           root.traverse(function(o){
