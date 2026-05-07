@@ -2331,7 +2331,8 @@ window.onload = function() {
     window.__shipCatalog = SHIP_CATALOG_BY_ID; // expose catalog so turntable refresh() reads active hullKg
     var shipDiscovered = { deltawing: true, stealthwing: false };
     var shipOwned = { deltawing: true, stealthwing: false };
-    window.__shipOwned = shipOwned; // expose ownership map to turntable IIFE for greyed-out preview
+    // Live-state ownership lookup — function form survives shipOwned reassignment via session load.
+    window.__isShipOwned = function(id) { try { return !!shipOwned[id]; } catch(e) { return false; } };
     var activeShip = 'deltawing';
     var previewShipId = activeShip; // turntable preview only — does NOT affect gameplay
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.20];
@@ -3490,14 +3491,21 @@ window.onload = function() {
             var btnRow = document.createElement('div');
             btnRow.style.cssText = 'display:flex; flex-wrap:wrap; gap:10px; margin:18px 0 8px;';
             links.forEach(function(lk) {
-                var a = document.createElement('a');
-                a.href = lk.url;
-                a.target = '_blank';
-                a.rel = 'noopener noreferrer';
-                a.innerText = lk.label;
-                a.className = 'menu-btn';
-                a.style.cssText = 'display:inline-block; text-decoration:none; padding:10px 18px; font-size:9px; border-color:#FAFFA5; color:#FAFFA5; text-shadow:0 0 6px rgba(250,255,165,0.4); cursor:pointer;';
-                btnRow.appendChild(a);
+                var btn = document.createElement('button');
+                btn.type = 'button';
+                btn.innerText = lk.label;
+                btn.className = 'menu-btn';
+                btn.style.cssText = 'padding:10px 18px; font-size:9px; border-color:#FAFFA5; color:#FAFFA5; text-shadow:0 0 6px rgba(250,255,165,0.4); cursor:pointer; touch-action:manipulation;';
+                (function(_url){
+                    var _open = function(e){
+                        e.preventDefault();
+                        e.stopPropagation();
+                        try { window.open(_url, '_blank', 'noopener,noreferrer'); } catch(err) { window.location.href = _url; }
+                    };
+                    btn.addEventListener('click', _open);
+                    btn.addEventListener('touchend', _open, {passive:false});
+                })(lk.url);
+                btnRow.appendChild(btn);
             });
             gallery.appendChild(btnRow);
         }
@@ -9339,7 +9347,17 @@ window.onload = function() {
             tickFinalCinematic(delta);
         }
 
-        if (gameState === 'playing') {
+        // Treat as paused if ANY overlay/menu is open — prevents time, movement, collisions from advancing while the player is reading content.
+        var _menuOpen = false;
+        try {
+            var _ovIds = ['tr-store-screen','tr-session-screen','tr-carousel-overlay','pause-screen','game-over-screen','victory-screen','finale-screen','tr-video-player','tr-lightbox','tr-design-viewer','inventory-picker'];
+            for (var _oi = 0; _oi < _ovIds.length; _oi++) {
+                var _ovEl = document.getElementById(_ovIds[_oi]);
+                if (_ovEl && _ovEl.style.display && _ovEl.style.display !== 'none') { _menuOpen = true; break; }
+            }
+        } catch(e) {}
+
+        if (gameState === 'playing' && !_menuOpen) {
 
             tutTick(delta);
             if (!TUT.active) speed = Math.min(SPEED_CAPS[speedTier], speed + (delta * 6));
@@ -18490,8 +18508,9 @@ illum 3
           });
         });
         // Greyed-out preview when ship is not owned — applies AFTER per-ship coloring.
-        // Solid grey desaturated finish (NOT transparent) so player can still see ship form clearly.
-        var _isOwned = !!(window.__shipOwned && window.__shipOwned[shipId]);
+        // Solid grey desaturated finish (NOT transparent) — applies ONLY to the hull body
+        // (meshes with DELTAWING/STEALTHWING in name), NOT to weapons/shields/speed mounts.
+        var _isOwned = !!(window.__isShipOwned && window.__isShipOwned(shipId));
         if (!_isOwned) {
           var _greyApply = function(mat){
             if (!mat) return;
@@ -18508,6 +18527,9 @@ illum 3
           };
           root.traverse(function(o){
             if (!o.isMesh || !o.material) return;
+            var nm = (o.name || '').toUpperCase();
+            // Only grey the hull body — leave weapons, shields, thrusters, ammo etc. at their normal colors.
+            if (!nm.includes('DELTAWING') && !nm.includes('STEALTHWING')) return;
             if (Array.isArray(o.material)) o.material.forEach(_greyApply); else _greyApply(o.material);
           });
         }
