@@ -2350,11 +2350,11 @@ window.onload = function() {
         try { localStorage.setItem('tunnelrunner.sessions', JSON.stringify(arr)); } catch(e) {}
     }
     function _sessionGenId() {
-        var letters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+        var chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
         var existing = _sessionsLoad().map(function(s){ return s.id; });
         for (var attempt = 0; attempt < 200; attempt++) {
             var id = '';
-            for (var i = 0; i < 3; i++) id += letters.charAt(Math.floor(Math.random()*26));
+            for (var i = 0; i < 5; i++) id += chars.charAt(Math.floor(Math.random()*chars.length));
             if (existing.indexOf(id) === -1) return id;
         }
         return 'X' + Math.floor(Math.random()*100);
@@ -4144,7 +4144,7 @@ window.onload = function() {
     const mineGeo  = new THREE.TetrahedronGeometry(4.5, 0);
     const hazardMat = new THREE.MeshStandardMaterial({ color: 0xff4444, emissive: 0x550011, emissiveIntensity: 1.2, metalness: 0.0, roughness: 1.0 });
     // Secret barrier — destroying this in S2 unlocks the StealthWing at half price.
-    const secretBarrierMat = new THREE.MeshStandardMaterial({ color: 0xffe000, emissive: 0xffc800, emissiveIntensity: 1.6, metalness: 0.3, roughness: 0.5 });
+    const secretBarrierMat = new THREE.MeshBasicMaterial({ color: 0xffe000, transparent: true, opacity: 0.92, side: THREE.DoubleSide });
     const blockGeo  = new THREE.BoxGeometry(8, 8, 3);
     const knotGeo   = new THREE.TorusKnotGeometry(2.8, 1.0, 64, 8);
 
@@ -6163,16 +6163,19 @@ window.onload = function() {
     }
     function _spawnSecretBarrierIfNeeded(seedZ) {
         if (currentSector !== 2) return;
+        if (currentLevel === 1) return; // skip S2L1 — only spawn in higher S2 levels
         if (secretCollected) return;
         var z = seedZ - 1400; // ~1400 units into the level
-        var mesh = new THREE.Mesh(blockGeo, secretBarrierMat);
-        // Place at tunnel centre — impossible to miss, has to be navigated around or shot through.
+        // Partial-ring barrier — 3/4 of the tube blocked, 90° gap at the bottom (skilled players can thread it; shooters get the unlock).
+        var arcLength = Math.PI * 1.5;
+        var mesh = new THREE.Mesh(buildBarrierGeo(arcLength), secretBarrierMat);
         mesh.position.set(0, 0, z);
-        mesh.userData = { type: 'hazard', hitRadius: 7.0, _hp: 3, _secretBarrier: true, _spinRate: 1.0 };
-        // Add a simple star sprite as a child for visual flair.
+        mesh.rotation.z = Math.PI * 0.25; // rotate so gap sits at bottom-right
+        mesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, _hp: 3, _secretBarrier: true };
+        // Add a glowing star at the centre of the ring to telegraph "this is the secret."
         try {
             var starShape = new THREE.Shape();
-            var spikes = 5, outer = 2.4, inner = 1.0;
+            var spikes = 5, outer = 5.0, inner = 2.0;
             for (var si = 0; si < spikes * 2; si++) {
                 var rr = (si % 2) ? inner : outer;
                 var aa = (si / (spikes * 2)) * Math.PI * 2 - Math.PI/2;
@@ -6180,9 +6183,11 @@ window.onload = function() {
                 if (si === 0) starShape.moveTo(x, y); else starShape.lineTo(x, y);
             }
             var starGeoSec = new THREE.ShapeGeometry(starShape);
-            var starMatSec = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+            var starMatSec = new THREE.MeshBasicMaterial({ color: 0xffffff, transparent: true, opacity: 0.95, side: THREE.DoubleSide });
             var starMesh = new THREE.Mesh(starGeoSec, starMatSec);
-            starMesh.position.z = 1.6;
+            // Counter-rotate so the star sits upright regardless of barrier rotation.
+            starMesh.rotation.z = -mesh.rotation.z;
+            starMesh.position.z = 0.5;
             mesh.add(starMesh);
         } catch(e) {}
         scene.add(mesh);
