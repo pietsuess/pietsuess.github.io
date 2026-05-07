@@ -2315,15 +2315,20 @@ window.onload = function() {
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
-        { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, price: 6000, default: false }
+        { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, price: 0,    default: true },
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 6000, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
     function _shipDataIds(shipId) {
         if (shipId === 'stealthwing') return { obj: 'ship-loadout-obj-stealthwing', mtl: 'ship-loadout-mtl-stealthwing' };
         return { obj: 'ship-loadout-obj', mtl: 'ship-loadout-mtl' };
     }
+    function _shipStat(name, fallback) {
+        var meta = SHIP_CATALOG_BY_ID[activeShip] || SHIP_CATALOG_BY_ID.deltawing;
+        return (meta && meta[name] != null) ? meta[name] : fallback;
+    }
     window.__shipDataIds = _shipDataIds; // expose for turntable IIFE in separate script tag
+    window.__shipCatalog = SHIP_CATALOG_BY_ID; // expose catalog so turntable refresh() reads active hullKg
     var shipDiscovered = { deltawing: true, stealthwing: false };
     var shipOwned = { deltawing: true, stealthwing: false };
     var shipDiscount = { stealthwing: false };
@@ -4152,7 +4157,7 @@ window.onload = function() {
     }
     setActiveShip(activeShip);
 
-    const shipHitRadius = 3.5;
+    // Hitbox radius is now per-ship — read from SHIP_CATALOG via _shipStat('hitRadius', 3.5).
 
 
     // --- Objects ---
@@ -4804,7 +4809,7 @@ window.onload = function() {
             ],
             rotMult: 0.9
         },
-        // S1L4 - applied from spawn editor export 2026-05-03 22:52
+        // S1L4 - applied from spawn editor export 2026-05-07 18:09
         'S1L4': {
             blocks: false,
             shields: false,
@@ -4831,7 +4836,7 @@ window.onload = function() {
             srGapMin: 0.9,
             srGapMax: 1.3,
             srMinDist: 400,
-            spacing: 50,
+            spacing: 65,
             startOffset: 400,
             maxSpawnPct: 0.86,
             starChance: 0,
@@ -4850,12 +4855,12 @@ window.onload = function() {
                     until: 0.5,
                     lanes: [{ step: 0.8, offset: 0.44 }],
                     spacing: 55,
-                    spawn: { baseHazard: 0, baseRing: 0, baseShields: 0, contentCount: 1, barrierThreshold: 0, starChance: 0, boostChance: 0 }
+                    spawn: { baseHazard: 0, baseRing: 0, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0 }
                 },
                 {
                     until: 0.6,
                     lanes: [{ step: -0.8, offset: 0.44 }],
-                    spacing: 55,
+                    spacing: 100,
                     spawn: { baseHazard: 1, baseRing: 2, baseShields: 0, contentCount: 1, barrierThreshold: 0, starChance: 0, boostChance: 0 }
                 },
                 {
@@ -4874,7 +4879,7 @@ window.onload = function() {
                     until: 1,
                     lanes: [{ step: 0.8, offset: 0.44 }],
                     spacing: 55,
-                    spawn: { baseHazard: 0, baseRing: 2, baseShields: 1, contentCount: 1, barrierThreshold: 0, starChance: 0, boostChance: 0 }
+                    spawn: { baseHazard: 0, baseRing: 10, baseShields: 0, contentCount: 1, barrierThreshold: 0, starChance: 0, boostChance: 0 }
                 }
             ],
             rotMult: 1,
@@ -4885,7 +4890,7 @@ window.onload = function() {
             isSpeedRun: true,
             speedRunTarget: 20,
             pylons: {
-                spacing: 510,
+                spacing: 680,
                 offset: 0.05,
                 spiralStep: 0.05,
                 startAngle: 0.5,
@@ -5273,10 +5278,12 @@ window.onload = function() {
 
     function updateShieldBar() {
         const bar = document.getElementById('shield-bar');
-        bar.style.height = Math.max(0, health) + '%';
+        var maxH = _shipStat('maxHealth', 100);
+        var pct = Math.max(0, (health / maxH) * 100);
+        bar.style.height = pct + '%';
         if (shieldsUp) { bar.style.background = '#ff44ff'; bar.style.boxShadow = '0 0 16px #ff44ff, 0 0 30px rgba(255,68,255,0.4)'; }
-        else if (health > 50) { bar.style.background = '#00ffff'; bar.style.boxShadow = '0 0 10px #00ffff'; }
-        else if (health > 25) { bar.style.background = '#ffcc00'; bar.style.boxShadow = '0 0 10px #ffcc00'; }
+        else if (pct > 50) { bar.style.background = '#00ffff'; bar.style.boxShadow = '0 0 10px #00ffff'; }
+        else if (pct > 25) { bar.style.background = '#ffcc00'; bar.style.boxShadow = '0 0 10px #ffcc00'; }
         else { bar.style.background = '#ff0055'; bar.style.boxShadow = '0 0 10px #ff0055'; }
     }
 
@@ -5635,6 +5642,7 @@ window.onload = function() {
         var _redHi = SHIELD_DAMAGE_RED_HYPER[_sIdx] || 0;
         var _red = _redLo + (_redHi - _redLo) * hyperFracNow;
         dmg = dmg * (1 - _red);
+        dmg = dmg * _shipStat('dmgMult', 1.0);
         health -= dmg;
         combo = 0; comboTimer = 0;
         AudioEngine.playSFX('hit');
@@ -6112,10 +6120,10 @@ window.onload = function() {
         try { _spawnSecretBarrierIfNeeded(seedZ); } catch(e) {}
     }
     function _spawnSecretBarrierIfNeeded(seedZ) {
-        if (currentSector !== 2) return;
-        if (currentLevel === 1) return; // skip S2L1 — only spawn in higher S2 levels
+        // Moved to S3L2 — by then the player has firepower (weapon tier ≥ 2) to break the 8-HP barrier.
+        if (currentSector !== 3 || currentLevel !== 2) return;
         if (secretCollected) return;
-        var z = seedZ - 1400; // ~1400 units into the level
+        var z = seedZ - sectorDistance * 0.85; // near end of level
         // Partial-ring barrier — 3/4 of the tube blocked, 90° gap at the bottom (skilled players can thread it; shooters get the unlock).
         var arcLength = Math.PI * 1.5;
         var mesh = new THREE.Mesh(buildBarrierGeo(arcLength), secretBarrierMat);
@@ -7052,7 +7060,7 @@ window.onload = function() {
             updateCollectionHUD();
         }
         
-        health = 100;
+        health = _shipStat('maxHealth', 100);
         if (!preserveScore) score = sectorStartScore;
         speed = baseSpeed;
         distanceTraveled = 0;
@@ -9730,7 +9738,7 @@ window.onload = function() {
                     else {
                         let dist = shipContainer.position.distanceTo(item.position);
 
-                        if (dist < shipHitRadius + item.userData.hitRadius) {
+                        if (dist < _shipStat('hitRadius', 3.5) + item.userData.hitRadius) {
                             if (item.userData.type === 'ramp' && !isJumping && !isFlipping) {
                                 isJumping = true;
                                 jumpTimer = 0;
@@ -9801,7 +9809,7 @@ window.onload = function() {
                             }
                             else if (item.userData.type === 'health') {
                                 sectorCollectiblesCollected++;
-                                health = Math.min(100, health + 20);
+                                health = Math.min(_shipStat('maxHealth', 100), health + 20);
                                 score += 85;
                                 AudioEngine.playSFX('shield');
                                 flash('#44aaff');
@@ -18224,7 +18232,15 @@ illum 3
     canvas.parentNode.appendChild(miss);
   }
 
-  var SHIP_KG_HULL = 4500;
+  var SHIP_KG_HULL_DEFAULT = 4500; // fallback if catalog lookup fails
+  function _activeHullKg(){
+    try {
+      var sid = (typeof activeShip === 'string') ? activeShip : 'deltawing';
+      var meta = window.__shipCatalog && window.__shipCatalog[sid];
+      if (meta && typeof meta.hullKg === 'number') return meta.hullKg;
+    } catch(e) {}
+    return SHIP_KG_HULL_DEFAULT;
+  }
   var WEAPON_KG    = [0, 150, 320, 280, 850];
   var SHIELD_KG    = [0, 200, 800, 2400, 60];
   var SPEED_TOP    = [1140, 1320, 1500, 1740, 1980]; // km/min — equivalent to [19, 22, 25, 29, 33] km/s, scaled by SPEED_MULTIPLIERS.
@@ -18415,8 +18431,9 @@ illum 3
       setObjTier(objMeshes.shields, a.s);
       setObjTier(objMeshes.speeds, a.sp);
     }
-    var totalKg = SHIP_KG_HULL + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
-    var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (SHIP_KG_HULL / totalKg);
+    var hullKg = _activeHullKg();
+    var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
+    var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
     var cls = 'LIGHT', col = '#44ff66';
     if (totalKg >= 6500) { cls = 'HEAVY'; col = '#ff4466'; }
     else if (totalKg >= 5200) { cls = 'MEDIUM'; col = '#ffcc44'; }
