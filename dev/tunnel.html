@@ -2302,9 +2302,9 @@ window.onload = function() {
     var weaponTier = _loadWeaponTier();
     var speedTier = _loadSpeedTier();
 
-    var SHIELD_PRICES = [null, 25, 60, 350, 800];
-    var WEAPON_PRICES = [null, 50, 200, 600, 900];
-    var SPEED_PRICES = [null, 75, 250, 700, 1500];
+    var SHIELD_PRICES = [null, 20, 45, 250, 600];
+    var WEAPON_PRICES = [null, 40, 150, 425, 700];
+    var SPEED_PRICES = [null, 60, 200, 500, 1100];
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
@@ -2316,7 +2316,7 @@ window.onload = function() {
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
         { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 6000, default: false }
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 3000, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
     function _shipDataIds(shipId) {
@@ -2331,9 +2331,7 @@ window.onload = function() {
     window.__shipCatalog = SHIP_CATALOG_BY_ID; // expose catalog so turntable refresh() reads active hullKg
     var shipDiscovered = { deltawing: true, stealthwing: false };
     var shipOwned = { deltawing: true, stealthwing: false };
-    var shipDiscount = { stealthwing: false };
     var activeShip = 'deltawing';
-    var secretCollected = false;
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.20];
     var WEAPON_MAX_AMMO = [0, 100, 60, 40, 20];
     var WEAPON_PER_ROUND_COST = [0, 0.5, 0.8, 3, 5];
@@ -2460,8 +2458,6 @@ window.onload = function() {
         try {
             if (s.shipDiscovered) shipDiscovered = Object.assign({deltawing:true, stealthwing:false}, s.shipDiscovered);
             if (s.shipOwned) shipOwned = Object.assign({deltawing:true, stealthwing:false}, s.shipOwned);
-            if (s.shipDiscount) shipDiscount = Object.assign({stealthwing:false}, s.shipDiscount);
-            if (typeof s.secretCollected === 'boolean') secretCollected = s.secretCollected;
             if (typeof s.activeShip === 'string' && SHIP_CATALOG_BY_ID[s.activeShip] && shipOwned[s.activeShip]) {
                 if (s.activeShip !== activeShip) { try { setActiveShip(s.activeShip); } catch(e) {} }
                 else activeShip = s.activeShip;
@@ -2517,9 +2513,7 @@ window.onload = function() {
                 try {
                     arr[i].shipDiscovered = JSON.parse(JSON.stringify(shipDiscovered));
                     arr[i].shipOwned = JSON.parse(JSON.stringify(shipOwned));
-                    arr[i].shipDiscount = JSON.parse(JSON.stringify(shipDiscount));
                     arr[i].activeShip = activeShip;
-                    arr[i].secretCollected = secretCollected;
                 } catch(e) {}
                 if (!Array.isArray(arr[i].ownedShields)) arr[i].ownedShields = [];
                 if (!Array.isArray(arr[i].ownedWeapons)) arr[i].ownedWeapons = [];
@@ -4175,6 +4169,9 @@ window.onload = function() {
     const ringGeo  = new THREE.TorusGeometry(4.5, 0.7, 8, 28);
     const ringMat  = new THREE.MeshStandardMaterial({ color: 0xaaffaa, emissive: 0x00ff88, emissiveIntensity: 1.5, metalness: 0.0, roughness: 1.0 });
 
+    const goldRingGeo = new THREE.TorusGeometry(5.5, 1.0, 10, 32);
+    const goldRingMat = new THREE.MeshStandardMaterial({ color: 0xffd700, emissive: 0xffe000, emissiveIntensity: 2.0, metalness: 0.6, roughness: 0.3 });
+
     const rampGeo = new THREE.BoxGeometry(6, 28, 12);
     const rampMat = new THREE.MeshStandardMaterial({ color: 0x00ffcc, emissive: 0x0088cc, emissiveIntensity: 1.0, wireframe: false, transparent: true, opacity: 0.8 });
 
@@ -4999,13 +4996,25 @@ window.onload = function() {
         var _sCfg = _getSpawnCfg(s);
         var lvl = currentLevel; // level within this sector
         var isSpeedRun = (s === 3) || (s === 5 && lvl === 1);
+        var _t = _getTuning(s, lvl);
+
+        // Rare gold ring — 1% chance per spawn slot. Pays 5 rings + 500 score on collect.
+        if (!_forceContent && Math.random() < 0.01) {
+            var _gAngle = _advanceSpiral(_t, zPos);
+            var _gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+            var _gHover = tubeRadius - 6;
+            _gMesh.position.set(Math.cos(_gAngle) * _gHover, Math.sin(_gAngle) * _gHover, zPos);
+            _gMesh.rotation.z = _gAngle;
+            _gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+            scene.add(_gMesh); items.push(_gMesh);
+            return;
+        }
 
         // ═══════════════════════════════════════════════════════════════
         // CONTENT OBJECT SPAWNING — zone-shaped collectibles, 2x size
         // Spawns uncollected content items at regular intervals
         // Speed run sectors: no content objects — beat the clock to unlock
         // ═══════════════════════════════════════════════════════════════
-        var _t = _getTuning(s, lvl);
         var _segS = _getSegSpawn(_t, zPos);
         var _fc = _forceContent; _forceContent = false;
         // If current segment defines contentCount, suppress random contentChance — only forced positions spawn content
@@ -5209,7 +5218,7 @@ window.onload = function() {
                 var rHover = tubeRadius - 6;
                 rMesh.position.set(Math.cos(flipAngle) * rHover, Math.sin(flipAngle) * rHover, rz);
                 rMesh.rotation.z = flipAngle;
-                rMesh.userData = { type: 'score', hitRadius: 6.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
+                rMesh.userData = { type: 'score', hitRadius: 6.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3, _isBoostRing: true };
                 scene.add(rMesh); items.push(rMesh);
                 sectorCollectiblesSpawned++;
             }
@@ -5587,18 +5596,7 @@ window.onload = function() {
                         item.userData._hp -= dmg;
                         if (item.userData._hp <= 0) {
                             AudioEngine.playSFX('destroy');
-                            if (item.userData._secretBarrier) {
-                                // Secret cracked open — unlock StealthWing + half-price discount.
-                                shipDiscovered.stealthwing = true;
-                                shipDiscount.stealthwing = true;
-                                secretCollected = true;
-                                try { _sessionSync(); } catch(e) {}
-                                try { spawnPointBurst('STEALTHWING UNLOCKED', 'c-gold'); } catch(e) {}
-                                flash('#ffe000');
-                                try { AudioEngine.playSFX('victory'); } catch(e) {}
-                            } else {
-                                flash('#ff8800');
-                            }
+                            flash('#ff8800');
                             score += 35;
                             document.getElementById('score').innerText = score.toString().padStart(6, '0');
                             scene.remove(item);
@@ -5850,6 +5848,31 @@ window.onload = function() {
             bestTimes[currentSector] = sectorTime;
             try { localStorage.setItem('trBestTimes', JSON.stringify(bestTimes)); } catch(e) {}
         }
+
+        // === Ring bonuses (sector clear + speed) ===
+        var _sectorBonus = 50 * currentSector;
+        // Speed bonus: baseline = level length / (zone base speed at NONE thrusters).
+        // "NONE" speedTier = 0 → SPEED_MULTIPLIERS[0] = 0.85.
+        // Player beats baseline → bonus rings (2 per second under, cap 200).
+        var _zoneForBonus = ZONES[Math.min(currentSector - 1, ZONES.length - 1)];
+        var _baselineSpeed = (_zoneForBonus && _zoneForBonus.speed ? _zoneForBonus.speed : 200) * 0.85;
+        var _baselineLength = sectorDistance || 14000;
+        var _baselineTime = _baselineLength / _baselineSpeed;
+        var _speedBonus = Math.max(0, Math.min(200, Math.floor((_baselineTime - sectorTime) * 2)));
+        var _totalBonus = _sectorBonus + _speedBonus;
+        if (_totalBonus > 0) {
+            _ringsAdd(_totalBonus);
+            try { updateRingHUD(); } catch(e) {}
+        }
+        // Expose for victory-screen render below.
+        window.__lastRunBonus = { sector: _sectorBonus, speed: _speedBonus, total: _totalBonus };
+
+        try {
+            var _vbn = document.getElementById('victory-score');
+            if (_vbn && window.__lastRunBonus && window.__lastRunBonus.total > 0) {
+                _vbn.innerHTML += '<div style="margin-top:8px;color:#ffe000;font-size:clamp(10px,2.6vw,14px);">+' + window.__lastRunBonus.total + ' RINGS (sector ' + window.__lastRunBonus.sector + ', speed ' + window.__lastRunBonus.speed + ')</div>';
+            }
+        } catch(e) {}
 
         // Build run times table
         function fmtTime(t) { var mm=Math.floor(t/60),ss=Math.floor(t%60),tt=Math.floor((t%1)*10); return mm+':'+(ss<10?'0':'')+ss+'.'+tt; }
@@ -6120,9 +6143,9 @@ window.onload = function() {
         try { _spawnSecretBarrierIfNeeded(seedZ); } catch(e) {}
     }
     function _spawnSecretBarrierIfNeeded(seedZ) {
-        // Moved to S3L2 — by then the player has firepower (weapon tier ≥ 2) to break the 8-HP barrier.
+        // Disabled — discount mechanic removed. Function preserved for future ship unlock.
+        return;
         if (currentSector !== 3 || currentLevel !== 2) return;
-        if (secretCollected) return;
         var z = seedZ - sectorDistance * 0.85; // near end of level
         // Partial-ring barrier — 3/4 of the tube blocked, 90° gap at the bottom (skilled players can thread it; shooters get the unlock).
         var arcLength = Math.PI * 1.5;
@@ -8098,7 +8121,6 @@ window.onload = function() {
     function _shipPriceFor(id) {
         var meta = SHIP_CATALOG_BY_ID[id]; if (!meta) return 0;
         var p = meta.price || 0;
-        if (shipDiscount && shipDiscount[id]) p = Math.round(p * 0.5);
         return p;
     }
     function _buyShip(id) {
@@ -8130,7 +8152,6 @@ window.onload = function() {
             var owned = !!shipOwned[meta.id];
             var isActive = (activeShip === meta.id);
             var price = _shipPriceFor(meta.id);
-            var hasDiscount = !meta.default && !!shipDiscount[meta.id];
             var canAfford = (price > 0 && ringBank >= price);
             // Match _renderStoreItem styling exactly.
             var row = document.createElement('div');
@@ -8167,7 +8188,7 @@ window.onload = function() {
             info.appendChild(nm);
             var ds = document.createElement('div');
             ds.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-            ds.innerText = meta.hullKg.toLocaleString() + ' KG' + (hasDiscount && !owned ? ' · 50% OFF' : '');
+            ds.innerText = meta.hullKg.toLocaleString() + ' KG';
             info.appendChild(ds);
             row.appendChild(info);
             if (owned) {
@@ -9816,6 +9837,15 @@ window.onload = function() {
                                 spawnPointBurst('+20 SHIELD', 'c-cyan');
                                 if (TUT.active) tutHit('health');
                             }
+                            else if (item.userData.type === 'gold_ring') {
+                                sectorCollectiblesCollected++;
+                                score += 500;
+                                _ringsAdd(5);
+                                AudioEngine.playSFX('combo4');
+                                flash('#ffe000');
+                                spawnPointBurst('+5 RINGS', 'c-gold');
+                                updateRingHUD();
+                            }
                             else if (item.userData.type === 'score') {
                                 sectorCollectiblesCollected++;
                                 combo++;
@@ -9832,7 +9862,7 @@ window.onload = function() {
                                 spawnPointBurst('+'+pts, mult > 1 ? 'c-magenta' : 'c-green');
                                 if (mult > 1) spawnComboBadge(mult);
                                 if (TUT.active) tutHit('score');
-                                _ringsAdd(1); updateRingHUD();
+                                _ringsAdd(item.userData._isBoostRing ? 10 : mult); updateRingHUD();
                             }
                             else if (item.userData.type === 'pylon_left' || item.userData.type === 'pylon_right') {
                                 if (!item.userData._bumped) {
