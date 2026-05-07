@@ -5650,7 +5650,7 @@ window.onload = function() {
                                 shipDiscount.stealthwing = true;
                                 secretCollected = true;
                                 try { _sessionSync(); } catch(e) {}
-                                try { spawnPointBurst('STEALTHWING UNLOCKED', 'c-yellow'); } catch(e) {}
+                                try { spawnPointBurst('STEALTHWING UNLOCKED', 'c-gold'); } catch(e) {}
                                 flash('#ffe000');
                                 try { AudioEngine.playSFX('victory'); } catch(e) {}
                             } else {
@@ -6185,7 +6185,7 @@ window.onload = function() {
         var mesh = new THREE.Mesh(buildBarrierGeo(arcLength), secretBarrierMat);
         mesh.position.set(0, 0, z);
         mesh.rotation.z = Math.PI * 0.25; // rotate so gap sits at bottom-right
-        mesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, _hp: 3, _secretBarrier: true };
+        mesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, _hp: 8, _secretBarrier: true };
         // Add a glowing star at the centre of the ring to telegraph "this is the secret."
         try {
             var starShape = new THREE.Shape();
@@ -8178,44 +8178,103 @@ window.onload = function() {
         var listEl = document.getElementById('tr-store-ships-list');
         var tabEl = document.getElementById('tr-store-tab-ships');
         if (!listEl || !tabEl) return;
-        // Show tab only if at least one non-default ship is discovered.
         var anyDiscovered = SHIP_CATALOG.some(function(s){ return !s.default && shipDiscovered[s.id]; });
         tabEl.style.display = anyDiscovered ? '' : 'none';
         listEl.innerHTML = '';
         SHIP_CATALOG.forEach(function(meta){
-            // Only show the default + any discovered alts.
             if (!meta.default && !shipDiscovered[meta.id]) return;
-            var row = document.createElement('div');
-            row.style.cssText = 'display:flex;justify-content:space-between;align-items:center;gap:8px;padding:10px;border:1px solid #336;background:rgba(0,0,0,0.4);';
-            var info = document.createElement('div');
-            info.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;color:#aacfff;line-height:1.6;';
-            var isActive = (activeShip === meta.id);
             var owned = !!shipOwned[meta.id];
+            var isActive = (activeShip === meta.id);
             var price = _shipPriceFor(meta.id);
             var hasDiscount = !meta.default && !!shipDiscount[meta.id];
-            var priceText = meta.default ? 'INCLUDED' : (hasDiscount ? ('◯ ' + price + '  (50% OFF)') : ('◯ ' + price));
-            info.innerHTML = '<div style="color:#ffe000;">' + meta.name + '</div>' +
-                '<div style="color:#888;font-size:7px;">' + meta.hullKg.toLocaleString() + ' kg</div>' +
-                (owned ? '' : '<div style="color:#aacfff;font-size:8px;">' + priceText + '</div>');
-            row.appendChild(info);
-            var btn = document.createElement('button');
-            btn.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;padding:8px 12px;cursor:pointer;-webkit-tap-highlight-color:transparent;touch-action:manipulation;';
-            if (isActive) {
-                btn.innerText = 'ACTIVE';
-                btn.style.cssText += 'background:rgba(0,80,40,0.4);border:1px solid #44ff88;color:#44ff88;';
-                btn.disabled = true;
-            } else if (owned) {
-                btn.innerText = '[ SELECT ]';
-                btn.style.cssText += 'background:rgba(0,40,80,0.4);border:1px solid #aacfff;color:#aacfff;';
-                btn.addEventListener('click', function(){ _selectShip(meta.id); });
+            var canAfford = (price > 0 && ringBank >= price);
+            // Match _renderStoreItem styling exactly.
+            var row = document.createElement('div');
+            row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + (owned ? '#00ff88' : (canAfford ? '#ffe000' : '#444')) + ';background:rgba(0,0,0,0.35);touch-action:pan-y;';
+            var dot = document.createElement('div');
+            dot.className = 'tr-store-dot';
+            dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
+            if (owned) {
+                if (isActive) {
+                    dot.style.background = '#ffe000';
+                    dot.style.boxShadow = '0 0 8px rgba(255,224,0,0.8)';
+                    dot.style.border = '2px solid #ffe000';
+                } else {
+                    dot.style.background = 'transparent';
+                    dot.style.border = '2px solid #ffe000';
+                    dot.style.cursor = 'pointer';
+                    dot.style.touchAction = 'manipulation';
+                    (function(_id){
+                        var _h = function(e){ e.stopPropagation(); e.preventDefault(); _selectShip(_id); };
+                        dot.addEventListener('click', _h);
+                        dot.addEventListener('touchend', _h, {passive:false});
+                    })(meta.id);
+                }
             } else {
-                var canAfford = ringBank >= price;
-                btn.innerText = '[ BUY ]';
-                btn.style.cssText += 'background:rgba(80,40,0,0.4);border:1px solid ' + (canAfford ? '#ffe000' : '#444') + ';color:' + (canAfford ? '#ffe000' : '#666') + ';';
-                if (canAfford) btn.addEventListener('click', function(){ _buyShip(meta.id); });
-                else btn.disabled = true;
+                dot.style.background = 'transparent';
+                dot.style.border = '2px solid #333';
             }
-            row.appendChild(btn);
+            row.appendChild(dot);
+            var info = document.createElement('div');
+            info.style.cssText = 'flex:1;min-width:0;display:flex;flex-direction:column;gap:1px;touch-action:pan-y;';
+            var nm = document.createElement('div');
+            nm.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:11px;letter-spacing:1px;color:' + (owned ? '#00ff88' : (canAfford ? '#ffe000' : '#666')) + ';text-shadow:0 0 6px ' + (owned ? 'rgba(0,255,136,0.5)' : (canAfford ? 'rgba(255,224,0,0.5)' : 'transparent')) + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+            nm.innerText = meta.name;
+            info.appendChild(nm);
+            var ds = document.createElement('div');
+            ds.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
+            ds.innerText = meta.hullKg.toLocaleString() + ' KG' + (hasDiscount && !owned ? ' · 50% OFF' : '');
+            info.appendChild(ds);
+            row.appendChild(info);
+            if (owned) {
+                if (!meta.default) {
+                    var ow = document.createElement('div');
+                    ow.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:' + (isActive ? '#ffe000' : '#00ff88') + ';flex-shrink:0;text-shadow:0 0 6px ' + (isActive ? 'rgba(255,224,0,0.6)' : 'transparent') + ';';
+                    ow.innerText = isActive ? 'ACTIVE' : 'OWNED';
+                    row.appendChild(ow);
+                } else if (isActive) {
+                    var ow2 = document.createElement('div');
+                    ow2.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:9px;letter-spacing:1px;color:#ffe000;flex-shrink:0;text-shadow:0 0 6px rgba(255,224,0,0.6);';
+                    ow2.innerText = 'ACTIVE';
+                    row.appendChild(ow2);
+                }
+            } else {
+                var btn = document.createElement('button');
+                btn.className = 'menu-btn';
+                btn.style.cssText = 'margin:0;width:auto;font-size:9px;padding:6px 10px;flex-shrink:0;touch-action:pan-y;';
+                btn.innerText = 'BUY (' + price + ')';
+                if (canAfford) {
+                    btn.style.borderColor = '#ffe000';
+                    btn.style.color = '#ffe000';
+                    btn.style.cursor = 'pointer';
+                    btn.disabled = false;
+                    (function(_id){
+                        btn.addEventListener('click', function(e){ e.stopPropagation(); _buyShip(_id); });
+                    })(meta.id);
+                } else {
+                    btn.style.borderColor = '#ff4444';
+                    btn.style.color = '#ff6666';
+                    btn.style.cursor = 'not-allowed';
+                    btn.disabled = true;
+                }
+                row.appendChild(btn);
+            }
+            // Tap row to select when owned but not active.
+            if (owned && !isActive) {
+                row.style.cursor = 'pointer';
+                var lastTap = 0;
+                var rowH = function(e){
+                    if (e.target && e.target.closest && e.target.closest('button.menu-btn')) return;
+                    if (e.target && e.target.closest && e.target.closest('.tr-store-dot')) return;
+                    e.preventDefault();
+                    var now = Date.now();
+                    if (now - lastTap < 300) return;
+                    lastTap = now;
+                    _selectShip(meta.id);
+                };
+                row.addEventListener('touchend', rowH, {passive:false});
+                row.addEventListener('mouseup', rowH);
+            }
             listEl.appendChild(row);
         });
     }
