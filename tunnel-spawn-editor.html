@@ -926,13 +926,13 @@ function buildSpiralEditor() {
   let prevU = 0;
   pat.forEach((seg, i) => {
     const pct = ((seg.until - prevU) * 100);
-    const lanes = seg.lanes || [{ step: seg.step || 0, offset: 0 }];
+    const lanes = seg.lanes !== undefined ? seg.lanes : [{ step: seg.step || 0, offset: 0 }];
     const arrows = lanes.map(l => l.step > 0 ? '↻' : l.step < 0 ? '↺' : '—').join(' ');
     const segEl = document.createElement('div');
     segEl.className = 'spiral-seg';
     segEl.style.cssText = 'flex:0 0 ' + pct + '%;background:' + SEG_BG[i % SEG_BG.length] + ';';
     segEl.innerHTML = '<div class="spiral-seg-label">' + Math.round(pct) + '%</div>'
-      + '<div class="spiral-seg-info">' + lanes.length + (lanes.length > 1 ? ' lanes' : ' lane') + ' ' + arrows + '</div>';
+      + '<div class="spiral-seg-info">' + lanes.length + (lanes.length === 1 ? ' lane' : ' lanes') + ' ' + arrows + '</div>';
     bar.appendChild(segEl);
     prevU = seg.until;
   });
@@ -956,7 +956,7 @@ function buildSpiralEditor() {
   cards.className = 'seg-cards';
   prevU = 0;
   pat.forEach((seg, i) => {
-    const lanes = seg.lanes || [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
+    const lanes = seg.lanes !== undefined ? seg.lanes : [{ step: seg.step !== undefined ? seg.step : 1.1, offset: 0 }];
     const color = SEG_BORDER[i % SEG_BORDER.length];
     const fromPct = Math.round(prevU * 100);
     const toPct = Math.round(seg.until * 100);
@@ -984,9 +984,9 @@ function buildSpiralEditor() {
 
     // Lanes header
     h += '<div style="display:flex;align-items:center;gap:6px;margin:8px 0 6px;">'
-      + '<span style="color:#666;font-size:10px;font-family:\'Press Start 2P\',monospace;letter-spacing:1px;">' + lanes.length + ' LANE' + (lanes.length > 1 ? 'S' : '') + '</span>'
+      + '<span style="color:#666;font-size:10px;font-family:\'Press Start 2P\',monospace;letter-spacing:1px;">' + lanes.length + ' LANE' + (lanes.length === 1 ? '' : 'S') + '</span>'
       + '<button class="seg-btn" style="color:#00ff88;border-color:#00ff88;" onclick="addSpiralLane(' + i + ')">+</button>';
-    if (lanes.length > 1) h += '<button class="seg-btn" style="color:#ff4444;border-color:#ff4444;" onclick="rmSpiralLane(' + i + ')">−</button>';
+    if (lanes.length > 0 || seg.step !== undefined) h += '<button class="seg-btn" style="color:#ff4444;border-color:#ff4444;" onclick="rmSpiralLane(' + i + ')">−</button>';
     h += '</div>';
 
     // Per-lane rows
@@ -1144,9 +1144,16 @@ function addSpiralLane(segIdx) {
 
 function rmSpiralLane(segIdx) {
   const seg = getC().spiralPattern[segIdx];
-  if (!seg.lanes || seg.lanes.length <= 1) return;
-  seg.lanes.pop();
-  if (seg.lanes.length === 1) { seg.step = seg.lanes[0].step; delete seg.lanes; }
+  // Allow removing all lanes — empty lanes:[] means "no spawn rows in this segment" (e.g. pylon-only).
+  if (seg.lanes && seg.lanes.length > 0) {
+    seg.lanes.pop();
+  } else if (seg.step !== undefined) {
+    // Legacy single-step format → convert to explicit empty array.
+    seg.lanes = [];
+    delete seg.step;
+  } else {
+    return;
+  }
   refresh();
 }
 
