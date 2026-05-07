@@ -2255,6 +2255,14 @@ window.onload = function() {
     function isZoneComplete(sector) { return getZoneCollectedCount(sector) >= getZoneItemCount(sector); }
     function allZonesComplete() { for (var i = 1; i <= 5; i++) { if (!isZoneComplete(i)) return false; } return true; }
     function isSpeedRunSector(sector, level) {
+        // Bonus level — always a speed run.
+        if (_inBonusLevel) {
+            try {
+                var tb = SPAWN_TUNING['S' + sector + 'B'];
+                if (tb && tb.isSpeedRun !== undefined) return !!tb.isSpeedRun;
+            } catch(e) {}
+            return true;
+        }
         // 1. SPAWN_TUNING per-level override (from spawn editor)
         try {
             if (typeof SPAWN_TUNING !== 'undefined') {
@@ -2302,9 +2310,9 @@ window.onload = function() {
     var weaponTier = _loadWeaponTier();
     var speedTier = _loadSpeedTier();
 
-    var SHIELD_PRICES = [null, 60, 135, 750, 1800];
-    var WEAPON_PRICES = [null, 120, 450, 1275, 2100];
-    var SPEED_PRICES = [null, 180, 600, 1500, 3300];
+    var SHIELD_PRICES = [null, 90, 200, 1125, 2700];
+    var WEAPON_PRICES = [null, 180, 675, 1900, 3150];
+    var SPEED_PRICES = [null, 270, 900, 2250, 4950];
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
@@ -2316,7 +2324,7 @@ window.onload = function() {
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
         { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 3000, default: false }
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 4500, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
     function _shipDataIds(shipId) {
@@ -2447,7 +2455,7 @@ window.onload = function() {
         try { updateCollectionHUD(); } catch(e) {}
         try {
             var _stEl = document.getElementById('sector-text');
-            if (_stEl) _stEl.innerText = currentSector + '-' + currentLevel;
+            if (_stEl) _stEl.innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
             var _zone = getLevelScaledZone(currentSector);
             if (_zone) {
                 var _znEl = document.getElementById('zone-name');
@@ -2503,8 +2511,16 @@ window.onload = function() {
                 arr[i].weaponAmmo = weaponAmmo;
                 arr[i].score = score;
                 arr[i].sectorStartScore = sectorStartScore;
-                arr[i].currentSector = currentSector;
-                arr[i].currentLevel = currentLevel;
+                // Bonus levels are transient side-quests — persist as if about to advance
+                // to next sector L1, so a reload mid-bonus drops player into S(N+1)L1
+                // rather than re-entering the bonus or the just-cleared sector.
+                if (_inBonusLevel) {
+                    arr[i].currentSector = Math.min(currentSector + 1, 5);
+                    arr[i].currentLevel = 1;
+                } else {
+                    arr[i].currentSector = currentSector;
+                    arr[i].currentLevel = currentLevel;
+                }
                 try {
                     arr[i].collectedContent = {
                         EDIT: Array.from(collectedContent.EDIT || []),
@@ -3372,8 +3388,18 @@ window.onload = function() {
             openInventory(_inventoryReturnTo);
         } else if (carouselFromVictory) {
             carouselFromVictory = false;
-            // Advance directly — show store first, then next sector
-            showStore(function() { startNextSector(); });
+            // Advance directly — show store first, then next sector (or bonus level if available).
+            showStore(function() {
+                // After clearing a sector (zone complete) and dismissing the inter-sector
+                // carousel, route into the per-sector bonus ring-grab — once per transition,
+                // and only when the sector advance would otherwise happen.
+                var _justClearedZone = isZoneComplete(currentSector) && currentSector < 5;
+                if (!_inBonusLevel && _justClearedZone && SPAWN_TUNING['S' + currentSector + 'B']) {
+                    _startBonusLevel();
+                } else {
+                    startNextSector();
+                }
+            });
         } else if (carouselFromPause) {
             carouselFromPause = false;
             document.getElementById('pause-screen').style.display = 'flex';
@@ -4946,9 +4972,148 @@ window.onload = function() {
                 startPct: 0.05,
                 endPct: 0.85
             }
+        },
+        // Bonus ring-grab between Sector 1 and Sector 2 — hidden from level pickers.
+        'S1B': {
+            isBonus: true,
+            blocks: false, shields: false, barriers: false, knots: false, mines: false,
+            ramps: false, stars: false, boost: false,
+            baseHazard: 0, baseRing: 1.0, baseShields: 0,
+            levelEscalation: 0, barrierThreshold: 0,
+            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
+            srSpacing: 40, srCountMin: 0, srCountMax: 0,
+            srTwistMin: 0.15, srTwistMax: 0.3,
+            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
+            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
+            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
+            knotShare: 0, blockShare: 0,
+            baseSpeed: 320, levelSpeed: 320,
+            baseLength: 6000, levelLength: 6000,
+            spiralStep: 0.8,
+            spiralPattern: [
+                { until: 1.0,
+                  lanes: [
+                      { step: 0.6, offset: 0 },
+                      { step: -0.6, offset: 1.57 }
+                  ],
+                  spacing: 35,
+                  spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
+                }
+            ],
+            rotMult: 1.0,
+            isSpeedRun: true,
+            speedRunTarget: 18,
+            pylons: null
+        },
+        // Bonus ring-grab between Sector 2 and Sector 3.
+        'S2B': {
+            isBonus: true,
+            blocks: false, shields: false, barriers: false, knots: false, mines: false,
+            ramps: false, stars: false, boost: false,
+            baseHazard: 0, baseRing: 1.0, baseShields: 0,
+            levelEscalation: 0, barrierThreshold: 0,
+            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
+            srSpacing: 40, srCountMin: 0, srCountMax: 0,
+            srTwistMin: 0.15, srTwistMax: 0.3,
+            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
+            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
+            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
+            knotShare: 0, blockShare: 0,
+            baseSpeed: 360, levelSpeed: 360,
+            baseLength: 6000, levelLength: 6000,
+            spiralStep: 0.8,
+            spiralPattern: [
+                { until: 1.0,
+                  lanes: [
+                      { step: 0.6, offset: 0 },
+                      { step: -0.6, offset: 1.57 }
+                  ],
+                  spacing: 35,
+                  spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
+                }
+            ],
+            rotMult: 1.0,
+            isSpeedRun: true,
+            speedRunTarget: 17,
+            pylons: null
+        },
+        // Bonus ring-grab between Sector 3 and Sector 4.
+        'S3B': {
+            isBonus: true,
+            blocks: false, shields: false, barriers: false, knots: false, mines: false,
+            ramps: false, stars: false, boost: false,
+            baseHazard: 0, baseRing: 1.0, baseShields: 0,
+            levelEscalation: 0, barrierThreshold: 0,
+            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
+            srSpacing: 40, srCountMin: 0, srCountMax: 0,
+            srTwistMin: 0.15, srTwistMax: 0.3,
+            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
+            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
+            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
+            knotShare: 0, blockShare: 0,
+            baseSpeed: 400, levelSpeed: 400,
+            baseLength: 6000, levelLength: 6000,
+            spiralStep: 0.8,
+            spiralPattern: [
+                { until: 1.0,
+                  lanes: [
+                      { step: 0.6, offset: 0 },
+                      { step: -0.6, offset: 1.57 }
+                  ],
+                  spacing: 35,
+                  spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
+                }
+            ],
+            rotMult: 1.0,
+            isSpeedRun: true,
+            speedRunTarget: 16,
+            pylons: null
+        },
+        // Bonus ring-grab between Sector 4 and Sector 5 (final sector has no bonus after it).
+        'S4B': {
+            isBonus: true,
+            blocks: false, shields: false, barriers: false, knots: false, mines: false,
+            ramps: false, stars: false, boost: false,
+            baseHazard: 0, baseRing: 1.0, baseShields: 0,
+            levelEscalation: 0, barrierThreshold: 0,
+            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
+            srSpacing: 40, srCountMin: 0, srCountMax: 0,
+            srTwistMin: 0.15, srTwistMax: 0.3,
+            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
+            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
+            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
+            knotShare: 0, blockShare: 0,
+            baseSpeed: 440, levelSpeed: 440,
+            baseLength: 6000, levelLength: 6000,
+            spiralStep: 0.8,
+            spiralPattern: [
+                { until: 1.0,
+                  lanes: [
+                      { step: 0.6, offset: 0 },
+                      { step: -0.6, offset: 1.57 }
+                  ],
+                  spacing: 35,
+                  spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
+                }
+            ],
+            rotMult: 1.0,
+            isSpeedRun: true,
+            speedRunTarget: 15,
+            pylons: null
         }
     };
+    // Bonus level state — transient (NOT persisted to session JSON).
+    // When true, _getTuning + carousel close + triggerVictory + sector HUD
+    // route through the per-sector 'SnB' bonus ring-grab between sector clears.
+    var _inBonusLevel = false;
     function _getTuning(sector, level) {
+        if (_inBonusLevel && SPAWN_TUNING['S' + sector + 'B']) {
+            return SPAWN_TUNING['S' + sector + 'B'];
+        }
+        // Treat sentinel level === 'B' as bonus (defensive — accepts string key).
+        if (level === 'B' && SPAWN_TUNING['S' + sector + 'B']) {
+            return SPAWN_TUNING['S' + sector + 'B'];
+        }
         return SPAWN_TUNING['S' + sector + 'L' + level] || {};
     }
 
@@ -5799,6 +5964,10 @@ window.onload = function() {
     // Speed run target — per-level override via SPAWN_TUNING, else hardcoded
     function getSpeedRunTarget() {
         try {
+            if (_inBonusLevel) {
+                var tb = SPAWN_TUNING['S' + currentSector + 'B'];
+                if (tb && tb.speedRunTarget !== undefined) return tb.speedRunTarget;
+            }
             if (typeof SPAWN_TUNING !== 'undefined') {
                 var t = SPAWN_TUNING['S' + currentSector + 'L' + currentLevel];
                 if (t && t.speedRunTarget !== undefined) return t.speedRunTarget;
@@ -5810,6 +5979,65 @@ window.onload = function() {
     function triggerVictory() {
         _sendTelemetry('victory');
         gameState = 'victory';
+        // Bonus level complete — rings already awarded via collect handlers + sector/speed bonuses.
+        // Skip score-bonus content unlocks, skip max-passed (it's a side-quest, not progression),
+        // skip the inter-sector carousel (already shown before the bonus). Auto-advance to S(N+1)L1.
+        if (_inBonusLevel) {
+            AudioEngine.playSFX('victory');
+            flash('#ffe000');
+            // Award sector + speed ring bonuses for the bonus run.
+            sectorRunTimes['S' + currentSector + 'B'] = sectorTime;
+            var _bSectorBonus = 50 * currentSector;
+            var _bZone = ZONES[Math.min(currentSector - 1, ZONES.length - 1)];
+            var _bBaselineSpeed = (_bZone && _bZone.speed ? _bZone.speed : 200) * 0.85;
+            var _bBaselineLength = sectorDistance || 6000;
+            var _bBaselineTime = _bBaselineLength / _bBaselineSpeed;
+            var _bSpeedBonus = Math.max(0, Math.min(200, Math.floor((_bBaselineTime - sectorTime) * 2)));
+            var _bTotalBonus = _bSectorBonus + _bSpeedBonus;
+            if (_bTotalBonus > 0) { _ringsAdd(_bTotalBonus); try { updateRingHUD(); } catch(e) {} }
+            // Show a brief "BONUS COMPLETE" banner on the victory screen, then auto-advance.
+            var _vsRoot = document.getElementById('victory-screen');
+            try {
+                _vsRoot.querySelector('.screen-title').innerText = 'BONUS COMPLETE';
+                document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bTotalBonus + ' RINGS</span>';
+                document.getElementById('victory-time').innerHTML = '';
+                var _vu = document.getElementById('victory-unlocks');
+                if (_vu) { _vu.innerHTML = ''; _vu.style.display = 'none'; }
+            } catch(e) {}
+            _vsRoot.style.display = 'flex';
+            AudioEngine.stopEngine();
+            stopMusic();
+            var _bTap = _vsRoot.querySelector('.vs-tap-prompt');
+            if (_bTap) _bTap.remove();
+            var _bPrompt = document.createElement('div');
+            _bPrompt.className = 'vs-tap-prompt';
+            _bPrompt.textContent = 'TAP TO CONTINUE';
+            _bPrompt.style.cssText = "font-family:'Press Start 2P',monospace; font-size:clamp(11px,2.5vw,14px); letter-spacing:3px; color:#ffe000; text-align:center; margin-top:24px; animation:victoryPulse 1.2s ease-in-out infinite;";
+            _vsRoot.appendChild(_bPrompt);
+            var _bAdvanced = false;
+            var _bAdvanceAt = Date.now() + 300;
+            var _bFallbackTimer = null;
+            var _bAdvance = function() {
+                if (_bAdvanced) return;
+                if (Date.now() < _bAdvanceAt) return;
+                _bAdvanced = true;
+                if (_bFallbackTimer) { clearTimeout(_bFallbackTimer); _bFallbackTimer = null; }
+                _vsRoot.removeEventListener('touchend', _bAdvance);
+                _vsRoot.removeEventListener('mouseup', _bAdvance);
+                _vsRoot.removeEventListener('click', _bAdvance);
+                if (gameState !== 'victory') return;
+                _vsRoot.style.display = 'none';
+                var _tp = _vsRoot.querySelector('.vs-tap-prompt');
+                if (_tp) _tp.remove();
+                // startNextSector() detects _inBonusLevel and advances to S(N+1)L1, clearing the flag.
+                startNextSector();
+            };
+            _vsRoot.addEventListener('touchend', _bAdvance, {passive:true});
+            _vsRoot.addEventListener('mouseup', _bAdvance);
+            _vsRoot.addEventListener('click', _bAdvance);
+            _bFallbackTimer = setTimeout(_bAdvance, 6000);
+            return;
+        }
         try { _trSaveMaxPassed(currentSector, currentLevel); } catch(e) {}
         // Sector 2 clear unlocks the StealthWing in the SHIPS panel.
         if (currentSector >= 2 && !shipDiscovered.stealthwing) {
@@ -6558,7 +6786,50 @@ window.onload = function() {
     // Alias for backwards compatibility with collision calls
     function tutHit(utype) { tutPassed(utype); }
 
+    // Begin a hidden bonus ring-grab between the just-cleared sector and the next.
+    // Stays in currentSector (so SPAWN_TUNING['S' + currentSector + 'B'] applies via _getTuning),
+    // sets _inBonusLevel so HUD + tuning + victory all route correctly.
+    function _startBonusLevel() {
+        _inBonusLevel = true;
+        contentSpawnedThisRun = [];
+        var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
+        sectorDistance = t.levelLength || t.baseLength || 6000;
+        var spd = t.baseSpeed || 320;
+        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier];
+        // Keep current zone visuals — bonus level reuses just-cleared sector's palette.
+        try { document.getElementById('sector-text').innerText = 'BONUS'; } catch(e) {}
+        sectorStartScore = score;
+        combo = 0;
+        shieldsUp = false; shieldsUpTimer = 0;
+        updateCollectionHUD();
+        initializeFlight(false);
+    }
+
     function startNextSector() {
+        // Bonus level just finished — advance to next sector L1 without re-entering bonus.
+        if (_inBonusLevel) {
+            _inBonusLevel = false;
+            if (currentSector >= 5) { runFinalCinematic(); return; }
+            currentSector++;
+            currentLevel = 1;
+            contentSpawnedThisRun = [];
+            try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
+            var zoneB = getLevelScaledZone(currentSector);
+            sectorDistance = zoneB.length;
+            baseSpeed = zoneB.speed * SPEED_MULTIPLIERS[speedTier];
+            document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
+            document.getElementById('zone-name').innerText = zoneB.name;
+            document.getElementById('zone-name').style.color = zoneB.color;
+            wireMat.color.setHex(zoneB.wireColor);
+            scene.fog.color.setHex(zoneB.fogColor);
+            scene.background.setHex(zoneB.fogColor);
+            sectorStartScore = score;
+            combo = 0;
+            shieldsUp = false; shieldsUpTimer = 0;
+            updateCollectionHUD();
+            initializeFlight(false);
+            return;
+        }
         if (TUT.done) {
             TUT.done=false; TUT.skipNext=true;
             document.getElementById('victory-screen').querySelector('.screen-title').innerText = 'SECTOR CLEARED';
@@ -6595,7 +6866,7 @@ window.onload = function() {
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
         baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
-        document.getElementById('sector-text').innerText = currentSector + '-' + currentLevel;
+        document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
         document.getElementById('zone-name').innerText = zone.name;
         document.getElementById('zone-name').style.color = zone.color;
         wireMat.color.setHex(zone.wireColor);
@@ -6856,14 +7127,14 @@ window.onload = function() {
         preTitle.innerText = 'YOU ARE ENTERING THE';
         el.appendChild(preTitle);
 
-        // Zone name + SECTOR
+        // Zone name + SECTOR — bonus level shows "BONUS RING RUN" instead.
         var title = document.createElement('div');
         title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(18px,6vw,34px);letter-spacing:2px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';text-align:center;width:100%;';
-        title.innerText = zone.name + ' SECTOR';
+        title.innerText = _inBonusLevel ? 'BONUS RING RUN' : (zone.name + ' SECTOR');
         el.appendChild(title);
 
-        // Level indicator
-        if (currentLevel > 1) {
+        // Level indicator (suppressed for bonus — bonus stays sector-anonymous).
+        if (!_inBonusLevel && currentLevel > 1) {
             var lvlEl = document.createElement('div');
             lvlEl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(10px,2.5vw,16px);letter-spacing:3px;color:#fff;opacity:0.7;text-align:center;width:100%;';
             lvlEl.innerText = 'LEVEL ' + currentLevel;
@@ -7110,7 +7381,7 @@ window.onload = function() {
             try { localStorage.removeItem('trUnlockedZones'); } catch(e) {}
             rebuildUnlockedMenu();
             throttle = 0; throttleSmooth = 0; shipZOffset = -18;
-            document.getElementById('sector-text').innerText = currentSector + '-' + currentLevel;
+            document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
             document.getElementById('zone-name').innerText = zone0.name;
             document.getElementById('zone-name').style.color = zone0.color;
             wireMat.color.setHex(zone0.wireColor);
@@ -7633,6 +7904,10 @@ window.onload = function() {
             head.textContent = 'S' + s;
             col.appendChild(head);
             for (var l = 1; l <= 4; l++) {
+                // Skip any bonus level (isBonus: true in SPAWN_TUNING) — bonus levels are
+                // hidden side-quests and must not appear in pickers / abort grids.
+                var _tCheck = (typeof SPAWN_TUNING !== 'undefined') ? SPAWN_TUNING['S' + s + 'L' + l] : null;
+                if (_tCheck && _tCheck.isBonus === true) continue;
                 var btn = document.createElement('button');
                 btn.className = 'menu-btn';
                 btn.setAttribute('data-sector', String(s));
