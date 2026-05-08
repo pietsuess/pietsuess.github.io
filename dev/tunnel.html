@@ -2200,7 +2200,7 @@ var AudioEngine = {
     this._engineMuted = false;
   },
   suspend: function() { stopMusic(); pauseMusic(); this.stopEngine(); },
-  resume: function() { resumeMusic(); },
+  resume: function() { try { if (masterGain && masterGain.gain) masterGain.gain.value = 0.82; } catch(e) {} resumeMusic(); },
   playBGM: function() {},
   stopBGM: function() {},
   toggleMute: function() {} // no longer used — separate buttons now
@@ -4898,8 +4898,30 @@ window.onload = function() {
             ],
             rotMult: 0.9
         },
-        // S1L4 - applied from spawn editor export 2026-05-07 17:48 (pylons-only update)
+        // S1L4 — swapped with S2L1 on 2026-05-07. Was the rich 5-phase config; now the minimal pylon-slalom.
         'S1L4': {
+            baseHazard: 0, baseRing: 0, baseShields: 0,
+            spacing: 50, maxSpawnPct: 0.86,
+            speed: 260, length: 14000,
+            isSpeedRun: true,
+            speedRunTarget: 20,
+            spiralPattern: [
+                { until: 1.0, lanes: [
+                    { step: 0.8, offset: 0.44 }
+                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 0, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0 } }
+            ],
+            pylons: {
+                spacing: 560,
+                offset: -0.2,
+                spiralStep: 0.25,
+                startAngle: 0,
+                pattern: 'alternate',
+                startPct: 0.05,
+                endPct: 0.85
+            }
+        },
+        // S2L1 — swapped with S1L4 on 2026-05-07. Was the minimal pylon-slalom; now the rich 5-phase config.
+        'S2L1': {
             blocks: false,
             shields: false,
             barriers: false,
@@ -4986,28 +5008,6 @@ window.onload = function() {
                 pattern: "alternate",
                 startPct: 0.05,
                 endPct: 0.52
-            }
-        },
-        // S2L1 — pylon-slalom test (cloned from S1L4 export 2026-04-22)
-        'S2L1': {
-            baseHazard: 0, baseRing: 0, baseShields: 0,
-            spacing: 50, maxSpawnPct: 0.86,
-            speed: 260, length: 14000,
-            isSpeedRun: true,
-            speedRunTarget: 20,
-            spiralPattern: [
-                { until: 1.0, lanes: [
-                    { step: 0.8, offset: 0.44 }
-                ], spacing: 55, spawn: { baseHazard: 0, baseRing: 0, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0 } }
-            ],
-            pylons: {
-                spacing: 560,
-                offset: -0.2,
-                spiralStep: 0.25,
-                startAngle: 0,
-                pattern: 'alternate',
-                startPct: 0.05,
-                endPct: 0.85
             }
         },
         // Bonus ring-grab between Sector 1 and Sector 2 — hidden from level pickers.
@@ -8796,18 +8796,30 @@ window.onload = function() {
         el.addEventListener('touchmove', function(e) { e.stopPropagation(); }, {passive:true});
     });
 
-    // --- Pause audio when tab/app hidden, page closed, or window loses focus ---
+    // --- HARD PAUSE on visibility/focus loss ---
+    // Tab hidden, app backgrounded, page closed, or window blurred → kill ALL audio + freeze gameplay.
+    // Belt-and-suspenders: AudioEngine.suspend() (music + engine + audioCtx.suspend) AND mute masterGain to 0.
+    // Do NOT auto-resume on refocus — user must tap RESUME to come back.
+    function _hardPause() {
+        try { if (typeof AudioEngine !== 'undefined' && AudioEngine.suspend) AudioEngine.suspend(); } catch(e) {}
+        try { if (typeof masterGain !== 'undefined' && masterGain && masterGain.gain) masterGain.gain.value = 0; } catch(e) {}
+        try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'running') audioCtx.suspend(); } catch(e) {}
+        try {
+            if (typeof gameState !== 'undefined' && gameState === 'playing') {
+                _prePauseState = 'playing';
+                gameState = 'paused';
+                var ps = document.getElementById('pause-screen');
+                if (ps) ps.style.display = 'flex';
+            }
+        } catch(e) {}
+    }
     document.addEventListener('visibilitychange', function() {
-        if (document.hidden) {
-            pauseMusic();
-        } else {
-            if (gameState === 'playing') resumeMusic();
-        }
+        if (document.hidden) _hardPause();
+        // No auto-resume on visibility return — user must tap RESUME.
     });
-    window.addEventListener('blur', function() { pauseMusic(); });
-    window.addEventListener('focus', function() { if (gameState === 'playing') resumeMusic(); });
-    window.addEventListener('pagehide', function() { pauseMusic(); });
-    window.addEventListener('beforeunload', function() { pauseMusic(); });
+    window.addEventListener('blur', _hardPause);
+    window.addEventListener('pagehide', _hardPause);
+    window.addEventListener('beforeunload', _hardPause);
 
     // --- Main Render Loop ---
     const clock = new THREE.Clock();
