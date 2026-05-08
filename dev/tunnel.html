@@ -1009,10 +1009,8 @@
             <span style="color:#ff88dd;text-align:right;">HULL</span><span id="tr-prev-bar-hull" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hull" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">TOTAL</span><span id="tr-prev-bar-mass" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-mass" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">SPEED</span><span id="tr-prev-bar-top" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-top" style="color:#ffcc66;text-align:right;">--</span>
-            <span style="color:#ff88dd;text-align:right;">HITBOX</span><span id="tr-prev-bar-hit" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hit" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">SHIELDS</span><span id="tr-prev-bar-hp" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hp" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">DMG ABS</span><span id="tr-prev-bar-dmg" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-dmg" style="color:#ffcc66;text-align:right;">--</span>
-            <span style="color:#ff88dd;text-align:right;">CLASS</span><span></span><span id="tr-prev-class" style="color:#44ff66;text-align:right;">--</span>
         </div>
     </div>
     </div>
@@ -18980,23 +18978,32 @@ illum 3
       map[k].forEach(function(m){ m.visible = show; });
     });
   }
-  function _bar(value, max) {
-    var fillCount = Math.max(0, Math.min(10, Math.round((value / max) * 10)));
+  function _bar(fillCount) {
+    fillCount = Math.max(0, Math.min(10, fillCount));
     return '▰'.repeat(fillCount) + '▱'.repeat(10 - fillCount);
   }
-  function _setStat(idBar, idNum, value, max, formatted, color) {
+  // Color by absolute fill tier (0-10):
+  //   0-3 fills = bottom 2 tiers → red    (#ff6688)
+  //   4-6 fills = middle tier    → orange (#ffcc66)
+  //   7-10 fills = top 2 tiers   → green  (#00ff88)
+  function _tierColor(fillCount) {
+    if (fillCount >= 7) return '#00ff88';
+    if (fillCount >= 4) return '#ffcc66';
+    return '#ff6688';
+  }
+  // Bar shows RAW VALUE direction (more = bigger bar regardless of goodness).
+  // Color reflects GOODNESS independently:
+  //   For "higher = better" stats: fill→goodness directly.
+  //   For "lower = better" stats: invert (small bar = green, full bar = red).
+  // Goodness tier: 0-3 = red, 4-6 = orange, 7-10 = green.
+  function _setStat(idBar, idNum, rawFill, goodness, formatted) {
+    var color = goodness >= 7 ? '#00ff88' : (goodness >= 4 ? '#ffcc66' : '#ff6688');
     var bar = document.getElementById(idBar);
     var num = document.getElementById(idNum);
-    if (bar) { bar.textContent = _bar(value, max); if (color) bar.style.color = color; else bar.style.color = '#ffcc66'; }
-    if (num) { num.textContent = formatted; if (color) num.style.color = color; else num.style.color = '#ffcc66'; }
+    if (bar) { bar.textContent = _bar(rawFill); bar.style.color = color; }
+    if (num) { num.textContent = formatted; num.style.color = color; }
   }
-  // Default ship for delta comparison
   function _defaultShipMeta(){ try { return window.__shipCatalog && window.__shipCatalog.deltawing; } catch(e){} return null; }
-  function _cmpColor(value, baseline, betterIsHigher) {
-    if (value === baseline) return null;
-    var better = betterIsHigher ? (value > baseline) : (value < baseline);
-    return better ? '#00ff88' : '#ff6688';
-  }
   function refresh(){
     var a = getActive();
     if (objLoaded) {
@@ -19005,41 +19012,25 @@ illum 3
       setObjTier(objMeshes.speeds, a.sp);
     }
     var meta = _previewShipMeta() || _defaultShipMeta();
-    var base = _defaultShipMeta() || meta || {};
     var hullKg     = (meta && typeof meta.hullKg     === 'number') ? meta.hullKg     : SHIP_KG_HULL_DEFAULT;
-    var hitRadius  = (meta && typeof meta.hitRadius  === 'number') ? meta.hitRadius  : 3.5;
     var maxHealth  = (meta && typeof meta.maxHealth  === 'number') ? meta.maxHealth  : 100;
     var dmgMult    = (meta && typeof meta.dmgMult    === 'number') ? meta.dmgMult    : 1.0;
-    var baseHull   = (typeof base.hullKg     === 'number') ? base.hullKg     : 4500;
-    var baseHit    = (typeof base.hitRadius  === 'number') ? base.hitRadius  : 3.5;
-    var baseHP     = (typeof base.maxHealth  === 'number') ? base.maxHealth  : 100;
-    var baseDmg    = (typeof base.dmgMult    === 'number') ? base.dmgMult    : 1.0;
     var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
     var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
-    var baseTotalKg = baseHull + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
-    var baseTop = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (baseHull / baseTotalKg);
-    var cls = 'LIGHT', col = '#44ff66';
-    if (totalKg >= 6500) { cls = 'HEAVY'; col = '#ff4466'; }
-    else if (totalKg >= 5200) { cls = 'MEDIUM'; col = '#ffcc44'; }
-    // Bar maxes
-    var MAX_HULL = 5000, MAX_TOTAL = 8000, MAX_TOP = 2000, MAX_HIT = 5.0, MAX_HP = 200, MAX_DMG = 0.5;
-    // Color comparisons (vs default ship deltawing)
-    var colHull = _cmpColor(hullKg, baseHull, false);   // lower hull = better
-    var colMass = _cmpColor(totalKg, baseTotalKg, false); // lower total = better
-    var colTop  = _cmpColor(top, baseTop, true);         // higher top speed = better
-    var colHit  = _cmpColor(hitRadius, baseHit, false);  // smaller hitbox = better
-    var colHp   = _cmpColor(maxHealth, baseHP, true);    // higher shields = better
-    var colDmg  = _cmpColor(dmgMult, baseDmg, false);    // lower dmgMult = better
-    _setStat('tr-prev-bar-hull', 'tr-prev-hull', hullKg, MAX_HULL, hullKg.toLocaleString() + ' kg', colHull);
-    _setStat('tr-prev-bar-mass', 'tr-prev-mass', totalKg, MAX_TOTAL, totalKg.toLocaleString() + ' kg', colMass);
-    _setStat('tr-prev-bar-top',  'tr-prev-top',  top, MAX_TOP, top.toFixed(0) + ' km/min', colTop);
-    // HITBOX: smaller is better -> invert for fill
-    _setStat('tr-prev-bar-hit',  'tr-prev-hit',  Math.max(0, MAX_HIT - hitRadius), MAX_HIT, hitRadius.toFixed(1), colHit);
-    _setStat('tr-prev-bar-hp',   'tr-prev-hp',   maxHealth, MAX_HP, String(maxHealth) + ' HP', colHp);
-    // DMG ABS: shown as absorption fraction = 1 - dmgMult
-    var absorb = Math.max(0, 1 - dmgMult);
-    _setStat('tr-prev-bar-dmg',  'tr-prev-dmg',  absorb, MAX_DMG, Math.round(absorb * 100) + '%', colDmg);
-    if (classEl) { classEl.textContent = cls; classEl.style.color = col; }
+    // Scale anchors — full bar = MAX, empty bar = 0.
+    var MAX_HULL = 5000, MAX_TOTAL = 8000, MAX_TOP = 2200, MAX_HP = 200, MAX_ABS = 0.50;
+    var fillHull = Math.max(0, Math.min(10, Math.round((hullKg    / MAX_HULL)  * 10)));
+    var fillMass = Math.max(0, Math.min(10, Math.round((totalKg   / MAX_TOTAL) * 10)));
+    var fillTop  = Math.max(0, Math.min(10, Math.round((top       / MAX_TOP)   * 10)));
+    var fillHp   = Math.max(0, Math.min(10, Math.round((maxHealth / MAX_HP)    * 10)));
+    var absorb   = Math.max(0, 1 - dmgMult);
+    var fillDmg  = Math.max(0, Math.min(10, Math.round((absorb    / MAX_ABS)   * 10)));
+    // Goodness: HULL/TOTAL inverted (heavy = bad); others direct.
+    _setStat('tr-prev-bar-hull', 'tr-prev-hull', fillHull, 10 - fillHull, hullKg.toLocaleString() + ' kg');
+    _setStat('tr-prev-bar-mass', 'tr-prev-mass', fillMass, 10 - fillMass, totalKg.toLocaleString() + ' kg');
+    _setStat('tr-prev-bar-top',  'tr-prev-top',  fillTop,  fillTop,       top.toFixed(0) + ' km/min');
+    _setStat('tr-prev-bar-hp',   'tr-prev-hp',   fillHp,   fillHp,        String(maxHealth) + ' HP');
+    _setStat('tr-prev-bar-dmg',  'tr-prev-dmg',  fillDmg,  fillDmg,       Math.round(absorb * 100) + '%');
   }
   function resize(){
     var w = canvas.clientWidth || 320;
