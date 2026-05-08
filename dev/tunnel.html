@@ -2331,8 +2331,21 @@ window.onload = function() {
     // Rings collected during a bonus level are held here; banked to ringBank only on objective success.
     var _bonusEscrow = 0;
     function _bonusEscrowAdd(n) { _bonusEscrow += n; try { updateRingHUD(); } catch(e) {} }
-    function _bonusEscrowCommit() { if (_bonusEscrow > 0) { ringBank += _bonusEscrow; _ringsSave(ringBank); } _bonusEscrow = 0; try { _sessionSync(); updateRingHUD(); } catch(e) {} }
-    function _bonusEscrowForfeit() { _bonusEscrow = 0; try { updateRingHUD(); } catch(e) {} }
+    function _bonusEscrowCommit() { if (_bonusEscrow > 0) { ringBank += _bonusEscrow; _ringsSave(ringBank); } _bonusEscrow = 0; try { _loanerRestore(); } catch(e) {} try { _sessionSync(); updateRingHUD(); } catch(e) {} }
+    function _bonusEscrowForfeit() { _bonusEscrow = 0; try { _loanerRestore(); } catch(e) {} try { updateRingHUD(); } catch(e) {} }
+    // ── BONUS CHALLENGE loaner (free max-tier weapon/shield for the bonus only) ──
+    var _loanerActive = false, _loanerOrigWeapon = null, _loanerOrigShield = null;
+    function _loanerApply(kind) {
+        _loanerActive = true;
+        if (kind === 'weapon') { _loanerOrigWeapon = weaponTier; weaponTier = 4; }
+        else if (kind === 'shield') { _loanerOrigShield = shieldTier; shieldTier = 4; }
+    }
+    function _loanerRestore() {
+        if (!_loanerActive) return;
+        if (_loanerOrigWeapon !== null) { weaponTier = _loanerOrigWeapon; _loanerOrigWeapon = null; }
+        if (_loanerOrigShield !== null) { shieldTier = _loanerOrigShield; _loanerOrigShield = null; }
+        _loanerActive = false;
+    }
     var ringBank = _ringsLoad();
 
     function _loadShieldTier() { try { var v = parseInt(localStorage.getItem('tunnelrunner.shieldTier') || '0', 10); if (isNaN(v)) return 0; return _migrateShieldIdx(v); } catch(e) { return 0; } }
@@ -6870,7 +6883,16 @@ window.onload = function() {
     // Begin a hidden bonus ring-grab between the just-cleared sector and the next.
     // Stays in currentSector (so SPAWN_TUNING['S' + currentSector + 'B'] applies via _getTuning),
     // sets _inBonusLevel so HUD + tuning + victory all route correctly.
+    // S2 + S4 prompt for a free max-tier loaner (weapon/shield) before the challenge starts.
     function _startBonusLevel() {
+        var sec = currentSector;
+        if (sec === 2 || sec === 4) {
+            _showLoanerPicker(sec === 2 ? 'weapon' : 'shield', _startBonusLevelInner);
+            return;
+        }
+        _startBonusLevelInner();
+    }
+    function _startBonusLevelInner() {
         _inBonusLevel = true;
         contentSpawnedThisRun = [];
         var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
@@ -6884,6 +6906,36 @@ window.onload = function() {
         shieldsUp = false; shieldsUpTimer = 0;
         updateCollectionHUD();
         initializeFlight(false);
+    }
+    function _showLoanerPicker(kind, onConfirm) {
+        var existing = document.getElementById('tr-loaner-picker');
+        if (existing) existing.remove();
+        var loanerName = kind === 'weapon' ? 'WAVE CANNON' : 'GRAPHENE SHIELD';
+        var typeLbl = kind === 'weapon' ? 'WEAPON' : 'SHIELD';
+        var ownedTier = kind === 'weapon' ? weaponTier : shieldTier;
+        var ownedName = kind === 'weapon' ? (WEAPON_NAMES[ownedTier] || 'NONE') : (ownedTier > 0 ? (SHIELD_DESC[ownedTier] || 'EQUIPPED') : 'NONE');
+        var ov = document.createElement('div');
+        ov.id = 'tr-loaner-picker';
+        ov.style.cssText = 'position:fixed;inset:0;z-index:700;background:rgba(0,0,0,0.94);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:18px;padding:24px;font-family:"Press Start 2P",monospace;color:#ffe000;';
+        ov.innerHTML =
+            '<div style="font-size:clamp(13px,3.5vw,20px);letter-spacing:3px;color:#fff;">BONUS CHALLENGE</div>'
+            + '<div style="font-size:clamp(10px,2.5vw,13px);color:#aaa;letter-spacing:2px;text-align:center;">FREE LOANER ' + typeLbl + '?</div>'
+            + '<div style="font-size:clamp(16px,4.5vw,24px);color:#ffe000;text-shadow:0 0 12px rgba(255,224,0,0.7);letter-spacing:2px;">' + loanerName + '</div>'
+            + '<button id="tr-loaner-yes" class="menu-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ USE LOANER ]</button>'
+            + '<div style="font-size:8px;color:#666;letter-spacing:2px;">YOUR ' + typeLbl + ': ' + ownedName + '</div>'
+            + '<button id="tr-loaner-no" class="menu-btn">[ USE MY EQUIPMENT ]</button>';
+        document.body.appendChild(ov);
+        var done = function(useLoaner) {
+            try { ov.remove(); } catch(e) {}
+            if (useLoaner) _loanerApply(kind);
+            onConfirm();
+        };
+        var yes = document.getElementById('tr-loaner-yes');
+        var no  = document.getElementById('tr-loaner-no');
+        yes.addEventListener('click', function(){ done(true); });
+        yes.addEventListener('touchend', function(e){ e.preventDefault(); done(true); }, {passive:false});
+        no.addEventListener('click', function(){ done(false); });
+        no.addEventListener('touchend', function(e){ e.preventDefault(); done(false); }, {passive:false});
     }
 
     function startNextSector() {
