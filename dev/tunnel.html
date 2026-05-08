@@ -2274,6 +2274,9 @@ window.onload = function() {
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
     // Track which content items have been collected per zone (by title)
     let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
+    // Per-run roster cursor: tracks which roster slot is next when a level defines `contentRoster`.
+    // Reset at level start (in spawnIntroWave) so each playthrough starts at index 0.
+    var _rosterIdx = 0;
     // Pending content collected this run — not banked until level victory.
     // Discarded on death/abort, so retrying a level cannot grind partial pickups.
     var _pendingContent = [];
@@ -2973,6 +2976,35 @@ window.onload = function() {
         { title:'Maya Scatter', subtitle:'UPVS Wireframe', text:'Show cards scattered across the page. Pick up, drag, and throw cards to explore the variety show lineup.\n\nTAGS: Scatter · Drag · Physics\n\nView ↗ https://clients.pietsuess.com/maya/scatter.html', vimeoId:null, duration:90, gallery:[{url:'https://pietsuess.com/toolkit-screenshots/maya-scatter.jpg',caption:''}] },
         { title:'Unveil', subtitle:'Unveil', text:'Product animation showcase with interactive demos, mobile-optimized views, and animated WebP/GIF assets in three colorways and sizes.\n\nTAGS: Animation · Product · Interactive\n\nAnimations ↗ https://clients.pietsuess.com/unveil/\nInteractive ↗ https://clients.pietsuess.com/unveil/interactive.html', vimeoId:null, duration:90, gallery:[{url:'https://pietsuess.com/toolkit-screenshots/unveil.jpg',caption:''}] }
       ]
+    };
+
+    // ═══════════════════════════════════════════════════════════════
+    // SECTOR_ROSTERS — fallback content roster for levels without explicit
+    // SPAWN_TUNING entries. Keyed by 'SnLn'. Spawned in order at forced content
+    // slots; already-collected items skip the slot. Levels with their own
+    // SPAWN_TUNING.contentRoster override this map.
+    // ═══════════════════════════════════════════════════════════════
+    const SECTOR_ROSTERS = {
+        // S1 EDIT (16 items distributed across 4 levels) — also set inline in SPAWN_TUNING['S1Lx']
+        // S2 PHOTO (18 items)
+        'S2L1': ['RURAL VISTA', 'TRIPTYCH', 'GOLDEN FIELD', 'EZRA — CRAZY HORSE'],
+        'S2L2': ['HIGHLANDS', 'LANDSCAPES', 'SILHOUETTE', 'RUTH', 'PORTRAITS'],
+        'S2L3': ['FACEBOOK FOX', 'NIGHT COLOUR THEORY', 'HORSE BRIDGE', 'MUSIC & EVENTS', 'STREET ART'],
+        'S2L4': ['DOWNTOWN LA', 'PACIFIC DAWN', 'ERYN', 'DADAAB'],
+        // S3 ANIMATE (6 items)
+        'S3L1': ['MAKE ANYTHING — AUTODESK', 'GROUNDED SHOES'],
+        'S3L2': ['BEN AFFLECK ON THE MEANING OF LIFE — ECI', 'BETTERMOO(D) ORIGIN STORY'],
+        'S3L3': ['ANTHEMS TRAILER'],
+        'S3L4': ['MAXIMUM EFFORT CHANNEL STATION ID'],
+        // S4 VIBE (13 items)
+        'S4L1': ['Sound Effects Designer', 'Navigator Content Editor', 'Animation Grid Editor'],
+        'S4L2': ['ACYR Schedule Editor', 'BMATS Subtitle Review', 'Salt Spring Rolfing Admin'],
+        'S4L3': ['UPVS Admin', 'Heart Lines', 'The Clearing', 'Spatial Intent'],
+        'S4L4': ['Depth Scroll', 'Maya Scatter', 'Unveil'],
+        // S5 DIRECT (11 items)
+        'S5L1': ['SACRIFICE — KALE BEAUDRY', 'JUNIPER AND THE ALCHEMIST', 'MAKE ANYTHING — AUTODESK', 'GROUNDED SHOES'],
+        'S5L2': ['BETTERMOO(D) ORIGIN STORY', "WE'LL BURY HIM IN THE DESERT", "LEAVIN' ALONE — ADRIAN GLYNN", 'BEN AFFLECK ON THE MEANING OF LIFE — ECI'],
+        'S5L3': ['INTO THE WILD — LP', 'BALLAD OF A CHRISTIAN MAN — ADRIAN GLYNN', 'SNACK SMART WITH CHEF LENA']
     };
 
     // ── Dynamic content manifest loader (PHOTO + VIBE from GitHub) ──
@@ -4799,6 +4831,7 @@ window.onload = function() {
     // ═══════════════════════════════════════════════════════════════
     var SPAWN_TUNING = {
         'S1L1': {
+            contentRoster: ['THE LEGEND OF OTTO DESĆINSKI', 'BETWEEN THE MOUNTAIN AND THE SKY', 'PACIFIC WILD ALLIANCE — F*#K OFF FISH FARMS', 'BETTY BOOZE'],
             blocks: false,
             shields: true,
             barriers: false,
@@ -4873,6 +4906,7 @@ window.onload = function() {
         },
         // S1L2 — blocks unlocked; spiralPattern edited per spawn editor
         'S1L2': {
+            contentRoster: ['AVIATION GIN — FRIENDSGIVING', 'BOLT — ABANDONED CARTS', 'ADIMVERSE — WELCOME TO ADIM', 'WREXHAM FC — STAND UP, WREXHAM'],
             blocks: true,
             shields: false,
             barriers: false,
@@ -4950,6 +4984,7 @@ window.onload = function() {
         },
         // S1L3 — shields unlocked; spiralPattern edited per spawn editor
         'S1L3': {
+            contentRoster: ['FUBO TV — FUBOOOOOOOOOOOOOO', 'LEAD FROM BEHIND — $H!T TALKING WITH DAK PRESCOTT', 'AVIATION GIN — THE OTHER ROB', 'AVIATION GIN — PUMPKIN SPICE SEASON'],
             baseHazard: 0.22, baseRing: 0.68, baseShields: 0.10,
             spacing: 70, maxSpawnPct: 0.84,
             speed: 240, length: 13000,
@@ -4984,6 +5019,7 @@ window.onload = function() {
         // speed/length pre-compensated for L4 escalation (×1.331 speed, ×1.521 length) so effective play
         // matches old S2L1's effective play (260 speed / 14000 length).
         'S1L4': {
+            contentRoster: ['MINT MOBILE — DEFLATES PRICES', 'MINT MOBILE — JURY DUTY', 'DELOITTE — WALKING DEAD', 'DAVE VS BUSTA'],
             baseHazard: 0, baseRing: 0, baseShields: 0,
             spacing: 50, maxSpawnPct: 0.86,
             speed: 195, length: 9205,
@@ -5375,10 +5411,50 @@ window.onload = function() {
         if (_fc || rand < contentChance) {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
-            // Pick a random uncollected item
-            var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title); });
-            if (uncollected.length > 0) {
-                var pick = uncollected[Math.floor(Math.random() * uncollected.length)];
+            var pick = null;
+            // ── Per-level roster path ──
+            // If this level defines a `contentRoster`, walk it in order and assign each forced slot
+            // to the next roster title. Already-collected titles SKIP the slot (no random fallback) so
+            // a fully-cleared level shows no content on replay.
+            var roster = (_t && Array.isArray(_t.contentRoster)) ? _t.contentRoster : null;
+            if (!roster) {
+                var _rosterKey = 'S' + s + 'L' + lvl;
+                if (SECTOR_ROSTERS && Array.isArray(SECTOR_ROSTERS[_rosterKey])) {
+                    roster = SECTOR_ROSTERS[_rosterKey];
+                }
+            }
+            if (roster && _fc) {
+                while (_rosterIdx < roster.length) {
+                    var _title = roster[_rosterIdx];
+                    _rosterIdx++;
+                    // Already banked → skip slot entirely
+                    if (collectedContent[zone] && collectedContent[zone].has(_title)) continue;
+                    // Already grabbed this run (pending) → skip slot
+                    if (_pendingHasItem(zone, _title)) continue;
+                    // Find item in zone catalog
+                    var _found = null;
+                    for (var _zi = 0; _zi < zoneItems.length; _zi++) {
+                        if (zoneItems[_zi].title === _title) { _found = zoneItems[_zi]; break; }
+                    }
+                    if (!_found) {
+                        try { console.warn('[contentRoster] title not in CONTENT_DATA[' + zone + ']: ' + _title); } catch(e) {}
+                        continue;
+                    }
+                    pick = _found;
+                    break;
+                }
+                // Roster exhausted (or all skipped) → empty slot, no spawn
+                if (!pick) return;
+            } else {
+                // Legacy random pick (levels without a roster)
+                var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title); });
+                if (uncollected.length === 0) {
+                    // Reuse outer return-after-mesh-build path; just skip when nothing to spawn.
+                } else {
+                    pick = uncollected[Math.floor(Math.random() * uncollected.length)];
+                }
+            }
+            if (pick) {
                 contentSpawnedThisRun.push(pick.title);
                 var cGeo = getContentGeo(s);
                 var cMat = getContentMat(s).clone();
@@ -6494,6 +6570,7 @@ window.onload = function() {
     try { localStorage.removeItem('tunnelRunner_bakedLevels'); } catch(e) {}
     function spawnIntroWave() {
         introSpawned = true;
+        _rosterIdx = 0; // reset per-run roster cursor at every level start
         var r = tubeRadius - 6;
         var baseZ = camera.position.z - 600;
 
