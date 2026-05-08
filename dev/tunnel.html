@@ -3476,11 +3476,40 @@ window.onload = function() {
         }
     }
 
+    // Device-icon map for VIBE projects (mirrors pietsuess.com/vibe-coding.html `devices` const).
+    var VIBE_DEVICE_MAP = {
+        'Sound Effects Designer': 'DM',
+        'Navigator Content Editor': 'D',
+        'Animation Grid Editor': 'D',
+        'ACYR Schedule Editor': 'D',
+        'BMATS Subtitle Review': 'D',
+        'Salt Spring Rolfing Admin': 'D',
+        'UPVS Admin': 'D',
+        'Heart Lines': 'D',
+        'The Clearing': 'D',
+        'Spatial Intent': 'D',
+        'Depth Scroll': 'D',
+        'Maya Scatter': 'D',
+        'Unveil': 'DM'
+    };
+    var _VIBE_SVG_DESKTOP = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#FAFFA5;opacity:0.7;"><path d="M21 2H3c-1.1 0-2 .9-2 2v12c0 1.1.9 2 2 2h7v2H8v2h8v-2h-2v-2h7c1.1 0 2-.9 2-2V4c0-1.1-.9-2-2-2zm0 14H3V4h18v12z"/></svg>';
+    var _VIBE_SVG_MOBILE  = '<svg viewBox="0 0 24 24" style="width:14px;height:14px;fill:#FAFFA5;opacity:0.7;"><path d="M16 1H8C6.34 1 5 2.34 5 4v16c0 1.66 1.34 3 3 3h8c1.66 0 3-1.34 3-3V4c0-1.66-1.34-3-3-3zm-2 20h-4v-1h4v1zm3.25-3H6.75V4h10.5v14z"/></svg>';
+
     function trOpenVibeViewer(item) {
         document.getElementById('hamburger-btn').style.display = 'none';
         var dv = document.getElementById('tr-design-viewer');
         document.getElementById('tr-dv-title').innerText = item.displayTitle || item.title || '';
-        document.getElementById('tr-dv-subtitle').innerText = item.subtitle || '';
+        // Subtitle = client + device icons (desktop / mobile).
+        var subtitleEl = document.getElementById('tr-dv-subtitle');
+        var devs = VIBE_DEVICE_MAP[item.title] || '';
+        var devHtml = '';
+        if (devs.indexOf('D') >= 0) devHtml += _VIBE_SVG_DESKTOP;
+        if (devs.indexOf('M') >= 0) devHtml += _VIBE_SVG_MOBILE;
+        if (devHtml) {
+            subtitleEl.innerHTML = (item.subtitle || '') + ' <span style="display:inline-flex;gap:4px;margin-left:8px;vertical-align:middle;">' + devHtml + '</span>';
+        } else {
+            subtitleEl.innerText = item.subtitle || '';
+        }
         var textEl = document.getElementById('tr-dv-text');
         var gallery = document.getElementById('tr-dv-gallery');
         gallery.innerHTML = '';
@@ -7458,8 +7487,9 @@ window.onload = function() {
         throttle = 0; throttleSmooth = 0; shipZOffset = -18;
 
         TUT.skipNext = false;
-        // Show sector intro splash, then mission banner, then countdown
-        var zoneForIntro = getLevelScaledZone(currentSector);
+        // Show sector intro splash, then mission banner, then countdown.
+        // NOTE: zoneForIntro must be re-read inside _runIntroChain — by then the user has picked a session
+        // (which can change currentSector). Capturing here would show the previous zone after a session swap.
         function _afterCinematic() {
             // Restore HUD visibility for session screen
             try { document.body.classList.remove('cinematic-active'); } catch(e) {}
@@ -7476,6 +7506,7 @@ window.onload = function() {
         function _runIntroChain() {
             gameState = 'intro'; // not playing yet — waiting for intro + countdown
             clock.getDelta();
+            var zoneForIntro = getLevelScaledZone(currentSector); // re-read after session load
             showSectorIntro(zoneForIntro, function() {
                 showMissionBanner(Math.min(currentSector-1, ZONES.length-1));
                 setTimeout(function(){
