@@ -2341,7 +2341,7 @@ window.onload = function() {
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
-    var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-40% DAMAGE', '-50% DAMAGE (MAX)'];
+    var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-40% DAMAGE', '-50% DAMAGE'];
     var SHIELD_DAMAGE_RED = [0, 0.10, 0.20, 0.40, 0.50];
     var SHIELD_DAMAGE_RED_HYPER = [0, 0, 0.20, 0.40, 0.55];
     var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
@@ -2401,6 +2401,8 @@ window.onload = function() {
         return 'X' + Math.floor(Math.random()*100);
     }
     function _sessionCreate() {
+        // Explicit defaults for ALL fields _sessionLoad inspects, so a fresh session truly starts at zeros.
+        // Without these, _sessionLoad's `if (typeof s.X === 'number') X = s.X;` checks no-op and stale memory leaks in.
         var s = {
             id: _sessionGenId(),
             ringBank: 0,
@@ -2413,6 +2415,14 @@ window.onload = function() {
             weaponAmmo: 0,
             maxReached: 'S1L1',
             maxPassed: null,
+            score: 0,
+            sectorStartScore: 0,
+            currentSector: 1,
+            currentLevel: 1,
+            collectedContent: { EDIT: [], PHOTO: [], DIRECT: [], ANIMATE: [], VIBE: [] },
+            shipDiscovered: { deltawing: true, stealthwing: false },
+            shipOwned:      { deltawing: true, stealthwing: false },
+            activeShip: 'deltawing',
             lastPlayed: Date.now()
         };
         var arr = _sessionsLoad();
@@ -19018,9 +19028,13 @@ illum 3
     var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
     var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
     // Scale anchors — full bar = MAX, empty bar = 0.
-    var MAX_HULL = 5000, MAX_TOTAL = 8000, MAX_TOP = 2200, MAX_HP = 200, MAX_ABS = 0.50;
-    var fillHull = Math.max(0, Math.min(10, Math.round((hullKg    / MAX_HULL)  * 10)));
-    var fillMass = Math.max(0, Math.min(10, Math.round((totalKg   / MAX_TOTAL) * 10)));
+    // HULL/TOTAL use MIN-anchored ranges so bars reflect where the value sits in the *realistic* spectrum.
+    // (Plain 0-MAX put 4200kg at 8/10 and 7450kg at 9/10 — not a useful comparison.)
+    var MIN_HULL = 3500, MAX_HULL = 5500;     // ships in catalog: 4200-4500 → mid bar
+    var MIN_TOTAL = 4000, MAX_TOTAL = 9000;   // typical loadout 5500 → low; max loadout 7750 → high
+    var MAX_TOP = 2200, MAX_HP = 200, MAX_ABS = 0.50;
+    var fillHull = Math.max(0, Math.min(10, Math.round(((hullKg  - MIN_HULL)  / (MAX_HULL  - MIN_HULL))  * 10)));
+    var fillMass = Math.max(0, Math.min(10, Math.round(((totalKg - MIN_TOTAL) / (MAX_TOTAL - MIN_TOTAL)) * 10)));
     var fillTop  = Math.max(0, Math.min(10, Math.round((top       / MAX_TOP)   * 10)));
     var fillHp   = Math.max(0, Math.min(10, Math.round((maxHealth / MAX_HP)    * 10)));
     var absorb   = Math.max(0, 1 - dmgMult);
