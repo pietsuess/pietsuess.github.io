@@ -2274,6 +2274,31 @@ window.onload = function() {
     const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
     // Track which content items have been collected per zone (by title)
     let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
+    // Pending content collected this run — not banked until level victory.
+    // Discarded on death/abort, so retrying a level cannot grind partial pickups.
+    var _pendingContent = [];
+    function _pendingHasItem(zone, title) {
+        for (var i = 0; i < _pendingContent.length; i++) {
+            if (_pendingContent[i].zone === zone && _pendingContent[i].title === title) return true;
+        }
+        return false;
+    }
+    function _commitPendingContent() {
+        for (var i = 0; i < _pendingContent.length; i++) {
+            var p = _pendingContent[i];
+            if (collectedContent[p.zone] && !collectedContent[p.zone].has(p.title)) {
+                collectedContent[p.zone].add(p.title);
+            }
+        }
+        _pendingContent = [];
+        try { _sessionSync(); } catch(e) {}
+        try { updateCollectionHUD(); } catch(e) {}
+    }
+    function _discardPendingContent() {
+        if (_pendingContent.length === 0) return;
+        _pendingContent = [];
+        try { updateCollectionHUD(); } catch(e) {}
+    }
     // Content objects spawned this run (titles) — to know which were available
     let contentSpawnedThisRun = [];
     function getZoneName(sector) { return SECTOR_ZONES[Math.min(sector - 1, SECTOR_ZONES.length - 1)]; }
@@ -5351,7 +5376,7 @@ window.onload = function() {
             var zone = getZoneName(s);
             var zoneItems = CONTENT_DATA[zone] || [];
             // Pick a random uncollected item
-            var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; });
+            var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title); });
             if (uncollected.length > 0) {
                 var pick = uncollected[Math.floor(Math.random() * uncollected.length)];
                 contentSpawnedThisRun.push(pick.title);
@@ -5464,7 +5489,7 @@ window.onload = function() {
                 scene.add(wallMesh); items.push(wallMesh);
                 // Place content object at peak of jump arc for collection during jump (not in speed runs)
                 var jumpZone = getZoneName(s);
-                var jumpUncollected = !isSpeedRun ? (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0; }) : [];
+                var jumpUncollected = !isSpeedRun ? (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(jumpZone, it.title); }) : [];
                 if (jumpUncollected.length > 0 && Math.random() < 0.4) {
                     var jumpPick = jumpUncollected[Math.floor(Math.random() * jumpUncollected.length)];
                     contentSpawnedThisRun.push(jumpPick.title);
@@ -6019,6 +6044,7 @@ window.onload = function() {
         _analyticsDeathCount++;
         _sendTelemetry('death');
         if (_inBonusLevel) { try { _bonusEscrowForfeit(); } catch(e) {} }
+        try { _discardPendingContent(); } catch(e) {}
         try { _sessionSync(); } catch(e) {}
         gameState = 'dead';
         document.getElementById('speedrun-clock').style.display = 'none';
@@ -6237,6 +6263,9 @@ window.onload = function() {
             return;
         }
         try { _trSaveMaxPassed(currentSector, currentLevel); } catch(e) {}
+        // Commit pending content collected this run — banks pickups gathered during a successful playthrough.
+        // Death and abort flush this set so retry can't grind partial pickups.
+        try { _commitPendingContent(); } catch(e) {}
         // Sector 2 clear unlocks the StealthWing in the SHIPS panel.
         if (currentSector >= 2 && !shipDiscovered.stealthwing) {
             shipDiscovered.stealthwing = true;
@@ -7638,9 +7667,12 @@ window.onload = function() {
         items.forEach(function(it) {
             var dot = document.createElement('div');
             var isFilled = collected.has(it.title);
+            var isPending = !isFilled && _pendingHasItem(zone, it.title);
             dot.style.cssText = 'width:12px;height:12px;border:2px solid '+color+';border-radius:'+(zone==='ANIMATE'?'50%':'2px')+';'
-                + (isFilled ? 'background:'+color+';box-shadow:0 0 8px '+color+';' : 'background:transparent;opacity:0.5;');
-            dot.title = it.title;
+                + (isFilled ? 'background:'+color+';box-shadow:0 0 8px '+color+';'
+                  : isPending ? 'background:'+color+';opacity:0.55;animation:blink 0.8s step-end infinite;'
+                  : 'background:transparent;opacity:0.5;');
+            dot.title = it.title + (isPending ? ' (PENDING — finish level to bank)' : '');
             hud.appendChild(dot);
         });
         document.body.appendChild(hud);
@@ -8389,6 +8421,7 @@ window.onload = function() {
         var ps = document.getElementById('pause-screen');
         if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
         if (_inBonusLevel) { try { _bonusEscrowForfeit(); _inBonusLevel = false; } catch(e) {} }
+        try { _discardPendingContent(); } catch(e) {}
         gameState = 'playing';
         _prePauseState = null;
         _prePauseScreen = null;
@@ -10532,28 +10565,15 @@ window.onload = function() {
                                 spawnCollectBurst(item.position);
                                 var cZone = item.userData.contentZone;
                                 var cTitle = item.userData.contentTitle;
-                                if (!collectedContent[cZone].has(cTitle)) {
-                                    collectedContent[cZone].add(cTitle);
+                                // Pending: held until level victory commits via _commitPendingContent.
+                                // Death/abort triggers _discardPendingContent so retry can't grind pickups.
+                                if (!collectedContent[cZone].has(cTitle) && !_pendingHasItem(cZone, cTitle)) {
+                                    _pendingContent.push({ zone: cZone, title: cTitle });
                                     AudioEngine.playSFX('content_collect');
-                                    var zColor = ZONE_OBJ_COLORS[cZone] || '#fff';
                                     spawnPointBurst(cTitle.length > 20 ? cTitle.substring(0, 18) + '..' : cTitle, 'c-gold');
                                     score += 335;
                                     updateCollectionHUD();
-                                    // Check if zone is now complete
-                                    var cSector = 0;
-                                    for (var ck in CAROUSEL_SECTOR_MAP) { if (CAROUSEL_SECTOR_MAP[ck] === cZone) { cSector = parseInt(ck); break; } }
-                                    if (cSector > 0 && isZoneComplete(cSector)) {
-                                        AudioEngine.playSFX('zone_complete');
-                                        setTimeout(function() {
-                                            var completeEl = document.createElement('div');
-                                            completeEl.style.cssText = 'position:fixed;inset:0;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;';
-                                            completeEl.innerHTML = '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(14px,4vw,28px);color:'+zColor+';text-shadow:0 0 30px '+zColor+',0 0 60px '+zColor+';letter-spacing:5px;animation:fadeSlideUp 0.6s ease-out both;">'+cZone+' COMPLETE</div>'
-                                                + '<div style="font-family:\'Press Start 2P\',monospace;font-size:clamp(8px,2vw,12px);color:#fff;letter-spacing:3px;margin-top:10px;opacity:0.8;animation:fadeSlideUp 0.6s ease-out 0.2s both;">ALL ITEMS COLLECTED</div>';
-                                            document.body.appendChild(completeEl);
-                                            setTimeout(function() { completeEl.style.transition = 'opacity 0.8s'; completeEl.style.opacity = '0'; }, 2200);
-                                            setTimeout(function() { completeEl.remove(); }, 3200);
-                                        }, 200);
-                                    }
+                                    // ZONE COMPLETE celebration deferred to commit-time on victory.
                                 }
                             }
                             else if (item.userData.type === 'ammo') {
