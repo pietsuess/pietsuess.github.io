@@ -1005,10 +1005,14 @@
             <canvas id="tr-store-ship-stars" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;pointer-events:none;"></canvas>
             <canvas id="tr-store-ship-canvas" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;background:transparent;touch-action:none;"></canvas>
         </div>
-        <div id="tr-store-ship-stats" style="font-family:'Press Start 2P',monospace;font-size:11px;line-height:1.7;color:#00ffcc;display:grid;grid-template-columns:1fr 1fr;gap:6px 8px;">
-            <span style="color:#ff88dd;text-align:right;">SHIP MASS</span><span id="tr-prev-mass" style="color:#ffcc66;text-align:left;">--</span>
-            <span style="color:#ff88dd;text-align:right;">TOP SPEED</span><span id="tr-prev-top" style="color:#ffcc66;text-align:left;">--</span>
-            <span style="color:#ff88dd;text-align:right;">CLASS</span><span id="tr-prev-class" style="color:#44ff66;text-align:left;">--</span>
+        <div id="tr-store-ship-stats" style="font-family:'Press Start 2P',monospace;font-size:9px;line-height:1.7;color:#00ffcc;display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;">
+            <span style="color:#ff88dd;text-align:right;">HULL</span><span id="tr-prev-bar-hull" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hull" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">TOTAL</span><span id="tr-prev-bar-mass" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-mass" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">SPEED</span><span id="tr-prev-bar-top" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-top" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">HITBOX</span><span id="tr-prev-bar-hit" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hit" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">SHIELDS</span><span id="tr-prev-bar-hp" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hp" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">DMG ABS</span><span id="tr-prev-bar-dmg" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-dmg" style="color:#ffcc66;text-align:right;">--</span>
+            <span style="color:#ff88dd;text-align:right;">CLASS</span><span></span><span id="tr-prev-class" style="color:#44ff66;text-align:right;">--</span>
         </div>
     </div>
     </div>
@@ -2363,6 +2367,7 @@ window.onload = function() {
     window.__isShipOwned = function(id) { try { return !!shipOwned[id]; } catch(e) { return false; } };
     var activeShip = 'deltawing';
     var previewShipId = activeShip; // turntable preview only — does NOT affect gameplay
+    window.__getPreviewShipId = function() { try { return previewShipId; } catch(e) { return 'deltawing'; } };
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.20];
     var WEAPON_MAX_AMMO = [0, 100, 60, 40, 20];
     var WEAPON_PER_ROUND_COST = [0, 0.5, 0.8, 3, 5];
@@ -8295,7 +8300,16 @@ window.onload = function() {
         info.appendChild(nm);
         var ds = document.createElement('div');
         ds.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;';
-        ds.innerText = desc || '';
+        var _descText = desc || '';
+        // Append weight badge for shield/weapon items (not speed, not NONE)
+        if (!isSpeed && !isNone) {
+            var _kgArr = isShield ? (window.__shieldKg || [0,200,800,2400,60]) : (window.__weaponKg || [0,150,320,280,850]);
+            var _kg = _kgArr[idx];
+            if (typeof _kg === 'number' && _kg > 0) {
+                _descText = _descText + ' · +' + _kg + 'kg';
+            }
+        }
+        ds.innerText = _descText;
         info.appendChild(ds);
         row.appendChild(info);
         if (owned) {
@@ -18721,16 +18735,33 @@ illum 3
   }
 
   var SHIP_KG_HULL_DEFAULT = 4500; // fallback if catalog lookup fails
-  function _activeHullKg(){
+  function _previewShipId(){
     try {
-      var sid = (typeof activeShip === 'string') ? activeShip : 'deltawing';
-      var meta = window.__shipCatalog && window.__shipCatalog[sid];
-      if (meta && typeof meta.hullKg === 'number') return meta.hullKg;
+      if (typeof window.__getPreviewShipId === 'function') {
+        var pid = window.__getPreviewShipId();
+        if (pid && window.__shipCatalog && window.__shipCatalog[pid]) return pid;
+      }
     } catch(e) {}
+    try { return (typeof activeShip === 'string') ? activeShip : 'deltawing'; } catch(e) {}
+    return 'deltawing';
+  }
+  function _previewShipMeta(){
+    try {
+      var sid = _previewShipId();
+      var meta = window.__shipCatalog && window.__shipCatalog[sid];
+      if (meta) return meta;
+    } catch(e) {}
+    return null;
+  }
+  function _activeHullKg(){
+    var meta = _previewShipMeta();
+    if (meta && typeof meta.hullKg === 'number') return meta.hullKg;
     return SHIP_KG_HULL_DEFAULT;
   }
   var WEAPON_KG    = [0, 150, 320, 280, 850];
   var SHIELD_KG    = [0, 200, 800, 2400, 60];
+  // Expose for store item rows (weight badges)
+  try { window.__weaponKg = WEAPON_KG; window.__shieldKg = SHIELD_KG; } catch(e) {}
   var SPEED_TOP    = [1140, 1320, 1500, 1740, 1980]; // km/min — equivalent to [19, 22, 25, 29, 33] km/s, scaled by SPEED_MULTIPLIERS.
 
   function _migrateShield(v){ v = v|0; if (v >= 0 && v <= 4) return v; if (v >= 5) return 4; return 0; }
@@ -18944,6 +18975,23 @@ illum 3
       map[k].forEach(function(m){ m.visible = show; });
     });
   }
+  function _bar(value, max) {
+    var fillCount = Math.max(0, Math.min(10, Math.round((value / max) * 10)));
+    return '▰'.repeat(fillCount) + '▱'.repeat(10 - fillCount);
+  }
+  function _setStat(idBar, idNum, value, max, formatted, color) {
+    var bar = document.getElementById(idBar);
+    var num = document.getElementById(idNum);
+    if (bar) { bar.textContent = _bar(value, max); if (color) bar.style.color = color; else bar.style.color = '#ffcc66'; }
+    if (num) { num.textContent = formatted; if (color) num.style.color = color; else num.style.color = '#ffcc66'; }
+  }
+  // Default ship for delta comparison
+  function _defaultShipMeta(){ try { return window.__shipCatalog && window.__shipCatalog.deltawing; } catch(e){} return null; }
+  function _cmpColor(value, baseline, betterIsHigher) {
+    if (value === baseline) return null;
+    var better = betterIsHigher ? (value > baseline) : (value < baseline);
+    return better ? '#00ff88' : '#ff6688';
+  }
   function refresh(){
     var a = getActive();
     if (objLoaded) {
@@ -18951,14 +18999,41 @@ illum 3
       setObjTier(objMeshes.shields, a.s);
       setObjTier(objMeshes.speeds, a.sp);
     }
-    var hullKg = _activeHullKg();
+    var meta = _previewShipMeta() || _defaultShipMeta();
+    var base = _defaultShipMeta() || meta || {};
+    var hullKg     = (meta && typeof meta.hullKg     === 'number') ? meta.hullKg     : SHIP_KG_HULL_DEFAULT;
+    var hitRadius  = (meta && typeof meta.hitRadius  === 'number') ? meta.hitRadius  : 3.5;
+    var maxHealth  = (meta && typeof meta.maxHealth  === 'number') ? meta.maxHealth  : 100;
+    var dmgMult    = (meta && typeof meta.dmgMult    === 'number') ? meta.dmgMult    : 1.0;
+    var baseHull   = (typeof base.hullKg     === 'number') ? base.hullKg     : 4500;
+    var baseHit    = (typeof base.hitRadius  === 'number') ? base.hitRadius  : 3.5;
+    var baseHP     = (typeof base.maxHealth  === 'number') ? base.maxHealth  : 100;
+    var baseDmg    = (typeof base.dmgMult    === 'number') ? base.dmgMult    : 1.0;
     var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
     var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
+    var baseTotalKg = baseHull + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
+    var baseTop = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (baseHull / baseTotalKg);
     var cls = 'LIGHT', col = '#44ff66';
     if (totalKg >= 6500) { cls = 'HEAVY'; col = '#ff4466'; }
     else if (totalKg >= 5200) { cls = 'MEDIUM'; col = '#ffcc44'; }
-    if (massEl)  massEl.textContent  = totalKg.toLocaleString() + ' kg';
-    if (topEl)   topEl.textContent   = top.toFixed(0) + ' km/min';
+    // Bar maxes
+    var MAX_HULL = 5000, MAX_TOTAL = 8000, MAX_TOP = 2000, MAX_HIT = 5.0, MAX_HP = 200, MAX_DMG = 0.5;
+    // Color comparisons (vs default ship deltawing)
+    var colHull = _cmpColor(hullKg, baseHull, false);   // lower hull = better
+    var colMass = _cmpColor(totalKg, baseTotalKg, false); // lower total = better
+    var colTop  = _cmpColor(top, baseTop, true);         // higher top speed = better
+    var colHit  = _cmpColor(hitRadius, baseHit, false);  // smaller hitbox = better
+    var colHp   = _cmpColor(maxHealth, baseHP, true);    // higher shields = better
+    var colDmg  = _cmpColor(dmgMult, baseDmg, false);    // lower dmgMult = better
+    _setStat('tr-prev-bar-hull', 'tr-prev-hull', hullKg, MAX_HULL, hullKg.toLocaleString() + ' kg', colHull);
+    _setStat('tr-prev-bar-mass', 'tr-prev-mass', totalKg, MAX_TOTAL, totalKg.toLocaleString() + ' kg', colMass);
+    _setStat('tr-prev-bar-top',  'tr-prev-top',  top, MAX_TOP, top.toFixed(0) + ' km/min', colTop);
+    // HITBOX: smaller is better -> invert for fill
+    _setStat('tr-prev-bar-hit',  'tr-prev-hit',  Math.max(0, MAX_HIT - hitRadius), MAX_HIT, hitRadius.toFixed(1), colHit);
+    _setStat('tr-prev-bar-hp',   'tr-prev-hp',   maxHealth, MAX_HP, String(maxHealth) + ' HP', colHp);
+    // DMG ABS: shown as absorption fraction = 1 - dmgMult
+    var absorb = Math.max(0, 1 - dmgMult);
+    _setStat('tr-prev-bar-dmg',  'tr-prev-dmg',  absorb, MAX_DMG, Math.round(absorb * 100) + '%', colDmg);
     if (classEl) { classEl.textContent = cls; classEl.style.color = col; }
   }
   function resize(){
