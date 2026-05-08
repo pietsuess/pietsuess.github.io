@@ -2330,6 +2330,9 @@ window.onload = function() {
     // ── BONUS CHALLENGE escrow ──
     // Rings collected during a bonus level are held here; banked to ringBank only on objective success.
     var _bonusEscrow = 0;
+    // Per-challenge counters (reset in _startBonusLevelInner)
+    var _bonusBullseyeHit = 0, _bonusBullseyeMiss = 0;
+    var _lastBullseyeZ = -Infinity;
     function _bonusEscrowAdd(n) { _bonusEscrow += n; try { updateRingHUD(); } catch(e) {} }
     function _bonusEscrowCommit() { if (_bonusEscrow > 0) { ringBank += _bonusEscrow; _ringsSave(ringBank); } _bonusEscrow = 0; try { _loanerRestore(); } catch(e) {} try { _sessionSync(); updateRingHUD(); } catch(e) {} }
     function _bonusEscrowForfeit() { _bonusEscrow = 0; try { _loanerRestore(); } catch(e) {} try { updateRingHUD(); } catch(e) {} }
@@ -5274,6 +5277,17 @@ window.onload = function() {
     function spawnItem(zPos) {
         // Hard stop: never place items beyond finish ring (80% of sector distance)
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
+        // BONUS CHALLENGE — sector-specific spawners override the default content
+        if (_inBonusLevel && currentSector === 2) {
+            // S2B TARGET SHOOT — sparse bullseyes only (target one every ~350 units)
+            if (Math.abs(zPos - _lastBullseyeZ) < 350) return;
+            _lastBullseyeZ = zPos;
+            var _t2 = _getTuning(2, 1);
+            var _bAng = _advanceSpiral(_t2, zPos);
+            var _bMesh = _createBullseye(zPos, _bAng);
+            scene.add(_bMesh); items.push(_bMesh);
+            return;
+        }
         let rand = Math.random();
         const s = currentSector;
         var _sCfg = _getSpawnCfg(s);
@@ -5670,6 +5684,24 @@ window.onload = function() {
     waveGeo.scale(1, 1, 2.0);
     var waveMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 
+    // BULLSEYE — S2B BONUS CHALLENGE target (concentric flat rings facing the player)
+    var bullseyeOuterGeo = new THREE.RingGeometry(5.5, 6.5, 24);
+    var bullseyeMidGeo   = new THREE.RingGeometry(3.0, 4.0, 24);
+    var bullseyeInnerGeo = new THREE.CircleGeometry(2.0, 16);
+    var bullseyeOuterMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
+    var bullseyeMidMat   = new THREE.MeshBasicMaterial({ color: 0xff3344, side: THREE.DoubleSide });
+    var bullseyeInnerMat = new THREE.MeshBasicMaterial({ color: 0xffe000, side: THREE.DoubleSide });
+    function _createBullseye(zPos, angle) {
+        var grp = new THREE.Group();
+        grp.add(new THREE.Mesh(bullseyeOuterGeo, bullseyeOuterMat));
+        grp.add(new THREE.Mesh(bullseyeMidGeo,   bullseyeMidMat));
+        grp.add(new THREE.Mesh(bullseyeInnerGeo, bullseyeInnerMat));
+        var hover = tubeRadius - 8;
+        grp.position.set(Math.cos(angle) * hover, Math.sin(angle) * hover, zPos);
+        grp.userData = { type: 'bullseye', hitRadius: 6.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+        return grp;
+    }
+
     function _spawnSingle(offsetX, opts) {
         opts = opts || {};
         var geo = opts.geo || projectileGeo;
@@ -5868,7 +5900,7 @@ window.onload = function() {
             for (var ii = items.length - 1; ii >= 0; ii--) {
                 var item = items[ii];
                 var itype = item.userData.type;
-                if (itype !== 'hazard' && itype !== 'laser_wall') continue;
+                if (itype !== 'hazard' && itype !== 'laser_wall' && itype !== 'bullseye') continue;
 
                 var hit = false;
                 if (itype === 'laser_wall') {
@@ -5879,6 +5911,19 @@ window.onload = function() {
                 }
 
                 if (hit) {
+                    if (itype === 'bullseye') {
+                        _bonusBullseyeHit++;
+                        _bonusEscrowAdd(10);
+                        AudioEngine.playSFX('destroy');
+                        flash('#ffe000');
+                        try { spawnPointBurst('+10', 'c-gold'); } catch(e) {}
+                        scene.remove(item);
+                        items.splice(ii, 1);
+                        _disposeProjectile(p);
+                        projectiles.splice(pi, 1);
+                        disposed = true;
+                        break;
+                    }
                     var dmg = p.userData._damage || 1;
                     if (typeof item.userData._hp === 'number') {
                         item.userData._hp -= dmg;
@@ -6073,31 +6118,56 @@ window.onload = function() {
         // Skip score-bonus content unlocks, skip max-passed (it's a side-quest, not progression),
         // skip the inter-sector carousel (already shown before the bonus). Auto-advance to S(N+1)L1.
         if (_inBonusLevel) {
-            AudioEngine.playSFX('victory');
-            flash('#ffe000');
-            // Award sector + speed ring bonuses for the bonus run.
-            sectorRunTimes['S' + currentSector + 'B'] = sectorTime;
-            var _bSectorBonus = 50 * currentSector;
-            var _bZone = ZONES[Math.min(currentSector - 1, ZONES.length - 1)];
-            var _bBaselineSpeed = (_bZone && _bZone.speed ? _bZone.speed : 200) * 0.85;
-            var _bBaselineLength = sectorDistance || 6000;
-            var _bBaselineTime = _bBaselineLength / _bBaselineSpeed;
-            var _bSpeedBonus = Math.max(0, Math.min(200, Math.floor((_bBaselineTime - sectorTime) * 2)));
-            var _bTotalBonus = _bSectorBonus + _bSpeedBonus;
-            // Bank escrow first (rings collected during the bonus), then add sector/speed bonus directly to ringBank
-            // (bypass _ringsAdd so it doesn't route back into the now-empty escrow).
+            // Per-challenge objective gate
+            var _objectivePass = true;
+            var _failDetail = '';
+            if (currentSector === 2) {
+                var _btTotal = _bonusBullseyeHit + _bonusBullseyeMiss;
+                _objectivePass = (_btTotal > 0) && (_bonusBullseyeHit / _btTotal >= 0.8);
+                _failDetail = _bonusBullseyeHit + ' / ' + _btTotal + ' TARGETS';
+            }
+            // S3B / S4B objective gates added in later phases
+
             var _bEscrowBanked = _bonusEscrow;
-            _bonusEscrowCommit();
-            if (_bTotalBonus > 0) { ringBank += _bTotalBonus; _ringsSave(ringBank); try { updateRingHUD(); _sessionSync(); } catch(e) {} }
-            // Show a brief "CHALLENGE PASSED" banner on the victory screen, then auto-advance.
+            var _bTotalBonus = 0;
             var _vsRoot = document.getElementById('victory-screen');
-            try {
-                _vsRoot.querySelector('.screen-title').innerText = 'CHALLENGE PASSED';
-                document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bEscrowBanked + ' RINGS BANKED<br>+' + _bTotalBonus + ' BONUS</span>';
-                document.getElementById('victory-time').innerHTML = '';
-                var _vu = document.getElementById('victory-unlocks');
-                if (_vu) { _vu.innerHTML = ''; _vu.style.display = 'none'; }
-            } catch(e) {}
+            var _titleEl = _vsRoot.querySelector('.screen-title');
+            var _accent = _objectivePass ? '#ffe000' : '#ff4444';
+
+            if (_objectivePass) {
+                AudioEngine.playSFX('victory');
+                flash('#ffe000');
+                sectorRunTimes['S' + currentSector + 'B'] = sectorTime;
+                var _bSectorBonus = 50 * currentSector;
+                var _bZone = ZONES[Math.min(currentSector - 1, ZONES.length - 1)];
+                var _bBaselineSpeed = (_bZone && _bZone.speed ? _bZone.speed : 200) * 0.85;
+                var _bBaselineLength = sectorDistance || 6000;
+                var _bBaselineTime = _bBaselineLength / _bBaselineSpeed;
+                var _bSpeedBonus = Math.max(0, Math.min(200, Math.floor((_bBaselineTime - sectorTime) * 2)));
+                _bTotalBonus = _bSectorBonus + _bSpeedBonus;
+                _bonusEscrowCommit();
+                if (_bTotalBonus > 0) { ringBank += _bTotalBonus; _ringsSave(ringBank); try { updateRingHUD(); _sessionSync(); } catch(e) {} }
+                try {
+                    _titleEl.innerText = 'CHALLENGE PASSED';
+                    _titleEl.style.color = '';
+                    document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bEscrowBanked + ' RINGS BANKED<br>+' + _bTotalBonus + ' BONUS</span>';
+                    document.getElementById('victory-time').innerHTML = '';
+                    var _vu = document.getElementById('victory-unlocks');
+                    if (_vu) { _vu.innerHTML = ''; _vu.style.display = 'none'; }
+                } catch(e) {}
+            } else {
+                AudioEngine.playSFX('hit');
+                flash('#ff4444');
+                _bonusEscrowForfeit();
+                try {
+                    _titleEl.innerText = 'CHALLENGE FAILED';
+                    _titleEl.style.color = '#ff4444';
+                    document.getElementById('victory-score').innerHTML = '<span style="color:#ff4444;font-size:clamp(14px,4vw,24px);">' + _bEscrowBanked + ' RINGS FORFEIT' + (_failDetail ? '<br>' + _failDetail : '') + '</span>';
+                    document.getElementById('victory-time').innerHTML = '';
+                    var _vuF = document.getElementById('victory-unlocks');
+                    if (_vuF) { _vuF.innerHTML = ''; _vuF.style.display = 'none'; }
+                } catch(e) {}
+            }
             _vsRoot.style.display = 'flex';
             AudioEngine.stopEngine();
             stopMusic();
@@ -6106,7 +6176,7 @@ window.onload = function() {
             var _bPrompt = document.createElement('div');
             _bPrompt.className = 'vs-tap-prompt';
             _bPrompt.textContent = 'TAP TO CONTINUE';
-            _bPrompt.style.cssText = "font-family:'Press Start 2P',monospace; font-size:clamp(11px,2.5vw,14px); letter-spacing:3px; color:#ffe000; text-align:center; margin-top:24px; animation:victoryPulse 1.2s ease-in-out infinite;";
+            _bPrompt.style.cssText = "font-family:'Press Start 2P',monospace; font-size:clamp(11px,2.5vw,14px); letter-spacing:3px; color:" + _accent + "; text-align:center; margin-top:24px; animation:victoryPulse 1.2s ease-in-out infinite;";
             _vsRoot.appendChild(_bPrompt);
             var _bAdvanced = false;
             var _bAdvanceAt = Date.now() + 300;
@@ -6123,6 +6193,8 @@ window.onload = function() {
                 _vsRoot.style.display = 'none';
                 var _tp = _vsRoot.querySelector('.vs-tap-prompt');
                 if (_tp) _tp.remove();
+                // Restore screen-title color so a future non-bonus victory isn't tinted red.
+                try { _titleEl.style.color = ''; } catch(e) {}
                 // startNextSector() detects _inBonusLevel and advances to S(N+1)L1, clearing the flag.
                 startNextSector();
             };
@@ -6895,6 +6967,9 @@ window.onload = function() {
     function _startBonusLevelInner() {
         _inBonusLevel = true;
         contentSpawnedThisRun = [];
+        // Reset per-challenge counters
+        _bonusBullseyeHit = 0; _bonusBullseyeMiss = 0;
+        _lastBullseyeZ = -Infinity;
         var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
         sectorDistance = t.levelLength || t.baseLength || 6000;
         var spd = t.baseSpeed || 320;
@@ -10325,6 +10400,10 @@ window.onload = function() {
                                 spawnPointBurst('JUMP!', 'c-cyan');
                                 score += 40;
                             }
+                            else if (item.userData.type === 'bullseye') {
+                                // No damage — counts as a missed target (failed to shoot in time).
+                                if (_inBonusLevel) _bonusBullseyeMiss++;
+                            }
                             else if (item.userData.type === 'hazard' && !isJumping) {
                                 if (isFlipping || shieldsUp) {
                                     // Invincible during flip or force field — smash through
@@ -10499,6 +10578,9 @@ window.onload = function() {
                 }
 
                 if (item.position.z > camera.position.z + 50) {
+                    if (item.userData.type === 'bullseye' && _inBonusLevel) {
+                        _bonusBullseyeMiss++;
+                    }
                     if (item.userData.isTut && TUT.active) {
                         tutPassed(item.userData.type === 'score' ? 'score' : item.userData.type === 'health' ? 'health' : 'hazard');
                     }
