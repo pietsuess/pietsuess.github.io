@@ -848,6 +848,7 @@
       </div>
     </div>
     <button class="menu-btn stagger-in" id="go-retry-level-btn">[ RETRY LEVEL ]</button>
+    <button class="menu-btn stagger-in" id="go-armoury-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ ARMOURY ]</button>
     <button class="menu-btn btn-danger stagger-in" id="go-abort-btn">[ ABORT ]</button>
     <div style="margin-top:18px;width:100%;max-width:380px;">
       <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;text-align:center;">JUMP TO LEVEL</div>
@@ -2986,11 +2987,11 @@ window.onload = function() {
     // ═══════════════════════════════════════════════════════════════
     const SECTOR_ROSTERS = {
         // S1 EDIT (16 items distributed across 4 levels) — also set inline in SPAWN_TUNING['S1Lx']
-        // S2 PHOTO (18 items)
-        'S2L1': ['RURAL VISTA', 'TRIPTYCH', 'GOLDEN FIELD', 'EZRA — CRAZY HORSE'],
-        'S2L2': ['HIGHLANDS', 'LANDSCAPES', 'SILHOUETTE', 'RUTH', 'PORTRAITS'],
-        'S2L3': ['FACEBOOK FOX', 'NIGHT COLOUR THEORY', 'HORSE BRIDGE', 'MUSIC & EVENTS', 'STREET ART'],
-        'S2L4': ['DOWNTOWN LA', 'PACIFIC DAWN', 'ERYN', 'DADAAB'],
+        // S2 PHOTO (11 items from manifest — manifest replaces inline placeholders at runtime)
+        'S2L1': ['SELFIE IN RWANDA', 'MEN OF CONSEQUENCE', 'BEN AFFLECK IN DRC'],
+        'S2L2': ['EZRA MILLER AT CRAZY HORSE', "K'NAAN IN MOSCOW", 'RUTH WILSON'],
+        'S2L3': ['WOMEN IN RED', 'NIGHT COLOURS TORONTO', 'EAST VAN BY NIGHT'],
+        'S2L4': ['ALPHA YAYA DIALO CONCERT', 'WORLD'],
         // S3 ANIMATE (6 items)
         'S3L1': ['MAKE ANYTHING — AUTODESK', 'GROUNDED SHOES'],
         'S3L2': ['BEN AFFLECK ON THE MEANING OF LIFE — ECI', 'BETTERMOO(D) ORIGIN STORY'],
@@ -5443,8 +5444,15 @@ window.onload = function() {
                     pick = _found;
                     break;
                 }
-                // Roster exhausted (or all skipped) → empty slot, no spawn
-                if (!pick) return;
+                // Roster exhausted or all titles missing → fall back to random uncollected so the slot still spawns
+                // something. Manifest-loaded zones (PHOTO, VIBE) may have replaced titles after the roster was authored.
+                if (!pick) {
+                    var _fallback = zoneItems.filter(function(it) {
+                        return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title);
+                    });
+                    if (_fallback.length > 0) pick = _fallback[Math.floor(Math.random() * _fallback.length)];
+                    else return;
+                }
             } else {
                 // Legacy random pick (levels without a roster)
                 var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title); });
@@ -6153,6 +6161,8 @@ window.onload = function() {
             document.getElementById('go-post-submit').style.display = 'none';
             var _goRetry = document.getElementById('go-retry-level-btn');
             if (_goRetry) _goRetry.style.display = '';
+            var _goArm = document.getElementById('go-armoury-btn');
+            if (_goArm) _goArm.style.display = '';
             var _goAbort = document.getElementById('go-abort-btn');
             if (_goAbort) _goAbort.style.display = '';
             ['ini-1','ini-2','ini-3'].forEach(function(id){ var el=document.getElementById(id); if(el) el.value=''; });
@@ -8288,6 +8298,13 @@ window.onload = function() {
         _carouselFromAbort = true;
         showCarousel(currentSector);
     });
+    bindTap('go-armoury-btn', function() {
+        var gos = document.getElementById('game-over-screen');
+        if (gos) gos.style.display = 'none';
+        showStore(function() {
+            if (gos) gos.style.display = 'flex';
+        });
+    });
     bindTap('tr-abort-retry-level-btn', function() {
         var s = currentSector, l = currentLevel;
         _carouselFromAbort = false;
@@ -9091,6 +9108,8 @@ window.onload = function() {
         document.getElementById('initials-entry').style.display = 'none';
         var _goRetryHide = document.getElementById('go-retry-level-btn');
         if (_goRetryHide) _goRetryHide.style.display = 'none';
+        var _goArmHide = document.getElementById('go-armoury-btn');
+        if (_goArmHide) _goArmHide.style.display = 'none';
         var _goAbortHide = document.getElementById('go-abort-btn');
         if (_goAbortHide) _goAbortHide.style.display = 'none';
         document.getElementById('go-post-submit').style.display = 'block';
@@ -10581,7 +10600,6 @@ window.onload = function() {
                                 // Invincible during flip or force field
                                 AudioEngine.playSFX('destroy');
                                 flash('#00ccff');
-                                spawnPointBurst('SMASH!', 'c-cyan');
                                 score += 35;
                             } else if (_inBonusLevel && currentSector === 3) {
                                 // S3B POWER LOOP — count unshielded barrier hits; 2 = forfeit at end.
@@ -10622,7 +10640,6 @@ window.onload = function() {
                                     // Invincible during flip or force field — smash through
                                     AudioEngine.playSFX('destroy');
                                     flash('#00ccff');
-                                    spawnPointBurst('SMASH!', 'c-cyan');
                                     score += 35;
                                 } else {
                                     takeDamage();
