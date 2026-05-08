@@ -970,6 +970,10 @@
     <button class="menu-btn" id="prev-games-btn" style="border-color:#00ffcc;color:#00ffcc;text-shadow:0 0 8px rgba(0,255,204,0.6);">[ PREVIOUS GAMES ]</button>
     <button class="menu-btn" id="store-btn" style="border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ ARMOURY ]</button>
     <button class="menu-btn btn-danger" id="abort-btn">[ ABORT RUN ]</button>
+    <div style="margin-top:18px;width:100%;max-width:380px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;text-align:center;">JUMP TO LEVEL</div>
+      <div id="pause-level-grid" style="display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;max-width:360px;margin:0 auto;"></div>
+    </div>
 </div>
 
 <!-- Store / Upgrades Overlay -->
@@ -7892,8 +7896,7 @@ window.onload = function() {
         if (_carouselScrollCleanup) { _carouselScrollCleanup(); _carouselScrollCleanup = null; }
         try { initializeFlight(true, s, l, true); } catch(err) {}
     });
-    function _trRebuildAbortLevelGrid() {
-        var grid = document.getElementById('tr-abort-level-grid');
+    function _trBuildLevelGridInto(grid) {
         if (!grid) return;
         grid.innerHTML = '';
         for (var s = 1; s <= 5; s++) {
@@ -7927,6 +7930,42 @@ window.onload = function() {
             grid.appendChild(col);
         }
     }
+    function _trRebuildAbortLevelGrid() {
+        _trBuildLevelGridInto(document.getElementById('tr-abort-level-grid'));
+    }
+    // Pause-screen level grid: rebuild whenever pause-screen becomes visible + bind tap.
+    (function(){
+        var ps = document.getElementById('pause-screen');
+        if (ps && typeof MutationObserver !== 'undefined') {
+            var rebuild = function(){
+                try { _trBuildLevelGridInto(document.getElementById('pause-level-grid')); } catch(e) {}
+            };
+            new MutationObserver(function(){
+                var d = ps.style.display;
+                if (d && d !== 'none') rebuild();
+            }).observe(ps, { attributes: true, attributeFilter: ['style'] });
+            rebuild();
+        }
+        var pgrid = document.getElementById('pause-level-grid');
+        if (!pgrid) return;
+        var pLast = 0;
+        var pHandler = function(e) {
+            var tgt = e.target && e.target.closest ? e.target.closest('[data-sector]') : null;
+            if (!tgt || !pgrid.contains(tgt)) return;
+            e.preventDefault(); e.stopPropagation();
+            var now = Date.now();
+            if (now - pLast < 300) return;
+            pLast = now;
+            var s = parseInt(tgt.getAttribute('data-sector'), 10);
+            var l = parseInt(tgt.getAttribute('data-level'), 10);
+            if (!_trIsReached(s, l)) return;
+            try { ps.style.display = 'none'; } catch(err) {}
+            try { document.body.style.touchAction = 'none'; } catch(err) {}
+            try { initializeFlight(true, s, l, true); } catch(err) {}
+        };
+        pgrid.addEventListener('touchend', pHandler, {passive:false});
+        pgrid.addEventListener('mouseup', pHandler, {passive:false});
+    })();
     (function() {
         var grid = document.getElementById('tr-abort-level-grid');
         if (!grid) return;
@@ -8461,6 +8500,9 @@ window.onload = function() {
         if (previewShipId !== activeShip) {
             previewShipId = activeShip;
             try { if (window.__tunnelStoreShipReload) window.__tunnelStoreShipReload(activeShip); } catch(e) {}
+        } else {
+            // Same ship — but tiers may have changed (e.g. session swap). Force visibility refresh.
+            try { if (window.__tunnelStoreRefresh) window.__tunnelStoreRefresh(); } catch(e) {}
         }
         var anyDiscovered = SHIP_CATALOG.some(function(s){ return !s.default && shipDiscovered[s.id]; });
         tabEl.style.display = anyDiscovered ? '' : 'none';
@@ -18628,10 +18670,14 @@ illum 3
     } catch(e) { return def; }
   }
   function getActive(){
+    // Read in-memory tier state (updated by _sessionLoad), not localStorage globals which can be stale across sessions.
+    var w  = (typeof weaponTier === 'number') ? weaponTier : _readTier('tunnelrunner.weaponTier', 0, 4);
+    var sp = (typeof speedTier  === 'number') ? speedTier  : _readTier('tunnelrunner.speedTier',  0, 4);
+    var s  = (typeof shieldTier === 'number') ? shieldTier : _migrateShield(_readTier('tunnelrunner.shieldTier', 0, 5));
     return {
-      w:  _readTier('tunnelrunner.weaponTier', 0, 4),
-      sp: _readTier('tunnelrunner.speedTier',  1, 4),
-      s:  _migrateShield(_readTier('tunnelrunner.shieldTier', 0, 5))
+      w:  Math.max(0, Math.min(4, w)),
+      sp: Math.max(0, Math.min(4, sp)),
+      s:  _migrateShield(s)
     };
   }
 
@@ -18816,6 +18862,8 @@ illum 3
   } catch(e) {}
   } // end loadShip
   window.__tunnelStoreShipReload = loadShip;
+  // Expose refresh() so other code can update tier mesh visibility when in-memory tiers change (session swap).
+  setTimeout(function(){ try { window.__tunnelStoreRefresh = refresh; } catch(e) {} }, 0);
   loadShip(typeof activeShip === 'string' ? activeShip : 'deltawing');
 
   function setObjTier(map, idx){
