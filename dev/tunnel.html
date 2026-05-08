@@ -1166,13 +1166,16 @@
 // AUDIO ENGINE — Procedural music + SFX (adapted from NAVIGATOR)
 // ═══════════════════════════════════════════════════════════════════
 var audioCtx = null, musicNodes = [], songTimeout = null, musicBarCount = 0;
-var masterGain = null, musicGainNode = null, sfxGainNode = null, reverbIn = null;
+var masterGain = null, musicGainNode = null, sfxGainNode = null, reverbIn = null, outputGate = null;
 var _musicMuted = false, _sfxMuted = false, _musicPaused = false, _songIndex = 0;
 try { if (localStorage.getItem('trMusicMuted') === '1') _musicMuted = true; } catch(e) {}
 try { if (localStorage.getItem('trSfxMuted') === '1') _sfxMuted = true; } catch(e) {}
 
 function initAudioGraph() {
-  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.82; masterGain.connect(audioCtx.destination);
+  // outputGate is the FINAL gate before destination — both dry (masterGain) and wet (reverb) route through it.
+  // Mute outputGate to silence ALL audio in one place (used by hard-pause on tab/app hide).
+  outputGate = audioCtx.createGain(); outputGate.gain.value = 1.0; outputGate.connect(audioCtx.destination);
+  masterGain = audioCtx.createGain(); masterGain.gain.value = 0.82; masterGain.connect(outputGate);
   musicGainNode = audioCtx.createGain(); musicGainNode.gain.value = 1.0; musicGainNode.connect(masterGain);
   sfxGainNode = audioCtx.createGain(); sfxGainNode.gain.value = 1.0; sfxGainNode.connect(masterGain);
   var d1 = audioCtx.createDelay(4.0), d2 = audioCtx.createDelay(4.0), d3 = audioCtx.createDelay(4.0);
@@ -1183,7 +1186,7 @@ function initAudioGraph() {
   d1.connect(fb1); fb1.connect(d1); d1.connect(d2);
   d2.connect(fb2); fb2.connect(d2); d2.connect(d3);
   d3.connect(fb3); fb3.connect(d3); d3.connect(wet);
-  wet.connect(audioCtx.destination); reverbIn = d1;
+  wet.connect(outputGate); reverbIn = d1;
 }
 
 // Shield note voice
@@ -2216,7 +2219,7 @@ var AudioEngine = {
     this._engineMuted = false;
   },
   suspend: function() { stopMusic(); pauseMusic(); this.stopEngine(); },
-  resume: function() { try { if (masterGain && masterGain.gain) masterGain.gain.value = 0.82; } catch(e) {} resumeMusic(); },
+  resume: function() { try { if (outputGate && outputGate.gain) outputGate.gain.value = 1.0; } catch(e) {} try { if (masterGain && masterGain.gain) masterGain.gain.value = 0.82; } catch(e) {} resumeMusic(); },
   playBGM: function() {},
   stopBGM: function() {},
   toggleMute: function() {} // no longer used — separate buttons now
@@ -8841,6 +8844,8 @@ window.onload = function() {
     // Do NOT auto-resume on refocus — user must tap RESUME to come back.
     function _hardPause() {
         try { if (typeof AudioEngine !== 'undefined' && AudioEngine.suspend) AudioEngine.suspend(); } catch(e) {}
+        // Mute the final output gate — silences dry AND wet (reverb tail) paths in one place.
+        try { if (typeof outputGate !== 'undefined' && outputGate && outputGate.gain) outputGate.gain.value = 0; } catch(e) {}
         try { if (typeof masterGain !== 'undefined' && masterGain && masterGain.gain) masterGain.gain.value = 0; } catch(e) {}
         try { if (typeof audioCtx !== 'undefined' && audioCtx && audioCtx.state === 'running') audioCtx.suspend(); } catch(e) {}
         try {
