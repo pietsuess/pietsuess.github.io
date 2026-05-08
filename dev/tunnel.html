@@ -837,6 +837,10 @@
     </div>
     <button class="menu-btn stagger-in" id="go-retry-level-btn">[ RETRY LEVEL ]</button>
     <button class="menu-btn btn-danger stagger-in" id="go-abort-btn">[ ABORT ]</button>
+    <div style="margin-top:18px;width:100%;max-width:380px;">
+      <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#555;letter-spacing:2px;margin-bottom:8px;text-align:center;">JUMP TO LEVEL</div>
+      <div id="go-level-grid" style="display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;max-width:360px;margin:0 auto;"></div>
+    </div>
 </div>
 <div id="victory-screen" class="overlay-screen">
     <div id="victory-unlocks" style="display:none;text-align:center;margin-bottom:14px;"></div>
@@ -4865,7 +4869,7 @@ window.onload = function() {
             ],
             rotMult: 0.9
         },
-        // S1L4 - applied from spawn editor export 2026-05-07 18:09
+        // S1L4 - applied from spawn editor export 2026-05-07 17:48 (pylons-only update)
         'S1L4': {
             blocks: false,
             shields: false,
@@ -4946,9 +4950,9 @@ window.onload = function() {
             isSpeedRun: true,
             speedRunTarget: 20,
             pylons: {
-                spacing: 680,
-                offset: 0.05,
-                spiralStep: 0.05,
+                spacing: 1000,
+                offset: -0.25,
+                spiralStep: 0.25,
                 startAngle: 0.5,
                 pattern: "alternate",
                 startPct: 0.05,
@@ -7933,39 +7937,39 @@ window.onload = function() {
     function _trRebuildAbortLevelGrid() {
         _trBuildLevelGridInto(document.getElementById('tr-abort-level-grid'));
     }
-    // Pause-screen level grid: rebuild whenever pause-screen becomes visible + bind tap.
-    (function(){
-        var ps = document.getElementById('pause-screen');
-        if (ps && typeof MutationObserver !== 'undefined') {
-            var rebuild = function(){
-                try { _trBuildLevelGridInto(document.getElementById('pause-level-grid')); } catch(e) {}
-            };
+    // Pause-screen + game-over-screen level grids: rebuild whenever they become visible + bind tap.
+    function _trWirePickerGrid(overlayId, gridId) {
+        var ov = document.getElementById(overlayId);
+        var grid = document.getElementById(gridId);
+        if (!ov || !grid) return;
+        if (typeof MutationObserver !== 'undefined') {
+            var rebuild = function(){ try { _trBuildLevelGridInto(grid); } catch(e) {} };
             new MutationObserver(function(){
-                var d = ps.style.display;
+                var d = ov.style.display;
                 if (d && d !== 'none') rebuild();
-            }).observe(ps, { attributes: true, attributeFilter: ['style'] });
+            }).observe(ov, { attributes: true, attributeFilter: ['style'] });
             rebuild();
         }
-        var pgrid = document.getElementById('pause-level-grid');
-        if (!pgrid) return;
-        var pLast = 0;
-        var pHandler = function(e) {
+        var last = 0;
+        var handler = function(e) {
             var tgt = e.target && e.target.closest ? e.target.closest('[data-sector]') : null;
-            if (!tgt || !pgrid.contains(tgt)) return;
+            if (!tgt || !grid.contains(tgt)) return;
             e.preventDefault(); e.stopPropagation();
             var now = Date.now();
-            if (now - pLast < 300) return;
-            pLast = now;
+            if (now - last < 300) return;
+            last = now;
             var s = parseInt(tgt.getAttribute('data-sector'), 10);
             var l = parseInt(tgt.getAttribute('data-level'), 10);
             if (!_trIsReached(s, l)) return;
-            try { ps.style.display = 'none'; } catch(err) {}
+            try { ov.style.display = 'none'; } catch(err) {}
             try { document.body.style.touchAction = 'none'; } catch(err) {}
             try { initializeFlight(true, s, l, true); } catch(err) {}
         };
-        pgrid.addEventListener('touchend', pHandler, {passive:false});
-        pgrid.addEventListener('mouseup', pHandler, {passive:false});
-    })();
+        grid.addEventListener('touchend', handler, {passive:false});
+        grid.addEventListener('mouseup', handler, {passive:false});
+    }
+    _trWirePickerGrid('pause-screen', 'pause-level-grid');
+    _trWirePickerGrid('game-over-screen', 'go-level-grid');
     (function() {
         var grid = document.getElementById('tr-abort-level-grid');
         if (!grid) return;
