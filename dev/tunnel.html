@@ -2322,8 +2322,17 @@ window.onload = function() {
         try { var v = parseInt(localStorage.getItem('tunnelrunner.ringBank') || '0', 10); return isNaN(v) ? 0 : v; } catch(e) { return 0; }
     }
     function _ringsSave(n) { try { localStorage.setItem('tunnelrunner.ringBank', String(n)); } catch(e) {} }
-    function _ringsAdd(n) { ringBank += n; _ringsSave(ringBank); try { _sessionSync(); } catch(e) {} }
+    function _ringsAdd(n) {
+        if (typeof _inBonusLevel !== 'undefined' && _inBonusLevel) { _bonusEscrowAdd(n); return; }
+        ringBank += n; _ringsSave(ringBank); try { _sessionSync(); } catch(e) {}
+    }
     function _ringsSpend(n) { if (ringBank < n) return false; ringBank -= n; _ringsSave(ringBank); try { _sessionSync(); } catch(e) {} return true; }
+    // ── BONUS CHALLENGE escrow ──
+    // Rings collected during a bonus level are held here; banked to ringBank only on objective success.
+    var _bonusEscrow = 0;
+    function _bonusEscrowAdd(n) { _bonusEscrow += n; try { updateRingHUD(); } catch(e) {} }
+    function _bonusEscrowCommit() { if (_bonusEscrow > 0) { ringBank += _bonusEscrow; _ringsSave(ringBank); } _bonusEscrow = 0; try { _sessionSync(); updateRingHUD(); } catch(e) {} }
+    function _bonusEscrowForfeit() { _bonusEscrow = 0; try { updateRingHUD(); } catch(e) {} }
     var ringBank = _ringsLoad();
 
     function _loadShieldTier() { try { var v = parseInt(localStorage.getItem('tunnelrunner.shieldTier') || '0', 10); if (isNaN(v)) return 0; return _migrateShieldIdx(v); } catch(e) { return 0; } }
@@ -5926,6 +5935,7 @@ window.onload = function() {
     function triggerGameOver() {
         _analyticsDeathCount++;
         _sendTelemetry('death');
+        if (_inBonusLevel) { try { _bonusEscrowForfeit(); } catch(e) {} }
         try { _sessionSync(); } catch(e) {}
         gameState = 'dead';
         document.getElementById('speedrun-clock').style.display = 'none';
@@ -6065,12 +6075,16 @@ window.onload = function() {
             var _bBaselineTime = _bBaselineLength / _bBaselineSpeed;
             var _bSpeedBonus = Math.max(0, Math.min(200, Math.floor((_bBaselineTime - sectorTime) * 2)));
             var _bTotalBonus = _bSectorBonus + _bSpeedBonus;
-            if (_bTotalBonus > 0) { _ringsAdd(_bTotalBonus); try { updateRingHUD(); } catch(e) {} }
-            // Show a brief "BONUS COMPLETE" banner on the victory screen, then auto-advance.
+            // Bank escrow first (rings collected during the bonus), then add sector/speed bonus directly to ringBank
+            // (bypass _ringsAdd so it doesn't route back into the now-empty escrow).
+            var _bEscrowBanked = _bonusEscrow;
+            _bonusEscrowCommit();
+            if (_bTotalBonus > 0) { ringBank += _bTotalBonus; _ringsSave(ringBank); try { updateRingHUD(); _sessionSync(); } catch(e) {} }
+            // Show a brief "CHALLENGE PASSED" banner on the victory screen, then auto-advance.
             var _vsRoot = document.getElementById('victory-screen');
             try {
-                _vsRoot.querySelector('.screen-title').innerText = 'BONUS COMPLETE';
-                document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bTotalBonus + ' RINGS</span>';
+                _vsRoot.querySelector('.screen-title').innerText = 'CHALLENGE PASSED';
+                document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bEscrowBanked + ' RINGS BANKED<br>+' + _bTotalBonus + ' BONUS</span>';
                 document.getElementById('victory-time').innerHTML = '';
                 var _vu = document.getElementById('victory-unlocks');
                 if (_vu) { _vu.innerHTML = ''; _vu.style.display = 'none'; }
@@ -7198,10 +7212,10 @@ window.onload = function() {
         preTitle.innerText = 'YOU ARE ENTERING THE';
         el.appendChild(preTitle);
 
-        // Zone name + SECTOR — bonus level shows "BONUS RING RUN" instead.
+        // Zone name + SECTOR — bonus level shows "BONUS CHALLENGE" instead.
         var title = document.createElement('div');
         title.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(18px,6vw,34px);letter-spacing:2px;color:'+zone.color+';text-shadow:0 0 30px '+zone.color+',0 0 60px '+zone.color+';text-align:center;width:100%;';
-        title.innerText = _inBonusLevel ? 'BONUS RING RUN' : (zone.name + ' SECTOR');
+        title.innerText = _inBonusLevel ? 'BONUS CHALLENGE' : (zone.name + ' SECTOR');
         el.appendChild(title);
 
         // Level indicator (suppressed for bonus — bonus stays sector-anonymous).
@@ -8162,6 +8176,7 @@ window.onload = function() {
     bindTap('abort-btn', () => {
         var ps = document.getElementById('pause-screen');
         if (ps) { ps.style.display = 'none'; ps.style.zIndex = ''; }
+        if (_inBonusLevel) { try { _bonusEscrowForfeit(); _inBonusLevel = false; } catch(e) {} }
         gameState = 'playing';
         _prePauseState = null;
         _prePauseScreen = null;
