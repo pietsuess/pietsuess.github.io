@@ -486,6 +486,7 @@
         #tr-carousel-strip::-webkit-scrollbar-thumb { background:#333; }
         body.abort-carousel #tr-carousel-strip { bottom: 260px; }
         body.abort-carousel #tr-carousel-scroll-hint { top: 45%; }
+        body.abort-carousel #tr-carousel-armoury { display: none; }
         .tr-carousel-card {
             display:inline-flex; flex-direction:column; align-items:center;
             scroll-snap-align:center; flex:0 0 160px; cursor:pointer;
@@ -905,6 +906,7 @@
     <button id="tr-carousel-armoury">[ ARMOURY ]</button>
     <button id="tr-carousel-continue">[ PLAY NEXT SECTOR &gt; ]</button>
     <div id="tr-carousel-abort-nav" style="display:none;position:absolute;left:0;right:0;bottom:88px;z-index:3;flex-direction:column;align-items:center;gap:10px;padding:0 16px;pointer-events:auto;">
+        <button class="menu-btn" id="tr-abort-armoury-btn" style="width:auto;padding:12px 22px;font-size:10px;border-color:#ffe000;color:#ffe000;text-shadow:0 0 8px rgba(255,224,0,0.6);">[ ARMOURY ]</button>
         <button class="menu-btn" id="tr-abort-retry-level-btn" style="width:auto;padding:12px 22px;font-size:10px;">[ RETRY LEVEL ]</button>
         <div style="font-family:'Press Start 2P',monospace;font-size:7px;color:#888;letter-spacing:2px;margin-top:4px;">TRY ANOTHER SECTOR</div>
         <div id="tr-abort-level-grid" style="display:grid;grid-template-columns:repeat(5,minmax(46px,1fr));gap:8px;max-width:360px;margin:0 auto;"></div>
@@ -1005,14 +1007,12 @@
             <canvas id="tr-store-ship-stars" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;pointer-events:none;"></canvas>
             <canvas id="tr-store-ship-canvas" style="position:absolute !important;top:0;left:0;width:100%;height:100%;display:block;background:transparent;touch-action:none;"></canvas>
         </div>
-        <div id="tr-store-ship-stats" style="font-family:'Press Start 2P',monospace;font-size:9px;line-height:1.7;color:#00ffcc;display:grid;grid-template-columns:auto 1fr auto;gap:4px 8px;align-items:center;">
+        <div id="tr-store-ship-stats" style="font-family:'Press Start 2P',monospace;font-size:9px;line-height:1.7;color:#00ffcc;display:grid;grid-template-columns:7ch 1fr 12ch;gap:4px 8px;align-items:center;">
             <span style="color:#ff88dd;text-align:right;">HULL</span><span id="tr-prev-bar-hull" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hull" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">TOTAL</span><span id="tr-prev-bar-mass" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-mass" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">SPEED</span><span id="tr-prev-bar-top" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-top" style="color:#ffcc66;text-align:right;">--</span>
-            <span style="color:#ff88dd;text-align:right;">HITBOX</span><span id="tr-prev-bar-hit" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hit" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">SHIELDS</span><span id="tr-prev-bar-hp" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-hp" style="color:#ffcc66;text-align:right;">--</span>
             <span style="color:#ff88dd;text-align:right;">DMG ABS</span><span id="tr-prev-bar-dmg" style="color:#ffcc66;letter-spacing:1px;">▱▱▱▱▱▱▱▱▱▱</span><span id="tr-prev-dmg" style="color:#ffcc66;text-align:right;">--</span>
-            <span style="color:#ff88dd;text-align:right;">CLASS</span><span></span><span id="tr-prev-class" style="color:#44ff66;text-align:right;">--</span>
         </div>
     </div>
     </div>
@@ -2343,10 +2343,10 @@ window.onload = function() {
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
-    var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-40% DAMAGE', '-50% DAMAGE (MAX)'];
+    var SHIELD_DESC = ['NO REDUCTION', '-10% DAMAGE', '-20% DAMAGE', '-40% DAMAGE', '-50% DAMAGE'];
     var SHIELD_DAMAGE_RED = [0, 0.10, 0.20, 0.40, 0.50];
     var SHIELD_DAMAGE_RED_HYPER = [0, 0, 0.20, 0.40, 0.55];
-    var WEAPON_DESC = ['', 'SINGLE SHOT', 'DUAL SHOTS', 'MAGENTA BOLT (FAST)', '3 SINE-WAVE SHOTS'];
+    var WEAPON_DESC = ['', '1× SHOT', '2× SHOTS', '2× FAST', '3× WAVE'];
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
@@ -2403,6 +2403,8 @@ window.onload = function() {
         return 'X' + Math.floor(Math.random()*100);
     }
     function _sessionCreate() {
+        // Explicit defaults for ALL fields _sessionLoad inspects, so a fresh session truly starts at zeros.
+        // Without these, _sessionLoad's `if (typeof s.X === 'number') X = s.X;` checks no-op and stale memory leaks in.
         var s = {
             id: _sessionGenId(),
             ringBank: 0,
@@ -2415,6 +2417,14 @@ window.onload = function() {
             weaponAmmo: 0,
             maxReached: 'S1L1',
             maxPassed: null,
+            score: 0,
+            sectorStartScore: 0,
+            currentSector: 1,
+            currentLevel: 1,
+            collectedContent: { EDIT: [], PHOTO: [], DIRECT: [], ANIMATE: [], VIBE: [] },
+            shipDiscovered: { deltawing: true, stealthwing: false },
+            shipOwned:      { deltawing: true, stealthwing: false },
+            activeShip: 'deltawing',
             lastPlayed: Date.now()
         };
         var arr = _sessionsLoad();
@@ -8325,8 +8335,8 @@ window.onload = function() {
         } else {
             var btn = document.createElement('button');
             btn.className = 'menu-btn';
-            btn.style.cssText = 'margin:0;width:auto;font-size:9px;padding:6px 10px;flex-shrink:0;touch-action:pan-y;';
-            btn.innerText = 'BUY (' + cost + ')';
+            btn.style.cssText = 'margin:0;width:auto;font-size:8px;padding:5px 7px;flex-shrink:0;touch-action:pan-y;letter-spacing:0;';
+            btn.innerText = 'BUY ' + cost;
             if (canAfford) {
                 btn.style.borderColor = '#ffe000';
                 btn.style.color = '#ffe000';
@@ -8707,6 +8717,13 @@ window.onload = function() {
     });
     // Carousel ARMOURY button — open store from inter-level carousel; on close, return to carousel.
     bindTap('tr-carousel-armoury', function() {
+        var carousel = document.getElementById('tr-carousel-overlay');
+        if (carousel) carousel.style.display = 'none';
+        showStore(function() {
+            if (carousel) carousel.style.display = 'flex';
+        });
+    });
+    bindTap('tr-abort-armoury-btn', function() {
         var carousel = document.getElementById('tr-carousel-overlay');
         if (carousel) carousel.style.display = 'none';
         showStore(function() {
@@ -18980,23 +18997,32 @@ illum 3
       map[k].forEach(function(m){ m.visible = show; });
     });
   }
-  function _bar(value, max) {
-    var fillCount = Math.max(0, Math.min(10, Math.round((value / max) * 10)));
+  function _bar(fillCount) {
+    fillCount = Math.max(0, Math.min(10, fillCount));
     return '▰'.repeat(fillCount) + '▱'.repeat(10 - fillCount);
   }
-  function _setStat(idBar, idNum, value, max, formatted, color) {
+  // Color by absolute fill tier (0-10):
+  //   0-3 fills = bottom 2 tiers → red    (#ff6688)
+  //   4-6 fills = middle tier    → orange (#ffcc66)
+  //   7-10 fills = top 2 tiers   → green  (#00ff88)
+  function _tierColor(fillCount) {
+    if (fillCount >= 7) return '#00ff88';
+    if (fillCount >= 4) return '#ffcc66';
+    return '#ff6688';
+  }
+  // Bar shows RAW VALUE direction (more = bigger bar regardless of goodness).
+  // Color reflects GOODNESS independently:
+  //   For "higher = better" stats: fill→goodness directly.
+  //   For "lower = better" stats: invert (small bar = green, full bar = red).
+  // Goodness tier: 0-3 = red, 4-6 = orange, 7-10 = green.
+  function _setStat(idBar, idNum, rawFill, goodness, formatted) {
+    var color = goodness >= 7 ? '#00ff88' : (goodness >= 4 ? '#ffcc66' : '#ff6688');
     var bar = document.getElementById(idBar);
     var num = document.getElementById(idNum);
-    if (bar) { bar.textContent = _bar(value, max); if (color) bar.style.color = color; else bar.style.color = '#ffcc66'; }
-    if (num) { num.textContent = formatted; if (color) num.style.color = color; else num.style.color = '#ffcc66'; }
+    if (bar) { bar.textContent = _bar(rawFill); bar.style.color = color; }
+    if (num) { num.textContent = formatted; num.style.color = color; }
   }
-  // Default ship for delta comparison
   function _defaultShipMeta(){ try { return window.__shipCatalog && window.__shipCatalog.deltawing; } catch(e){} return null; }
-  function _cmpColor(value, baseline, betterIsHigher) {
-    if (value === baseline) return null;
-    var better = betterIsHigher ? (value > baseline) : (value < baseline);
-    return better ? '#00ff88' : '#ff6688';
-  }
   function refresh(){
     var a = getActive();
     if (objLoaded) {
@@ -19005,41 +19031,29 @@ illum 3
       setObjTier(objMeshes.speeds, a.sp);
     }
     var meta = _previewShipMeta() || _defaultShipMeta();
-    var base = _defaultShipMeta() || meta || {};
     var hullKg     = (meta && typeof meta.hullKg     === 'number') ? meta.hullKg     : SHIP_KG_HULL_DEFAULT;
-    var hitRadius  = (meta && typeof meta.hitRadius  === 'number') ? meta.hitRadius  : 3.5;
     var maxHealth  = (meta && typeof meta.maxHealth  === 'number') ? meta.maxHealth  : 100;
     var dmgMult    = (meta && typeof meta.dmgMult    === 'number') ? meta.dmgMult    : 1.0;
-    var baseHull   = (typeof base.hullKg     === 'number') ? base.hullKg     : 4500;
-    var baseHit    = (typeof base.hitRadius  === 'number') ? base.hitRadius  : 3.5;
-    var baseHP     = (typeof base.maxHealth  === 'number') ? base.maxHealth  : 100;
-    var baseDmg    = (typeof base.dmgMult    === 'number') ? base.dmgMult    : 1.0;
     var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
     var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
-    var baseTotalKg = baseHull + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
-    var baseTop = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (baseHull / baseTotalKg);
-    var cls = 'LIGHT', col = '#44ff66';
-    if (totalKg >= 6500) { cls = 'HEAVY'; col = '#ff4466'; }
-    else if (totalKg >= 5200) { cls = 'MEDIUM'; col = '#ffcc44'; }
-    // Bar maxes
-    var MAX_HULL = 5000, MAX_TOTAL = 8000, MAX_TOP = 2000, MAX_HIT = 5.0, MAX_HP = 200, MAX_DMG = 0.5;
-    // Color comparisons (vs default ship deltawing)
-    var colHull = _cmpColor(hullKg, baseHull, false);   // lower hull = better
-    var colMass = _cmpColor(totalKg, baseTotalKg, false); // lower total = better
-    var colTop  = _cmpColor(top, baseTop, true);         // higher top speed = better
-    var colHit  = _cmpColor(hitRadius, baseHit, false);  // smaller hitbox = better
-    var colHp   = _cmpColor(maxHealth, baseHP, true);    // higher shields = better
-    var colDmg  = _cmpColor(dmgMult, baseDmg, false);    // lower dmgMult = better
-    _setStat('tr-prev-bar-hull', 'tr-prev-hull', hullKg, MAX_HULL, hullKg.toLocaleString() + ' kg', colHull);
-    _setStat('tr-prev-bar-mass', 'tr-prev-mass', totalKg, MAX_TOTAL, totalKg.toLocaleString() + ' kg', colMass);
-    _setStat('tr-prev-bar-top',  'tr-prev-top',  top, MAX_TOP, top.toFixed(0) + ' km/min', colTop);
-    // HITBOX: smaller is better -> invert for fill
-    _setStat('tr-prev-bar-hit',  'tr-prev-hit',  Math.max(0, MAX_HIT - hitRadius), MAX_HIT, hitRadius.toFixed(1), colHit);
-    _setStat('tr-prev-bar-hp',   'tr-prev-hp',   maxHealth, MAX_HP, String(maxHealth) + ' HP', colHp);
-    // DMG ABS: shown as absorption fraction = 1 - dmgMult
-    var absorb = Math.max(0, 1 - dmgMult);
-    _setStat('tr-prev-bar-dmg',  'tr-prev-dmg',  absorb, MAX_DMG, Math.round(absorb * 100) + '%', colDmg);
-    if (classEl) { classEl.textContent = cls; classEl.style.color = col; }
+    // Scale anchors — full bar = MAX, empty bar = 0.
+    // HULL/TOTAL use MIN-anchored ranges so bars reflect where the value sits in the *realistic* spectrum.
+    // (Plain 0-MAX put 4200kg at 8/10 and 7450kg at 9/10 — not a useful comparison.)
+    var MIN_HULL = 3500, MAX_HULL = 5500;     // ships in catalog: 4200-4500 → mid bar
+    var MIN_TOTAL = 4000, MAX_TOTAL = 9000;   // typical loadout 5500 → low; max loadout 7750 → high
+    var MAX_TOP = 2200, MAX_HP = 200, MAX_ABS = 0.50;
+    var fillHull = Math.max(0, Math.min(10, Math.round(((hullKg  - MIN_HULL)  / (MAX_HULL  - MIN_HULL))  * 10)));
+    var fillMass = Math.max(0, Math.min(10, Math.round(((totalKg - MIN_TOTAL) / (MAX_TOTAL - MIN_TOTAL)) * 10)));
+    var fillTop  = Math.max(0, Math.min(10, Math.round((top       / MAX_TOP)   * 10)));
+    var fillHp   = Math.max(0, Math.min(10, Math.round((maxHealth / MAX_HP)    * 10)));
+    var absorb   = Math.max(0, 1 - dmgMult);
+    var fillDmg  = Math.max(0, Math.min(10, Math.round((absorb    / MAX_ABS)   * 10)));
+    // Goodness: HULL/TOTAL inverted (heavy = bad); others direct.
+    _setStat('tr-prev-bar-hull', 'tr-prev-hull', fillHull, 10 - fillHull, hullKg.toLocaleString() + ' kg');
+    _setStat('tr-prev-bar-mass', 'tr-prev-mass', fillMass, 10 - fillMass, totalKg.toLocaleString() + ' kg');
+    _setStat('tr-prev-bar-top',  'tr-prev-top',  fillTop,  fillTop,       top.toFixed(0) + ' km/min');
+    _setStat('tr-prev-bar-hp',   'tr-prev-hp',   fillHp,   fillHp,        String(maxHealth) + ' HP');
+    _setStat('tr-prev-bar-dmg',  'tr-prev-dmg',  fillDmg,  fillDmg,       Math.round(absorb * 100) + '%');
   }
   function resize(){
     var w = canvas.clientWidth || 320;
