@@ -155,6 +155,9 @@
   <!-- Speed-run toggle + countdown (top of every level pane) -->
   <div id="speedrun-toggle"></div>
 
+  <!-- Per-level content roster (fixed pickups, in order) -->
+  <div id="content-roster"></div>
+
   <!-- Computed stats -->
   <div class="computed" id="computed-stats"></div>
 
@@ -1262,6 +1265,7 @@ function refresh() {
   buildTabs();
   buildLevelTabs();
   buildSpeedRunToggle();
+  buildContentRosterPanel();
   buildGatingToggles();
   buildSliders();
   buildSpiralEditor();
@@ -1494,6 +1498,61 @@ function buildSpeedRunToggle() {
     offHint.textContent = 'check to convert this level into a timed speed run';
     offHint.style.cssText = 'color:#555;font-size:10px;margin-left:auto;font-style:italic;';
     wrap.appendChild(offHint);
+  }
+
+  host.appendChild(wrap);
+}
+
+// Per-level content roster — one title per line. Game spawns these in order at forced
+// content slots (driven by segment contentCount). Already-collected titles skip the slot.
+function buildContentRosterPanel() {
+  var host = document.getElementById('content-roster');
+  if (!host) return;
+  host.innerHTML = '';
+  var c = getC();
+  var roster = Array.isArray(c.contentRoster) ? c.contentRoster : [];
+
+  var wrap = document.createElement('div');
+  wrap.style.cssText = 'padding:10px 14px;background:#0a0a14;border:1px solid #224;border-radius:4px;margin-bottom:12px;';
+
+  var header = document.createElement('div');
+  header.style.cssText = 'display:flex;align-items:center;gap:10px;margin-bottom:6px;';
+  var lbl = document.createElement('div');
+  lbl.textContent = 'CONTENT ROSTER';
+  lbl.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:10px;letter-spacing:1px;color:#aacfff;';
+  var hint = document.createElement('div');
+  hint.textContent = 'one title per line — spawns in order at content slots, collected items skip';
+  hint.style.cssText = 'color:#557;font-size:10px;font-style:italic;margin-left:auto;';
+  header.appendChild(lbl);
+  header.appendChild(hint);
+  wrap.appendChild(header);
+
+  var ta = document.createElement('textarea');
+  ta.value = roster.join('\n');
+  ta.placeholder = 'OTTO DESCINSKI\nALSEK\nTOPDRAW';
+  ta.style.cssText = 'width:100%;min-height:64px;background:#000;color:#aacfff;border:1px solid #224;'
+    + 'border-radius:3px;padding:8px;font-family:monospace;font-size:11px;line-height:1.4;outline:none;'
+    + 'box-sizing:border-box;resize:vertical;';
+  ta.onchange = function() {
+    var lines = this.value.split(/\r?\n/).map(function(s){ return s.trim(); }).filter(function(s){ return s.length > 0; });
+    if (lines.length === 0) { delete c.contentRoster; }
+    else { c.contentRoster = lines; }
+    saveConfig();
+    refresh();
+  };
+  wrap.appendChild(ta);
+
+  if (roster.length > 0) {
+    var chips = document.createElement('div');
+    chips.style.cssText = 'display:flex;flex-wrap:wrap;gap:4px;margin-top:6px;';
+    roster.forEach(function(t, i) {
+      var chip = document.createElement('span');
+      chip.textContent = (i + 1) + '. ' + t;
+      chip.style.cssText = 'background:#112;border:1px solid #334;color:#aacfff;'
+        + 'padding:3px 7px;border-radius:10px;font-size:10px;font-family:monospace;';
+      chips.appendChild(chip);
+    });
+    wrap.appendChild(chips);
   }
 
   host.appendChild(wrap);
