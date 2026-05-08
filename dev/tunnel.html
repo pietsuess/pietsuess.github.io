@@ -2352,12 +2352,16 @@ window.onload = function() {
     }
     function _ringsSave(n) { try { localStorage.setItem('tunnelrunner.ringBank', String(n)); } catch(e) {} }
     function _ringsAdd(n) {
-        if (typeof _inBonusLevel !== 'undefined' && _inBonusLevel) { _bonusEscrowAdd(n); return; }
-        ringBank += n; _ringsSave(ringBank); try { _sessionSync(); } catch(e) {}
+        // Always bank directly. Bonus challenges keep what you collect — no escrow / no forfeit.
+        ringBank += n; _ringsSave(ringBank);
+        if (typeof _inBonusLevel !== 'undefined' && _inBonusLevel) { _bonusRingsThisRun += n; }
+        try { _sessionSync(); } catch(e) {}
     }
     function _ringsSpend(n) { if (ringBank < n) return false; ringBank -= n; _ringsSave(ringBank); try { _sessionSync(); } catch(e) {} return true; }
-    // ── BONUS CHALLENGE escrow ──
-    // Rings collected during a bonus level are held here; banked to ringBank only on objective success.
+    // ── BONUS CHALLENGE ring tally ──
+    // Display counter for rings earned during a bonus run (already banked to ringBank as collected).
+    var _bonusRingsThisRun = 0;
+    // Legacy escrow vars retained (no-op) for any code that still references them.
     var _bonusEscrow = 0;
     // Per-challenge counters (reset in _startBonusLevelInner)
     var _bonusBullseyeHit = 0, _bonusBullseyeMiss = 0;
@@ -5133,9 +5137,9 @@ window.onload = function() {
                 endPct: 0.52
             }
         },
-        // S3L3 — explicit tuning. Flat low hazard density, NO BARRIERS (sector 3 default
-        // floods the level with gap-barrier clusters via isSpeedRun=true; we opt out and
-        // force barrierThreshold=0 via the spiralPattern segment override).
+        // S3L3 — explicit tuning. Sector 3 only has gap-barriers as obstacles (no mines/blocks/knots
+        // in sector 3 by design). We keep some barriers for challenge but at a much lower density
+        // than the default 0.264. isSpeedRun:false dodges the speedrun barrier-cluster path.
         'S3L3': {
             baseHazard: 0.08, baseRing: 0.55, baseShields: 0.08,
             spacing: 110, maxSpawnPct: 0.84,
@@ -5143,10 +5147,15 @@ window.onload = function() {
             isSpeedRun: false,
             spiralPattern: [
                 { until: 1.0,
-                  spawn: { barrierThreshold: 0, baseHazard: 0.08, baseRing: 0.55, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
+                  spawn: { barrierThreshold: 0.08, baseHazard: 0.08, baseRing: 0.55, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
                 }
             ],
             rotMult: 1.0
+        },
+        // S3L4 — give a generous 50-sec speedrun target (user-tuned).
+        'S3L4': {
+            isSpeedRun: true,
+            speedRunTarget: 50
         },
         // Bonus ring-grab between Sector 1 and Sector 2 — hidden from level pickers.
         'S1B': {
@@ -5163,7 +5172,7 @@ window.onload = function() {
             starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
             knotShare: 0, blockShare: 0,
             baseSpeed: 320, levelSpeed: 320,
-            baseLength: 6000, levelLength: 6000,
+            baseLength: 12000, levelLength: 12000,
             spiralStep: 0.8,
             spiralPattern: [
                 { until: 1.0,
@@ -5177,7 +5186,7 @@ window.onload = function() {
             ],
             rotMult: 1.0,
             isSpeedRun: true,
-            speedRunTarget: 18,
+            speedRunTarget: 36,
             pylons: null
         },
         // Bonus ring-grab between Sector 2 and Sector 3.
@@ -5195,7 +5204,7 @@ window.onload = function() {
             starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
             knotShare: 0, blockShare: 0,
             baseSpeed: 360, levelSpeed: 360,
-            baseLength: 12000, levelLength: 12000,
+            baseLength: 24000, levelLength: 24000,
             spiralStep: 0.8,
             spiralPattern: [
                 { until: 1.0,
@@ -5209,7 +5218,7 @@ window.onload = function() {
             ],
             rotMult: 1.0,
             isSpeedRun: true,
-            speedRunTarget: 34,
+            speedRunTarget: 68,
             pylons: null
         },
         // Bonus ring-grab between Sector 3 and Sector 4.
@@ -5227,7 +5236,7 @@ window.onload = function() {
             starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
             knotShare: 0, blockShare: 0,
             baseSpeed: 400, levelSpeed: 400,
-            baseLength: 12000, levelLength: 12000,
+            baseLength: 24000, levelLength: 24000,
             spiralStep: 0.8,
             spiralPattern: [
                 { until: 1.0,
@@ -5241,7 +5250,7 @@ window.onload = function() {
             ],
             rotMult: 1.0,
             isSpeedRun: true,
-            speedRunTarget: 32,
+            speedRunTarget: 64,
             pylons: null
         },
         // Bonus ring-grab between Sector 4 and Sector 5 (final sector has no bonus after it).
@@ -5259,7 +5268,7 @@ window.onload = function() {
             starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
             knotShare: 0, blockShare: 0,
             baseSpeed: 440, levelSpeed: 440,
-            baseLength: 6000, levelLength: 6000,
+            baseLength: 12000, levelLength: 12000,
             spiralStep: 0.8,
             spiralPattern: [
                 { until: 1.0,
@@ -5273,7 +5282,7 @@ window.onload = function() {
             ],
             rotMult: 1.0,
             isSpeedRun: true,
-            speedRunTarget: 15,
+            speedRunTarget: 30,
             pylons: null
         }
     };
@@ -5362,12 +5371,12 @@ window.onload = function() {
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
         // BONUS CHALLENGE — sector-specific spawners override the default content
         if (_inBonusLevel && currentSector === 2) {
-            // S2B TARGET SHOOT — spread bullseyes (one every ~750 units, ~16 per 12k level).
-            // Each target sits within a small radial twist of the previous one (~18° max),
-            // so the player follows a slow rotation rather than chasing big angle jumps.
-            if (Math.abs(zPos - _lastBullseyeZ) < 750) return;
+            // S2B TARGET SHOOT — bullseye every ~500 units (~48 targets per 24k level, 3× density).
+            // Each target sits within a small radial twist of the previous one (~29° max),
+            // so the player follows a rotation rather than chasing big angle jumps.
+            if (Math.abs(zPos - _lastBullseyeZ) < 500) return;
             _lastBullseyeZ = zPos;
-            _bullseyeAngle += (Math.random() - 0.5) * 0.6; // ±0.3 rad ≈ ±17° drift per target
+            _bullseyeAngle += (Math.random() - 0.5) * 1.0; // ±0.5 rad ≈ ±29° drift per target — slightly more chase
             var _bMesh = _createBullseye(zPos, _bullseyeAngle);
             scene.add(_bMesh); items.push(_bMesh);
             return;
@@ -5823,9 +5832,9 @@ window.onload = function() {
     var waveMat = new THREE.MeshBasicMaterial({ color: 0x00ffff });
 
     // BULLSEYE — S2B BONUS CHALLENGE target (concentric flat rings facing the player)
-    var bullseyeOuterGeo = new THREE.RingGeometry(5.5, 6.5, 24);
-    var bullseyeMidGeo   = new THREE.RingGeometry(3.0, 4.0, 24);
-    var bullseyeInnerGeo = new THREE.CircleGeometry(2.0, 16);
+    var bullseyeOuterGeo = new THREE.RingGeometry(7.0, 8.0, 24);
+    var bullseyeMidGeo   = new THREE.RingGeometry(4.0, 5.5, 24);
+    var bullseyeInnerGeo = new THREE.CircleGeometry(2.6, 16);
     var bullseyeOuterMat = new THREE.MeshBasicMaterial({ color: 0xffffff, side: THREE.DoubleSide });
     var bullseyeMidMat   = new THREE.MeshBasicMaterial({ color: 0xff3344, side: THREE.DoubleSide });
     var bullseyeInnerMat = new THREE.MeshBasicMaterial({ color: 0xffe000, side: THREE.DoubleSide });
@@ -5836,7 +5845,7 @@ window.onload = function() {
         grp.add(new THREE.Mesh(bullseyeInnerGeo, bullseyeInnerMat));
         var hover = tubeRadius - 8;
         grp.position.set(Math.cos(angle) * hover, Math.sin(angle) * hover, zPos);
-        grp.userData = { type: 'bullseye', hitRadius: 6.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+        grp.userData = { type: 'bullseye', hitRadius: 8.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
         return grp;
     }
 
@@ -6051,7 +6060,9 @@ window.onload = function() {
                 if (hit) {
                     if (itype === 'bullseye') {
                         _bonusBullseyeHit++;
-                        _bonusEscrowAdd(10);
+                        // Direct-to-bank: hits earn rings even if level fails. No escrow / no objective gate for S2B.
+                        ringBank += 10; _ringsSave(ringBank);
+                        try { updateRingHUD(); } catch(e) {}
                         AudioEngine.playSFX('destroy');
                         flash('#ffe000');
                         try { spawnPointBurst('+10', 'c-gold'); } catch(e) {}
@@ -6259,18 +6270,15 @@ window.onload = function() {
         // Skip score-bonus content unlocks, skip max-passed (it's a side-quest, not progression),
         // skip the inter-sector carousel (already shown before the bonus). Auto-advance to S(N+1)L1.
         if (_inBonusLevel) {
-            // Per-challenge objective gate
+            // All bonus challenges: always pass. Rings collected go straight to ringBank as you grab them.
+            // Counters/details are display-only.
             var _objectivePass = true;
             var _failDetail = '';
             if (currentSector === 2) {
-                var _btTotal = _bonusBullseyeHit + _bonusBullseyeMiss;
-                _objectivePass = (_btTotal > 0) && (_bonusBullseyeHit / _btTotal >= 0.8);
-                _failDetail = _bonusBullseyeHit + ' / ' + _btTotal + ' TARGETS';
+                _failDetail = _bonusBullseyeHit + ' / ' + (_bonusBullseyeHit + _bonusBullseyeMiss) + ' TARGETS';
             } else if (currentSector === 3) {
-                _objectivePass = (_bonusBarrierHits < 2);
                 _failDetail = _bonusBarrierHits + ' BARRIER HITS';
             }
-            // S4B objective gate added in Phase 6
 
             var _bEscrowBanked = _bonusEscrow;
             var _bTotalBonus = 0;
@@ -6292,9 +6300,11 @@ window.onload = function() {
                 _bonusEscrowCommit();
                 if (_bTotalBonus > 0) { ringBank += _bTotalBonus; _ringsSave(ringBank); try { updateRingHUD(); _sessionSync(); } catch(e) {} }
                 try {
-                    _titleEl.innerText = 'CHALLENGE PASSED';
+                    _titleEl.innerText = 'CHALLENGE COMPLETE';
                     _titleEl.style.color = '';
-                    document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">+' + _bEscrowBanked + ' RINGS BANKED<br>+' + _bTotalBonus + ' BONUS</span>';
+                    var _bSummary = '+' + _bonusRingsThisRun + ' RINGS EARNED<br>+' + _bTotalBonus + ' BONUS';
+                    if (_failDetail) _bSummary += '<br><span style="font-size:0.65em;color:#aaa;">' + _failDetail + '</span>';
+                    document.getElementById('victory-score').innerHTML = '<span style="color:#ffe000;font-size:clamp(14px,4vw,24px);">' + _bSummary + '</span>';
                     document.getElementById('victory-time').innerHTML = '';
                     var _vu = document.getElementById('victory-unlocks');
                     if (_vu) { _vu.innerHTML = ''; _vu.style.display = 'none'; }
@@ -6380,20 +6390,35 @@ window.onload = function() {
             var timeColor = _speedRunPassed ? '#00ff88' : '#ff4444';
             document.getElementById('victory-score').innerHTML = '<span style="color:'+timeColor+';font-size:clamp(14px,4vw,24px);">TIME: ' + fmtTimeShort(sectorTime) + ' / ' + fmtTimeShort(s4Target) + '</span>';
 
-            // Speed run elite-pass: only unlock content if finished with ≥30% time to spare.
-            // Just clearing under target is no longer enough (roster carries primary progression).
+            // Speed run pass = grant the level's roster items directly. Speedrun levels suppress
+            // in-level content spawning, so this is the only progression path for those zones (e.g. S3 ANIMATE).
             var _srUnlocked = 0;
-            var _srEliteThreshold = s4Target * 0.70;
-            if (_speedRunPassed && sectorTime <= _srEliteThreshold) {
+            if (_speedRunPassed) {
                 var srZone = getZoneName(currentSector);
                 var srItems = CONTENT_DATA[srZone] || [];
-                var srUncollected = srItems.filter(function(it) { return !collectedContent[srZone].has(it.title); });
-                for (var si = srUncollected.length - 1; si > 0; si--) { var sj = Math.floor(Math.random() * (si + 1)); var tmp = srUncollected[si]; srUncollected[si] = srUncollected[sj]; srUncollected[sj] = tmp; }
-                if (srUncollected.length > 0) {
-                    collectedContent[srZone].add(srUncollected[0].title);
-                    _srUnlocked = 1;
-                    updateCollectionHUD();
+                var _srKey = 'S' + currentSector + 'L' + currentLevel;
+                var _srLevelTun = (typeof SPAWN_TUNING !== 'undefined') ? SPAWN_TUNING[_srKey] : null;
+                var _srRoster = (_srLevelTun && Array.isArray(_srLevelTun.contentRoster)) ? _srLevelTun.contentRoster
+                    : (SECTOR_ROSTERS && Array.isArray(SECTOR_ROSTERS[_srKey])) ? SECTOR_ROSTERS[_srKey] : null;
+                if (_srRoster && _srRoster.length > 0) {
+                    for (var _sri = 0; _sri < _srRoster.length; _sri++) {
+                        var _srTitle = _srRoster[_sri];
+                        if (collectedContent[srZone] && collectedContent[srZone].has(_srTitle)) continue;
+                        var _srHas = false;
+                        for (var _srz = 0; _srz < srItems.length; _srz++) { if (srItems[_srz].title === _srTitle) { _srHas = true; break; } }
+                        if (!_srHas) continue;
+                        collectedContent[srZone].add(_srTitle);
+                        _srUnlocked++;
+                    }
+                } else {
+                    // No roster defined → fall back to random uncollected (1 item).
+                    var srUncollected = srItems.filter(function(it) { return !collectedContent[srZone].has(it.title); });
+                    if (srUncollected.length > 0) {
+                        collectedContent[srZone].add(srUncollected[Math.floor(Math.random() * srUncollected.length)].title);
+                        _srUnlocked = 1;
+                    }
                 }
+                if (_srUnlocked > 0) updateCollectionHUD();
             }
         } else {
             document.getElementById('victory-score').innerText = 'SCORE: ' + sectorScore.toString().padStart(6, '0');
@@ -7110,12 +7135,12 @@ window.onload = function() {
     // Begin a hidden bonus ring-grab between the just-cleared sector and the next.
     // Stays in currentSector (so SPAWN_TUNING['S' + currentSector + 'B'] applies via _getTuning),
     // sets _inBonusLevel so HUD + tuning + victory all route correctly.
-    // S2 auto-equips a basic GUN (single shot) for the TARGET SHOOT challenge.
+    // S2 auto-equips LASERS (tier 3) for the TARGET SHOOT challenge — longer-range pickoff.
     // S4 prompts for a free max-tier shield loaner.
     function _startBonusLevel() {
         var sec = currentSector;
         if (sec === 2) {
-            _loanerApply('weapon', 1);
+            _loanerApply('weapon', 3);
             _startBonusLevelInner();
             return;
         }
@@ -7133,6 +7158,7 @@ window.onload = function() {
         _lastBullseyeZ = -Infinity;
         _bullseyeAngle = Math.random() * Math.PI * 2;
         _bonusBarrierHits = 0;
+        _bonusRingsThisRun = 0;
         var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
         sectorDistance = t.levelLength || t.baseLength || 6000;
         var spd = t.baseSpeed || 320;
@@ -10602,11 +10628,11 @@ window.onload = function() {
                                 flash('#00ccff');
                                 score += 35;
                             } else if (_inBonusLevel && currentSector === 3) {
-                                // S3B POWER LOOP — count unshielded barrier hits; 2 = forfeit at end.
+                                // S3B POWER LOOP — barrier hit (no damage, no forfeit; counter shown for stats).
                                 _bonusBarrierHits++;
                                 AudioEngine.playSFX('hit');
                                 flash('#ff4444');
-                                try { spawnPointBurst('HIT ' + _bonusBarrierHits + '/2', 'c-red'); } catch(e) {}
+                                try { spawnPointBurst('BARRIER', 'c-red'); } catch(e) {}
                             } else {
                                 takeDamage();
                             }
