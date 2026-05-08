@@ -2287,11 +2287,29 @@ window.onload = function() {
         }
         return false;
     }
+    // Set when a commit completes a zone — read by triggerVictory to fire the post-level celebration.
+    var _pendingZoneCompleteName = null;
     function _commitPendingContent() {
+        // Snapshot pre-commit completion state per zone so we can detect a fresh zone-complete this commit.
+        var _wasComplete = {};
+        for (var _zk in collectedContent) {
+            try {
+                var _zItems = (CONTENT_DATA[_zk] || []).length;
+                _wasComplete[_zk] = _zItems > 0 && collectedContent[_zk].size >= _zItems;
+            } catch(e) { _wasComplete[_zk] = false; }
+        }
         for (var i = 0; i < _pendingContent.length; i++) {
             var p = _pendingContent[i];
             if (collectedContent[p.zone] && !collectedContent[p.zone].has(p.title)) {
                 collectedContent[p.zone].add(p.title);
+            }
+        }
+        // Detect: was this commit the one that completed a zone? Take the first match.
+        for (var _zc in collectedContent) {
+            var _zCount = (CONTENT_DATA[_zc] || []).length;
+            if (_zCount > 0 && !_wasComplete[_zc] && collectedContent[_zc].size >= _zCount) {
+                _pendingZoneCompleteName = _zc;
+                break;
             }
         }
         _pendingContent = [];
@@ -6358,6 +6376,47 @@ window.onload = function() {
         // Commit pending content collected this run — banks pickups gathered during a successful playthrough.
         // Death and abort flush this set so retry can't grind partial pickups.
         try { _commitPendingContent(); } catch(e) {}
+        // Zone-complete celebration: fires once when the commit finishes a zone.
+        if (_pendingZoneCompleteName) {
+            (function(zname) {
+                try {
+                    var zColor = (typeof ZONE_OBJ_COLORS !== 'undefined' && ZONE_OBJ_COLORS[zname]) || '#ffe000';
+                    // 4 brief fireworks in front of the camera (world-space).
+                    for (var fi = 0; fi < 4; fi++) {
+                        (function(idx) {
+                            setTimeout(function() {
+                                try {
+                                    var pos = new THREE.Vector3(
+                                        (Math.random() - 0.5) * 32,
+                                        (Math.random() - 0.5) * 18 + 4,
+                                        camera.position.z - 90 - Math.random() * 40
+                                    );
+                                    _spawnFirework(pos, new THREE.Color(zColor).getHex());
+                                } catch(e) {}
+                            }, idx * 180);
+                        })(fi);
+                    }
+                    // Text up — high on screen, below upper HUD, doesn't block gameplay.
+                    var el = document.createElement('div');
+                    el.style.cssText = "position:fixed;left:0;right:0;top:88px;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;font-family:'Press Start 2P',monospace;letter-spacing:5px;color:" + zColor + ";text-shadow:0 0 20px " + zColor + ",0 0 40px " + zColor + ";animation:fadeSlideUp 0.5s ease-out both;";
+                    el.innerHTML = '<div style="font-size:clamp(13px,3.6vw,22px);">' + zname + ' ZONE COMPLETE</div>'
+                                + '<div style="font-size:clamp(7px,1.6vw,10px);color:#fff;letter-spacing:3px;margin-top:6px;opacity:0.9;">ALL CONTENT COLLECTED</div>';
+                    document.body.appendChild(el);
+                    try { AudioEngine.playSFX('zone_complete'); } catch(e) {}
+                    setTimeout(function(){ el.style.transition = 'opacity 0.6s'; el.style.opacity = '0'; }, 1800);
+                    setTimeout(function(){ if (el.parentNode) el.remove(); }, 2500);
+                } catch(e) {}
+            })(_pendingZoneCompleteName);
+            _pendingZoneCompleteName = null;
+        }
+        // All zones complete on this level clear → auto-run the finale after the celebration plays out.
+        // Skip the per-level victory screen + inter-sector carousel entirely.
+        if (allZonesComplete()) {
+            setTimeout(function() {
+                try { runFinalCinematic(); } catch(err) {}
+            }, 2400);
+            return;
+        }
         // Sector 2 clear unlocks the StealthWing in the SHIPS panel.
         if (currentSector >= 2 && !shipDiscovered.stealthwing) {
             shipDiscovered.stealthwing = true;
@@ -6575,6 +6634,12 @@ window.onload = function() {
             if (_tp) _tp.remove();
             _carouselFromAbort = false;
             document.body.classList.remove('abort-carousel');
+            // If all zones are complete, skip the inter-sector carousel and run the final cinematic directly.
+            // User no longer has to dismiss carousel + tap "VIEW FINALE" — it auto-plays.
+            if (allZonesComplete()) {
+                try { runFinalCinematic(); } catch(err) {}
+                return;
+            }
             carouselFromVictory = true;
             try { showCarousel(currentSector); } catch(err) {}
         };
