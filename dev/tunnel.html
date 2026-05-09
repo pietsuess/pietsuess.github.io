@@ -5442,32 +5442,41 @@ window.onload = function() {
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
         // BONUS CHALLENGE — sector-specific spawners override the default content
         if (_inBonusLevel && currentSector === 4) {
-            // S4B MINE FIELD — partial mine rings with a rotating gap. Player threads the gap.
-            // Every ~150 units, 5 mines fill ~260° of the tube; the gap drifts each row.
-            if (Math.abs(zPos - _lastBullseyeZ) < 150) return;
+            // S4B MINE FIELD — alternating dense rows. Mines bounce (knot-sway) so the player can't memorize gaps.
+            // Spacing tightened so it actually feels like a field; gold rings inserted between mine rows.
+            if (Math.abs(zPos - _lastBullseyeZ) < 75) return;
             _lastBullseyeZ = zPos;
-            var _row4 = Math.round(Math.abs(zPos - _spawnOriginZ) / 150);
-            // Every 4th row → gold ring instead of mines (reward for survival).
-            if (_row4 % 4 === 3) {
-                var _grAngle = (_row4 * 0.35) % (Math.PI * 2);
-                var _grHover = tubeRadius - 6;
-                var _grMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
-                _grMesh.position.set(Math.cos(_grAngle) * _grHover, Math.sin(_grAngle) * _grHover, zPos);
-                _grMesh.rotation.z = _grAngle;
-                _grMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
-                scene.add(_grMesh); items.push(_grMesh);
+            var _row4 = Math.round(Math.abs(zPos - _spawnOriginZ) / 75);
+            var _hov = tubeRadius - 7;
+            // Every 2nd row → full ring of 6 gold rings (collect bonanza between mine waves).
+            if (_row4 % 2 === 1) {
+                for (var _gi = 0; _gi < 6; _gi++) {
+                    var _gAng = (_gi / 6) * Math.PI * 2 + (_row4 * 0.21);
+                    var _gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                    _gMesh.position.set(Math.cos(_gAng) * _hov, Math.sin(_gAng) * _hov, zPos);
+                    _gMesh.rotation.z = _gAng;
+                    _gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                    scene.add(_gMesh); items.push(_gMesh);
+                }
                 return;
             }
+            // Mine rows — 7 bouncing mines, narrower gap, gap drifts each row.
             var _gapCenter = (_row4 * 0.35) % (Math.PI * 2);
-            var _gapHalf = Math.PI * 0.32; // ~57° half-gap = ~115° opening
-            var _mineCount = 5;
-            var _mineHover = tubeRadius - 7;
+            var _gapHalf = Math.PI * 0.22; // ~40° half-gap = ~80° opening (tighter)
+            var _mineCount = 7;
             for (var _mi = 0; _mi < _mineCount; _mi++) {
-                // Distribute mines evenly across (2π − 2×gapHalf), starting just past the gap.
                 var _mAng = _gapCenter + _gapHalf + ((_mi + 0.5) / _mineCount) * (Math.PI * 2 - 2 * _gapHalf);
                 var _mineMesh = new THREE.Mesh(mineGeo, hazardMat);
-                _mineMesh.position.set(Math.cos(_mAng) * _mineHover, Math.sin(_mAng) * _mineHover, zPos);
-                _mineMesh.userData = { type: 'hazard', hitRadius: 5.5, _hp: 2, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
+                _mineMesh.position.set(Math.cos(_mAng) * _hov, Math.sin(_mAng) * _hov, zPos);
+                // Knot-sway: each mine drifts angularly so the field feels alive.
+                _mineMesh.userData = {
+                    type: 'hazard', hitRadius: 5.5, _hp: 2,
+                    rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3,
+                    isKnot: true,
+                    knotBaseAngle: _mAng,
+                    knotSwaySpeed: 1.5 + Math.random() * 1.5,
+                    knotSwayRange: 0.35 + Math.random() * 0.35
+                };
                 scene.add(_mineMesh); items.push(_mineMesh);
             }
             return;
