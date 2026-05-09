@@ -4141,12 +4141,17 @@ window.onload = function() {
                     || n.includes('THRUSTER') || n.includes('AFTERBURN') || n.includes('ION') || n.includes('WARP') || n.includes('NONE')
                     || n.includes('ENGINEBLOCK') || n.includes('WINDOWS');
             };
+            // BW: skip shields entirely (no shield mechanic on this ship).
+            var _isBlockwingSupplementName = function(n) {
+                return n.includes('THRUSTER') || n.includes('AFTERBURN') || n.includes('ION') || n.includes('WARP') || n.includes('NONE')
+                    || n.includes('ENGINEBLOCK') || n.includes('WINDOWS');
+            };
             if (shipId === 'stealthwing') {
                 // SW ships without its own weapons; pull from DeltaWing.
                 _supplementFrom('deltawing', _isWeaponName);
             } else if (shipId === 'blockwing') {
-                // BW has only the hull; pull engines/shields/thrusters from StealthWing, weapons from DeltaWing.
-                _supplementFrom('stealthwing', _isLoadoutNonWeaponName);
+                // BW has only the hull; pull engines/thrusters from StealthWing (skip shields), weapons from DeltaWing.
+                _supplementFrom('stealthwing', _isBlockwingSupplementName);
                 _supplementFrom('deltawing', _isWeaponName);
             }
             // Convert every ship material to a tuned MeshPhongMaterial.
@@ -4410,6 +4415,8 @@ window.onload = function() {
     function setActiveShip(id) {
         if (!SHIP_CATALOG_BY_ID[id]) id = 'deltawing';
         activeShip = id;
+        // Refresh HP to new ship's max so a tankier ship actually feels tankier on swap.
+        try { health = _shipStat('maxHealth', 100); updateShieldBar(); } catch(e) {}
         shipGroup.visible = true;
         try { _loadInflightObjShip(id); } catch(e) { console.warn('inflight ship reload err', e); }
         try { if (window.__tunnelStoreShipReload) window.__tunnelStoreShipReload(id); } catch(e) {}
@@ -6206,9 +6213,12 @@ window.onload = function() {
         const hyperFracNow = Math.max(0, Math.min(1, (throttleSmooth - 1.0) / 0.5));
         var dmg = 20;
         if (currentSector === 1) dmg = Math.min(dmg, 15);
-        var _sIdx = Math.max(0, Math.min(SHIELD_DAMAGE_RED.length-1, shieldTier|0));
-        var _red = SHIELD_DAMAGE_RED[_sIdx] || 0;
-        dmg = dmg * (1 - _red);
+        // BlockWing has no shield mechanic — relies on hull dmgMult only.
+        if (activeShip !== 'blockwing') {
+            var _sIdx = Math.max(0, Math.min(SHIELD_DAMAGE_RED.length-1, shieldTier|0));
+            var _red = SHIELD_DAMAGE_RED[_sIdx] || 0;
+            dmg = dmg * (1 - _red);
+        }
         dmg = dmg * _shipStat('dmgMult', 1.0);
         health -= dmg;
         try { updateShieldBar(); } catch(e) {}
@@ -19065,10 +19075,15 @@ illum 3
               || n.includes('THRUSTER') || n.includes('AFTERBURN') || n.includes('ION') || n.includes('WARP') || n.includes('NONE')
               || n.includes('ENGINEBLOCK') || n.includes('WINDOWS');
         };
+        // BW: skip shields entirely (no shield mechanic on this ship).
+        var _ttIsBlockwingSupplement = function(n) {
+          return n.includes('THRUSTER') || n.includes('AFTERBURN') || n.includes('ION') || n.includes('WARP') || n.includes('NONE')
+              || n.includes('ENGINEBLOCK') || n.includes('WINDOWS');
+        };
         if (shipId === 'stealthwing') {
           _ttSupplement('ship-loadout-obj', 'ship-loadout-mtl', _ttIsWeapon);
         } else if (shipId === 'blockwing') {
-          _ttSupplement('ship-loadout-obj-stealthwing', 'ship-loadout-mtl-stealthwing', _ttIsLoadoutNonWeapon);
+          _ttSupplement('ship-loadout-obj-stealthwing', 'ship-loadout-mtl-stealthwing', _ttIsBlockwingSupplement);
           _ttSupplement('ship-loadout-obj', 'ship-loadout-mtl', _ttIsWeapon);
         }
         // Match in-flight lighting: punchier MeshPhongMaterial with self-emissive.
