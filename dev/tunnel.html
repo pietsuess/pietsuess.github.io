@@ -5535,7 +5535,7 @@ window.onload = function() {
                     roster = SECTOR_ROSTERS[_rosterKey];
                 }
             }
-            if (roster && _fc) {
+            if (roster) {
                 while (_rosterIdx < roster.length) {
                     var _title = roster[_rosterIdx];
                     _rosterIdx++;
@@ -7313,33 +7313,43 @@ window.onload = function() {
     // makes the next barrier safe; without shield, the barrier counts as one of 2 forfeit hits.
     function _spawnS3BPowerLoops() {
         var seedZ = camera.position.z - 600;
-        var loopCount = 8;
-        var totalLen = sectorDistance * 0.85; // leave 15% runway after last loop
+        var loopCount = 12;
+        var totalLen = sectorDistance * 0.90;
         var loopLen = totalLen / loopCount;
         var hover = tubeRadius - 6;
         for (var k = 0; k < loopCount; k++) {
             var loopBaseZ = seedZ - (k * loopLen);
-            var loopAngle = (k / loopCount) * Math.PI * 2; // each loop rotates around the tube
-            // 1. Three force-field stars across a half-ring (with gaps to dodge through)
-            for (var s = 0; s < 3; s++) {
-                var starAngle = loopAngle + (s / 3) * Math.PI; // covers 180° + offset
-                var starZ = loopBaseZ - (s * 60);
+            var loopRot = (k * 0.35) % (Math.PI * 2);
+            // 1. RING OF 5 SHIELD ORBS (force-field stars), evenly spaced around tube at single Z.
+            for (var s = 0; s < 5; s++) {
+                var starAngle = loopRot + (s / 5) * Math.PI * 2;
                 var starMesh = new THREE.Mesh(starGeo, starMat.clone());
-                starMesh.position.set(Math.cos(starAngle) * hover, Math.sin(starAngle) * hover, starZ);
+                starMesh.position.set(Math.cos(starAngle) * hover, Math.sin(starAngle) * hover, loopBaseZ);
                 starMesh.userData = { type: 'star', hitRadius: 5.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
                 scene.add(starMesh); items.push(starMesh);
             }
-            // 2. Full barrier ring at 0.30 of loop
-            var barrierZ = loopBaseZ - (loopLen * 0.30);
+            // 2. FULL BARRIER right after the orb ring.
+            var barrierZ = loopBaseZ - (loopLen * 0.18);
             var barrierMesh = new THREE.Mesh(buildBarrierGeo(Math.PI * 2), barrierMat);
             barrierMesh.position.set(0, 0, barrierZ);
             barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: Math.PI * 2, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
             scene.add(barrierMesh); items.push(barrierMesh);
-            // 3. Four gold rings spread across 0.50–0.95 of loop
-            for (var g = 0; g < 4; g++) {
-                var gFrac = 0.50 + g * 0.12;
-                var gZ = loopBaseZ - (loopLen * gFrac);
-                var gAngle = loopAngle + (g / 4) * Math.PI; // half-ring spread
+            // 3. SIX GOLD RINGS in 4 lanes — staggered Z so player threads through, bonus pickup line.
+            //    4 angular lanes evenly spread; rings 1-4 fill the lanes, rings 5-6 bracket two of them at offset Z.
+            var laneAngles = [];
+            for (var li = 0; li < 4; li++) laneAngles.push(loopRot + (li / 4) * Math.PI * 2);
+            var ringDefs = [
+                { lane: 0, dz: 0.36 },
+                { lane: 1, dz: 0.42 },
+                { lane: 2, dz: 0.48 },
+                { lane: 3, dz: 0.54 },
+                { lane: 0, dz: 0.62 },
+                { lane: 2, dz: 0.68 }
+            ];
+            for (var ri = 0; ri < ringDefs.length; ri++) {
+                var def = ringDefs[ri];
+                var gAngle = laneAngles[def.lane];
+                var gZ = loopBaseZ - (loopLen * def.dz);
                 var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
                 gMesh.position.set(Math.cos(gAngle) * hover, Math.sin(gAngle) * hover, gZ);
                 gMesh.rotation.z = gAngle;
@@ -8713,7 +8723,7 @@ window.onload = function() {
     }, {passive: true});
     _fireBtn.addEventListener('mousedown', function(e) { e.stopPropagation(); fireProjectile(); });
 
-    function _isCornerFire(t) { return t.clientX < window.innerWidth * 0.30 && t.clientY > window.innerHeight * 0.75; }
+    function _isCornerFire(t) { return t.clientX < window.innerWidth * 0.30 && t.clientY > window.innerHeight - 130; }
     window.addEventListener('touchstart', function(e) {
         if (gameState !== 'playing') return;
         var btn = document.getElementById('fire-btn');
