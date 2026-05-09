@@ -2291,6 +2291,9 @@ window.onload = function() {
     var _pendingZoneCompleteName = null;
     // Per-zone fire-once guard so the celebration can't double up if triggerVictory runs twice.
     var _zoneCelebrationFired = {};
+    // True only when the *current* run freshly cleared the zone — gates the bonus auto-route.
+    // Replays of an already-cleared sector must NOT auto-route to bonus on carousel dismiss.
+    var _bonusEligibleThisRun = false;
     function _commitPendingContent() {
         // Snapshot pre-commit completion state per zone so we can detect a fresh zone-complete this commit.
         var _wasComplete = {};
@@ -3547,8 +3550,10 @@ window.onload = function() {
             carouselFromVictory = false;
             // Advance directly. ARMOURY is an opt-in button on the carousel itself —
             // no auto-routing through the store on dismiss.
-            var _justClearedZone = isZoneComplete(currentSector) && currentSector < 5;
-            if (!_inBonusLevel && _justClearedZone && SPAWN_TUNING['S' + currentSector + 'B']) {
+            // Bonus auto-route fires only on a FRESH zone-clear this run (not on replays of a cleared sector).
+            var _freshClear = _bonusEligibleThisRun && currentSector < 5;
+            _bonusEligibleThisRun = false;
+            if (!_inBonusLevel && _freshClear && SPAWN_TUNING['S' + currentSector + 'B']) {
                 _startBonusLevel();
             } else {
                 startNextSector();
@@ -6525,6 +6530,7 @@ window.onload = function() {
         // Zone-complete celebration: fires once when the commit finishes a zone.
         if (_pendingZoneCompleteName && !_zoneCelebrationFired[_pendingZoneCompleteName]) {
             _zoneCelebrationFired[_pendingZoneCompleteName] = true;
+            _bonusEligibleThisRun = true; // gates the bonus auto-route on carousel dismiss
             (function(zname) {
                 try {
                     var zColor = (typeof ZONE_OBJ_COLORS !== 'undefined' && ZONE_OBJ_COLORS[zname]) || '#ffe000';
