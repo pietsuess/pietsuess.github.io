@@ -5412,6 +5412,37 @@ window.onload = function() {
         // Hard stop: never place items beyond finish ring (80% of sector distance)
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
         // BONUS CHALLENGE — sector-specific spawners override the default content
+        if (_inBonusLevel && currentSector === 4) {
+            // S4B MINE FIELD — partial mine rings with a rotating gap. Player threads the gap.
+            // Every ~150 units, 5 mines fill ~260° of the tube; the gap drifts each row.
+            if (Math.abs(zPos - _lastBullseyeZ) < 150) return;
+            _lastBullseyeZ = zPos;
+            var _row4 = Math.round(Math.abs(zPos - _spawnOriginZ) / 150);
+            // Every 4th row → gold ring instead of mines (reward for survival).
+            if (_row4 % 4 === 3) {
+                var _grAngle = (_row4 * 0.35) % (Math.PI * 2);
+                var _grHover = tubeRadius - 6;
+                var _grMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                _grMesh.position.set(Math.cos(_grAngle) * _grHover, Math.sin(_grAngle) * _grHover, zPos);
+                _grMesh.rotation.z = _grAngle;
+                _grMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                scene.add(_grMesh); items.push(_grMesh);
+                return;
+            }
+            var _gapCenter = (_row4 * 0.35) % (Math.PI * 2);
+            var _gapHalf = Math.PI * 0.32; // ~57° half-gap = ~115° opening
+            var _mineCount = 5;
+            var _mineHover = tubeRadius - 7;
+            for (var _mi = 0; _mi < _mineCount; _mi++) {
+                // Distribute mines evenly across (2π − 2×gapHalf), starting just past the gap.
+                var _mAng = _gapCenter + _gapHalf + ((_mi + 0.5) / _mineCount) * (Math.PI * 2 - 2 * _gapHalf);
+                var _mineMesh = new THREE.Mesh(mineGeo, hazardMat);
+                _mineMesh.position.set(Math.cos(_mAng) * _mineHover, Math.sin(_mAng) * _mineHover, zPos);
+                _mineMesh.userData = { type: 'hazard', hitRadius: 5.5, _hp: 2, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
+                scene.add(_mineMesh); items.push(_mineMesh);
+            }
+            return;
+        }
         if (_inBonusLevel && currentSector === 2) {
             // S2B TARGET SHOOT — bullseye every ~500 units (~48 targets per 24k level, 3× density).
             // Each target sits within a small radial twist of the previous one (~29° max),
