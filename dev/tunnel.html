@@ -5583,7 +5583,7 @@ window.onload = function() {
                     roster = SECTOR_ROSTERS[_rosterKey];
                 }
             }
-            if (roster) {
+            if (roster && _fc) {
                 while (_rosterIdx < roster.length) {
                     var _title = roster[_rosterIdx];
                     _rosterIdx++;
@@ -6209,6 +6209,7 @@ window.onload = function() {
                         _bonusBullseyeHit++;
                         // Direct-to-bank: hits earn rings even if level fails. No escrow / no objective gate for S2B.
                         ringBank += 10; _ringsSave(ringBank);
+                        _bonusRingsThisRun += 10;
                         try { updateRingHUD(); } catch(e) {}
                         AudioEngine.playSFX('destroy');
                         flash('#ffe000');
@@ -6903,6 +6904,27 @@ window.onload = function() {
                 }
             }
         }
+        // Fallback: if no segment defined contentCount but the level has a roster, distribute
+        // roster.length forced slots evenly across the whole level so content doesn't pile randomly.
+        var _hasSegContent = false;
+        if (pat) for (var _hck = 0; _hck < pat.length; _hck++) {
+            if (pat[_hck].spawn && pat[_hck].spawn.contentCount > 0) { _hasSegContent = true; break; }
+        }
+        if (!_hasSegContent) {
+            var _rosKey = 'S' + currentSector + 'L' + currentLevel;
+            var _rosArr = (_tSpawn && Array.isArray(_tSpawn.contentRoster)) ? _tSpawn.contentRoster
+                : (typeof SECTOR_ROSTERS !== 'undefined' && Array.isArray(SECTOR_ROSTERS[_rosKey])) ? SECTOR_ROSTERS[_rosKey] : null;
+            if (_rosArr && _rosArr.length > 0) {
+                var _totalCalls = 0, _swk = startOffset;
+                while (_swk <= lastItemDist && _totalCalls < 600) { _totalCalls++; _swk += spacing; }
+                var _n = Math.min(_rosArr.length, _totalCalls);
+                for (var _ri = 0; _ri < _n; _ri++) {
+                    var _idxR = Math.round((_ri + 0.5) / _n * _totalCalls - 0.5);
+                    _idxR = Math.max(0, Math.min(_totalCalls - 1, _idxR));
+                    _contentIndices[_idxR] = true;
+                }
+            }
+        }
 
         var walkDist = startOffset;
         var _spawnCallIdx = 0;
@@ -7475,9 +7497,12 @@ window.onload = function() {
         // ── Progression gating ──
         // Speed run sectors: must beat target time. Others: zone content must be complete
         var sectorPassed = isZoneComplete(currentSector);
+        var _speedrunFailedThisLevel = false;
         if (isSpeedRunSector(currentSector, currentLevel)) {
             var s4Target = getSpeedRunTarget();
-            sectorPassed = sectorPassed && (sectorRunTimes[currentSector] <= s4Target);
+            var _passedTimer = (sectorRunTimes[currentSector] <= s4Target);
+            sectorPassed = sectorPassed && _passedTimer;
+            _speedrunFailedThisLevel = !_passedTimer;
         }
         if (sectorPassed) {
             // Advance to next sector
@@ -7488,6 +7513,8 @@ window.onload = function() {
             }
             currentSector++;
             currentLevel = 1;
+        } else if (_speedrunFailedThisLevel) {
+            // Speedrun missed the timer → must retry this same level (no advance).
         } else {
             // Replay same sector at higher level
             currentLevel++;
