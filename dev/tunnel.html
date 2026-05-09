@@ -2448,7 +2448,7 @@ window.onload = function() {
     }
     window.__shipDataIds = _shipDataIds; // expose for turntable IIFE in separate script tag
     window.__shipCatalog = SHIP_CATALOG_BY_ID; // expose catalog so turntable refresh() reads active hullKg
-    var shipDiscovered = { deltawing: true, stealthwing: false, blockwing: true };
+    var shipDiscovered = { deltawing: true, stealthwing: false, blockwing: false };
     var shipOwned = { deltawing: true, stealthwing: false, blockwing: false };
     // Live-state ownership lookup — function form survives shipOwned reassignment via session load.
     window.__isShipOwned = function(id) { try { return !!shipOwned[id]; } catch(e) { return false; } };
@@ -2506,7 +2506,7 @@ window.onload = function() {
             currentSector: 1,
             currentLevel: 1,
             collectedContent: { EDIT: [], PHOTO: [], DIRECT: [], ANIMATE: [], VIBE: [] },
-            shipDiscovered: { deltawing: true, stealthwing: false, blockwing: true },
+            shipDiscovered: { deltawing: true, stealthwing: false, blockwing: false },
             shipOwned:      { deltawing: true, stealthwing: false, blockwing: false },
             activeShip: 'deltawing',
             lastPlayed: Date.now()
@@ -2590,8 +2590,12 @@ window.onload = function() {
             }
         } catch(e) {}
         try {
-            if (s.shipDiscovered) shipDiscovered = Object.assign({deltawing:true, stealthwing:false, blockwing:true}, s.shipDiscovered);
+            if (s.shipDiscovered) shipDiscovered = Object.assign({deltawing:true, stealthwing:false, blockwing:false}, s.shipDiscovered);
             if (s.shipOwned) shipOwned = Object.assign({deltawing:true, stealthwing:false, blockwing:false}, s.shipOwned);
+            // Migrate: enforce current reveal thresholds even if a stored session granted a ship early.
+            // StealthWing: requires sector ≥ 2 (i.e., S1 cleared). BlockWing: requires sector ≥ 4 (S3 cleared).
+            if (currentSector < 2) shipDiscovered.stealthwing = false;
+            if (currentSector < 4) shipDiscovered.blockwing = false;
             if (typeof s.activeShip === 'string' && SHIP_CATALOG_BY_ID[s.activeShip] && shipOwned[s.activeShip]) {
                 if (s.activeShip !== activeShip) { try { setActiveShip(s.activeShip); } catch(e) {} }
                 else activeShip = s.activeShip;
@@ -5549,15 +5553,9 @@ window.onload = function() {
                     pick = _found;
                     break;
                 }
-                // Roster exhausted or all titles missing → fall back to random uncollected so the slot still spawns
-                // something. Manifest-loaded zones (PHOTO, VIBE) may have replaced titles after the roster was authored.
-                if (!pick) {
-                    var _fallback = zoneItems.filter(function(it) {
-                        return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title);
-                    });
-                    if (_fallback.length > 0) pick = _fallback[Math.floor(Math.random() * _fallback.length)];
-                    else return;
-                }
+                // Roster exhausted → empty slot. No random fallback, so a level can't grant more content
+                // than its roster defines. (Title-not-in-CONTENT_DATA also lands here — slot stays empty.)
+                if (!pick) return;
             } else {
                 // Legacy random pick (levels without a roster)
                 var uncollected = zoneItems.filter(function(it) { return !collectedContent[zone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(zone, it.title); });
@@ -5883,7 +5881,7 @@ window.onload = function() {
             var tm = Math.floor(srTarget/60), ts = Math.floor(srTarget%60);
             obj.innerHTML = '<span style="animation:blink 0.6s step-end infinite;color:#ffe000;">SPEEDRUN</span><br><span style="font-size:0.8em;">BEAT ' + tm + ':' + (ts<10?'0':'') + ts + '</span>';
         } else {
-            obj.innerHTML = collected + ' / ' + total + ' COLLECTED';
+            obj.innerHTML = collected + ' / ' + total + '<br><span style="font-size:0.8em;">COLLECTED</span>';
         }
         el.classList.add('show');
         setTimeout(() => el.classList.remove('show'), 4000);
@@ -6485,9 +6483,13 @@ window.onload = function() {
             }, 2400);
             return;
         }
-        // Sector 2 clear unlocks the StealthWing in the SHIPS panel.
+        // Sector 1 clear → StealthWing reveal. Sector 3 clear → BlockWing reveal.
         if (currentSector >= 2 && !shipDiscovered.stealthwing) {
             shipDiscovered.stealthwing = true;
+            try { _sessionSync(); } catch(e) {}
+        }
+        if (currentSector >= 4 && !shipDiscovered.blockwing) {
+            shipDiscovered.blockwing = true;
             try { _sessionSync(); } catch(e) {}
         }
         document.getElementById('speedrun-clock').style.display = 'none';
