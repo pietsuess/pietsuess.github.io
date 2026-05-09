@@ -2419,9 +2419,9 @@ window.onload = function() {
     var weaponTier = _loadWeaponTier();
     var speedTier = _loadSpeedTier();
 
-    var SHIELD_PRICES = [null, 90, 200, 1125, 2700];
-    var WEAPON_PRICES = [null, 180, 675, 1900, 3150];
-    var SPEED_PRICES = [null, 270, 900, 2250, 4950];
+    var SHIELD_PRICES = [null, 60, 135, 750, 1800];
+    var WEAPON_PRICES = [null, 120, 450, 1275, 2100];
+    var SPEED_PRICES = [null, 180, 600, 1500, 3300];
     var SHIELD_NAMES = ['NONE', 'CERAMIC', 'STEEL', 'TUNGSTEN', 'GRAPHENE'];
     var WEAPON_NAMES = ['', 'GUN', 'TWIN GUNS', 'LASERS', 'WAVE CANNON'];
     var SPEED_NAMES = ['NONE', 'THRUSTER', 'AFTERBURNER', 'ION DRIVE', 'WARP DRIVE'];
@@ -2433,8 +2433,8 @@ window.onload = function() {
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
         { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 4500, default: false },
-        { id: 'blockwing',  name: 'BLOCKWING',  hullKg: 5800, hitRadius: 3.8, maxHealth: 160, dmgMult: 0.65, price: 5500, default: false }
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 3000, default: false },
+        { id: 'blockwing',  name: 'BLOCKWING',  hullKg: 5800, hitRadius: 3.8, maxHealth: 260, dmgMult: 0.65, price: 3700, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
     function _shipDataIds(shipId) {
@@ -6463,21 +6463,7 @@ window.onload = function() {
             (function(zname) {
                 try {
                     var zColor = (typeof ZONE_OBJ_COLORS !== 'undefined' && ZONE_OBJ_COLORS[zname]) || '#ffe000';
-                    // 4 brief fireworks in front of the camera (world-space).
-                    for (var fi = 0; fi < 4; fi++) {
-                        (function(idx) {
-                            setTimeout(function() {
-                                try {
-                                    var pos = new THREE.Vector3(
-                                        (Math.random() - 0.5) * 32,
-                                        (Math.random() - 0.5) * 18 + 4,
-                                        camera.position.z - 90 - Math.random() * 40
-                                    );
-                                    _spawnFirework(pos, new THREE.Color(zColor).getHex());
-                                } catch(e) {}
-                            }, idx * 180);
-                        })(fi);
-                    }
+                    // Fireworks removed — were buggy. Keep the text-up only.
                     // Text up — high on screen, below upper HUD, doesn't block gameplay.
                     var el = document.createElement('div');
                     el.style.cssText = "position:fixed;left:0;right:0;top:88px;z-index:610;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none;font-family:'Press Start 2P',monospace;letter-spacing:5px;color:" + zColor + ";text-shadow:0 0 20px " + zColor + ",0 0 40px " + zColor + ";animation:fadeSlideUp 0.5s ease-out both;";
@@ -8784,20 +8770,24 @@ window.onload = function() {
         var isShield = (kind === 'shield');
         var isSpeed = (kind === 'speed');
         var isNone = (idx === 0);
+        // BlockWing has no shield mechanic — grey out the entire shield row.
+        var _shipShieldsDisabled = (isShield && activeShip === 'blockwing');
         var name;
         if (isNone) { name = 'NONE'; }
         else { name = isShield ? SHIELD_NAMES[idx] : (isSpeed ? SPEED_NAMES[idx] : WEAPON_NAMES[idx]); }
         var desc;
         if (isNone) { desc = isShield ? 'NO SHIELD' : (isSpeed ? 'NO SPEED BOOST' : 'NO WEAPON'); }
         else { desc = isShield ? SHIELD_DESC[idx] : (isSpeed ? SPEED_DESC[idx] : WEAPON_DESC[idx]); }
+        if (_shipShieldsDisabled) desc = 'N/A — BLOCKWING USES HULL ARMOR';
         var cost = isNone ? null : (isShield ? SHIELD_PRICES[idx] : (isSpeed ? SPEED_PRICES[idx] : WEAPON_PRICES[idx]));
         var ownedArr = isShield ? _getOwnedShields() : (isSpeed ? _getOwnedSpeeds() : _getOwnedWeapons());
         var owned = isNone ? true : (ownedArr.indexOf(idx) !== -1);
         var activeIdx = isShield ? shieldTier : (isSpeed ? speedTier : weaponTier);
         var isActive = (owned && idx === activeIdx);
-        var canAfford = (cost != null && ringBank >= cost);
+        var canAfford = (cost != null && ringBank >= cost && !_shipShieldsDisabled);
         var row = document.createElement('div');
-        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + (owned ? '#00ff88' : (canAfford ? '#ffe000' : '#444')) + ';background:rgba(0,0,0,0.35);touch-action:pan-y;';
+        var _rowBorder = _shipShieldsDisabled ? '#333' : (owned ? '#00ff88' : (canAfford ? '#ffe000' : '#444'));
+        row.style.cssText = 'display:flex;align-items:center;gap:8px;padding:11px 8px;border:1px solid ' + _rowBorder + ';background:rgba(0,0,0,0.35);touch-action:pan-y;' + (_shipShieldsDisabled ? 'opacity:0.45;pointer-events:none;' : '');
         var dot = document.createElement('div');
         dot.className = 'tr-store-dot';
         dot.style.cssText = 'width:14px;height:14px;border-radius:50%;flex-shrink:0;display:flex;align-items:center;justify-content:center;';
