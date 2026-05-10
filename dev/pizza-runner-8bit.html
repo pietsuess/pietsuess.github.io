@@ -185,17 +185,21 @@
   const FH      = H - HUD_H;
   const FY_END  = FY + FH;
 
-  const PLAYER_Y = FY + FH - 30;
-  const PLAYER_HALF_W = 7;
-  const PLAYER_H = 16;
+  const PLAYER_Y_BASE = FY + FH - 36;       // resting Y for the slice
+  const PLAYER_Y_MIN  = FY + 56;             // can't push into the oven glow
+  const PLAYER_Y_MAX  = FY + FH - 16;        // back-of-playfield limit
+  const PLAYER_HALF_W = 14;                  // half of the slice width (2x)
+  const PLAYER_TRI_H  = 24;                  // dough triangle height (2x)
+  const PLAYER_CRUST_H = 6;                  // crust band height (2x)
 
   // --- Pacing ---
   const SCROLL_SPEED   = 64;      // px/sec the world moves down
   const LEVEL_DISTANCE = 1500;    // px to oven
-  const SPAWN_GAP_MIN  = 14;      // px between spawn rolls (smaller = denser)
-  const SPAWN_GAP_MAX  = 28;
+  const SPAWN_GAP_MIN  = 18;      // px between spawn rolls (smaller = denser)
+  const SPAWN_GAP_MAX  = 32;
   const BRICK_CHANCE   = 0.40;
-  const STEER_SPEED    = 110;     // player px/sec via keys
+  const STEER_SPEED    = 130;     // player px/sec via keys (both axes)
+  const FINALE_DUR     = 0.9;     // seconds the slice spends flying into the oven
 
   // --- Brand palette ---
   const P = {
@@ -266,41 +270,65 @@
   // --- Sprite draw functions (procedural pixel art) ---
 
   function drawPlayer(x, y, pile){
-    // Crust band (3 px tall, sits at base)
+    // 2x slice: tip narrow forward (top of screen), crust wide at the back.
+    // x = center, y = top of crust band.
+    const HALF = PLAYER_HALF_W;
+    const TRI  = PLAYER_TRI_H;
+    const CRH  = PLAYER_CRUST_H;
+
+    // Crust band at the back
     ctx.fillStyle = P.crust;
-    ctx.fillRect(x - 7, y, 14, 3);
+    ctx.fillRect(x - HALF, y, HALF * 2, CRH);
     ctx.fillStyle = P.crustDk;
-    ctx.fillRect(x - 7, y + 2, 14, 1);
+    ctx.fillRect(x - HALF, y + CRH - 2, HALF * 2, 2);
     // Crust outline
     ctx.fillStyle = P.ink;
-    ctx.fillRect(x - 7, y - 1, 14, 1);
-    ctx.fillRect(x - 7, y + 3, 14, 1);
-    ctx.fillRect(x - 8, y - 1, 1, 5);
-    ctx.fillRect(x + 7, y - 1, 1, 5);
+    ctx.fillRect(x - HALF,     y - 1,     HALF * 2,  1);
+    ctx.fillRect(x - HALF,     y + CRH,   HALF * 2,  1);
+    ctx.fillRect(x - HALF - 1, y - 1,     1,         CRH + 2);
+    ctx.fillRect(x + HALF,     y - 1,     1,         CRH + 2);
 
-    // Triangle dough rising upward (tip up)
-    for(let row = 1; row <= 12; row++){
-      const halfW = Math.round(row * 6 / 12);
+    // Triangle dough: row=1 sits just above the crust (WIDE),
+    //                 row=TRI is the tip (NARROW).
+    for(let row = 1; row <= TRI; row++){
+      const halfW = Math.round((TRI - row) * HALF / (TRI - 1));
       const yy = y - row;
       // outline pixels
       ctx.fillStyle = P.ink;
       ctx.fillRect(x - halfW - 1, yy, 1, 1);
       ctx.fillRect(x + halfW,     yy, 1, 1);
-      // dough fill
-      ctx.fillStyle = P.dough;
-      if(halfW > 0) ctx.fillRect(x - halfW, yy, halfW * 2, 1);
-      // shaded right edge
-      ctx.fillStyle = P.doughDk;
-      if(halfW > 0) ctx.fillRect(x + halfW - 1, yy, 1, 1);
+      if(halfW > 0){
+        ctx.fillStyle = P.dough;
+        ctx.fillRect(x - halfW, yy, halfW * 2, 1);
+        ctx.fillStyle = P.doughDk;
+        ctx.fillRect(x + halfW - 1, yy, 1, 1);
+      }
     }
-    // Tip outline pixel
+    // tip cap pixel
     ctx.fillStyle = P.ink;
-    ctx.fillRect(x, y - 13, 1, 1);
+    ctx.fillRect(x, y - TRI, 1, 1);
 
-    // Pile of collected toppings sit on the dough
+    // Toppings pile inside the triangle (already constrained at insert time)
     for(const p of pile){
-      drawMiniTopping(p.type, x + p.dx, y - 2 - p.dy);
+      drawMiniTopping(p.type, x + p.dx, y - p.dy);
     }
+  }
+
+  // Pile placement: pick a random spot inside the dough triangle so toppings
+  // spread evenly across the slice instead of clustering at the back.
+  function pickPileSpot(){
+    const TRI  = PLAYER_TRI_H;
+    const HALF = PLAYER_HALF_W;
+    // Square-root distribution biases toward the wider rear half so the
+    // dy values fill the slice more uniformly by visible area.
+    const u = Math.random();
+    const dyNorm = 1 - Math.sqrt(1 - u); // 0..1, weighted toward 0 (wide end)
+    const dy = 4 + Math.round(dyNorm * (TRI - 8));
+    const halfWAtDy = Math.round((TRI - dy) / (TRI - 1) * HALF);
+    const inset = 3;
+    const range = Math.max(0, halfWAtDy - inset);
+    const dx = Math.round((Math.random() * 2 - 1) * range);
+    return { dx, dy };
   }
 
   // 8x8 topping sprites (used as floating pickups)
@@ -391,34 +419,55 @@
     }
   }
 
-  // 4x4 mini topping (sits on the slice in the player pile)
+  // 6x6 mini topping centered on (x, y) — sits on the slice
   function drawMiniTopping(type, x, y){
+    const x0 = x - 3, y0 = y - 3;
     if(type === 'pep'){
+      // outline + dark rim + bright center
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0,   y0,   6, 1); ctx.fillRect(x0,   y0+5, 6, 1);
+      ctx.fillRect(x0,   y0,   1, 6); ctx.fillRect(x0+5, y0,   1, 6);
       ctx.fillStyle = P.pepDk;
-      ctx.fillRect(x-1, y-1, 4, 4);
+      ctx.fillRect(x0+1, y0+1, 4, 4);
       ctx.fillStyle = P.pep;
-      ctx.fillRect(x,   y,   2, 2);
+      ctx.fillRect(x0+2, y0+2, 2, 2);
+      ctx.fillRect(x0+1, y0+2, 4, 2);
     }
     else if(type === 'pepper'){
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0,   y0,   5, 1); ctx.fillRect(x0,   y0+5, 5, 1);
+      ctx.fillRect(x0,   y0,   1, 6);
       ctx.fillStyle = P.pepperDk;
-      ctx.fillRect(x-1, y-1, 4, 4);
+      ctx.fillRect(x0+1, y0+1, 4, 4);
       ctx.fillStyle = P.pepper;
-      ctx.fillRect(x,   y-1, 2, 1);
-      ctx.fillRect(x-1, y,   1, 2);
-      ctx.fillRect(x,   y+2, 2, 1);
+      ctx.fillRect(x0+1, y0+1, 2, 4);
+      // hole opens to the right
+      ctx.fillStyle = P.dough;
+      ctx.fillRect(x0+3, y0+2, 2, 2);
     }
     else if(type === 'mush'){
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0,   y0,   6, 1);
+      ctx.fillRect(x0,   y0,   1, 3); ctx.fillRect(x0+5, y0, 1, 3);
       ctx.fillStyle = P.mushDk;
-      ctx.fillRect(x-1, y-1, 4, 1);
+      ctx.fillRect(x0+1, y0+1, 4, 1);
       ctx.fillStyle = P.mush;
-      ctx.fillRect(x-1, y, 4, 1);
-      ctx.fillRect(x,   y+1, 2, 2);
+      ctx.fillRect(x0+1, y0+2, 4, 1);
+      // stem
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0+1, y0+3, 1, 3); ctx.fillRect(x0+4, y0+3, 1, 3);
+      ctx.fillRect(x0+1, y0+5, 4, 1);
+      ctx.fillStyle = P.mush;
+      ctx.fillRect(x0+2, y0+3, 2, 2);
     }
     else if(type === 'olive'){
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0,   y0,   6, 1); ctx.fillRect(x0,   y0+5, 6, 1);
+      ctx.fillRect(x0,   y0,   1, 6); ctx.fillRect(x0+5, y0,   1, 6);
       ctx.fillStyle = P.olive;
-      ctx.fillRect(x-1, y-1, 4, 4);
-      ctx.fillStyle = P.cream;
-      ctx.fillRect(x,   y,   2, 2);
+      ctx.fillRect(x0+1, y0+1, 4, 4);
+      ctx.fillStyle = P.dough;
+      ctx.fillRect(x0+2, y0+2, 2, 2);
     }
   }
 
@@ -541,8 +590,12 @@
     distance: 0,
     invuln: 0,
     finishing: false,
+    finishT: 0,
+    finishStartY: PLAYER_Y_BASE,
     playerX: W/2,
     targetX: W/2,
+    playerY: PLAYER_Y_BASE,
+    targetY: PLAYER_Y_BASE,
     items: [],            // {type:'topping'|'brick', sub:'pep'|..., x, y, w, h}
     pile: [],             // {type, dx, dy}
     spawnAccumulator: 0,  // px of scroll banked toward the next spawn
@@ -555,8 +608,12 @@
     state.distance = 0;
     state.invuln = 0;
     state.finishing = false;
+    state.finishT = 0;
+    state.finishStartY = PLAYER_Y_BASE;
     state.playerX = W/2;
     state.targetX = W/2;
+    state.playerY = PLAYER_Y_BASE;
+    state.targetY = PLAYER_Y_BASE;
     state.items.length = 0;
     state.pile.length = 0;
     state.spawnAccumulator = 0;
@@ -568,21 +625,24 @@
   addEventListener('keydown', e => { keys[e.key] = true; });
   addEventListener('keyup',   e => { keys[e.key] = false; });
 
-  let dragging = false, dragRefX = 0, dragRefPlayerX = 0;
+  let dragging = false, dragRefX = 0, dragRefY = 0, dragRefPlayerX = 0, dragRefPlayerY = 0;
   function pointerDown(e){
     const t = e.touches ? e.touches[0] : e;
     dragging = true;
     dragRefX = t.clientX;
+    dragRefY = t.clientY;
     dragRefPlayerX = state.targetX;
+    dragRefPlayerY = state.targetY;
     e.preventDefault();
   }
   function pointerMove(e){
     if(!dragging) return;
     const t = e.touches ? e.touches[0] : e;
     const rect = canvas.getBoundingClientRect();
-    const ratio = W / rect.width;
-    const dx = (t.clientX - dragRefX) * ratio;
-    state.targetX = dragRefPlayerX + dx;
+    const ratioX = W / rect.width;
+    const ratioY = H / rect.height;
+    state.targetX = dragRefPlayerX + (t.clientX - dragRefX) * ratioX;
+    state.targetY = dragRefPlayerY + (t.clientY - dragRefY) * ratioY;
     e.preventDefault();
   }
   function pointerUp(){ dragging = false; }
@@ -598,15 +658,15 @@
   function spawnRow(){
     const isBrick = Math.random() < BRICK_CHANCE;
     if(isBrick){
-      // 1-2 bricks in a row, leaving a gap
-      const count = Math.random() < 0.55 ? 1 : 2;
+      // 1-2 bricks across 3 lanes (the bigger slice needs wider gaps).
+      const count = Math.random() < 0.6 ? 1 : 2;
       const slots = [];
       while(slots.length < count){
-        const s = Math.floor(Math.random() * 4); // 4 lanes
+        const s = Math.floor(Math.random() * 3); // 3 lanes
         if(!slots.includes(s)) slots.push(s);
       }
+      const laneW = (FW - 16) / 2; // 3 lane positions: 0, laneW, 2*laneW
       for(const s of slots){
-        const laneW = (FW - 16) / 3;
         const lx = FX + Math.round(s * laneW);
         state.items.push({
           type:'brick', x:lx, y:FY - 12, w:16, h:10
@@ -644,20 +704,42 @@
 
   // --- Game tick ---
   function tick(dt){
-    // Steering input
-    let kx = 0;
-    if(keys['ArrowLeft']  || keys['a'] || keys['A']) kx -= 1;
-    if(keys['ArrowRight'] || keys['d'] || keys['D']) kx += 1;
-    if(kx !== 0){
-      state.targetX += kx * STEER_SPEED * dt;
+    // Finale: slice flies forward into the oven, world is paused.
+    if(state.finishing){
+      state.finishT += dt;
+      const t = Math.min(1, state.finishT / FINALE_DUR);
+      const ease = 1 - Math.pow(1 - t, 3); // easeOutCubic
+      // y interpolates from where the slice was at the moment finale began
+      // to deep inside the oven glow at the top of the playfield.
+      const targetTopY = FY + 6;
+      state.playerY = state.finishStartY + (targetTopY - state.finishStartY) * ease;
+      // tiny X drift toward center as if the oven pulls it in
+      state.playerX += (W/2 - state.playerX) * Math.min(1, dt * 6);
+      if(t >= 1){
+        state.running = false;
+        document.getElementById('win-score').textContent = pad6(state.score);
+        showOverlay('win-screen');
+      }
+      return;
     }
 
-    // Clamp target inside playfield
+    // Steering input — both axes
+    let kx = 0, ky = 0;
+    if(keys['ArrowLeft']  || keys['a'] || keys['A']) kx -= 1;
+    if(keys['ArrowRight'] || keys['d'] || keys['D']) kx += 1;
+    if(keys['ArrowUp']    || keys['w'] || keys['W']) ky -= 1;
+    if(keys['ArrowDown']  || keys['s'] || keys['S']) ky += 1;
+    if(kx !== 0) state.targetX += kx * STEER_SPEED * dt;
+    if(ky !== 0) state.targetY += ky * STEER_SPEED * dt;
+
+    // Clamp targets to playfield bounds
     const minX = FX + PLAYER_HALF_W + 1;
     const maxX = FX + FW - PLAYER_HALF_W - 1;
     state.targetX = Math.max(minX, Math.min(maxX, state.targetX));
-    // Smooth follow
+    state.targetY = Math.max(PLAYER_Y_MIN, Math.min(PLAYER_Y_MAX, state.targetY));
+    // Smooth follow on both axes
     state.playerX += (state.targetX - state.playerX) * Math.min(1, dt * 14);
+    state.playerY += (state.targetY - state.playerY) * Math.min(1, dt * 14);
 
     // Scroll world
     const dy = SCROLL_SPEED * dt;
@@ -680,21 +762,19 @@
       const it = state.items[i];
       it.y += dy;
 
-      // Collision against player slice (bounding rect)
+      // Player bounding rect: slice runs from tip (top) to crust (bottom)
       const px1 = state.playerX - PLAYER_HALF_W;
       const px2 = state.playerX + PLAYER_HALF_W;
-      const py1 = PLAYER_Y - 13;       // tip top
-      const py2 = PLAYER_Y + 3;        // crust bottom
+      const py1 = state.playerY - PLAYER_TRI_H;
+      const py2 = state.playerY + PLAYER_CRUST_H;
       const ix1 = it.x, ix2 = it.x + it.w;
       const iy1 = it.y, iy2 = it.y + it.h;
       const overlap = (ix1 < px2 && ix2 > px1 && iy1 < py2 && iy2 > py1);
       if(overlap){
         if(it.type === 'topping'){
           state.score += 50;
-          // Pile a small piece on the slice at a random spot inside the triangle
-          const dx = Math.round((Math.random()*2 - 1) * 4);
-          const dy2 = Math.round(Math.random() * 6);
-          state.pile.push({type: it.sub, dx, dy: dy2});
+          const spot = pickPileSpot();
+          state.pile.push({type: it.sub, dx: spot.dx, dy: spot.dy});
           beep(880, .08, 'square');
           state.items.splice(i, 1);
           continue;
@@ -721,18 +801,15 @@
       }
     }
 
-    // Win
+    // Reached the oven — kick off the finale (animation runs next tick).
     if(state.distance >= LEVEL_DISTANCE && !state.finishing){
       state.finishing = true;
-      flashScreen = 6;
+      state.finishT = 0;
+      state.finishStartY = state.playerY;
+      flashScreen = 4;
       beep(660, .12, 'square');
       setTimeout(()=>beep(880, .12, 'square'), 110);
       setTimeout(()=>beep(1320, .25, 'square'), 230);
-      setTimeout(()=>{
-        state.running = false;
-        document.getElementById('win-score').textContent = pad6(state.score);
-        showOverlay('win-screen');
-      }, 600);
     }
   }
 
@@ -764,7 +841,7 @@
     // Player slice (skip drawing some frames during invuln for a flicker)
     const flicker = state.invuln > 0 && (Math.floor(performance.now()/80) % 2 === 0);
     if(!flicker){
-      drawPlayer(Math.round(state.playerX), PLAYER_Y, state.pile);
+      drawPlayer(Math.round(state.playerX), Math.round(state.playerY), state.pile);
     }
 
     // HUD on top
