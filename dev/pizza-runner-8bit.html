@@ -1,0 +1,815 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>Pizza Runner 8-Bit — Made With Love</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alfa+Slab+One&family=Big+Shoulders+Display:wght@600;800&family=Inter:wght@400;600&display=swap">
+<style>
+  :root{
+    --red:#ED3E24; --red-deep:#8B1A12;
+    --cream:#F2E6CC; --cream-light:#FAF6EE;
+    --ink:#1A1A1A;
+  }
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    background:var(--cream);
+    font-family:'Inter','Helvetica Neue',Arial,sans-serif;
+    color:var(--ink);
+    overflow:hidden;
+    touch-action:none;
+    user-select:none;-webkit-user-select:none;
+    display:flex;align-items:center;justify-content:center;
+    min-height:100vh;padding:14px;
+    background-image:
+      repeating-linear-gradient(45deg, transparent 0 22px, rgba(237,62,36,.05) 22px 24px);
+  }
+
+  #game-wrap{
+    position:relative;
+    width:min(100vw - 28px, 60vh);
+    aspect-ratio:160/256;
+    margin:auto;
+  }
+  canvas{
+    display:block;
+    width:100%;height:100%;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    background:#1A1A1A;
+    border:3px solid var(--ink);
+    box-shadow:0 5px 0 var(--red-deep), 0 0 0 6px var(--cream-light) inset;
+  }
+
+  /* Overlays sit on top of the canvas */
+  .overlay{
+    position:absolute;inset:0;
+    display:none;flex-direction:column;
+    align-items:center;justify-content:center;
+    text-align:center;padding:14px 12px;
+    background:var(--cream);
+    border:3px solid var(--ink);
+    box-shadow:0 5px 0 var(--red-deep);
+  }
+  .overlay.show{display:flex}
+  .overlay::before{
+    content:"";position:absolute;inset:0;pointer-events:none;
+    background:repeating-linear-gradient(45deg, transparent 0 12px, rgba(237,62,36,.06) 12px 13px);
+  }
+
+  .banner{
+    position:relative;display:inline-block;
+    background:var(--red);color:var(--cream-light);
+    padding:5px 18px 6px;
+    font-family:'Big Shoulders Display',sans-serif;font-weight:800;
+    font-size:9px;letter-spacing:4px;text-transform:uppercase;
+    margin-bottom:10px;
+    box-shadow:0 3px 0 var(--red-deep);
+  }
+  .title{
+    font-family:'Alfa Slab One',serif;
+    color:var(--red);
+    font-size:clamp(26px,7vw,40px);line-height:.95;
+    text-shadow:2px 2px 0 var(--ink);
+    text-transform:uppercase;
+    margin:0 0 4px;
+  }
+  .title .heart{
+    display:inline-block;color:var(--red);
+    margin:0 .12em;font-size:.8em;vertical-align:.08em;
+    animation:beat 1s ease-in-out infinite;
+  }
+  @keyframes beat{
+    0%,100%{transform:scale(1)}
+    30%{transform:scale(1.18)}
+    60%{transform:scale(.95)}
+  }
+  .sub{
+    font-family:'Big Shoulders Display',sans-serif;font-weight:600;
+    font-size:11px;letter-spacing:4px;color:var(--ink);
+    text-transform:uppercase;margin-bottom:14px;
+  }
+  .instr{
+    font-family:'Big Shoulders Display',sans-serif;font-weight:600;
+    font-size:10px;letter-spacing:1.5px;color:var(--ink);line-height:1.9;
+    text-align:left;text-transform:uppercase;
+    border-top:2px solid var(--ink);border-bottom:2px solid var(--ink);
+    padding:8px 14px;margin-bottom:14px;
+  }
+  .instr .k{display:inline-block;color:var(--red);font-weight:800;min-width:54px}
+  .btn{
+    font-family:'Alfa Slab One',serif;font-size:13px;letter-spacing:2px;
+    padding:9px 22px;cursor:pointer;text-transform:uppercase;
+    background:var(--red);color:var(--cream-light);
+    border:2px solid var(--ink);
+    box-shadow:0 3px 0 var(--ink);
+    -webkit-tap-highlight-color:transparent;
+    transition:transform .08s, box-shadow .08s;
+  }
+  .btn:hover{background:var(--red-deep)}
+  .btn:active{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+
+  #win-score{
+    font-family:'Alfa Slab One',serif;font-size:22px;color:var(--red);
+    text-shadow:2px 2px 0 var(--ink);margin-bottom:14px;letter-spacing:1px;
+  }
+
+  .corner-heart{
+    position:absolute;color:var(--red);font-size:18px;opacity:.55;
+    font-family:Arial,sans-serif;
+  }
+  .corner-heart.tl{top:8px;left:10px}
+  .corner-heart.tr{top:8px;right:10px}
+  .corner-heart.bl{bottom:8px;left:10px}
+  .corner-heart.br{bottom:8px;right:10px}
+</style>
+</head>
+<body>
+
+<div id="game-wrap">
+  <canvas id="game" width="160" height="256"></canvas>
+
+  <div id="start-screen" class="overlay show">
+    <span class="corner-heart tl">♥</span><span class="corner-heart tr">♥</span>
+    <span class="corner-heart bl">♥</span><span class="corner-heart br">♥</span>
+    <div class="banner">Made With Love</div>
+    <h1 class="title">Pizza<span class="heart">♥</span>Runner</h1>
+    <div class="sub">8-Bit Edition</div>
+    <div class="instr">
+      <div><span class="k">Move</span> Left / Right</div>
+      <div><span class="k">Grab</span> Toppings</div>
+      <div><span class="k">Dodge</span> Bricks</div>
+      <div><span class="k">Goal</span> Reach The Oven</div>
+    </div>
+    <button class="btn" id="start-btn">Start</button>
+  </div>
+
+  <div id="win-screen" class="overlay">
+    <span class="corner-heart tl">♥</span><span class="corner-heart tr">♥</span>
+    <span class="corner-heart bl">♥</span><span class="corner-heart br">♥</span>
+    <div class="banner">Hot &amp; Ready</div>
+    <h1 class="title">Delivered<span class="heart">♥</span></h1>
+    <div class="sub">Made With Love</div>
+    <div id="win-score">000000</div>
+    <button class="btn" id="win-btn">Run Again</button>
+  </div>
+
+  <div id="lose-screen" class="overlay">
+    <span class="corner-heart tl">♥</span><span class="corner-heart tr">♥</span>
+    <span class="corner-heart bl">♥</span><span class="corner-heart br">♥</span>
+    <div class="banner">House Special</div>
+    <h1 class="title">Dough<br>Dropped</h1>
+    <div class="sub">Too Many Bricks</div>
+    <button class="btn" id="lose-btn">Try Again</button>
+  </div>
+</div>
+
+<script>
+(function(){
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+
+  // --- Logical resolution ---
+  const W = 160, H = 256;
+
+  // --- Layout ---
+  const HUD_H   = 22;            // top HUD strip (inside canvas)
+  const WALL    = 12;            // brick wall thickness on each side
+  const FX      = WALL;
+  const FY      = HUD_H;
+  const FW      = W - WALL * 2;
+  const FH      = H - HUD_H;
+  const FY_END  = FY + FH;
+
+  const PLAYER_Y = FY + FH - 30;
+  const PLAYER_HALF_W = 7;
+  const PLAYER_H = 16;
+
+  // --- Pacing ---
+  const SCROLL_SPEED   = 64;      // px/sec the world moves down
+  const LEVEL_DISTANCE = 1500;    // px to oven
+  const SPAWN_GAP_MIN  = 14;      // px between spawn rolls (smaller = denser)
+  const SPAWN_GAP_MAX  = 28;
+  const BRICK_CHANCE   = 0.40;
+  const STEER_SPEED    = 110;     // player px/sec via keys
+
+  // --- Brand palette ---
+  const P = {
+    bg:        '#F2E6CC',
+    cream:     '#FAF6EE',
+    creamMid:  '#E6D6B0',
+    red:       '#ED3E24',
+    redDeep:   '#8B1A12',
+    ink:       '#1A1A1A',
+    white:     '#FFFFFF',
+    dough:     '#F4C24E',
+    doughDk:   '#C68B1F',
+    crust:     '#9C6325',
+    crustDk:   '#6E4517',
+    pep:       '#D9341C',
+    pepDk:     '#7A1208',
+    pepper:    '#4EA535',
+    pepperDk:  '#1F4519',
+    mush:      '#EAD2A2',
+    mushDk:    '#A87B45',
+    olive:     '#2A1822',
+    oliveLt:   '#5A3A4A',
+    glow:      '#FFB44A',
+    glowDeep:  '#FF5A1A',
+    flame:     '#FFE070',
+  };
+
+  // --- Tiny 3x5 bitmap font for HUD digits + a few letters ---
+  const FONT = {
+    '0':['111','101','101','101','111'],
+    '1':['010','110','010','010','111'],
+    '2':['111','001','111','100','111'],
+    '3':['111','001','011','001','111'],
+    '4':['101','101','111','001','001'],
+    '5':['111','100','111','001','111'],
+    '6':['111','100','111','101','111'],
+    '7':['111','001','010','100','100'],
+    '8':['111','101','111','101','111'],
+    '9':['111','101','111','001','111'],
+    ' ':['000','000','000','000','000'],
+  };
+  function drawText(text, x, y, color){
+    ctx.fillStyle = color;
+    for(let i=0;i<text.length;i++){
+      const g = FONT[text[i]] || FONT[' '];
+      for(let r=0;r<5;r++){
+        for(let c=0;c<3;c++){
+          if(g[r][c]==='1') ctx.fillRect(x + i*4 + c, y + r, 1, 1);
+        }
+      }
+    }
+  }
+
+  // 5x4 pixel heart for HUD
+  function drawHeart(x, y, filled){
+    const c = filled ? P.red : '#3a1a1a';
+    ctx.fillStyle = c;
+    // rows: x.x.x / xxxxx / .xxx. / ..x..
+    [[0,0],[2,0],
+     [0,1],[1,1],[2,1],[3,1],[4,1],
+     [1,2],[2,2],[3,2],
+     [2,3]].forEach(([dx,dy]) => ctx.fillRect(x+dx, y+dy, 1, 1));
+    // outline
+    ctx.fillStyle = P.ink;
+    [[1,0],[3,0]].forEach(([dx,dy]) => ctx.fillRect(x+dx, y+dy, 1, 1));
+  }
+
+  // --- Sprite draw functions (procedural pixel art) ---
+
+  function drawPlayer(x, y, pile){
+    // Crust band (3 px tall, sits at base)
+    ctx.fillStyle = P.crust;
+    ctx.fillRect(x - 7, y, 14, 3);
+    ctx.fillStyle = P.crustDk;
+    ctx.fillRect(x - 7, y + 2, 14, 1);
+    // Crust outline
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x - 7, y - 1, 14, 1);
+    ctx.fillRect(x - 7, y + 3, 14, 1);
+    ctx.fillRect(x - 8, y - 1, 1, 5);
+    ctx.fillRect(x + 7, y - 1, 1, 5);
+
+    // Triangle dough rising upward (tip up)
+    for(let row = 1; row <= 12; row++){
+      const halfW = Math.round(row * 6 / 12);
+      const yy = y - row;
+      // outline pixels
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x - halfW - 1, yy, 1, 1);
+      ctx.fillRect(x + halfW,     yy, 1, 1);
+      // dough fill
+      ctx.fillStyle = P.dough;
+      if(halfW > 0) ctx.fillRect(x - halfW, yy, halfW * 2, 1);
+      // shaded right edge
+      ctx.fillStyle = P.doughDk;
+      if(halfW > 0) ctx.fillRect(x + halfW - 1, yy, 1, 1);
+    }
+    // Tip outline pixel
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x, y - 13, 1, 1);
+
+    // Pile of collected toppings sit on the dough
+    for(const p of pile){
+      drawMiniTopping(p.type, x + p.dx, y - 2 - p.dy);
+    }
+  }
+
+  // 8x8 topping sprites (used as floating pickups)
+  function drawTopping(type, x, y){
+    if(type === 'pep'){
+      // outer rim
+      ctx.fillStyle = P.pepDk;
+      ctx.fillRect(x+1, y,   6, 1);
+      ctx.fillRect(x,   y+1, 8, 6);
+      ctx.fillRect(x+1, y+7, 6, 1);
+      // inner red
+      ctx.fillStyle = P.pep;
+      ctx.fillRect(x+2, y+1, 4, 6);
+      ctx.fillRect(x+1, y+2, 6, 4);
+      // dark spots
+      ctx.fillStyle = P.pepDk;
+      ctx.fillRect(x+3, y+2, 1, 1);
+      ctx.fillRect(x+5, y+4, 1, 1);
+      ctx.fillRect(x+2, y+5, 1, 1);
+      // outline
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x+2, y,   4, 1);
+      ctx.fillRect(x+2, y+7, 4, 1);
+      ctx.fillRect(x,   y+2, 1, 4);
+      ctx.fillRect(x+7, y+2, 1, 4);
+      ctx.fillRect(x+1, y+1, 1, 1);
+      ctx.fillRect(x+6, y+1, 1, 1);
+      ctx.fillRect(x+1, y+6, 1, 1);
+      ctx.fillRect(x+6, y+6, 1, 1);
+    }
+    else if(type === 'pepper'){
+      // green C-strip (open right)
+      ctx.fillStyle = P.pepper;
+      ctx.fillRect(x+1, y+1, 5, 6);
+      ctx.fillStyle = P.pepperDk;
+      ctx.fillRect(x+1, y+5, 5, 2);
+      // inner hole (cream bg) — opens to the right
+      ctx.fillStyle = P.cream;
+      ctx.fillRect(x+3, y+2, 4, 4);
+      // outline
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x+1, y,   5, 1);
+      ctx.fillRect(x+1, y+7, 5, 1);
+      ctx.fillRect(x,   y+1, 1, 6);
+      ctx.fillRect(x+2, y+2, 1, 4);
+      ctx.fillRect(x+2, y+2, 5, 1);
+      ctx.fillRect(x+2, y+5, 5, 1);
+    }
+    else if(type === 'mush'){
+      // mushroom cap on top, stem below
+      ctx.fillStyle = P.mush;
+      ctx.fillRect(x+1, y+1, 6, 2);
+      ctx.fillRect(x+2, y+3, 4, 1);
+      ctx.fillRect(x+3, y+4, 2, 3);
+      ctx.fillStyle = P.mushDk;
+      ctx.fillRect(x+1, y+2, 6, 1);
+      ctx.fillRect(x+2, y+3, 4, 1);
+      // outline
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x+1, y,   6, 1);
+      ctx.fillRect(x,   y+1, 1, 2);
+      ctx.fillRect(x+7, y+1, 1, 2);
+      ctx.fillRect(x+1, y+3, 1, 1);
+      ctx.fillRect(x+6, y+3, 1, 1);
+      ctx.fillRect(x+2, y+4, 1, 3);
+      ctx.fillRect(x+5, y+4, 1, 3);
+      ctx.fillRect(x+2, y+7, 4, 1);
+    }
+    else if(type === 'olive'){
+      // dark ring with hole
+      ctx.fillStyle = P.olive;
+      ctx.fillRect(x+1, y+1, 6, 6);
+      ctx.fillStyle = P.oliveLt;
+      ctx.fillRect(x+1, y+1, 2, 1);
+      // hole (bg color)
+      ctx.fillStyle = P.cream;
+      ctx.fillRect(x+3, y+3, 2, 2);
+      // outline
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x+1, y,   6, 1);
+      ctx.fillRect(x+1, y+7, 6, 1);
+      ctx.fillRect(x,   y+1, 1, 6);
+      ctx.fillRect(x+7, y+1, 1, 6);
+      ctx.fillRect(x+3, y+3, 2, 1);
+      ctx.fillRect(x+3, y+4, 2, 1);
+      ctx.fillRect(x+3, y+3, 1, 2);
+      ctx.fillRect(x+4, y+3, 1, 2);
+    }
+  }
+
+  // 4x4 mini topping (sits on the slice in the player pile)
+  function drawMiniTopping(type, x, y){
+    if(type === 'pep'){
+      ctx.fillStyle = P.pepDk;
+      ctx.fillRect(x-1, y-1, 4, 4);
+      ctx.fillStyle = P.pep;
+      ctx.fillRect(x,   y,   2, 2);
+    }
+    else if(type === 'pepper'){
+      ctx.fillStyle = P.pepperDk;
+      ctx.fillRect(x-1, y-1, 4, 4);
+      ctx.fillStyle = P.pepper;
+      ctx.fillRect(x,   y-1, 2, 1);
+      ctx.fillRect(x-1, y,   1, 2);
+      ctx.fillRect(x,   y+2, 2, 1);
+    }
+    else if(type === 'mush'){
+      ctx.fillStyle = P.mushDk;
+      ctx.fillRect(x-1, y-1, 4, 1);
+      ctx.fillStyle = P.mush;
+      ctx.fillRect(x-1, y, 4, 1);
+      ctx.fillRect(x,   y+1, 2, 2);
+    }
+    else if(type === 'olive'){
+      ctx.fillStyle = P.olive;
+      ctx.fillRect(x-1, y-1, 4, 4);
+      ctx.fillStyle = P.cream;
+      ctx.fillRect(x,   y,   2, 2);
+    }
+  }
+
+  // 16x10 brick obstacle
+  function drawBrick(x, y){
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x, y, 16, 10);
+    ctx.fillStyle = P.red;
+    ctx.fillRect(x+1, y+1, 14, 8);
+    ctx.fillStyle = P.redDeep;
+    ctx.fillRect(x+1, y+5, 14, 3);
+    // mortar
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(x+1, y+4, 14, 1);
+    ctx.fillRect(x+7, y+1, 1, 3);
+    ctx.fillRect(x+4, y+5, 1, 4);
+    ctx.fillRect(x+10, y+5, 1, 4);
+  }
+
+  // Side wall strip — repeating brick texture, scrolls with the world
+  function drawWalls(scrollPx){
+    const tileH = 10;
+    // start one tile above the playfield top so the offset reads cleanly
+    const offset = ((scrollPx % tileH) + tileH) % tileH;
+    for(let yy = FY - tileH + offset; yy < FY_END; yy += tileH){
+      drawWallTile(0,         yy);
+      drawWallTile(W - WALL,  yy);
+    }
+  }
+  function drawWallTile(x, y){
+    // outline
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x, y, WALL, 10);
+    // red brick body
+    ctx.fillStyle = P.redDeep;
+    ctx.fillRect(x+1, y+1, WALL-2, 8);
+    ctx.fillStyle = P.red;
+    ctx.fillRect(x+1, y+1, WALL-2, 4);
+    // mortar lines
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(x, y+4, WALL, 1);
+    ctx.fillRect(x+5, y+1, 1, 3);
+    ctx.fillRect(x+5, y+5, 1, 4);
+  }
+
+  // Floor — scrolling cream tiles with subtle stripe to sell motion
+  function drawFloor(scrollPx){
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(FX, FY, FW, FH);
+    ctx.fillStyle = P.creamMid;
+    const bandH = 8;
+    const offset = ((scrollPx % (bandH*2)) + bandH*2) % (bandH*2);
+    for(let yy = FY - bandH*2 + offset; yy < FY_END; yy += bandH*2){
+      ctx.fillRect(FX, yy, FW, bandH);
+    }
+  }
+
+  // Oven mouth at the top of the playfield. Always visible; intensity grows as player approaches.
+  function drawOvenGlow(distLeft){
+    // Glow strip above the playfield (inside the wall area, just below HUD)
+    const closeness = Math.max(0, Math.min(1, 1 - distLeft / 800));
+    const stripH = Math.round(6 + closeness * 28);
+    // outer glow
+    ctx.fillStyle = P.glowDeep;
+    ctx.fillRect(FX, FY, FW, stripH);
+    // inner glow
+    ctx.fillStyle = P.glow;
+    ctx.fillRect(FX, FY, FW, Math.max(2, stripH - 4));
+    // flame flicker
+    ctx.fillStyle = P.flame;
+    const flickerH = Math.max(1, Math.round(stripH * 0.4));
+    const flickerJitter = Math.round(Math.sin(performance.now() * 0.018) * 1.5);
+    ctx.fillRect(FX, FY + flickerJitter, FW, flickerH);
+    // dark ink frame
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(FX, FY + stripH, FW, 1);
+  }
+
+  // HUD bar at the top — score, hearts, progress
+  function drawHud(){
+    // bg cream
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(0, 0, W, HUD_H);
+    // ink frame
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, HUD_H - 1, W, 1);
+    // red banner accent
+    ctx.fillStyle = P.red;
+    ctx.fillRect(0, 0, W, 4);
+    ctx.fillStyle = P.redDeep;
+    ctx.fillRect(0, 3, W, 1);
+
+    // Score on the left
+    drawText(pad6(state.score), 6, 9, P.redDeep);
+
+    // Lives hearts on the right
+    const lives = Math.max(0, Math.min(3, state.lives));
+    for(let i=0;i<3;i++){
+      drawHeart(W - 8 - (2-i)*8, 8, i < lives);
+    }
+
+    // Progress bar across the bottom of HUD
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(4, HUD_H - 5, W - 8, 3);
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(5, HUD_H - 4, W - 10, 1);
+    ctx.fillStyle = P.red;
+    const pct = Math.min(1, state.distance / LEVEL_DISTANCE);
+    const fillW = Math.round((W - 10) * pct);
+    if(fillW > 0) ctx.fillRect(5, HUD_H - 4, fillW, 1);
+  }
+
+  function pad6(n){ return String(Math.max(0, Math.floor(n))).padStart(6, '0'); }
+
+  // --- Game state ---
+  const state = {
+    running: false,
+    score: 0,
+    lives: 3,
+    distance: 0,
+    invuln: 0,
+    finishing: false,
+    playerX: W/2,
+    targetX: W/2,
+    items: [],            // {type:'topping'|'brick', sub:'pep'|..., x, y, w, h}
+    pile: [],             // {type, dx, dy}
+    spawnAccumulator: 0,  // px of scroll banked toward the next spawn
+    scrollPx: 0,          // world scroll offset (for wall/floor visuals)
+  };
+
+  function reset(){
+    state.score = 0;
+    state.lives = 3;
+    state.distance = 0;
+    state.invuln = 0;
+    state.finishing = false;
+    state.playerX = W/2;
+    state.targetX = W/2;
+    state.items.length = 0;
+    state.pile.length = 0;
+    state.spawnAccumulator = 0;
+    state.scrollPx = 0;
+  }
+
+  // --- Input ---
+  const keys = {};
+  addEventListener('keydown', e => { keys[e.key] = true; });
+  addEventListener('keyup',   e => { keys[e.key] = false; });
+
+  let dragging = false, dragRefX = 0, dragRefPlayerX = 0;
+  function pointerDown(e){
+    const t = e.touches ? e.touches[0] : e;
+    dragging = true;
+    dragRefX = t.clientX;
+    dragRefPlayerX = state.targetX;
+    e.preventDefault();
+  }
+  function pointerMove(e){
+    if(!dragging) return;
+    const t = e.touches ? e.touches[0] : e;
+    const rect = canvas.getBoundingClientRect();
+    const ratio = W / rect.width;
+    const dx = (t.clientX - dragRefX) * ratio;
+    state.targetX = dragRefPlayerX + dx;
+    e.preventDefault();
+  }
+  function pointerUp(){ dragging = false; }
+  canvas.addEventListener('mousedown', pointerDown);
+  addEventListener('mousemove', pointerMove);
+  addEventListener('mouseup',   pointerUp);
+  canvas.addEventListener('touchstart', pointerDown, {passive:false});
+  addEventListener('touchmove',  pointerMove, {passive:false});
+  addEventListener('touchend',   pointerUp);
+
+  // --- Spawning ---
+  const TOPPING_TYPES = ['pep','pepper','mush','olive'];
+  function spawnRow(){
+    const isBrick = Math.random() < BRICK_CHANCE;
+    if(isBrick){
+      // 1-2 bricks in a row, leaving a gap
+      const count = Math.random() < 0.55 ? 1 : 2;
+      const slots = [];
+      while(slots.length < count){
+        const s = Math.floor(Math.random() * 4); // 4 lanes
+        if(!slots.includes(s)) slots.push(s);
+      }
+      for(const s of slots){
+        const laneW = (FW - 16) / 3;
+        const lx = FX + Math.round(s * laneW);
+        state.items.push({
+          type:'brick', x:lx, y:FY - 12, w:16, h:10
+        });
+      }
+    } else {
+      // 1-3 toppings spread along the row
+      const count = 1 + Math.floor(Math.random() * 3);
+      for(let i=0;i<count;i++){
+        const sub = TOPPING_TYPES[Math.floor(Math.random()*4)];
+        const x = FX + 4 + Math.floor(Math.random() * (FW - 12));
+        state.items.push({
+          type:'topping', sub, x, y:FY - 10, w:8, h:8
+        });
+      }
+    }
+  }
+
+  // --- Audio ---
+  let audio;
+  function beep(freq, dur, type){
+    if(!audio){
+      try { audio = new (window.AudioContext || window.webkitAudioContext)(); } catch(e){ return; }
+    }
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = type || 'square';
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    g.gain.exponentialRampToValueAtTime(0.18, audio.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+    o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + dur);
+  }
+
+  // --- Game tick ---
+  function tick(dt){
+    // Steering input
+    let kx = 0;
+    if(keys['ArrowLeft']  || keys['a'] || keys['A']) kx -= 1;
+    if(keys['ArrowRight'] || keys['d'] || keys['D']) kx += 1;
+    if(kx !== 0){
+      state.targetX += kx * STEER_SPEED * dt;
+    }
+
+    // Clamp target inside playfield
+    const minX = FX + PLAYER_HALF_W + 1;
+    const maxX = FX + FW - PLAYER_HALF_W - 1;
+    state.targetX = Math.max(minX, Math.min(maxX, state.targetX));
+    // Smooth follow
+    state.playerX += (state.targetX - state.playerX) * Math.min(1, dt * 14);
+
+    // Scroll world
+    const dy = SCROLL_SPEED * dt;
+    state.distance += dy;
+    state.scrollPx += dy;
+
+    // Spawn rows on a scroll-distance budget; pause near the oven for a clean approach.
+    state.spawnAccumulator += dy;
+    while(state.spawnAccumulator >= 0){
+      const distLeft = LEVEL_DISTANCE - state.distance;
+      if(distLeft < 80) break;
+      const gap = SPAWN_GAP_MIN + Math.random() * (SPAWN_GAP_MAX - SPAWN_GAP_MIN);
+      state.spawnAccumulator -= gap;
+      spawnRow();
+    }
+
+    // Move items downward and handle collisions
+    if(state.invuln > 0) state.invuln -= dt;
+    for(let i = state.items.length - 1; i >= 0; i--){
+      const it = state.items[i];
+      it.y += dy;
+
+      // Collision against player slice (bounding rect)
+      const px1 = state.playerX - PLAYER_HALF_W;
+      const px2 = state.playerX + PLAYER_HALF_W;
+      const py1 = PLAYER_Y - 13;       // tip top
+      const py2 = PLAYER_Y + 3;        // crust bottom
+      const ix1 = it.x, ix2 = it.x + it.w;
+      const iy1 = it.y, iy2 = it.y + it.h;
+      const overlap = (ix1 < px2 && ix2 > px1 && iy1 < py2 && iy2 > py1);
+      if(overlap){
+        if(it.type === 'topping'){
+          state.score += 50;
+          // Pile a small piece on the slice at a random spot inside the triangle
+          const dx = Math.round((Math.random()*2 - 1) * 4);
+          const dy2 = Math.round(Math.random() * 6);
+          state.pile.push({type: it.sub, dx, dy: dy2});
+          beep(880, .08, 'square');
+          state.items.splice(i, 1);
+          continue;
+        } else {
+          if(state.invuln <= 0){
+            state.lives -= 1;
+            state.invuln = 1.2;
+            beep(110, .22, 'sawtooth');
+            flashScreen = 4;
+            state.items.splice(i, 1);
+            if(state.lives <= 0){
+              state.running = false;
+              showOverlay('lose-screen');
+              return;
+            }
+            continue;
+          }
+        }
+      }
+
+      // Cull when fully past the bottom
+      if(it.y > FY_END + 12){
+        state.items.splice(i, 1);
+      }
+    }
+
+    // Win
+    if(state.distance >= LEVEL_DISTANCE && !state.finishing){
+      state.finishing = true;
+      flashScreen = 6;
+      beep(660, .12, 'square');
+      setTimeout(()=>beep(880, .12, 'square'), 110);
+      setTimeout(()=>beep(1320, .25, 'square'), 230);
+      setTimeout(()=>{
+        state.running = false;
+        document.getElementById('win-score').textContent = pad6(state.score);
+        showOverlay('win-screen');
+      }, 600);
+    }
+  }
+
+  // --- Render ---
+  let flashScreen = 0;
+  function render(){
+    // Clear canvas
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, 0, W, H);
+
+    // Floor (cream stripes)
+    drawFloor(state.scrollPx);
+
+    // Oven glow at the top of the playfield
+    drawOvenGlow(LEVEL_DISTANCE - state.distance);
+
+    // Side brick walls
+    drawWalls(state.scrollPx);
+
+    // Items
+    for(const it of state.items){
+      if(it.type === 'topping'){
+        drawTopping(it.sub, it.x, it.y);
+      } else {
+        drawBrick(it.x, it.y);
+      }
+    }
+
+    // Player slice (skip drawing some frames during invuln for a flicker)
+    const flicker = state.invuln > 0 && (Math.floor(performance.now()/80) % 2 === 0);
+    if(!flicker){
+      drawPlayer(Math.round(state.playerX), PLAYER_Y, state.pile);
+    }
+
+    // HUD on top
+    drawHud();
+
+    // Hit flash
+    if(flashScreen > 0){
+      ctx.fillStyle = 'rgba(237,62,36,0.55)';
+      ctx.fillRect(0, 0, W, H);
+      flashScreen--;
+    }
+  }
+
+  // --- Loop ---
+  let prev = performance.now();
+  function loop(now){
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+    if(state.running) tick(dt);
+    render();
+  }
+  requestAnimationFrame(loop);
+
+  // --- Overlay handling ---
+  const OVERLAY_IDS = ['start-screen', 'win-screen', 'lose-screen'];
+  function showOverlay(id){
+    OVERLAY_IDS.forEach(o => document.getElementById(o).classList.toggle('show', o === id));
+  }
+  function hideOverlays(){
+    OVERLAY_IDS.forEach(o => document.getElementById(o).classList.remove('show'));
+  }
+
+  function startGame(){
+    hideOverlays();
+    reset();
+    state.running = true;
+    try { if(audio && audio.state === 'suspended') audio.resume(); } catch(e){}
+    beep(440, .1, 'square');
+    setTimeout(()=>beep(660, .12, 'square'), 100);
+  }
+  document.getElementById('start-btn').addEventListener('click', startGame);
+  document.getElementById('win-btn').addEventListener('click', startGame);
+  document.getElementById('lose-btn').addEventListener('click', startGame);
+})();
+</script>
+</body>
+</html>
