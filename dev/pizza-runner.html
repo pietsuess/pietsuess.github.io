@@ -264,21 +264,38 @@
   const slice = new THREE.Mesh(sliceGeo, sliceMat);
   player.add(slice);
 
-  // Crust along the back edge (toward camera)
-  const crustGeo = new THREE.BoxGeometry(5.4, .55, .85);
+  // Crust: round tube along the back edge (toward camera)
+  const crustGeo = new THREE.CylinderGeometry(0.42, 0.42, 5.4, 18);
+  crustGeo.rotateZ(Math.PI / 2); // lay along X axis
   const crustMat = new THREE.MeshStandardMaterial({color: 0x9c6325, roughness: .9});
   const crust = new THREE.Mesh(crustGeo, crustMat);
-  crust.position.set(0, 0.45, 1.5); // sits on top of the back edge
+  crust.position.set(0, 0.50, 1.5); // sits on top of the back edge of the slice
   player.add(crust);
 
-  // Pepperoni dots on the slice top (y > slice top), spread along the slice
-  const pepGeo = new THREE.CylinderGeometry(.45, .45, .14, 14);
-  const pepMat = new THREE.MeshStandardMaterial({color: 0xc8261a, roughness: .6});
-  [[0, 0.6], [0.9, -0.5], [-0.9, -0.3], [0, -1.4]].forEach(([x, z])=>{
-    const p = new THREE.Mesh(pepGeo, pepMat);
-    p.position.set(x, 0.42, z); // y just above slice top (0.35)
-    player.add(p);
-  });
+  // Slice starts CLEAN — no pre-installed toppings. Toppings pile on as the player grabs them.
+  const collectedToppings = []; // tracked so we can clear them on reset
+
+  // Pile a small instance of the collected topping onto the slice top.
+  // Topping geos are designed facing -Z (camera). To lay them flat on the
+  // horizontal slice (face-up = +Y), rotate by -π/2 around X.
+  function addToppingToSlice(def){
+    const piece = new THREE.Mesh(def.geo, def.mat);
+    piece.scale.setScalar(0.42);
+    piece.rotation.x = -Math.PI / 2;
+    piece.rotation.y = Math.random() * Math.PI * 2;
+
+    // Pick a random spot inside the triangular slice (top surface).
+    // Triangle: tip at z=-1.9, back edge at z=+1.5; width grows linearly toward back.
+    const z = -1.65 + Math.random() * 3.0; // safe inset from edges
+    const halfW = ((z + 1.9) / 3.4) * 2.6 * 0.78;
+    const x = (Math.random() * 2 - 1) * halfW;
+    // Tiny vertical jitter so multiple pieces near the same spot read as a pile.
+    const y = 0.42 + Math.random() * 0.18;
+    piece.position.set(x, y, z);
+
+    player.add(piece);
+    collectedToppings.push(piece);
+  }
 
   player.position.set(0, 0, PLAYER_Z);
   player.rotation.x = -0.05; // very slight nose-up at rest
@@ -358,6 +375,7 @@
       // Spin slowly around Y so they wobble but stay legible.
       mesh.userData.spinY = (Math.random()-.5) * 1.2;
       mesh.userData.spinZ = 0;
+      mesh.userData.def = def; // remember which topping for the on-slice pile
       type = 'topping'; hitR = 1.5;
     }
     mesh.position.set(x, y, z);
@@ -432,6 +450,9 @@
     state.finishing = false; state.finishT = 0;
     items.forEach(m => scene.remove(m));
     items.length = 0;
+    // Clear any toppings the player picked up on the previous run
+    collectedToppings.forEach(p => player.remove(p));
+    collectedToppings.length = 0;
     player.position.set(0, 0, PLAYER_Z);
     // Oven sits at the far end of the level from the start so its glow is visible.
     oven.visible = true;
@@ -623,6 +644,7 @@
           state.score += 50;
           burst('+50', '#ED3E24', innerWidth/2, innerHeight/2);
           beep(880, .1, 'square');
+          if(it.userData.def) addToppingToSlice(it.userData.def);
           scene.remove(it); items.splice(i,1);
           continue;
         }
