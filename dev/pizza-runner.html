@@ -244,38 +244,44 @@
     segments.push(seg);
   }
 
-  // --- Player: a pizza slice ---
+  // --- Player: a pizza slice (delta-wing alignment) ---
+  // Tip points forward into the tunnel (-Z); crust at the back, toward camera (+Z).
   const player = new THREE.Group();
+
+  // Triangle in XY plane: base at y=0 (back), tip at y=3.4 (front).
+  // After rotateX(-π/2), the +Y axis maps to -Z, so the tip lands forward.
   const sliceShape = new THREE.Shape();
-  sliceShape.moveTo(0, 0);
-  sliceShape.lineTo(2.6, 3.0);
-  sliceShape.lineTo(-2.6, 3.0);
-  sliceShape.lineTo(0, 0);
-  const sliceGeo = new THREE.ExtrudeGeometry(sliceShape, {depth: .6, bevelEnabled: false});
-  sliceGeo.translate(0, -1.8, -0.3);
+  sliceShape.moveTo(-2.6, 0);    // back-left corner
+  sliceShape.lineTo(0, 3.4);     // tip (will become forward)
+  sliceShape.lineTo(2.6, 0);     // back-right corner
+  sliceShape.lineTo(-2.6, 0);
+  const sliceGeo = new THREE.ExtrudeGeometry(sliceShape, {depth: .35, bevelEnabled: false});
+  sliceGeo.rotateX(-Math.PI/2);  // lay flat; +Y -> -Z (tip forward)
+  // After rotation: tip at z=-3.4, crust edge at z=0; thickness in +Y (slice top = y=0.35)
+  // Center it slightly so the camera sees the whole slice:
+  sliceGeo.translate(0, 0, 1.5); // tip at z=-1.9, back edge at z=+1.5
   const sliceMat = new THREE.MeshStandardMaterial({color: 0xffd07a, roughness: .8});
   const slice = new THREE.Mesh(sliceGeo, sliceMat);
   player.add(slice);
 
-  // crust along the back edge
-  const crustGeo = new THREE.BoxGeometry(5.4, .55, .8);
+  // Crust along the back edge (toward camera)
+  const crustGeo = new THREE.BoxGeometry(5.4, .55, .85);
   const crustMat = new THREE.MeshStandardMaterial({color: 0x9c6325, roughness: .9});
   const crust = new THREE.Mesh(crustGeo, crustMat);
-  crust.position.set(0, 1.2, 0);
+  crust.position.set(0, 0.45, 1.5); // sits on top of the back edge
   player.add(crust);
 
-  // tiny pepperoni dots
-  const pepGeo = new THREE.CylinderGeometry(.4, .4, .12, 12);
-  pepGeo.rotateX(Math.PI/2);
+  // Pepperoni dots on the slice top (y > slice top), spread along the slice
+  const pepGeo = new THREE.CylinderGeometry(.45, .45, .14, 14);
   const pepMat = new THREE.MeshStandardMaterial({color: 0xc8261a, roughness: .6});
-  [[0,-.2],[0.9,.5],[-.9,.4]].forEach(([x,y])=>{
+  [[0, 0.6], [0.9, -0.5], [-0.9, -0.3], [0, -1.4]].forEach(([x, z])=>{
     const p = new THREE.Mesh(pepGeo, pepMat);
-    p.position.set(x, y, 0.05);
+    p.position.set(x, 0.42, z); // y just above slice top (0.35)
     player.add(p);
   });
 
   player.position.set(0, 0, PLAYER_Z);
-  player.rotation.x = -0.05;
+  player.rotation.x = -0.05; // very slight nose-up at rest
   scene.add(player);
 
   // --- Pizza toppings: shapes that actually look like the real thing ---
@@ -362,28 +368,36 @@
   }
 
   // --- Oven (level end) ---
+  // Always visible from the start so the player sees light at the end of the tunnel.
+  // Glow materials use fog:false so they shine through the fog regardless of distance.
   const oven = new THREE.Group();
-  // Mouth: glowing disc
+
+  // Mouth: bright glowing disc — pierces fog so it reads from far away
   const mouthGeo = new THREE.CircleGeometry(TUBE_RADIUS - 1, 36);
-  const mouthMat = new THREE.MeshBasicMaterial({color: 0xffaa3a});
+  const mouthMat = new THREE.MeshBasicMaterial({color: 0xffb44a, fog: false});
   const mouth = new THREE.Mesh(mouthGeo, mouthMat);
   oven.add(mouth);
-  // Inner glow ring
+
+  // Inner glow ring (deeper red/orange, also fog-immune)
   const ringGeo = new THREE.RingGeometry(TUBE_RADIUS - 5, TUBE_RADIUS - 1, 36);
-  const ringMat = new THREE.MeshBasicMaterial({color: 0xff5a1a, side: THREE.DoubleSide});
+  const ringMat = new THREE.MeshBasicMaterial({color: 0xff5a1a, side: THREE.DoubleSide, fog: false});
   const ring = new THREE.Mesh(ringGeo, ringMat);
   ring.position.z = 0.05;
   oven.add(ring);
-  // Outer brick frame
+
+  // Outer brick frame — fogs normally so it only resolves once close
   const frameGeo = new THREE.RingGeometry(TUBE_RADIUS - 1, TUBE_RADIUS + 1.5, 36);
   const frameMat = new THREE.MeshStandardMaterial({map: brickTex, color: 0x8a4020, side: THREE.DoubleSide});
   const frame = new THREE.Mesh(frameGeo, frameMat);
   frame.position.z = 0.1;
   oven.add(frame);
 
-  const ovenLight = new THREE.PointLight(0xff7a1a, 0, 200);
+  // Spotlight cast from the oven back toward the player so walls catch warm light
+  const ovenLight = new THREE.PointLight(0xff7a1a, 1.6, 800, 1.6);
+  ovenLight.position.set(0, 0, 4); // sits just in front of the mouth
   oven.add(ovenLight);
-  oven.visible = false;
+
+  oven.visible = true;
   scene.add(oven);
 
   // --- Game state ---
@@ -419,9 +433,10 @@
     items.forEach(m => scene.remove(m));
     items.length = 0;
     player.position.set(0, 0, PLAYER_Z);
-    oven.visible = false;
-    oven.position.z = -10000;
-    ovenLight.intensity = 0;
+    // Oven sits at the far end of the level from the start so its glow is visible.
+    oven.visible = true;
+    oven.position.z = -LEVEL_DISTANCE;
+    ovenLight.intensity = 1.6;
     drawHud();
   }
 
@@ -596,19 +611,25 @@
       } else {
         it.rotation.x += dt * 0.6;
       }
-      // Collision when item passes player plane
-      if(Math.abs(it.position.z - player.position.z) < 1.6){
-        const dx = it.position.x - player.position.x;
-        const dy = it.position.y - player.position.y;
-        const d = Math.hypot(dx, dy);
-        if(d < it.userData.hitR + 1.4){
-          if(it.userData.type === 'topping'){
-            state.score += 50;
-            burst('+50', '#ED3E24', innerWidth/2, innerHeight/2);
-            beep(880, .1, 'square');
-            scene.remove(it); items.splice(i,1);
-            continue;
-          } else if(state.invuln <= 0){
+      // Collision: separate, generous hitbox for toppings vs tighter for bricks.
+      // Slice spans roughly z=-1.9 to z=+1.5, so the z windows reflect the slice length.
+      const dz = it.position.z - player.position.z;
+      const dx = it.position.x - player.position.x;
+      const dy = it.position.y - player.position.y;
+      const d  = Math.hypot(dx, dy);
+      if(it.userData.type === 'topping'){
+        // Generous: anywhere over the slice counts as a grab.
+        if(Math.abs(dz) < 2.6 && d < it.userData.hitR + 2.6){
+          state.score += 50;
+          burst('+50', '#ED3E24', innerWidth/2, innerHeight/2);
+          beep(880, .1, 'square');
+          scene.remove(it); items.splice(i,1);
+          continue;
+        }
+      } else {
+        // Bricks: tighter so dodging matters.
+        if(Math.abs(dz) < 1.8 && d < it.userData.hitR + 1.6){
+          if(state.invuln <= 0){
             state.lives -= 1;
             state.invuln = 1.4;
             flash('#ED3E24');
@@ -630,18 +651,14 @@
       }
     }
 
-    // Reveal oven when close enough
+    // Oven sits at the level end the entire run; just track its z and grow the
+    // light intensity as the player closes in.
     const distLeft = LEVEL_DISTANCE - state.distance;
-    if(distLeft < 240 && !oven.visible){
-      oven.visible = true;
-      ovenLight.intensity = 2.2;
-    }
-    if(oven.visible){
-      // Place oven at the proper world z so the player flies into it
-      oven.position.z = -distLeft;
-      mouth.material.color.setHSL(0.07, 1, 0.5 + Math.sin(performance.now()*0.005)*0.08);
-      ring.material.color.setHSL(0.04, 1, 0.45 + Math.sin(performance.now()*0.008)*0.1);
-    }
+    oven.position.z = -distLeft;
+    const closeness = Math.max(0, Math.min(1, 1 - distLeft / 600));
+    ovenLight.intensity = 1.6 + closeness * 2.0;
+    mouth.material.color.setHSL(0.07, 1, 0.5 + Math.sin(performance.now()*0.005)*0.08);
+    ring.material.color.setHSL(0.04, 1, 0.45 + Math.sin(performance.now()*0.008)*0.1);
 
     drawHud();
 
