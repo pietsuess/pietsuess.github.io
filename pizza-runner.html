@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>PIZZA RUNNER // ONE LEVEL</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=block">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  body{background:#0a0604;overflow:hidden;font-family:'Press Start 2P',monospace;
+       touch-action:none;user-select:none;-webkit-user-select:none;color:#ffe7c2}
+  canvas{display:block;position:fixed;top:0;left:0}
+  #hud{position:fixed;top:0;left:0;right:0;padding:12px 16px;z-index:10;pointer-events:none;
+       display:flex;justify-content:space-between;align-items:flex-start;gap:12px}
+  #score{font-size:14px;color:#ffd24a;text-shadow:0 0 8px rgba(255,210,74,.7);letter-spacing:2px}
+  #lives{font-size:14px;color:#ff6b3d;text-shadow:0 0 8px rgba(255,107,61,.7);letter-spacing:2px}
+  #progress-wrap{position:fixed;left:16px;right:16px;bottom:14px;z-index:10;pointer-events:none}
+  #progress-label{font-size:7px;letter-spacing:3px;color:#c98a4b;margin-bottom:6px;text-align:center}
+  #progress-bar{height:8px;border:1px solid rgba(255,180,80,.55);background:rgba(0,0,0,.6);
+                box-shadow:0 0 10px rgba(255,140,40,.2),inset 0 0 4px rgba(0,0,0,.6)}
+  #progress-fill{height:100%;width:0%;background:linear-gradient(90deg,#ff6b3d,#ffd24a);
+                 box-shadow:0 0 10px #ff8a3d;transition:width .15s linear}
+  .overlay{position:fixed;inset:0;z-index:50;display:none;flex-direction:column;
+           align-items:center;justify-content:center;text-align:center;padding:20px;
+           background:rgba(10,6,4,.92)}
+  .overlay.show{display:flex}
+  .title{font-size:clamp(22px,6vw,38px);color:#ffd24a;letter-spacing:4px;
+         text-shadow:0 0 18px rgba(255,210,74,.7),0 0 36px rgba(255,107,61,.4);
+         animation:pulse 1.6s ease-in-out infinite;margin-bottom:8px}
+  @keyframes pulse{0%,100%{text-shadow:0 0 12px rgba(255,210,74,.5)}
+                   50%{text-shadow:0 0 28px rgba(255,210,74,1),0 0 56px rgba(255,107,61,.6)}}
+  .sub{font-size:clamp(8px,2vw,11px);color:#ff6b3d;letter-spacing:3px;margin-bottom:24px}
+  .instr{font-size:9px;color:#a86a3a;letter-spacing:1px;line-height:2.2;margin-bottom:24px;
+         max-width:340px;text-align:left}
+  .instr b{color:#ffd24a}
+  .btn{font-family:'Press Start 2P',monospace;font-size:11px;letter-spacing:2px;
+       padding:14px 28px;cursor:pointer;background:rgba(255,210,74,.08);
+       border:1px solid #ffd24a;color:#ffd24a;-webkit-tap-highlight-color:transparent}
+  .btn:hover{background:rgba(255,210,74,.18);box-shadow:0 0 14px rgba(255,210,74,.3)}
+  .btn:active{transform:scale(.97)}
+  #flash{position:fixed;inset:0;background:#fff;opacity:0;pointer-events:none;
+         z-index:40;transition:opacity .12s}
+  .burst{position:fixed;font-family:'Press Start 2P',monospace;font-size:14px;
+         pointer-events:none;z-index:60;letter-spacing:2px;
+         animation:floatUp 1s ease-out forwards}
+  @keyframes floatUp{0%{transform:translate(-50%,-50%) scale(.4);opacity:0}
+                     20%{transform:translate(-50%,-50%) scale(1.3);opacity:1}
+                     100%{transform:translate(-50%,calc(-50% - 120px)) scale(1);opacity:0}}
+  #win-score{font-size:14px;color:#ffd24a;letter-spacing:2px;margin-bottom:24px}
+</style>
+</head>
+<body>
+
+<div id="hud">
+  <div id="score">SCORE 000000</div>
+  <div id="lives">LIVES ♥♥♥</div>
+</div>
+
+<div id="progress-wrap">
+  <div id="progress-label">DELIVERY TO OVEN</div>
+  <div id="progress-bar"><div id="progress-fill"></div></div>
+</div>
+
+<div id="flash"></div>
+
+<div id="start-screen" class="overlay show">
+  <div class="title">PIZZA RUNNER</div>
+  <div class="sub">ONE-LEVEL DELIVERY</div>
+  <div class="instr">
+    <b>STEER</b> &nbsp; DRAG / ARROW KEYS<br>
+    <b>GRAB</b> &nbsp;&nbsp; PIZZA TOPPINGS &nbsp; +50<br>
+    <b>DODGE</b> &nbsp; FALLEN BRICKS<br>
+    <b>FINISH</b> &nbsp;FLY INTO THE OVEN
+  </div>
+  <button class="btn" id="start-btn">[ START DELIVERY ]</button>
+</div>
+
+<div id="win-screen" class="overlay">
+  <div class="title">DELIVERED!</div>
+  <div class="sub">PIZZA IN THE OVEN</div>
+  <div id="win-score">SCORE 000000</div>
+  <button class="btn" id="win-btn">[ AGAIN ]</button>
+</div>
+
+<div id="lose-screen" class="overlay">
+  <div class="title" style="color:#ff6b3d">DOUGH DROPPED</div>
+  <div class="sub">TOO MANY BRICKS</div>
+  <button class="btn" id="lose-btn">[ RETRY ]</button>
+</div>
+
+<script>
+(function(){
+  const TUBE_RADIUS = 18;
+  const SEGMENT_LEN = 30;
+  const NUM_SEGMENTS = 18;
+  const SPAWN_AHEAD = -240;
+  const PLAYER_Z = 0;
+  const SPEED = 70;             // units per second
+  const LEVEL_DISTANCE = 2400;  // total distance to oven
+  const STEER_RADIUS = 12;      // how far player can move from center
+
+  // --- Three.js setup ---
+  const scene = new THREE.Scene();
+  scene.fog = new THREE.Fog(0x1a0a04, 60, 260);
+  const camera = new THREE.PerspectiveCamera(70, innerWidth/innerHeight, 0.1, 600);
+  camera.position.set(0, 0, 12);
+  const renderer = new THREE.WebGLRenderer({antialias:true});
+  renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+  renderer.setSize(innerWidth, innerHeight);
+  renderer.setClearColor(0x0a0604);
+  document.body.appendChild(renderer.domElement);
+
+  scene.add(new THREE.AmbientLight(0xffaa66, 0.55));
+  const torchLight = new THREE.PointLight(0xff8a3d, 1.6, 120);
+  torchLight.position.set(0, 0, 5);
+  scene.add(torchLight);
+
+  // --- Brick tunnel (procedural texture) ---
+  const brickTex = (function(){
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 256;
+    const g = c.getContext('2d');
+    g.fillStyle = '#3a1a0e'; g.fillRect(0,0,256,256);
+    const rows = 8, cols = 6;
+    const rh = 256/rows, cw = 256/cols;
+    for(let r=0;r<rows;r++){
+      const offset = (r%2)*cw/2;
+      for(let col=-1;col<cols+1;col++){
+        const x = col*cw + offset;
+        const y = r*rh;
+        const tone = 60 + Math.floor(Math.random()*50);
+        g.fillStyle = `rgb(${tone+30},${Math.floor(tone*0.45)},${Math.floor(tone*0.25)})`;
+        g.fillRect(x+2, y+2, cw-4, rh-4);
+        g.strokeStyle = '#1a0805'; g.lineWidth = 2;
+        g.strokeRect(x+2, y+2, cw-4, rh-4);
+      }
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.wrapS = t.wrapT = THREE.RepeatWrapping;
+    t.repeat.set(4, 1);
+    return t;
+  })();
+
+  const tunnelGeo = new THREE.CylinderGeometry(TUBE_RADIUS, TUBE_RADIUS, SEGMENT_LEN, 24, 1, true);
+  tunnelGeo.rotateX(Math.PI/2);
+  const tunnelMat = new THREE.MeshStandardMaterial({
+    map: brickTex, side: THREE.BackSide, roughness: .9, metalness: .05
+  });
+
+  const segments = [];
+  for(let i=0;i<NUM_SEGMENTS;i++){
+    const seg = new THREE.Mesh(tunnelGeo, tunnelMat);
+    seg.position.z = -i * SEGMENT_LEN;
+    scene.add(seg);
+    segments.push(seg);
+  }
+
+  // --- Player: a pizza slice ---
+  const player = new THREE.Group();
+  const sliceShape = new THREE.Shape();
+  sliceShape.moveTo(0, 0);
+  sliceShape.lineTo(2.6, 3.0);
+  sliceShape.lineTo(-2.6, 3.0);
+  sliceShape.lineTo(0, 0);
+  const sliceGeo = new THREE.ExtrudeGeometry(sliceShape, {depth: .6, bevelEnabled: false});
+  sliceGeo.translate(0, -1.8, -0.3);
+  const sliceMat = new THREE.MeshStandardMaterial({color: 0xffd07a, roughness: .8});
+  const slice = new THREE.Mesh(sliceGeo, sliceMat);
+  player.add(slice);
+
+  // crust along the back edge
+  const crustGeo = new THREE.BoxGeometry(5.4, .55, .8);
+  const crustMat = new THREE.MeshStandardMaterial({color: 0x9c6325, roughness: .9});
+  const crust = new THREE.Mesh(crustGeo, crustMat);
+  crust.position.set(0, 1.2, 0);
+  player.add(crust);
+
+  // tiny pepperoni dots
+  const pepGeo = new THREE.CylinderGeometry(.4, .4, .12, 12);
+  pepGeo.rotateX(Math.PI/2);
+  const pepMat = new THREE.MeshStandardMaterial({color: 0xc8261a, roughness: .6});
+  [[0,-.2],[0.9,.5],[-.9,.4]].forEach(([x,y])=>{
+    const p = new THREE.Mesh(pepGeo, pepMat);
+    p.position.set(x, y, 0.05);
+    player.add(p);
+  });
+
+  player.position.set(0, 0, PLAYER_Z);
+  player.rotation.x = -0.05;
+  scene.add(player);
+
+  // --- Topping & brick prefabs ---
+  const toppingMats = [
+    new THREE.MeshStandardMaterial({color: 0xc8261a, roughness:.5, emissive:0x441008, emissiveIntensity:.4}), // pepperoni
+    new THREE.MeshStandardMaterial({color: 0x2f7a2a, roughness:.5, emissive:0x0a2a0a, emissiveIntensity:.4}), // basil
+    new THREE.MeshStandardMaterial({color: 0xf4dba8, roughness:.6, emissive:0x553a18, emissiveIntensity:.3}), // mushroom
+    new THREE.MeshStandardMaterial({color: 0x2a2018, roughness:.6, emissive:0x0a0805, emissiveIntensity:.3}), // olive
+  ];
+  const toppingGeos = [
+    new THREE.CylinderGeometry(1.2, 1.2, .3, 16),    // pepperoni disc
+    new THREE.SphereGeometry(.9, 10, 8),              // basil leaf-ish
+    new THREE.SphereGeometry(1.1, 10, 8),             // mushroom cap
+    new THREE.TorusGeometry(.85, .35, 8, 14),         // olive ring
+  ];
+  toppingGeos[0].rotateX(Math.PI/2);
+
+  const brickGeo = new THREE.BoxGeometry(3, 1.6, 1.6);
+  const brickMat = new THREE.MeshStandardMaterial({
+    map: brickTex, color: 0xb05030, roughness: .85
+  });
+
+  const items = [];
+
+  function spawnItem(z){
+    const isBrick = Math.random() < 0.42;
+    let mesh, type, hitR;
+    const angle = Math.random() * Math.PI * 2;
+    const r = (Math.random() * 0.55 + 0.15) * STEER_RADIUS;
+    const x = Math.cos(angle) * r;
+    const y = Math.sin(angle) * r;
+    if(isBrick){
+      mesh = new THREE.Mesh(brickGeo, brickMat);
+      mesh.rotation.set(Math.random()*0.6, Math.random()*0.6, Math.random()*0.6);
+      type = 'brick'; hitR = 1.7;
+    } else {
+      const i = Math.floor(Math.random() * toppingGeos.length);
+      mesh = new THREE.Mesh(toppingGeos[i], toppingMats[i]);
+      mesh.userData.spinY = (Math.random()-.5)*2;
+      mesh.userData.spinZ = (Math.random()-.5)*2;
+      type = 'topping'; hitR = 1.5;
+    }
+    mesh.position.set(x, y, z);
+    mesh.userData.type = type;
+    mesh.userData.hitR = hitR;
+    scene.add(mesh);
+    items.push(mesh);
+  }
+
+  // --- Oven (level end) ---
+  const oven = new THREE.Group();
+  // Mouth: glowing disc
+  const mouthGeo = new THREE.CircleGeometry(TUBE_RADIUS - 1, 36);
+  const mouthMat = new THREE.MeshBasicMaterial({color: 0xffaa3a});
+  const mouth = new THREE.Mesh(mouthGeo, mouthMat);
+  oven.add(mouth);
+  // Inner glow ring
+  const ringGeo = new THREE.RingGeometry(TUBE_RADIUS - 5, TUBE_RADIUS - 1, 36);
+  const ringMat = new THREE.MeshBasicMaterial({color: 0xff5a1a, side: THREE.DoubleSide});
+  const ring = new THREE.Mesh(ringGeo, ringMat);
+  ring.position.z = 0.05;
+  oven.add(ring);
+  // Outer brick frame
+  const frameGeo = new THREE.RingGeometry(TUBE_RADIUS - 1, TUBE_RADIUS + 1.5, 36);
+  const frameMat = new THREE.MeshStandardMaterial({map: brickTex, color: 0x8a4020, side: THREE.DoubleSide});
+  const frame = new THREE.Mesh(frameGeo, frameMat);
+  frame.position.z = 0.1;
+  oven.add(frame);
+
+  const ovenLight = new THREE.PointLight(0xff7a1a, 0, 200);
+  oven.add(ovenLight);
+  oven.visible = false;
+  scene.add(oven);
+
+  // --- Game state ---
+  const state = {
+    running: false,
+    score: 0,
+    lives: 3,
+    distance: 0,
+    invuln: 0,
+    targetX: 0,
+    targetY: 0,
+    finishing: false,
+    finishT: 0,
+  };
+
+  const $ = id => document.getElementById(id);
+  const pad = n => String(n).padStart(6, '0');
+  const drawHud = () => {
+    $('score').textContent = 'SCORE ' + pad(state.score);
+    $('lives').textContent = 'LIVES ' + '♥'.repeat(Math.max(0, state.lives)) + ' '.repeat(3-Math.max(0,state.lives));
+    $('progress-fill').style.width =
+      Math.min(100, (state.distance / LEVEL_DISTANCE) * 100) + '%';
+  };
+
+  function reset(){
+    state.score = 0; state.lives = 3; state.distance = 0;
+    state.invuln = 0; state.targetX = 0; state.targetY = 0;
+    state.finishing = false; state.finishT = 0;
+    items.forEach(m => scene.remove(m));
+    items.length = 0;
+    player.position.set(0, 0, PLAYER_Z);
+    oven.visible = false;
+    oven.position.z = -10000;
+    ovenLight.intensity = 0;
+    drawHud();
+  }
+
+  function flash(color){
+    const f = $('flash');
+    f.style.background = color;
+    f.style.opacity = '0.55';
+    setTimeout(()=>f.style.opacity = '0', 120);
+  }
+
+  function burst(text, color, x, y){
+    const el = document.createElement('div');
+    el.className = 'burst';
+    el.textContent = text;
+    el.style.color = color;
+    el.style.textShadow = '0 0 10px ' + color;
+    el.style.left = x + 'px';
+    el.style.top = y + 'px';
+    document.body.appendChild(el);
+    setTimeout(()=>el.remove(), 1000);
+  }
+
+  // --- Audio (tiny) ---
+  let audio;
+  function beep(freq, dur, type){
+    if(!audio) audio = new (window.AudioContext || window.webkitAudioContext)();
+    const o = audio.createOscillator();
+    const g = audio.createGain();
+    o.type = type || 'square';
+    o.frequency.value = freq;
+    g.gain.value = 0.0001;
+    g.gain.exponentialRampToValueAtTime(0.18, audio.currentTime + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, audio.currentTime + dur);
+    o.connect(g); g.connect(audio.destination);
+    o.start(); o.stop(audio.currentTime + dur);
+  }
+
+  // --- Input ---
+  const input = {x:0, y:0, dragging:false, dragX:0, dragY:0};
+  const keys = {};
+  addEventListener('keydown', e=>{ keys[e.key]=true; });
+  addEventListener('keyup',   e=>{ keys[e.key]=false; });
+
+  function onPointerDown(e){
+    input.dragging = true;
+    const t = e.touches ? e.touches[0] : e;
+    input.dragX = t.clientX; input.dragY = t.clientY;
+  }
+  function onPointerMove(e){
+    if(!input.dragging) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = (t.clientX - input.dragX) / innerWidth;
+    const dy = (t.clientY - input.dragY) / innerHeight;
+    state.targetX = Math.max(-1, Math.min(1, state.targetX + dx*2.5));
+    state.targetY = Math.max(-1, Math.min(1, state.targetY - dy*2.5));
+    input.dragX = t.clientX; input.dragY = t.clientY;
+    e.preventDefault();
+  }
+  function onPointerUp(){ input.dragging = false; }
+  addEventListener('mousedown', onPointerDown);
+  addEventListener('mousemove', onPointerMove);
+  addEventListener('mouseup',   onPointerUp);
+  addEventListener('touchstart', onPointerDown, {passive:false});
+  addEventListener('touchmove',  onPointerMove, {passive:false});
+  addEventListener('touchend',   onPointerUp);
+
+  addEventListener('resize', ()=>{
+    camera.aspect = innerWidth/innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(innerWidth, innerHeight);
+  });
+
+  // --- Buttons ---
+  $('start-btn').addEventListener('click', ()=>{
+    $('start-screen').classList.remove('show');
+    reset();
+    state.running = true;
+    try { if(audio && audio.state === 'suspended') audio.resume(); } catch(e){}
+    beep(440, .12, 'square');
+    setTimeout(()=>beep(660, .14, 'square'), 110);
+  });
+  $('win-btn').addEventListener('click', ()=>{
+    $('win-screen').classList.remove('show');
+    reset();
+    state.running = true;
+  });
+  $('lose-btn').addEventListener('click', ()=>{
+    $('lose-screen').classList.remove('show');
+    reset();
+    state.running = true;
+  });
+
+  // --- Game loop ---
+  let prev = performance.now();
+  function loop(now){
+    requestAnimationFrame(loop);
+    const dt = Math.min(0.05, (now - prev) / 1000);
+    prev = now;
+
+    if(state.running){
+      tick(dt);
+    }
+    renderer.render(scene, camera);
+  }
+
+  function tick(dt){
+    // Keyboard steering
+    let kx = 0, ky = 0;
+    if(keys['ArrowLeft']  || keys['a']) kx -= 1;
+    if(keys['ArrowRight'] || keys['d']) kx += 1;
+    if(keys['ArrowUp']    || keys['w']) ky += 1;
+    if(keys['ArrowDown']  || keys['s']) ky -= 1;
+    state.targetX = Math.max(-1, Math.min(1, state.targetX + kx * dt * 2.0));
+    state.targetY = Math.max(-1, Math.min(1, state.targetY + ky * dt * 2.0));
+
+    // Smooth-follow player toward target
+    const tx = state.targetX * STEER_RADIUS;
+    const ty = state.targetY * STEER_RADIUS;
+    player.position.x += (tx - player.position.x) * Math.min(1, dt * 8);
+    player.position.y += (ty - player.position.y) * Math.min(1, dt * 8);
+    player.rotation.z = -((tx - player.position.x) * 0.12 + state.targetX * 0.4);
+    player.rotation.x = -0.05 - state.targetY * 0.25;
+
+    // Camera follows lightly
+    camera.position.x = player.position.x * 0.4;
+    camera.position.y = player.position.y * 0.4;
+    camera.lookAt(player.position.x*0.6, player.position.y*0.6, -30);
+
+    torchLight.position.set(player.position.x, player.position.y, player.position.z + 4);
+    torchLight.intensity = 1.4 + Math.sin(performance.now()*0.012) * 0.25;
+
+    if(state.invuln > 0) state.invuln -= dt;
+    slice.material.opacity = state.invuln > 0 ? (Math.sin(performance.now()*0.04) > 0 ? 0.4 : 1) : 1;
+    slice.material.transparent = state.invuln > 0;
+
+    // Move world toward player
+    const dz = SPEED * dt;
+    state.distance += dz;
+
+    // Tunnel scroll
+    for(const seg of segments){
+      seg.position.z += dz;
+      if(seg.position.z > SEGMENT_LEN){
+        // recycle to back
+        const minZ = Math.min(...segments.map(s=>s.position.z));
+        seg.position.z = minZ - SEGMENT_LEN;
+      }
+    }
+
+    // Spawn items ahead until oven is near
+    if(!state.finishing){
+      // farthest item Z currently
+      let farthest = SPAWN_AHEAD;
+      for(const it of items){ if(it.position.z < farthest) farthest = it.position.z; }
+      // Stop spawning when we're close to the oven
+      const remaining = LEVEL_DISTANCE - state.distance;
+      while(farthest > SPAWN_AHEAD - 240 && remaining > 80){
+        const z = farthest - (16 + Math.random() * 16);
+        if(LEVEL_DISTANCE - (state.distance - z) < 60) break;
+        spawnItem(z);
+        farthest = z;
+      }
+    }
+
+    // Update items
+    for(let i = items.length - 1; i >= 0; i--){
+      const it = items[i];
+      it.position.z += dz;
+      if(it.userData.type === 'topping'){
+        it.rotation.y += it.userData.spinY * dt;
+        it.rotation.z += it.userData.spinZ * dt;
+      } else {
+        it.rotation.x += dt * 0.6;
+      }
+      // Collision when item passes player plane
+      if(Math.abs(it.position.z - player.position.z) < 1.6){
+        const dx = it.position.x - player.position.x;
+        const dy = it.position.y - player.position.y;
+        const d = Math.hypot(dx, dy);
+        if(d < it.userData.hitR + 1.4){
+          if(it.userData.type === 'topping'){
+            state.score += 50;
+            burst('+50', '#ffd24a', innerWidth/2, innerHeight/2);
+            beep(880, .1, 'square');
+            scene.remove(it); items.splice(i,1);
+            continue;
+          } else if(state.invuln <= 0){
+            state.lives -= 1;
+            state.invuln = 1.4;
+            flash('#ff6b3d');
+            burst('OUCH', '#ff6b3d', innerWidth/2, innerHeight/2);
+            beep(110, .25, 'sawtooth');
+            scene.remove(it); items.splice(i,1);
+            if(state.lives <= 0){
+              state.running = false;
+              $('lose-screen').classList.add('show');
+              return;
+            }
+            continue;
+          }
+        }
+      }
+      // Cleanup behind player
+      if(it.position.z > 30){
+        scene.remove(it); items.splice(i,1);
+      }
+    }
+
+    // Reveal oven when close enough
+    const distLeft = LEVEL_DISTANCE - state.distance;
+    if(distLeft < 240 && !oven.visible){
+      oven.visible = true;
+      ovenLight.intensity = 2.2;
+    }
+    if(oven.visible){
+      // Place oven at the proper world z so the player flies into it
+      oven.position.z = -distLeft;
+      mouth.material.color.setHSL(0.07, 1, 0.5 + Math.sin(performance.now()*0.005)*0.08);
+      ring.material.color.setHSL(0.04, 1, 0.45 + Math.sin(performance.now()*0.008)*0.1);
+    }
+
+    drawHud();
+
+    // Win
+    if(distLeft <= 0 && !state.finishing){
+      state.finishing = true;
+      flash('#ffd24a');
+      beep(660, .12, 'square');
+      setTimeout(()=>beep(880, .12, 'square'), 110);
+      setTimeout(()=>beep(1320, .25, 'square'), 230);
+      setTimeout(()=>{
+        state.running = false;
+        $('win-score').textContent = 'SCORE ' + pad(state.score);
+        $('win-screen').classList.add('show');
+      }, 600);
+    }
+  }
+
+  requestAnimationFrame(loop);
+})();
+</script>
+</body>
+</html>
