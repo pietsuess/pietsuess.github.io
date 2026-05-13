@@ -2437,9 +2437,9 @@ window.onload = function() {
     var SPEED_DESC = ['SLOWER START', 'BASE SPEED', '+15% SPEED', '+30% SPEED', '+50% SPEED'];
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
-        { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, price: 3000, default: false },
-        { id: 'blockwing',  name: 'BLOCKWING',  hullKg: 7500, hitRadius: 3.8, maxHealth: 325, dmgMult: 0.65, price: 3700, default: false }
+        { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, speedMult: 1.00, price: 0,    default: true },
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, speedMult: 1.00, price: 3000, default: false },
+        { id: 'blockwing',  name: 'BLOCKWING',  hullKg: 7500, hitRadius: 3.8, maxHealth: 325, dmgMult: 0.65, speedMult: 0.85, price: 3700, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
     function _shipDataIds(shipId) {
@@ -2592,7 +2592,7 @@ window.onload = function() {
                 if (typeof scene !== 'undefined' && scene.fog && _zone.fogColor != null) scene.fog.color.setHex(_zone.fogColor);
                 if (typeof scene !== 'undefined' && scene.background && _zone.fogColor != null && scene.background.setHex) scene.background.setHex(_zone.fogColor);
                 sectorDistance = _zone.length;
-                baseSpeed = _zone.speed * (SPEED_MULTIPLIERS[speedTier] || 1);
+                baseSpeed = _zone.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipStat('speedMult', 1.0);
             }
         } catch(e) {}
         try {
@@ -4434,6 +4434,15 @@ window.onload = function() {
         // Refresh HP to new ship's max so a tankier ship actually feels tankier on swap.
         // Skip during bonus levels — HP heals are gated by challenge rules, not free swaps.
         try { if (!_inBonusLevel) { health = _shipStat('maxHealth', 100); updateShieldBar(); } } catch(e) {}
+        // Re-apply ship speedMult to the in-flight baseSpeed (no-op if speedMult is 1.0).
+        try {
+            if (typeof currentSector === 'number' && typeof getLevelScaledZone === 'function') {
+                var _zSwap = getLevelScaledZone(currentSector);
+                if (_zSwap && typeof _zSwap.speed === 'number') {
+                    baseSpeed = _zSwap.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipStat('speedMult', 1.0);
+                }
+            }
+        } catch(e) {}
         shipGroup.visible = true;
         try { _loadInflightObjShip(id); } catch(e) { console.warn('inflight ship reload err', e); }
         try { if (window.__tunnelStoreShipReload) window.__tunnelStoreShipReload(id); } catch(e) {}
@@ -5828,8 +5837,16 @@ window.onload = function() {
             }
             return;
         }
-        // Star — force field pickup, S3+ only
-        var starChance = !starsEnabled ? 0 : (s >= 5 ? 0.03 : s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+        // Star — force field pickup, S3+ only.
+        // S5: stronger base + steeper per-level escalation so the final zone leans hard into force-field play.
+        var starChance;
+        if (!starsEnabled) {
+            starChance = 0;
+        } else if (s >= 5) {
+            starChance = 0.06 + (lvl - 1) * 0.02; // S5L1: 0.06 → S5L4: 0.12
+        } else {
+            starChance = (s >= 4 ? 0.02 : 0.025) + (lvl - 1) * 0.005;
+        }
         if (_segS && _segS.starChance !== undefined) starChance = _segS.starChance;
         if (starChance > 0 && rand < starChance) {
             mesh = new THREE.Mesh(starGeo, starMat.clone()); type = 'star'; hitRadius = 5.5;
@@ -7401,7 +7418,7 @@ window.onload = function() {
         var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
         sectorDistance = t.levelLength || t.baseLength || 6000;
         var spd = t.baseSpeed || 320;
-        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier];
+        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
         // Keep current zone visuals — bonus level reuses just-cleared sector's palette.
         try { document.getElementById('sector-text').innerText = 'BONUS'; } catch(e) {}
         sectorStartScore = score;
@@ -7504,7 +7521,7 @@ window.onload = function() {
             try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
             var zoneB = getLevelScaledZone(currentSector);
             sectorDistance = zoneB.length;
-            baseSpeed = zoneB.speed * SPEED_MULTIPLIERS[speedTier];
+            baseSpeed = zoneB.speed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
             document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
             document.getElementById('zone-name').innerText = zoneB.name;
             document.getElementById('zone-name').style.color = zoneB.color;
@@ -7560,7 +7577,7 @@ window.onload = function() {
         var zone = getLevelScaledZone(currentSector);
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
-        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
+        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
         document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
         document.getElementById('zone-name').innerText = zone.name;
         document.getElementById('zone-name').style.color = zone.color;
@@ -8070,7 +8087,7 @@ window.onload = function() {
             if (!preserveScore) collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
             var zone0 = getLevelScaledZone(currentSector);
             baseSpeed = zone0.speed;
-            baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier];
+            baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
             sectorDistance = zone0.length;
             if (!preserveScore) sectorStartScore = 0;
             combo = 0;
