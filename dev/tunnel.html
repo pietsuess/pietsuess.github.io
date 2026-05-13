@@ -3570,10 +3570,11 @@ window.onload = function() {
             carouselFromVictory = false;
             // Advance directly. ARMOURY is an opt-in button on the carousel itself —
             // no auto-routing through the store on dismiss.
-            // Bonus auto-route fires only on a FRESH zone-clear this run (not on replays of a cleared sector).
-            var _freshClear = _bonusEligibleThisRun && currentSector < 5;
+            // Bonus auto-fires whenever the player just completed a level in a fully-cleared
+            // sector — so any replay of a cleared sector lets you re-enter the bonus.
+            var _zoneClearedNow = isZoneComplete(currentSector) && currentSector < 5;
             _bonusEligibleThisRun = false;
-            if (!_inBonusLevel && _freshClear && SPAWN_TUNING['S' + currentSector + 'B']) {
+            if (!_inBonusLevel && _zoneClearedNow && SPAWN_TUNING['S' + currentSector + 'B']) {
                 _startBonusLevel();
             } else {
                 startNextSector();
@@ -8702,22 +8703,6 @@ window.onload = function() {
                 btn.style.cssText = base;
                 col.appendChild(btn);
             }
-            // Add a BONUS button at the bottom of each sector column when the player has
-            // cleared the sector's zone — lets them re-enter the bonus instead of it being
-            // a one-shot on fresh-clear.
-            try {
-                var _bKey = 'S' + s + 'B';
-                var _hasBonus = (typeof SPAWN_TUNING !== 'undefined') && SPAWN_TUNING[_bKey];
-                var _zoneClearedForS = (typeof isZoneComplete === 'function') && isZoneComplete(s);
-                if (_hasBonus && _zoneClearedForS) {
-                    var bbtn = document.createElement('button');
-                    bbtn.className = 'menu-btn';
-                    bbtn.setAttribute('data-bonus-sector', String(s));
-                    bbtn.textContent = 'B';
-                    bbtn.style.cssText = 'width:auto;margin:0;padding:8px 4px;font-size:8px;letter-spacing:1px;text-align:center;border-color:#ff66cc;color:#ff66cc;background:rgba(255,102,204,0.08);box-shadow:0 0 8px rgba(255,102,204,0.25);';
-                    col.appendChild(bbtn);
-                }
-            } catch(e) {}
             grid.appendChild(col);
         }
     }
@@ -8739,21 +8724,6 @@ window.onload = function() {
         }
         var last = 0;
         var handler = function(e) {
-            // BONUS-button tap → enter the bonus for that sector.
-            var bTgt = e.target && e.target.closest ? e.target.closest('[data-bonus-sector]') : null;
-            if (bTgt && grid.contains(bTgt)) {
-                e.preventDefault(); e.stopPropagation();
-                var nowB = Date.now();
-                if (nowB - last < 300) return;
-                last = nowB;
-                var bs = parseInt(bTgt.getAttribute('data-bonus-sector'), 10);
-                if (!isFinite(bs) || bs < 1) return;
-                try { ov.style.display = 'none'; } catch(err) {}
-                try { document.body.style.touchAction = 'none'; } catch(err) {}
-                try { currentSector = bs; currentLevel = 1; } catch(err) {}
-                try { _startBonusLevel(); } catch(err) {}
-                return;
-            }
             var tgt = e.target && e.target.closest ? e.target.closest('[data-sector]') : null;
             if (!tgt || !grid.contains(tgt)) return;
             e.preventDefault(); e.stopPropagation();
