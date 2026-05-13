@@ -2277,7 +2277,7 @@ window.onload = function() {
     const SCORE_BONUS_INCREMENT = 60000; // every 60K sector score = +1 bonus unlock (raised from 20K — roster system carries primary progression)
     const SECTOR_ZONES = ['EDIT', 'PHOTO', 'ANIMATE', 'VIBE', 'DIRECT'];
     const ZONE_SHAPES_3D = ['square', 'pentagon', 'circle', 'triangle', 'octagon'];
-    const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#ff69b4', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
+    const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#ffffff', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
     // Track which content items have been collected per zone (by title)
     let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
     // Per-run roster cursor: tracks which roster slot is next when a level defines `contentRoster`.
@@ -4548,7 +4548,7 @@ window.onload = function() {
     const contentMats = {
         EDIT:    new THREE.MeshStandardMaterial({ color: 0xffe800, emissive: 0xffe800, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         PHOTO:   new THREE.MeshStandardMaterial({ color: 0x5533ff, emissive: 0x5533ff, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
-        DIRECT:  new THREE.MeshStandardMaterial({ color: 0xff69b4, emissive: 0xff69b4, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        DIRECT:  new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         ANIMATE: new THREE.MeshStandardMaterial({ color: 0xff5577, emissive: 0xff5577, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         VIBE:    new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0xff8c00, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
     };
@@ -7012,6 +7012,9 @@ window.onload = function() {
                 }
                 _simWalk += _simSpacing;
             }
+            // Global "no content in first 1/6" floor — content placed before this is dropped
+            // so the player has time to react / look up before the first pickup appears.
+            var _contentMinSlot = Math.ceil(_simCallIdx / 6);
             // Pass 2: pick evenly-spaced content positions per segment
             for (var _sci = 0; _sci < pat.length; _sci++) {
                 var _seg = pat[_sci];
@@ -7021,7 +7024,8 @@ window.onload = function() {
                     for (var _ci = 0; _ci < _count; _ci++) {
                         var _pickIdx = Math.round((_ci + 0.5) / _count * _calls.length - 0.5);
                         _pickIdx = Math.max(0, Math.min(_calls.length - 1, _pickIdx));
-                        _contentIndices[_calls[_pickIdx]] = true;
+                        var _slot = _calls[_pickIdx];
+                        if (_slot >= _contentMinSlot) _contentIndices[_slot] = true;
                     }
                 }
             }
@@ -7040,9 +7044,13 @@ window.onload = function() {
                 var _totalCalls = 0, _swk = startOffset;
                 while (_swk <= lastItemDist && _totalCalls < 600) { _totalCalls++; _swk += spacing; }
                 var _n = Math.min(_rosArr.length, _totalCalls);
+                // Distribute roster across the last 5/6 of the level (skip first 1/6) so the
+                // player has reaction time before the first pickup appears.
+                var _startSlot = Math.ceil(_totalCalls / 6);
+                var _spread = Math.max(1, _totalCalls - _startSlot);
                 for (var _ri = 0; _ri < _n; _ri++) {
-                    var _idxR = Math.round((_ri + 0.5) / _n * _totalCalls - 0.5);
-                    _idxR = Math.max(0, Math.min(_totalCalls - 1, _idxR));
+                    var _idxR = Math.round(_startSlot + ((_ri + 0.5) / _n) * _spread - 0.5);
+                    _idxR = Math.max(_startSlot, Math.min(_totalCalls - 1, _idxR));
                     _contentIndices[_idxR] = true;
                 }
             }
