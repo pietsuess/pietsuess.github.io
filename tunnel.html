@@ -2277,7 +2277,7 @@ window.onload = function() {
     const SCORE_BONUS_INCREMENT = 60000; // every 60K sector score = +1 bonus unlock (raised from 20K — roster system carries primary progression)
     const SECTOR_ZONES = ['EDIT', 'PHOTO', 'ANIMATE', 'VIBE', 'DIRECT'];
     const ZONE_SHAPES_3D = ['square', 'pentagon', 'circle', 'triangle', 'octagon'];
-    const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#69ffb4', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
+    const ZONE_OBJ_COLORS = { EDIT:'#ffe800', PHOTO:'#5533ff', DIRECT:'#ffffff', ANIMATE:'#ff5577', VIBE:'#ff8c00' };
     // Track which content items have been collected per zone (by title)
     let collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
     // Per-run roster cursor: tracks which roster slot is next when a level defines `contentRoster`.
@@ -3570,10 +3570,11 @@ window.onload = function() {
             carouselFromVictory = false;
             // Advance directly. ARMOURY is an opt-in button on the carousel itself —
             // no auto-routing through the store on dismiss.
-            // Bonus auto-route fires only on a FRESH zone-clear this run (not on replays of a cleared sector).
-            var _freshClear = _bonusEligibleThisRun && currentSector < 5;
+            // Bonus auto-fires whenever the player just completed a level in a fully-cleared
+            // sector — so any replay of a cleared sector lets you re-enter the bonus.
+            var _zoneClearedNow = isZoneComplete(currentSector) && currentSector < 5;
             _bonusEligibleThisRun = false;
-            if (!_inBonusLevel && _freshClear && SPAWN_TUNING['S' + currentSector + 'B']) {
+            if (!_inBonusLevel && _zoneClearedNow && SPAWN_TUNING['S' + currentSector + 'B']) {
                 _startBonusLevel();
             } else {
                 startNextSector();
@@ -4547,7 +4548,7 @@ window.onload = function() {
     const contentMats = {
         EDIT:    new THREE.MeshStandardMaterial({ color: 0xffe800, emissive: 0xffe800, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         PHOTO:   new THREE.MeshStandardMaterial({ color: 0x5533ff, emissive: 0x5533ff, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
-        DIRECT:  new THREE.MeshStandardMaterial({ color: 0x69ffb4, emissive: 0x69ffb4, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
+        DIRECT:  new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         ANIMATE: new THREE.MeshStandardMaterial({ color: 0xff5577, emissive: 0xff5577, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
         VIBE:    new THREE.MeshStandardMaterial({ color: 0xff8c00, emissive: 0xff8c00, emissiveIntensity: 1.8, metalness: 0.0, roughness: 1.0, transparent: true, opacity: 0.9 }),
     };
@@ -5115,8 +5116,8 @@ window.onload = function() {
                     { step: 0.1, offset: 3.14 }
                 ], spacing: 85, spawn: { baseHazard: 80, baseRing: 0, contentCount: 1, baseShields: 20 } },
                 { until: 0.85, lanes: [
-                    { step: 0.6, offset: 3.14 },
-                    { step: -0.6, offset: 1.75 },
+                    { step: 0.45, offset: 3.14 },
+                    { step: -0.45, offset: 1.75 },
                     { step: 0.1, offset: 1.57 }
                 ], spawn: { contentCount: 1 } },
                 { until: 1.0, lanes: [
@@ -5250,12 +5251,12 @@ window.onload = function() {
         'S3L1': {
             baseHazard: 0.06, baseRing: 0.60, baseShields: 0.08,
             spacing: 110, maxSpawnPct: 0.84,
-            speed: 240, length: 14000,
+            speed: 240, length: 18000,
             isSpeedRun: true,
-            speedRunTarget: 40,
+            speedRunTarget: 19,
             spiralPattern: [
                 { until: 1.0,
-                  spawn: { barrierThreshold: 0.04, baseHazard: 0.06, baseRing: 0.60, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
+                  spawn: { barrierThreshold: 0.07, baseHazard: 0.06, baseRing: 0.60, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
                 }
             ],
             rotMult: 1.0
@@ -5264,12 +5265,24 @@ window.onload = function() {
         'S3L2': {
             baseHazard: 0.07, baseRing: 0.58, baseShields: 0.08,
             spacing: 105, maxSpawnPct: 0.84,
-            speed: 255, length: 15500,
+            speed: 255, length: 12000,
             isSpeedRun: true,
-            speedRunTarget: 45,
+            speedRunTarget: 30,
+            // Continuous-line barrier mode: one trigger spawns a 280-barrier line covering the
+            // whole 13800-effective level at 50-unit spacing, with consistent 0.1 rad twist.
+            // Gap fraction 0.55 = ~198° opening — wide slit drifting gently around the tunnel.
             spiralPattern: [
                 { until: 1.0,
-                  spawn: { barrierThreshold: 0.06, baseHazard: 0.07, baseRing: 0.58, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
+                  spawn: {
+                      barrierThreshold: 1.0,
+                      barrierLine: true,
+                      barrierLineCount: 280,
+                      barrierLineSpacing: 50,
+                      barrierLineTwist: 0.1,
+                      barrierLineGapFrac: 0.55,
+                      baseHazard: 0, baseRing: 0.40, baseShields: 0.06,
+                      contentCount: 0, starChance: 0, boostChance: 0
+                  }
                 }
             ],
             rotMult: 1.0
@@ -5280,9 +5293,9 @@ window.onload = function() {
         'S3L3': {
             baseHazard: 0.08, baseRing: 0.55, baseShields: 0.08,
             spacing: 110, maxSpawnPct: 0.84,
-            speed: 270, length: 17000,
+            speed: 270, length: 22000,
             isSpeedRun: true,
-            speedRunTarget: 50,
+            speedRunTarget: 25,
             spiralPattern: [
                 { until: 1.0,
                   spawn: { barrierThreshold: 0.08, baseHazard: 0.08, baseRing: 0.55, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
@@ -5294,9 +5307,9 @@ window.onload = function() {
         'S3L4': {
             baseHazard: 0.10, baseRing: 0.55, baseShields: 0.08,
             spacing: 100, maxSpawnPct: 0.84,
-            speed: 300, length: 18000,
+            speed: 300, length: 23500,
             isSpeedRun: true,
-            speedRunTarget: 55,
+            speedRunTarget: 28,
             spiralPattern: [
                 { until: 1.0,
                   spawn: { barrierThreshold: 0.06, baseHazard: 0.10, baseRing: 0.55, baseShields: 0.08, contentCount: 0, starChance: 0, boostChance: 0 }
@@ -5324,8 +5337,8 @@ window.onload = function() {
             spiralPattern: [
                 { until: 1.0,
                   lanes: [
-                      { step: 0.6, offset: 0 },
-                      { step: -0.6, offset: 1.57 }
+                      { step: 0.40, offset: 0 },
+                      { step: -0.40, offset: 1.57 }
                   ],
                   spacing: 35,
                   spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
@@ -5356,8 +5369,8 @@ window.onload = function() {
             spiralPattern: [
                 { until: 1.0,
                   lanes: [
-                      { step: 0.6, offset: 0 },
-                      { step: -0.6, offset: 1.57 }
+                      { step: 0.35, offset: 0 },
+                      { step: -0.35, offset: 1.57 }
                   ],
                   spacing: 35,
                   spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
@@ -5388,8 +5401,8 @@ window.onload = function() {
             spiralPattern: [
                 { until: 1.0,
                   lanes: [
-                      { step: 0.6, offset: 0 },
-                      { step: -0.6, offset: 1.57 }
+                      { step: 0.30, offset: 0 },
+                      { step: -0.30, offset: 1.57 }
                   ],
                   spacing: 35,
                   spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
@@ -5420,8 +5433,8 @@ window.onload = function() {
             spiralPattern: [
                 { until: 1.0,
                   lanes: [
-                      { step: 0.6, offset: 0 },
-                      { step: -0.6, offset: 1.57 }
+                      { step: 0.25, offset: 0 },
+                      { step: -0.25, offset: 1.57 }
                   ],
                   spacing: 35,
                   spawn: { baseHazard: 0, baseRing: 100, baseShields: 0, contentCount: 0, barrierThreshold: 0, starChance: 0, boostChance: 0, goldRingChance: 0.04 }
@@ -5518,54 +5531,68 @@ window.onload = function() {
         if (Math.abs(zPos - _spawnOriginZ) > sectorDistance * 0.80) return;
         // BONUS CHALLENGE — sector-specific spawners override the default content
         if (_inBonusLevel && currentSector === 4) {
-            // S4B MINE FIELD — alternating dense rows. Mines bounce (knot-sway) so the player can't memorize gaps.
-            // Spacing tightened so it actually feels like a field; gold rings inserted between mine rows.
-            if (Math.abs(zPos - _lastBullseyeZ) < 75) return;
+            // S4B MINE FIELD — chaos with TWO inverse-curving gold-ring channels (top + bottom)
+            // threading through bouncing mines. Player picks a channel and threads, or cuts
+            // through the chaos to switch sides for more pickups.
+            if (Math.abs(zPos - _lastBullseyeZ) < 60) return;
             _lastBullseyeZ = zPos;
-            var _row4 = Math.round(Math.abs(zPos - _spawnOriginZ) / 75);
+            var _row4 = Math.round(Math.abs(zPos - _spawnOriginZ) / 60);
             var _hov = tubeRadius - 7;
-            // Every 2nd row → full ring of 6 gold rings (collect bonanza between mine waves).
-            if (_row4 % 2 === 1) {
-                for (var _gi = 0; _gi < 6; _gi++) {
-                    var _gAng = (_gi / 6) * Math.PI * 2 + (_row4 * 0.21);
-                    var _gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
-                    _gMesh.position.set(Math.cos(_gAng) * _hov, Math.sin(_gAng) * _hov, zPos);
-                    _gMesh.rotation.z = _gAng;
-                    _gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
-                    scene.add(_gMesh); items.push(_gMesh);
-                }
-                return;
+            // Two channels: TOP starts at PI/2, BOTTOM at -PI/2. They drift in OPPOSITE directions,
+            // creating an inverse twist down the tunnel. Drift small enough to stay followable.
+            var _drift = _row4 * 0.06;
+            var _topAng = Math.PI / 2 + _drift;
+            var _botAng = -Math.PI / 2 - _drift;
+            var _channels = [_topAng, _botAng];
+            // Gold ring in each channel at this row.
+            for (var _ci = 0; _ci < _channels.length; _ci++) {
+                var _chAng = _channels[_ci];
+                var _gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                _gMesh.position.set(Math.cos(_chAng) * _hov, Math.sin(_chAng) * _hov, zPos);
+                _gMesh.rotation.z = _chAng;
+                _gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                scene.add(_gMesh); items.push(_gMesh);
             }
-            // Mine rows — 7 bouncing mines, narrower gap, gap drifts each row.
-            var _gapCenter = (_row4 * 0.35) % (Math.PI * 2);
-            var _gapHalf = Math.PI * 0.22; // ~40° half-gap = ~80° opening (tighter)
-            var _mineCount = 7;
+            // Fill the rest with bouncing mines. Skip the channel zones (with sway buffer)
+            // so a swaying mine never invades a ring channel.
+            var _angDiff = function(a, b) {
+                var d = Math.abs(((a - b) % (Math.PI * 2) + Math.PI * 3) % (Math.PI * 2) - Math.PI);
+                return d;
+            };
+            var _channelKeepout = 0.55; // ~31° each side of channel
+            var _maxSway = 0.20;
+            var _mineCount = 10;
             for (var _mi = 0; _mi < _mineCount; _mi++) {
-                var _mAng = _gapCenter + _gapHalf + ((_mi + 0.5) / _mineCount) * (Math.PI * 2 - 2 * _gapHalf);
+                var _mAng = (_mi / _mineCount) * Math.PI * 2 + (_row4 * 0.13);
+                if (_angDiff(_mAng, _topAng) < _channelKeepout) continue;
+                if (_angDiff(_mAng, _botAng) < _channelKeepout) continue;
                 var _mineMesh = new THREE.Mesh(mineGeo, hazardMat);
                 _mineMesh.position.set(Math.cos(_mAng) * _hov, Math.sin(_mAng) * _hov, zPos);
-                // Knot-sway: each mine drifts angularly so the field feels alive.
                 _mineMesh.userData = {
                     type: 'hazard', hitRadius: 5.5, _hp: 2,
                     rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3,
                     isKnot: true,
                     knotBaseAngle: _mAng,
                     knotSwaySpeed: 1.5 + Math.random() * 1.5,
-                    knotSwayRange: 0.35 + Math.random() * 0.35
+                    knotSwayRange: 0.10 + Math.random() * _maxSway // capped so mines don't invade channels
                 };
                 scene.add(_mineMesh); items.push(_mineMesh);
             }
             return;
         }
         if (_inBonusLevel && currentSector === 2) {
-            // S2B TARGET SHOOT — bullseye every ~500 units (~48 targets per 24k level, 3× density).
-            // Each target sits within a small radial twist of the previous one (~29° max),
-            // so the player follows a rotation rather than chasing big angle jumps.
-            if (Math.abs(zPos - _lastBullseyeZ) < 500) return;
+            // S2B TARGET SHOOT — full-ring target carpet every 300 units, 5 targets per ring,
+            // each ring rotated 0.25 rad from the previous so the whole carpet twists down the
+            // tunnel. Player can't get them all — score by quantity hit.
+            if (Math.abs(zPos - _lastBullseyeZ) < 300) return;
             _lastBullseyeZ = zPos;
-            _bullseyeAngle += (Math.random() - 0.5) * 1.0; // ±0.5 rad ≈ ±29° drift per target — slightly more chase
-            var _bMesh = _createBullseye(zPos, _bullseyeAngle);
-            scene.add(_bMesh); items.push(_bMesh);
+            _bullseyeAngle += 0.25; // consistent twist per ring (no random jitter)
+            var _targetsPerRing = 5;
+            for (var _ti = 0; _ti < _targetsPerRing; _ti++) {
+                var _tAngle = _bullseyeAngle + (_ti / _targetsPerRing) * Math.PI * 2;
+                var _tMesh = _createBullseye(zPos, _tAngle);
+                scene.add(_tMesh); items.push(_tMesh);
+            }
             return;
         }
         let rand = Math.random();
@@ -5604,11 +5631,16 @@ window.onload = function() {
         var _fc = _forceContent; _forceContent = false;
         // Speedruns are pass/fail — no in-level content pickups. Suppress BOTH random and forced slots.
         if (isSpeedRun) _fc = false;
-        // If current segment defines contentCount, suppress random contentChance — only forced positions spawn content
+        // If current segment defines contentCount OR the level has a roster (level-local or sector fallback),
+        // suppress random contentChance — only forced positions spawn content. This keeps the in-level
+        // object count equal to roster.length and stops the legacy random pick from over-spawning.
         var contentChance = 0;
         if (!_fc) {
             var _segHasCount = _segS && _segS.contentCount !== undefined;
-            contentChance = _segHasCount ? 0 : (isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008));
+            var _hasRoster = (_t && Array.isArray(_t.contentRoster))
+                || (typeof SECTOR_ROSTERS !== 'undefined' && Array.isArray(SECTOR_ROSTERS['S' + s + 'L' + lvl]));
+            contentChance = (_segHasCount || _hasRoster) ? 0
+                : (isSpeedRun ? 0 : (_t.contentChance !== undefined ? _t.contentChance : 0.055 + lvl * 0.008));
         }
         if (_fc || rand < contentChance) {
             var zone = getZoneName(s);
@@ -5716,17 +5748,39 @@ window.onload = function() {
         barrierThreshold *= (1 + (lvl - 1) * 0.10);
         if (_segS && _segS.barrierThreshold !== undefined) barrierThreshold = _segS.barrierThreshold;
 
-        // Speed run barrier series: cluster of gap barriers with twisting gap position
-        if (isSpeedRun && barriersEnabled && rand < barrierThreshold && Math.abs(zPos - lastRampZ) > 400) {
+        // Speed run barrier series: cluster of gap barriers with twisting gap position.
+        // Segment can override the cluster shape via _segS:
+        //   barrierLine: true              → continuous-line mode (skips cooldown, fixed twist/gap)
+        //   barrierLineCount: N            → barriers in the line (default 30)
+        //   barrierLineSpacing: N          → Z gap between barriers
+        //   barrierLineTwist: rad          → consistent angular drift per barrier (deterministic, no jitter)
+        //   barrierLineGapFrac: 0..1       → gap fraction of full ring (0.5 = 180° gap)
+        var _bLine = !!(_segS && _segS.barrierLine);
+        var _bLineCooldown = _bLine ? ((_segS.barrierLineCount || 30) * (_segS.barrierLineSpacing || 50) + 100) : 400;
+        // First-fire fix: lastRampZ starts at 0; if zPos is also near 0 (level start), the cooldown
+        // would block the very first line spawn. Allow it through whenever lastRampZ has never been touched.
+        var _cooldownOK = (_bLine && lastRampZ === 0) || Math.abs(zPos - lastRampZ) > _bLineCooldown;
+        if (isSpeedRun && barriersEnabled && rand < barrierThreshold && _cooldownOK) {
             lastRampZ = zPos;
-            // Series of gap barriers with progressive twist
-            var seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] :
+            var seriesSpacing, seriesCount, twistPerBarrier, gapJitter, gapBase;
+            if (_bLine) {
+                seriesSpacing = (_segS.barrierLineSpacing !== undefined) ? _segS.barrierLineSpacing : 50;
+                seriesCount = (_segS.barrierLineCount !== undefined) ? _segS.barrierLineCount : 30;
+                twistPerBarrier = (_segS.barrierLineTwist !== undefined) ? _segS.barrierLineTwist : 0.08;
+                gapBase = (_segS.barrierLineGapFrac !== undefined) ? _segS.barrierLineGapFrac : 0.55;
+                gapJitter = 0;
+            } else {
+                seriesSpacing = s === 3 ? [40, 30, 20][Math.min(lvl - 1, 2)] :
                                 s === 5 ? 40 : 30;
-            var seriesCount = 3 + Math.floor(Math.random() * 2); // 3-4 barriers per series
+                seriesCount = 3 + Math.floor(Math.random() * 2);
+                twistPerBarrier = 0.15 + Math.random() * 0.15;
+                gapBase = null; gapJitter = null;
+            }
             var baseGapAngle = Math.random() * Math.PI * 2;
-            var twistPerBarrier = 0.15 + Math.random() * 0.15; // gentle twist — gap drifts around tunnel
             for (var bi = 0; bi < seriesCount; bi++) {
-                var gapSize = Math.PI * (0.9 + Math.random() * 0.4); // wide gap (~162°-234°)
+                var gapSize;
+                if (_bLine) gapSize = Math.PI * 2 * gapBase;
+                else gapSize = Math.PI * (0.9 + Math.random() * 0.4);
                 var arcLen = Math.PI * 2 - gapSize;
                 var gapAngle = baseGapAngle + bi * twistPerBarrier;
                 var bz = zPos - bi * seriesSpacing;
@@ -5766,9 +5820,12 @@ window.onload = function() {
                 wallMesh.position.set(0, 0, zPos - peakDist);
                 wallMesh.userData = { type: 'laser_wall', rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.05 }; wallMesh.userData._hp = 8;
                 scene.add(wallMesh); items.push(wallMesh);
-                // Place content object at peak of jump arc for collection during jump (not in speed runs)
+                // Place content object at peak of jump arc for collection during jump (not in speed runs).
+                // Skip when the level has a roster — roster levels are capped at roster.length items, no random extras.
                 var jumpZone = getZoneName(s);
-                var jumpUncollected = !isSpeedRun ? (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(jumpZone, it.title); }) : [];
+                var _jumpHasRoster = (_t && Array.isArray(_t.contentRoster))
+                    || (typeof SECTOR_ROSTERS !== 'undefined' && Array.isArray(SECTOR_ROSTERS['S' + s + 'L' + lvl]));
+                var jumpUncollected = (!isSpeedRun && !_jumpHasRoster) ? (CONTENT_DATA[jumpZone] || []).filter(function(it) { return !collectedContent[jumpZone].has(it.title) && contentSpawnedThisRun.indexOf(it.title) < 0 && !_pendingHasItem(jumpZone, it.title); }) : [];
                 if (jumpUncollected.length > 0 && Math.random() < 0.4) {
                     var jumpPick = jumpUncollected[Math.floor(Math.random() * jumpUncollected.length)];
                     contentSpawnedThisRun.push(jumpPick.title);
@@ -6850,6 +6907,10 @@ window.onload = function() {
     // Clear stale baked levels — use procedural generation until manually re-baked
     try { localStorage.removeItem('tunnelRunner_bakedLevels'); } catch(e) {}
     function spawnIntroWave() {
+        // Re-entry guard: if a stray second countdown callback fires (e.g. two initializeFlight calls
+        // racing), the first invocation set introSpawned=true and the second would re-spawn every
+        // object — causing the visible "double spawn" bug across barriers + prizes.
+        if (introSpawned) return;
         introSpawned = true;
         _rosterIdx = 0; // reset per-run roster cursor at every level start
         var r = tubeRadius - 6;
@@ -6933,7 +6994,7 @@ window.onload = function() {
             // Pass 1: simulate walk to map spawn-call indices to segments
             var _simWalk = startOffset, _simCallIdx = 0;
             var _segCalls = {};  // segIdx → [callIdx, callIdx, ...]
-            for (var _sn = 0; _sn < 600; _sn++) {
+            for (var _sn = 0; _sn < 2000; _sn++) {
                 if (_simWalk > lastItemDist) break;
                 var _simProg = _simWalk / sectorDistance;
                 var _simSi = pat.length - 1, _simLanes = 1, _simSpacing = spacing;
@@ -6951,6 +7012,9 @@ window.onload = function() {
                 }
                 _simWalk += _simSpacing;
             }
+            // Global "no content in first 1/6" floor — content placed before this is dropped
+            // so the player has time to react / look up before the first pickup appears.
+            var _contentMinSlot = Math.ceil(_simCallIdx / 6);
             // Pass 2: pick evenly-spaced content positions per segment
             for (var _sci = 0; _sci < pat.length; _sci++) {
                 var _seg = pat[_sci];
@@ -6960,7 +7024,8 @@ window.onload = function() {
                     for (var _ci = 0; _ci < _count; _ci++) {
                         var _pickIdx = Math.round((_ci + 0.5) / _count * _calls.length - 0.5);
                         _pickIdx = Math.max(0, Math.min(_calls.length - 1, _pickIdx));
-                        _contentIndices[_calls[_pickIdx]] = true;
+                        var _slot = _calls[_pickIdx];
+                        if (_slot >= _contentMinSlot) _contentIndices[_slot] = true;
                     }
                 }
             }
@@ -6977,11 +7042,15 @@ window.onload = function() {
                 : (typeof SECTOR_ROSTERS !== 'undefined' && Array.isArray(SECTOR_ROSTERS[_rosKey])) ? SECTOR_ROSTERS[_rosKey] : null;
             if (_rosArr && _rosArr.length > 0) {
                 var _totalCalls = 0, _swk = startOffset;
-                while (_swk <= lastItemDist && _totalCalls < 600) { _totalCalls++; _swk += spacing; }
+                while (_swk <= lastItemDist && _totalCalls < 2000) { _totalCalls++; _swk += spacing; }
                 var _n = Math.min(_rosArr.length, _totalCalls);
+                // Distribute roster across the last 5/6 of the level (skip first 1/6) so the
+                // player has reaction time before the first pickup appears.
+                var _startSlot = Math.ceil(_totalCalls / 6);
+                var _spread = Math.max(1, _totalCalls - _startSlot);
                 for (var _ri = 0; _ri < _n; _ri++) {
-                    var _idxR = Math.round((_ri + 0.5) / _n * _totalCalls - 0.5);
-                    _idxR = Math.max(0, Math.min(_totalCalls - 1, _idxR));
+                    var _idxR = Math.round(_startSlot + ((_ri + 0.5) / _n) * _spread - 0.5);
+                    _idxR = Math.max(_startSlot, Math.min(_totalCalls - 1, _idxR));
                     _contentIndices[_idxR] = true;
                 }
             }
@@ -6989,7 +7058,7 @@ window.onload = function() {
 
         var walkDist = startOffset;
         var _spawnCallIdx = 0;
-        for (var n = 0; n < 600; n++) {
+        for (var n = 0; n < 2000; n++) {
             if (walkDist > lastItemDist) break;
             // How many lanes does the current segment have?
             var laneCount = 1;
@@ -7105,13 +7174,18 @@ window.onload = function() {
     }
 
     // 3-2-1 GO countdown then calls onDone()
+    // Per-countdown generation token — stale setTimeout chains check this before firing
+    // so that a fresh startCountdown call (e.g. quick level transition) invalidates the previous one.
+    var _countdownGen = 0;
     function startCountdown(onDone) {
         var overlay = document.getElementById('countdown-overlay');
         var numEl   = document.getElementById('countdown-num');
         overlay.style.display = 'flex';
         var steps = ['3','2','1','GO!'];
         var idx = 0;
+        var myGen = ++_countdownGen;
         function showStep() {
+            if (myGen !== _countdownGen) return; // stale chain — newer countdown supersedes
             numEl.style.animation = 'none';
             numEl.offsetHeight; // reflow to restart
             numEl.style.animation = 'cdPop 0.35s ease-out both';
@@ -7122,6 +7196,7 @@ window.onload = function() {
                 setTimeout(showStep, 900);
             } else {
                 setTimeout(function(){
+                    if (myGen !== _countdownGen) return;
                     overlay.style.display = 'none';
                     // Show control hint briefly
                     var hint = document.getElementById('ctrl-hint');
@@ -7455,41 +7530,39 @@ window.onload = function() {
         for (var k = 0; k < loopCount; k++) {
             var loopBaseZ = seedZ - (k * loopLen);
             var loopRot = (k * 0.35) % (Math.PI * 2);
-            // 1. RING OF 5 SHIELD ORBS (force-field stars), evenly spaced around tube at single Z.
-            for (var s = 0; s < 5; s++) {
-                var starAngle = loopRot + (s / 5) * Math.PI * 2;
+            // 1. RING OF 3 SHIELD ORBS (force-field stars) — fewer than before, since two barriers follow.
+            for (var s = 0; s < 3; s++) {
+                var starAngle = loopRot + (s / 3) * Math.PI * 2;
                 var starMesh = new THREE.Mesh(starGeo, starMat.clone());
                 starMesh.position.set(Math.cos(starAngle) * hover, Math.sin(starAngle) * hover, loopBaseZ);
                 starMesh.userData = { type: 'star', hitRadius: 5.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
                 scene.add(starMesh); items.push(starMesh);
             }
-            // 2. FULL BARRIER right after the orb ring.
-            var barrierZ = loopBaseZ - (loopLen * 0.18);
-            var barrierMesh = new THREE.Mesh(buildBarrierGeo(Math.PI * 2), barrierMat);
-            barrierMesh.position.set(0, 0, barrierZ);
-            barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: Math.PI * 2, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
-            scene.add(barrierMesh); items.push(barrierMesh);
-            // 3. SIX GOLD RINGS in 4 lanes — staggered Z so player threads through, bonus pickup line.
-            //    4 angular lanes evenly spread; rings 1-4 fill the lanes, rings 5-6 bracket two of them at offset Z.
+            // 2. TWO FULL BARRIERS back-to-back right after the orb ring.
+            var barrierZ1 = loopBaseZ - (loopLen * 0.18);
+            var barrierZ2 = loopBaseZ - (loopLen * 0.24);
+            for (var bz = 0; bz < 2; bz++) {
+                var bZpos = (bz === 0) ? barrierZ1 : barrierZ2;
+                var barrierMesh = new THREE.Mesh(buildBarrierGeo(Math.PI * 2), barrierMat);
+                barrierMesh.position.set(0, 0, bZpos);
+                barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: Math.PI * 2, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+                scene.add(barrierMesh); items.push(barrierMesh);
+            }
+            // 3. EIGHTEEN GOLD RINGS — 6 lanes × 3 Z positions, dense bonus pickup field.
             var laneAngles = [];
-            for (var li = 0; li < 4; li++) laneAngles.push(loopRot + (li / 4) * Math.PI * 2);
-            var ringDefs = [
-                { lane: 0, dz: 0.36 },
-                { lane: 1, dz: 0.42 },
-                { lane: 2, dz: 0.48 },
-                { lane: 3, dz: 0.54 },
-                { lane: 0, dz: 0.62 },
-                { lane: 2, dz: 0.68 }
-            ];
-            for (var ri = 0; ri < ringDefs.length; ri++) {
-                var def = ringDefs[ri];
-                var gAngle = laneAngles[def.lane];
-                var gZ = loopBaseZ - (loopLen * def.dz);
-                var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
-                gMesh.position.set(Math.cos(gAngle) * hover, Math.sin(gAngle) * hover, gZ);
-                gMesh.rotation.z = gAngle;
-                gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
-                scene.add(gMesh); items.push(gMesh);
+            for (var li = 0; li < 6; li++) laneAngles.push(loopRot + (li / 6) * Math.PI * 2);
+            var zSlots = [0.36, 0.48, 0.60, 0.72, 0.84, 0.92];
+            for (var zi = 0; zi < zSlots.length; zi++) {
+                for (var la = 0; la < laneAngles.length; la++) {
+                    if (((zi + la) % 2) === 0) continue; // checker pattern → ~half = 18 rings/loop
+                    var gAngle = laneAngles[la];
+                    var gZ = loopBaseZ - (loopLen * zSlots[zi]);
+                    var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                    gMesh.position.set(Math.cos(gAngle) * hover, Math.sin(gAngle) * hover, gZ);
+                    gMesh.rotation.z = gAngle;
+                    gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                    scene.add(gMesh); items.push(gMesh);
+                }
             }
         }
     }
@@ -7981,8 +8054,17 @@ window.onload = function() {
         // Instruction lines
         var collectLine = document.createElement('div');
         collectLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#00ffcc;text-shadow:0 0 12px rgba(0,255,204,0.5);letter-spacing:2px;text-align:center;width:100%;';
+        // Bonus challenge names — used instead of "BEAT THE CLOCK" when in a bonus level.
+        function _bonusChallengeName() {
+            if (_s === 1) return 'RING SWEEP';
+            if (_s === 2) return 'TARGET SHOOT';
+            if (_s === 3) return 'POWER LOOP';
+            if (_s === 4) return 'MINE FIELD';
+            return 'CHALLENGE';
+        }
         // Auto-derive collect line from collectItems
         function _intoCollectText() {
+            if (_inBonusLevel) return _bonusChallengeName();
             if (_sr) return 'BEAT THE CLOCK';
             if (!collectItems.length) return 'JUST SURVIVE';
             var labels = collectItems.map(function(i) { return i.label; });
@@ -8000,6 +8082,7 @@ window.onload = function() {
         avoidLine.style.cssText = 'font-family:"Press Start 2P",monospace;font-size:clamp(11px,3vw,18px);color:#ff4444;text-shadow:0 0 12px rgba(255,68,68,0.5);letter-spacing:2px;text-align:center;width:100%;';
         // Auto-derive avoid line from avoidItems
         function _intoAvoidText() {
+            if (_inBonusLevel && !avoidItems.length) return _bonusChallengeName();
             if (!avoidItems.length) return _sr ? 'BEAT THE CLOCK' : 'CLEAR PATH AHEAD';
             var labels = avoidItems.map(function(i) { return i.label; });
             var hasBarrier = labels.indexOf('BARRIER') >= 0;
