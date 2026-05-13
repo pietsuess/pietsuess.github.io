@@ -64,7 +64,6 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
   }
   body { background:#000; overflow:hidden; font-family:'Press Start 2P','PxFallback',monospace; }
   body.game-cursor, body.game-cursor * { cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='24' height='24'%3E%3Ccircle cx='12' cy='12' r='9' fill='none' stroke='%23cc44ff' stroke-width='1.5'/%3E%3Ccircle cx='12' cy='12' r='2' fill='%23ff69b4'/%3E%3C/svg%3E") 12 12, crosshair !important; }
-  body.cursor-hidden, body.cursor-hidden * { cursor: none !important; }
   /* Force font load for canvas */
   body::before {
     content: 'PIET SUESS 0123456789';
@@ -382,8 +381,8 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
   #content-box::-webkit-scrollbar { width:6px; }
   #content-box::-webkit-scrollbar-track { background:transparent; }
   #content-box::-webkit-scrollbar-thumb { background:rgba(255,105,180,0.4); border-radius:3px; }
-  #content-box.design-theme { scrollbar-color:rgba(200,160,0,0.4) transparent; }
-  #content-box.design-theme::-webkit-scrollbar-thumb { background:rgba(200,160,0,0.4); }
+  #content-box.vibe-theme { scrollbar-color:rgba(200,160,0,0.4) transparent; }
+  #content-box.vibe-theme::-webkit-scrollbar-thumb { background:rgba(200,160,0,0.4); }
   /* Inner border + corner brackets removed — caused visual artifacts on scrolling content */
   #content-header {
     background:#ff69b4; padding:10px 16px;
@@ -425,10 +424,10 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
   .photo-flex-thumb { aspect-ratio:auto; align-self:center; }
   .photo-flex-thumb img { object-fit:contain; width:100%; height:auto; }
   /* Design theme: transparent PNGs, clean look */
-  .design-thumb { background:transparent; border:none; aspect-ratio:auto; }
-  .design-thumb img { object-fit:contain; filter:none; background:transparent; width:100%; height:auto; }
-  .design-thumb:hover { border:none; box-shadow:none; }
-  .design-thumb .gallery-thumb-label { background:rgba(0,0,0,0.6); color:#FAFFA5; }
+  .vibe-thumb { background:transparent; border:none; aspect-ratio:auto; }
+  .vibe-thumb img { object-fit:contain; filter:none; background:transparent; width:100%; height:auto; }
+  .vibe-thumb:hover { border:none; box-shadow:none; }
+  .vibe-thumb .gallery-thumb-label { background:rgba(0,0,0,0.6); color:#FAFFA5; }
   /* Lightbox */
   #gallery-lightbox {
     display:none; position:fixed; top:0; left:0; right:0; bottom:0;
@@ -951,7 +950,7 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
 </div>
 
 <!-- Intro -->
-<div id="intro" onclick="if(!state.started && document.getElementById('boring-mode-popup').style.display!=='flex')startGame()">
+<div id="intro" onclick="_navHandleTitleClick(event)">
   <canvas id="title-stars" style="position:absolute;top:0;left:0;right:0;bottom:0;width:100%;height:100%;z-index:0;pointer-events:none;"></canvas>
   <!-- Title card with pixel art -->
   <div id="title-card" style="position:relative;width:680px;max-width:95vw;margin:0 auto;z-index:1;">
@@ -963,6 +962,13 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
     </div>
   </div>
   <div id="intro-sub" style="margin-top:12px;position:relative;z-index:1;">PRESS ANY KEY TO START</div>
+
+  <!-- Saved Games panel — shown only when saves exist and user clicks title -->
+  <div id="nav-saved-panel" style="display:none;text-align:center;margin-top:18px;position:relative;z-index:1;width:90%;max-width:420px;">
+    <div id="nav-saved-title" style="color:#ffe000;font-size:8px;text-align:center;margin-bottom:12px;text-shadow:0 0 8px #ffe000;letter-spacing:2px;">SAVED GAMES</div>
+    <div id="nav-saved-list"></div>
+    <div id="nav-saved-newbtn" onclick="event.stopPropagation();_navStartNewFromPanel()" style="margin-top:18px;cursor:pointer;font-family:'Press Start 2P',monospace;font-size:8px;color:#ffe000;text-shadow:0 0 10px #ffe000;border:1px solid #ffe000;padding:8px 18px;display:inline-block;background:rgba(255,224,0,0.05);letter-spacing:1px;animation:pulse 1s steps(1) infinite;">▶ START NEW GAME ◀</div>
+  </div>
 
   <div id="fullscreen-hint" onclick="toggleFullscreen()" style="
     margin-top:18px; cursor:pointer; font-family:'Press Start 2P',monospace;
@@ -976,6 +982,8 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
     <div id="leaderboard-rows"></div>
   </div>
 
+  <!-- Boring Mode link removed from title screen (still accessible via in-game menu if any) -->
+  <div id="boring-mode-link" style="display:none;"></div>
 </div>
 
 <!-- Boring Mode Popup -->
@@ -1023,7 +1031,7 @@ if((('ontouchstart' in window)||navigator.maxTouchPoints>0) && !/[?&]demo(=|&|$)
         <button class="dev-btn" onclick="devTeleport(0,0)">EDIT</button>
         <button class="dev-btn" onclick="devTeleport(Math.cos(0)*(9000+22317)/2, Math.sin(0)*(9000+22317)/2)">ANIMATE</button>
         <button class="dev-btn" onclick="devTeleport(Math.cos(-Math.PI/2)*(9000+22317)/2, Math.sin(-Math.PI/2)*(9000+22317)/2)">PHOTO</button>
-        <button class="dev-btn" onclick="devTeleport(Math.cos(Math.PI/2)*(9000+22317)/2, Math.sin(Math.PI/2)*(9000+22317)/2)">DESIGN</button>
+        <button class="dev-btn" onclick="devTeleport(Math.cos(Math.PI/2)*(9000+22317)/2, Math.sin(Math.PI/2)*(9000+22317)/2)">VIBE</button>
         <button class="dev-btn" onclick="devTeleport(Math.cos(Math.PI)*(9000+22317)/2, Math.sin(Math.PI)*(9000+22317)/2)">DIRECT</button>
       </div>
       <div class="dev-row">
@@ -1482,13 +1490,13 @@ if(localStorage.getItem('ps_vroom_return')){
   localStorage.removeItem('ps_vroom_state');
 }
 
-const LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','DESIGN'];
-// Shape per zone — lvlIdx 0=DIRECT 1=EDITING 2=ANIMATE 3=PHOTO 4=DESIGN
+const LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','VIBE'];
+// Shape per zone — lvlIdx 0=DIRECT 1=EDITING 2=ANIMATE 3=PHOTO 4=VIBE
 const ZONE_SHAPES = ['octagon','square','circle','pentagon','triangle'];
 
-const LEVEL_COLORS = { DIRECT:'#ff69b4', EDITING:'#00ffff', ANIMATE:'#00ff88', PHOTO:'#ffcc00', DESIGN:'#ff8c00' };
+const LEVEL_COLORS = { DIRECT:'#ff69b4', EDITING:'#00ffff', ANIMATE:'#00ff88', PHOTO:'#ffcc00', VIBE:'#ff8c00' };
 // Object colors — complementary to zone color, used for HUD icons and fly animations
-const LEVEL_OBJ_COLORS = { DIRECT:'#69ffb4', EDITING:'#ffe800', ANIMATE:'#ff5577', PHOTO:'#5533ff', DESIGN:'#ff8c00' };
+const LEVEL_OBJ_COLORS = { DIRECT:'#69ffb4', EDITING:'#ffe800', ANIMATE:'#ff5577', PHOTO:'#5533ff', VIBE:'#ff8c00' };
 
 // Bio write-ups shown in every level
 const LEVEL_BIOS = {
@@ -1496,7 +1504,7 @@ const LEVEL_BIOS = {
   EDITING: `EDITING // PIET SUESS\n\nWhen I was 14 I began my obsession with post by spending countless days and nights in a basement with two VCR's. I was tirelessly compiling short films and school projects made with my friends. Kung-Fu movies, Sci-fi epics and Documentaries about my family. The tape to tape process was linear and destructive, and required precise timing to make an edit.\n\nThat was 1995 and since then the software and my abilities have come a long way. Fortunately the techniques I learned in those days are still as relevant.`,
   ANIMATE: `ANIMATION // PIET SUESS\n\nSince Saturday morning cartoons, I've been deeply moved by animation's ability to take us anywhere, in all the ways that we could possibly imagine. Struck by the way in which worlds and ideas are able to be brought to life in colours and shapes.\n\nI've been excited by the idea that one person in a room, with enough time and conviction, can open doors to untold realms and stories. I love all the different mediums of animation, and ways to render a desired feel and convey emotion, and get excited by the prospect of experimenting.`,
   PHOTO: `PHOTOGRAPHY // PIET SUESS\n\nWhen I began taking photos as a teen, I had an old Rolleiflex 35mm camera with a broken light meter. This was a blessing, I learned to see the light and know the exposure. It made me sensitive to the nuances and the subtleties, it helped me to be inspired by light and in awe of it. Later when I took a black and white developing / printing class, I spent hours in the lab refining and obsessing over the prints, fine tuning my tools for dodging and burning. This was also years after I had been pushing pixels in Photoshop 2.0, a passion that I continue to this day, over 30 years later.`,
-  DESIGN: `DESIGN // PIET SUESS\n\nFonts and colours excite me. I love the challenge of making a word mark that stands for what it represents, and stands out. I love the subtleties and details of logos, and how the elements all fit together, making me think and feel something.`
+  VIBE: `VIBE CODING // PIET SUESS\n\nApps, tools, and experimental UI built by collaborating with AI. Over 30 years of design and post-production turned into instructions, then into working code. The pieces here are the ones I keep using — utilities for clients, prototypes that became real, and toys built to see what's possible.`
 };
 
 const CONTENT_DATA = {
@@ -1599,19 +1607,9 @@ const CONTENT_DATA = {
       youtubeId:'rtQN-maifVk', duration:150
     },
     {
-      title:'FUBO TV — FUBOOOOOOOOOOOOOO',
-      text:'3 spots\nClient: Fubo\nRole: Editor / Post',
-      youtubeId:'sVg7fqapikU', duration:90
-    },
-    {
       title:'LEAD FROM BEHIND — $H!T TALKING WITH DAK PRESCOTT',
       text:'Client: Lead From Behind\nRole: Editor / Post',
       youtubeId:'OKmQ4Tf8n9U', duration:120
-    },
-    {
-      title:'AVIATION GIN — THE OTHER ROB',
-      text:'Client: Aviation Gin\nRole: Editor / Post',
-      youtubeId:'1dsWl2DuUNo', duration:60
     },
     {
       title:'AVIATION GIN — PUMPKIN SPICE SEASON',
@@ -1622,11 +1620,6 @@ const CONTENT_DATA = {
       title:'MINT MOBILE — DEFLATES PRICES',
       text:'Client: Mint Mobile\nRole: Editor / Post',
       youtubeId:'bgIXiljcuVo', duration:45
-    },
-    {
-      title:'MINT MOBILE — JURY DUTY',
-      text:'Client: Mint Mobile\nRole: Editor / Post',
-      youtubeId:'LQakmDqQtpM', duration:45
     },
     {
       title:'DELOITTE — WALKING DEAD',
@@ -1697,104 +1690,141 @@ const CONTENT_DATA = {
     { title:'PHOTO_G12', text:'DESCRIPTION', vimeoId:null, duration:90,
       gallery:[ {url:'https://picsum.photos/seed/g12a/900/680',caption:'NAME'},{url:'https://picsum.photos/seed/g12b/900/680',caption:'NAME'},{url:'https://picsum.photos/seed/g12c/900/680',caption:'NAME'},{url:'https://picsum.photos/seed/g12d/900/680',caption:'NAME'},{url:'https://picsum.photos/seed/g12e/900/680',caption:'NAME'},{url:'https://picsum.photos/seed/g12f/900/680',caption:'NAME'} ] }
   ],
-  DESIGN:[
+  VIBE:[
     {
-      title:'VAN SOLO',
-      subtitle:'Logo & Font',
-      text:'For Van Solo the task was to create a mark incorporating the idea of a bird with the specific drum kit used in his one man show. He came with some sketches and some ideas, and we landed on this primary logo and minimalist bird face which is also the shape of foot pedal drum set.\n\nThe font was informed by the logo and done by hand giving it an organic feel. In addition we created a support element of the three feathers, symbolism that was meaningful to the client.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/vs1/800/600', caption:'VAN SOLO 01' },
-        { url:'https://picsum.photos/seed/vs2/800/600', caption:'VAN SOLO 02' },
-        { url:'https://picsum.photos/seed/vs3/800/600', caption:'VAN SOLO 03' }
-      ]
+      title:'Sound Effects Designer',
+      type:'vibe',
+      client:'NAVIGATOR Game',
+      description:'Modular synth with knob UI, patch bay cables, draggable/collapsible modules, per-output params, bypass/mute, box select, preset save/load with layout, waveform and spectrum analyzers.',
+      tags:['Web Audio','Synth','Drag & Drop','Modular'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/sfx-designer.jpg',
+      section:'Tools',
+      url:'https://pietsuess.com/sfx-designer.html',
+      linkLabel:'View ↗',
+      duration:90
     },
     {
-      title:'CONVERGENCE FEST',
-      subtitle:'Branding',
-      text:'This multi-year local festival came to me with a rebrand challenge. The task was to integrate the concept of converging, in a font logo. It came as a delightful undertaking, drawing upon several concept inspirations, coming to spring forth with this pairing of bold distorted main font, and the hand drawn sub-title FESTIVAL, which I then developed into its own unique font set.\n\nThe result is this funky, retro inspired and bold mark to immediately convey the concepts within the title.',
-      vimeoId:null, duration:100,
-      gallery:[
-        { url:'https://picsum.photos/seed/cf1/800/600', caption:'CONVERGENCE 01' },
-        { url:'https://picsum.photos/seed/cf2/800/600', caption:'CONVERGENCE 02' },
-        { url:'https://picsum.photos/seed/cf3/800/600', caption:'CONVERGENCE 03' },
-        { url:'https://picsum.photos/seed/cf4/800/600', caption:'CONVERGENCE 04' }
-      ]
+      title:'Navigator Content Editor',
+      type:'vibe',
+      client:'Piet Suess',
+      description:'Content editor that populates collectible game objects in both Navigator and TunnelRunner. Portfolio images become in-game pickups players discover while playing.',
+      tags:['Editor','Content','GitHub API'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/content-editor.jpg',
+      section:'Tools',
+      url:'https://arcade.pietsuess.com/dev/content-editor.html?demo',
+      linkLabel:'Demo ↗',
+      duration:90
     },
     {
-      title:'HAYAN COLLECTION',
-      subtitle:'Apparel Logo',
-      text:'The task to create a brand logo for this eclectic world inspired clothing company was a welcome challenge. The client wanted something that gave a nod to its Somali roots and would work well on clothing tags while feeling international.\n\nThe result we arrived at is this long legged traveller, which has a very boxy profile, ideal for tags.',
-      vimeoId:null, duration:70,
-      gallery:[
-        { url:'https://picsum.photos/seed/hc1/800/600', caption:'HAYAN 01' },
-        { url:'https://picsum.photos/seed/hc2/800/600', caption:'HAYAN 02' }
-      ]
+      title:'Animation Grid Editor',
+      type:'vibe',
+      client:'Piet Suess',
+      description:'Visual drag-and-drop grid editor for the animation portfolio page. Move and resize items on an 18-column grid, copy layout code. Layout visually instead of writing CSS.',
+      tags:['Editor','Grid','Drag & Drop'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/grid-editor.jpg',
+      section:'Tools',
+      url:'https://pietsuess.com/animate.html?dev',
+      linkLabel:'Demo ↗',
+      duration:90
     },
     {
-      title:'CHASM AUDIO',
-      subtitle:'Identity',
-      text:'The client had a very specific vision of a blend between a clean classical stamp logo and an 80s arcade game, with a timeless feel that you might see in the corner of an amp from the manufacturer.\n\nStarting from a basic serif font and fully reworking it into this upward flowing stamp, with a custom built Audio nestled underneath.\n\nTo further the idea of a Chasm (pr: Khazz-uhm) we developed a support element of a deep break in the earth which doubles as a representation of the electrification required for the business. The result being this clean and bold emblem that conveys a number of concurrent ideas.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/ca1/800/600', caption:'NAME' },
-        { url:'https://picsum.photos/seed/ca2/800/600', caption:'NAME' }
-      ]
+      title:'ACYR Schedule Editor',
+      type:'vibe',
+      client:'Salt Spring Centre of Yoga',
+      description:'Interactive weekly schedule editor with click-to-stamp events, drag to resize/move, venue color coding with hex inputs, 3-level undo, and vector PDF export.',
+      tags:['Editor','PDF Export','Drag & Drop'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/schedule-editor.jpg',
+      section:'Tools',
+      url:'https://clients.pietsuess.com/sscy/schedule-editor.html?demo',
+      linkLabel:'View ↗',
+      duration:90
     },
     {
-      title:'GAIA FOODS',
-      subtitle:'Label Design',
-      text:'Before I designed a series of miso labels for this client, I first was invited to make a house call and lunch visit to get let in on the level of artistry that they employ for their products. The Koji for this miso, is hand fermented, making it a one of a kind product. They are true masters of creating unique and delicious food items. The visit was wonderful inspiration and gave a keen insight towards the feeling that the labels needed to elicit.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/gf1/800/600', caption:'NAME' },
-        { url:'https://picsum.photos/seed/gf2/800/600', caption:'NAME' }
-      ]
+      title:'BMATS Subtitle Review',
+      type:'vibe',
+      client:'Client Tool',
+      description:'Video subtitle review tool with embedded Vimeo player, multi-language tabs, correction panel with Google Sheets integration for collaborative feedback. All in one place, replaces multiple documents and spreadsheets, automates the entire backend.',
+      tags:['Video','Sheets API','Review'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/bmats.jpg',
+      section:'Tools',
+      url:'https://arcade.pietsuess.com/dev/bmats-demo.html',
+      linkLabel:'Demo ↗',
+      duration:90
     },
     {
-      title:'TRUE LOVE PIZZA',
-      subtitle:'Illustration',
-      text:'This client wanted a fun pizza sticker and hat illustration to add to their existing brand. The challenge was to create something that could be embroidered as well as coloured in for a pop-sticker.\n\nThe position and layout were the key components to address for first approvals. I sketched a series of slices of different flavours and we landed on number 8 pepperoni.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/tp1/800/600', caption:'NAME' },
-        { url:'https://picsum.photos/seed/tp2/800/600', caption:'NAME' }
-      ]
+      title:'UPVS Admin',
+      type:'vibe',
+      client:'Maya Suess',
+      description:'WYSIWYG admin panel for the Unprofessional Variety Show. Manages shows, performers, blog posts, and 60+ embedded videos. Data-driven JSON architecture; client publishes everything herself.',
+      tags:['Admin Panel','CMS','WYSIWYG','Video'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/maya.jpg',
+      section:'Tools',
+      url:'https://unprofessionalvarietyshow.com/admin/?demo',
+      linkLabel:'Admin Demo ↗',
+      duration:90
     },
     {
-      title:'MORGAN FRY CONST.',
-      subtitle:'Logo',
-      text:'Morgan came to me with the idea that the structures he builds are puzzles. His clients know him to be able to pull off the impossible. He wanted something very structural as well as a letter mark. We played around with many variations of this idea of the M that is also triangles, trusses and beams.\n\nThis impossibly constructed shape contains all the letters of his name, though they are not overly accentuated, and tells the story of what Morgan can do.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/mf1/800/600', caption:'NAME' },
-        { url:'https://picsum.photos/seed/mf2/800/600', caption:'NAME' }
-      ]
+      title:'Heart Lines',
+      type:'vibe',
+      client:'Natalie',
+      description:'Scroll-driven responsive animation. Heart-shaped line forms build and shift as you move through the page.',
+      tags:['Animation','Interactive'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/heart-lines.jpg',
+      section:'Tools',
+      url:'https://natalielisa.com/about',
+      linkLabel:'View ↗',
+      duration:90
     },
     {
-      title:'MICK BROMLEY PTG',
-      subtitle:'Identity',
-      text:'When Mick saw what I had come up with, he was giddy, he loved it because it was what he spent all his working time immersed in; edges and colours and shapes.\n\nI wanted to create something using simple geometry and lots of colour, and landed here with delight.',
-      vimeoId:null, duration:90,
-      gallery:[
-        { url:'https://picsum.photos/seed/mb1/800/600', caption:'NAME' },
-        { url:'https://picsum.photos/seed/mb2/800/600', caption:'NAME' }
-      ]
+      title:'Depth Scroll',
+      type:'vibe',
+      client:'UPVS Wireframe',
+      description:'Full-page cards layered in depth, scroll to navigate through shows. Content layers approach and recede as you scroll through Z-space.',
+      tags:['Z-Space','Scroll','Depth'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/maya-depth.jpg',
+      section:'Tools',
+      url:'https://clients.pietsuess.com/maya/depth.html',
+      linkLabel:'View ↗',
+      duration:90
     },
+    {
+      title:'Maya Scatter',
+      type:'vibe',
+      client:'UPVS Wireframe',
+      description:'Show cards scattered across the page. Pick up, drag, and throw cards to explore the variety show lineup.',
+      tags:['Scatter','Drag','Physics'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/maya-scatter.jpg',
+      section:'Tools',
+      url:'https://clients.pietsuess.com/maya/scatter.html',
+      linkLabel:'View ↗',
+      duration:90
+    },
+    {
+      title:'Unveil',
+      type:'vibe',
+      client:'Unveil',
+      description:'Product animation showcase with interactive demos, mobile-optimized views, and animated WebP/GIF assets in three colorways and sizes. Interactive demo at https://clients.pietsuess.com/unveil/interactive.html.',
+      tags:['Animation','Product','Interactive'],
+      thumb:'https://pietsuess.com/toolkit-screenshots/unveil.jpg',
+      section:'Tools',
+      url:'https://clients.pietsuess.com/unveil/',
+      linkLabel:'Animations ↗',
+      duration:90
+    }
   ]
 };
 
 // ── Dynamic content manifest loader ──
-// Fetches PHOTO and DESIGN content from GitHub repo manifests at startup.
+// Fetches PHOTO and VIBE content from GitHub repo manifests at startup.
 // Falls back to the placeholder arrays above if fetch fails.
 (function loadContentManifests(){
   const PHOTO_MANIFEST_URL = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/manifest.json';
-  const DESIGN_MANIFEST_URL = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/manifest.json';
+  const VIBE_MANIFEST_URL = 'https://raw.githubusercontent.com/pietsuess/pietsuess-site/main/vibe-manifest.json';
   const PHOTO_BASE_FALLBACK = 'https://raw.githubusercontent.com/pietsuess/piet-photos/master/photos/';
-  const DESIGN_BASE_FALLBACK = 'https://raw.githubusercontent.com/pietsuess/design-portfolio/main/';
+  const VIBE_BASE_FALLBACK = 'https://pietsuess.com/';
 
   const _photoFallback = CONTENT_DATA.PHOTO;
-  const _designFallback = CONTENT_DATA.DESIGN;
+  const _vibeFallback = CONTENT_DATA.VIBE;
 
   function mapPhotoItem(item, baseUrl){
     const o = { title:item.title, text:item.text||'', vimeoId:null, duration:item.duration||90 };
@@ -1809,23 +1839,26 @@ const CONTENT_DATA = {
     return o;
   }
 
-  function mapDesignItem(item, baseUrl){
-    const allFiles = item.rows
-      ? item.rows.flat().map(f=>({ url:baseUrl+f.file, caption:f.caption||'' }))
-      : (item.files||[]).map(f=>({ url:baseUrl+f.file, caption:f.caption||'' }));
-    const o = {
-      title: item.title,
-      subtitle: item.subtitle||'',
-      text: item.text||'',
+  function mapVibeItem(item, baseUrl){
+    const thumb = item.thumb && /^https?:\/\//.test(item.thumb)
+      ? item.thumb
+      : (baseUrl + (item.thumb || ('toolkit-screenshots/' + (item.title||'item').toLowerCase().replace(/\s+/g,'-') + '.jpg')));
+    const links = Array.isArray(item.links) ? item.links : [];
+    const primary = links[0] || {};
+    return {
+      title: item.title || '',
+      type: 'vibe',
+      client: item.client || '',
+      description: item.description || '',
+      tags: Array.isArray(item.tags) ? item.tags.slice() : [],
+      thumb: thumb,
+      section: item.section || '',
+      url: primary.url || '',
+      linkLabel: primary.label || 'OPEN PROJECT ↗',
+      links: links.slice(),
       vimeoId: null,
-      duration: item.duration||90,
-      gallery: allFiles
+      duration: item.duration || 90
     };
-    if(item.rows){
-      o._rows = item.rows.map(row=>row.map(f=>({ url:baseUrl+f.file, caption:f.caption||'' })));
-    }
-    if(item.heroWidth) o._heroWidth = item.heroWidth;
-    return o;
   }
 
   function loadManifest(url, zone, fallback, mapper, baseFallback){
@@ -1845,10 +1878,10 @@ const CONTENT_DATA = {
 
   Promise.all([
     loadManifest(PHOTO_MANIFEST_URL, 'PHOTO', _photoFallback, mapPhotoItem, PHOTO_BASE_FALLBACK),
-    loadManifest(DESIGN_MANIFEST_URL, 'DESIGN', _designFallback, mapDesignItem, DESIGN_BASE_FALLBACK)
+    loadManifest(VIBE_MANIFEST_URL, 'VIBE', _vibeFallback, mapVibeItem, VIBE_BASE_FALLBACK)
   ]).then(()=>{
     window._contentManifestsReady = true;
-    console.log('[MANIFEST] All resolved. PHOTO='+CONTENT_DATA.PHOTO.length+', DESIGN='+CONTENT_DATA.DESIGN.length);
+    console.log('[MANIFEST] All resolved. PHOTO='+CONTENT_DATA.PHOTO.length+', VIBE='+CONTENT_DATA.VIBE.length);
   });
 })();
 
@@ -1866,7 +1899,7 @@ const ZONE_PALETTE = {
   EDITING: ['#ffe800','#ffee44','#ffd500'],
   ANIMATE: ['#ff5577','#ff7799','#ff3355'],
   PHOTO:   ['#5533ff','#7755ff','#4422ee'],
-  DESIGN:  ['#ff8c00','#ffaa44','#ff6600'],
+  VIBE:    ['#ff8c00','#ffaa44','#ff6600'],
   DIRECT:  ['#69ffb4','#88ffcc','#44ff99']
 };
 
@@ -2106,11 +2139,13 @@ function _dismissFuelPopup(){
 
 // ── Peanut unlock popup ──────────────────────────────────────────────
 let _peanutPopupToggled = false;
+let _peanutPopupToggleCount = 0; // require 2 X presses before the close affordance unlocks
 let _peanutAnimId = null;
 
 function _showPeanutPopup(){
   if(document.getElementById('peanut-popup-overlay')) return;
   _peanutPopupToggled = false;
+  _peanutPopupToggleCount = 0;
   const ov = document.createElement('div');
   ov.id = 'peanut-popup-overlay';
   ov.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
@@ -2355,10 +2390,12 @@ function _updateBubblePopupHighlight(){
 
 // ── Wave unlock popup (mirrors peanut/bubble popup) ─────────────────
 let _wavePopupToggled = false;
+let _wavePopupToggleCount = 0; // require 2 Z presses before auto-dismiss
 
 function _showWavePopup(){
   if(document.getElementById('wave-popup-overlay')) return;
   _wavePopupToggled = false;
+  _wavePopupToggleCount = 0;
   const ov = document.createElement('div');
   ov.id = 'wave-popup-overlay';
   ov.style.cssText = 'position:fixed;inset:0;display:flex;align-items:center;justify-content:center;z-index:9800;background:rgba(0,0,0,0.7);';
@@ -2586,10 +2623,29 @@ let _hudFlyAnims = [];
 let _hudFlyingTitles = new Set(); // items mid-flight — HUD stays stroked until landing
 let _pendingFlyTitle = null; // set in openContent, consumed in closeContent
 let _lastCollectedObj = null; // reference to the world object just collected (for burst positioning)
-let _firstCollectAnimDone = false; // enhanced animation for very first collection
+// Per-zone set: each zone fires the enhanced first-collection anim + thumbnail
+// hint once. Re-triggers the hint when player collects their first item in a new zone.
+let _firstCollectZonesDone = new Set();
 let _viewHintTimer = 0; // countdown for "VIEW AT ANY TIME" hint after first fly lands
 let _viewHintTargetX = 22; // where the first fly landed (for hint arrow position)
 let _viewHintTargetY = 0;
+let _viewHintItem = null;     // item whose thumb to show beside the hint
+let _viewHintImg = null;      // loaded Image, or null
+let _viewHintImgReady = false;
+let _viewHintHitBox = null;   // {x,y,w,h} clickable area for the thumbnail while visible
+function _viewHintLoadThumb(item){
+  _viewHintItem = item || null;
+  _viewHintImg = null; _viewHintImgReady = false;
+  if(!item) return;
+  let url = null;
+  if(item.youtubeId) url = 'https://img.youtube.com/vi/' + item.youtubeId + '/mqdefault.jpg';
+  else if(item.vimeoId) url = 'https://vumbnail.com/' + item.vimeoId + '.jpg';
+  if(!url) return;
+  const img = new Image();
+  img.onload = function(){ _viewHintImg = img; _viewHintImgReady = true; };
+  img.onerror = function(){ _viewHintImgReady = false; };
+  img.src = url;
+}
 let _radialBursts = []; // expanding ring bursts
 
 function _spawnRadialBurst(x, y, color){
@@ -2617,7 +2673,9 @@ function _spawnHudFlyAnim(itemTitle){
     const totalH = spacing * (count - 1);
     const targetY = (canvas.height / 2) - (totalH / 2) + idx * spacing;
     const targetX = 22;
-    const isFirst = !_firstCollectAnimDone;
+    // Fire enhanced first-collection treatment once per zone (skip bios — they
+    // aren't video content and the thumbnail would just show a fallback).
+    const isFirst = !isBioFly && !_firstCollectZonesDone.has(lvlName);
     _hudFlyingTitles.add(itemTitle);
 
     // Screen position of the object (for start point)
@@ -2637,6 +2695,7 @@ function _spawnHudFlyAnim(itemTitle){
       color: col,
       title: itemTitle,
       _isFirst: isFirst,
+      _zoneName: lvlName,
       _trail: isFirst ? [] : null,
       progress: 0,
       duration: isFirst ? 150 : 45, // first: ~2.5s fly, rest: ~0.75s
@@ -2716,9 +2775,18 @@ function _drawHudFlyAnims(){
     a.progress += 1 / a.duration;
     if(a.progress >= 1){
       if(a.title) _hudFlyingTitles.delete(a.title);
-      if(a._isFirst && !_firstCollectAnimDone){
-        _firstCollectAnimDone = true;
-        _viewHintTimer = 300;
+      if(a._isFirst && a._zoneName && !_firstCollectZonesDone.has(a._zoneName)){
+        _firstCollectZonesDone.add(a._zoneName);
+        _viewHintTimer = 540; // ~9s — longer because we now also show a thumbnail
+        // Look up the full item record (with youtubeId/vimeoId) for the thumbnail
+        let _foundItem = null;
+        for(let _li = 0; _li < LEVELS.length && !_foundItem; _li++){
+          const _items = CONTENT_DATA[LEVELS[_li]] || [];
+          for(let _ii = 0; _ii < _items.length; _ii++){
+            if(_items[_ii].title === a.title){ _foundItem = _items[_ii]; break; }
+          }
+        }
+        _viewHintLoadThumb(_foundItem);
         // Landing burst on HUD
         _spawnRadialBurst(a.targetX, a.targetY, a.color);
       }
@@ -2804,11 +2872,61 @@ function _drawHudFlyAnims(){
     ctx.textBaseline = 'middle';
     // Arrow pointing at HUD icon (32px arrow, 18px text — matches left HUD hint style)
     setFont('32px "Press Start 2P",monospace');
-    ctx.fillText('\u25C0', _viewHintTargetX + 20, _viewHintTargetY);
-    // Text
-    setFont(FONT_18);
-    ctx.fillText('VIEW AT ANY TIME', _viewHintTargetX + 52, _viewHintTargetY);
+    ctx.fillText('\u25C0', _viewHintTargetX + 8, _viewHintTargetY);
     ctx.shadowBlur = 0;
+
+    // Thumbnail pop-out beside the slot + title text BELOW (non-overlapping)
+    const popFrames = 18;
+    const popT = Math.min(1, (540 - _viewHintTimer) / popFrames);
+    const popScale = popT < 1 ? (popT * (2 - popT)) * 1.08 : 1.0;
+    const THUMB_W = 192, THUMB_H = 108;
+    const tx = _viewHintTargetX + 38;
+    const ty = _viewHintTargetY - THUMB_H/2;
+    // Register clickable hit area (only after pop-in completes so partial pop
+    // doesn't catch clicks before user can see what it is)
+    if(popT >= 0.6 && _viewHintItem){
+      _viewHintHitBox = { x: tx - 3, y: ty - 3, w: THUMB_W + 6, h: THUMB_H + 6, item: _viewHintItem };
+    } else {
+      _viewHintHitBox = null;
+    }
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    // Pop-in scale anchored on slot center
+    ctx.translate(tx, _viewHintTargetY);
+    ctx.scale(popScale, popScale);
+    ctx.translate(-tx, -_viewHintTargetY);
+    ctx.fillStyle = 'rgba(5,9,18,0.92)';
+    ctx.fillRect(tx - 3, ty - 3, THUMB_W + 6, THUMB_H + 6);
+    ctx.strokeStyle = '#00ffcc';
+    ctx.shadowBlur = 14; ctx.shadowColor = '#00ffcc';
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(tx - 3, ty - 3, THUMB_W + 6, THUMB_H + 6);
+    ctx.shadowBlur = 0;
+    if(_viewHintImgReady && _viewHintImg){
+      try{ ctx.drawImage(_viewHintImg, tx, ty, THUMB_W, THUMB_H); }catch(e){}
+    } else {
+      ctx.fillStyle = '#0a1428';
+      ctx.fillRect(tx, ty, THUMB_W, THUMB_H);
+      ctx.fillStyle = 'rgba(0,255,204,0.55)';
+      setFont(FONT_8);
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('...', tx + THUMB_W/2, ty + THUMB_H/2);
+    }
+    // Title BELOW thumbnail (no overlap with image)
+    ctx.globalAlpha = alpha;
+    const _titleY = ty + THUMB_H + 14;
+    let _ttl = (_viewHintItem && _viewHintItem.title) || 'VIEW AT ANY TIME';
+    if(_ttl.length > 30) _ttl = _ttl.slice(0, 28) + '...';
+    setFont(FONT_10);
+    ctx.fillStyle = '#00ffcc';
+    ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText(_ttl, tx, _titleY);
+    // Hint label below title (pulses)
+    ctx.globalAlpha = alpha * pulse;
+    setFont(FONT_8);
+    ctx.fillStyle = 'rgba(0,255,204,0.75)';
+    ctx.fillText('CLICK ICON TO WATCH', tx, _titleY + 14);
+    ctx.restore();
   }
 
   // Fuel fly anims (radials + fly simultaneous)
@@ -3023,6 +3141,315 @@ let state = {
   _dtScale: 1
 };
 
+// ── Saved Games — multi-slot resume (Piet spec, modeled on TunnelRunner sessions) ──
+const _NAV_SAVES_KEY = 'ps_navigator_saves';
+const _NAV_ACTIVE_KEY = 'ps_navigator_active';
+const _NAV_SAVE_VERSION = 1;
+let _navLastSyncMs = 0;
+const _NAV_SYNC_INTERVAL_MS = 2000;
+
+function _navSavesLoad(){
+  try{
+    const raw = localStorage.getItem(_NAV_SAVES_KEY);
+    if(!raw) return [];
+    const parsed = JSON.parse(raw);
+    if(!Array.isArray(parsed)) return [];
+    // One-time migration: any slot whose id isn't 5-char A-Z0-9 gets a fresh 5-char id
+    const VALID = /^[A-Z0-9]{5}$/;
+    let dirty = false;
+    const seen = {};
+    const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+    const oldActive = (function(){ try{ return localStorage.getItem(_NAV_ACTIVE_KEY) || null; }catch(e){ return null; } })();
+    let activeRemap = null;
+    for(let i=0;i<parsed.length;i++){
+      const s = parsed[i]; if(!s) continue;
+      const cur = String(s.id||'');
+      if(!VALID.test(cur) || seen[cur]){
+        let fresh = '';
+        for(let attempt=0; attempt<200; attempt++){
+          fresh = '';
+          for(let k=0;k<5;k++) fresh += chars.charAt(Math.floor(Math.random()*chars.length));
+          if(!seen[fresh] && !parsed.some(function(x){ return x && x.id===fresh; })) break;
+        }
+        if(oldActive && oldActive===cur) activeRemap = fresh;
+        s.id = fresh;
+        dirty = true;
+      }
+      seen[s.id] = true;
+    }
+    if(dirty){
+      try{ localStorage.setItem(_NAV_SAVES_KEY, JSON.stringify(parsed)); }catch(e){}
+      if(activeRemap){ try{ localStorage.setItem(_NAV_ACTIVE_KEY, activeRemap); }catch(e){} }
+    }
+    return parsed;
+  }catch(e){ return []; }
+}
+function _navSavesWrite(saves){
+  try{ localStorage.setItem(_NAV_SAVES_KEY, JSON.stringify(saves)); }catch(e){}
+}
+function _navActiveId(){
+  try{ return localStorage.getItem(_NAV_ACTIVE_KEY) || null; }catch(e){ return null; }
+}
+function _navSetActiveId(id){
+  try{ if(id) localStorage.setItem(_NAV_ACTIVE_KEY, id); else localStorage.removeItem(_NAV_ACTIVE_KEY); }catch(e){}
+}
+function _navSerializeSlot(){
+  return {
+    score: state.score|0,
+    fuel: +state.fuel || 0,
+    currentLevel: state.currentLevel|0,
+    levelIndex: state.levelIndex|0,
+    x: +state.x || 0, y: +state.y || 0,
+    vx: +state.vx || 0, vy: +state.vy || 0,
+    angle: +state.angle || 0,
+    visitedLevels: state.visitedLevels ? Array.from(state.visitedLevels) : [1],
+    collectedItems: Array.isArray(state.collectedItems) ? state.collectedItems.slice() : [],
+    hyperspace: !!state.hyperspace,
+    hasWaveBeam: !!state.hasWaveBeam,
+    boostDoubled: !!state.boostDoubled,
+    _beltRocksDestroyed: state._beltRocksDestroyed | 0,
+    secretVisitCount: state.secretVisitCount | 0,
+    fireMode: state.fireMode || 'boost',
+    outsideBarrier: !!state.outsideBarrier,
+    _committedInside: !!state._committedInside,
+    editMissionComplete: !!state.editMissionComplete,
+    _peanutUnlocked: !!state._peanutUnlocked,
+    _interzoneComplete: !!state._interzoneComplete,
+    _izRingMax: (typeof state._izRingMax === 'number') ? state._izRingMax : -1,
+    _mission2Shown: !!state._mission2Shown,
+    _bossHPSeen: !!state._bossHPSeen,
+    _lastGaspFired: !!state._lastGaspFired,
+    _allBubblesPopped: !!state._allBubblesPopped,
+    _x2StarSpawned: !!state._x2StarSpawned,
+    _bossCaptureTriggered: !!state._bossCaptureTriggered,
+    _waveToggleTutorialDone: !!state._waveToggleTutorialDone,
+    _shipToggleTutorialDone: !!state._shipToggleTutorialDone,
+    _outerLaunchpadRefuelled: !!state._outerLaunchpadRefuelled,
+    _bubbleUnlocked: !!state._bubbleUnlocked,
+    _bossInMainWorld: !!state._bossInMainWorld,
+    _beaconRaceComplete_ANIMATE: !!state._beaconRaceComplete_ANIMATE,
+    _survivalComplete_DIRECT: !!state._survivalComplete_DIRECT,
+    secretUnlocked: !!state.secretUnlocked,
+    secretBossDefeated: !!state.secretBossDefeated,
+    inSecretLevel: !!state.inSecretLevel,
+    rocksDestroyed: state.rocksDestroyed|0,
+    songIndex: state.songIndex|0,
+    launchpadWalls: state.launchpadWalls ? { closed: !!state.launchpadWalls.closed } : { closed: true },
+    penBarrier: state.penBarrier ? { closed: !!state.penBarrier.closed } : { closed: true }
+  };
+}
+// 5-char A-Z0-9 id (matches TunnelRunner session naming)
+function _navGenId(){
+  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
+  const existing = _navSavesLoad().map(function(s){ return s && s.id; });
+  for(let attempt=0; attempt<200; attempt++){
+    let id = '';
+    for(let i=0;i<5;i++) id += chars.charAt(Math.floor(Math.random()*chars.length));
+    if(existing.indexOf(id) === -1) return id;
+  }
+  return 'X' + Math.floor(Math.random()*10000);
+}
+function _navSlotCreate(){
+  const saves = _navSavesLoad();
+  const id = _navGenId();
+  const now = Date.now();
+  const slot = Object.assign({ id: id, createdAt: now, lastPlayed: now, _version: _NAV_SAVE_VERSION }, _navSerializeSlot());
+  saves.push(slot);
+  _navSavesWrite(saves);
+  _navSetActiveId(id);
+  return id;
+}
+function _navSlotSync(){
+  const id = _navActiveId();
+  if(!id) return;
+  const saves = _navSavesLoad();
+  const idx = saves.findIndex(function(s){ return s && s.id===id; });
+  if(idx < 0) return;
+  saves[idx] = Object.assign({}, saves[idx], _navSerializeSlot(), { lastPlayed: Date.now(), _version: _NAV_SAVE_VERSION });
+  _navSavesWrite(saves);
+}
+function _navApplySlot(slot){
+  if(!slot) return;
+  state.score = slot.score|0;
+  state.fuel = +slot.fuel || 0;
+  state.currentLevel = slot.currentLevel|0 || 1;
+  state.levelIndex = slot.levelIndex|0 || 1;
+  state.x = +slot.x || 0; state.y = +slot.y || 0;
+  state.vx = 0; state.vy = 0;
+  state.angle = +slot.angle || 0;
+  state.visitedLevels = new Set(Array.isArray(slot.visitedLevels) && slot.visitedLevels.length ? slot.visitedLevels : [1]);
+  state.collectedItems = Array.isArray(slot.collectedItems) ? slot.collectedItems.slice() : [];
+  state.hyperspace = !!slot.hyperspace;
+  state.hasWaveBeam = !!slot.hasWaveBeam;
+  state.boostDoubled = !!slot.boostDoubled;
+  state._beltRocksDestroyed = slot._beltRocksDestroyed | 0;
+  state.secretVisitCount = slot.secretVisitCount | 0;
+  state.fireMode = slot.fireMode || 'boost';
+  state.outsideBarrier = !!slot.outsideBarrier;
+  state._committedInside = !!slot._committedInside;
+  state.editMissionComplete = !!slot.editMissionComplete;
+  state._peanutUnlocked = !!slot._peanutUnlocked;
+  state._interzoneComplete = !!slot._interzoneComplete;
+  state._izRingMax = (typeof slot._izRingMax === 'number') ? slot._izRingMax : -1;
+  state._mission2Shown = !!slot._mission2Shown;
+  state._bossHPSeen = !!slot._bossHPSeen;
+  state._lastGaspFired = !!slot._lastGaspFired;
+  state._allBubblesPopped = !!slot._allBubblesPopped;
+  state._x2StarSpawned = !!slot._x2StarSpawned;
+  state._bossCaptureTriggered = !!slot._bossCaptureTriggered;
+  state._waveToggleTutorialDone = !!slot._waveToggleTutorialDone;
+  state._shipToggleTutorialDone = !!slot._shipToggleTutorialDone;
+  state._outerLaunchpadRefuelled = !!slot._outerLaunchpadRefuelled;
+  state._bubbleUnlocked = !!slot._bubbleUnlocked;
+  state._bossInMainWorld = !!slot._bossInMainWorld;
+  state._beaconRaceComplete_ANIMATE = !!slot._beaconRaceComplete_ANIMATE;
+  state._survivalComplete_DIRECT = !!slot._survivalComplete_DIRECT;
+  state.secretUnlocked = !!slot.secretUnlocked;
+  state.secretBossDefeated = !!slot.secretBossDefeated;
+  state.inSecretLevel = !!slot.inSecretLevel;
+  state.rocksDestroyed = slot.rocksDestroyed|0;
+  state.songIndex = slot.songIndex|0;
+  if(state.launchpadWalls && slot.launchpadWalls){
+    state.launchpadWalls.closed = !!slot.launchpadWalls.closed;
+    state.launchpadWalls.opening = false;
+    state.launchpadWalls.openTimer = 0;
+  }
+  if(state.penBarrier && slot.penBarrier){
+    state.penBarrier.closed = !!slot.penBarrier.closed;
+    state.penBarrier.opening = false;
+    state.penBarrier.openTimer = 0;
+  }
+  state._prevX = state.x; state._prevY = state.y;
+  // Migrate legacy collectedItems: assign .level to any entries missing one,
+  // replicating per-zone for shared titles so each zone gets credit retroactively.
+  try{ _migrateCollectedItemsLevels(); }catch(e){}
+  // Recompute per-zone completion flags from canonical collectedItems — the
+  // completedLevel_X flags aren't serialised in the slot, so without this a
+  // fully-cleared zone reloads as incomplete (and e.g. the VIBE laser keeps
+  // auto-firing, fuel re-freezes in DIRECT, etc.).
+  try{ checkLevelComplete(); }catch(e){}
+  // Self-heal stuck secret-level gating flags on load. mainWorldBoss isn't
+  // serialised, so a save made while _bossInMainWorld=true loses the boss but
+  // keeps the flag — permanently blocking re-entry to the secret level. Clear
+  // both flags here if no real boss survives.
+  if((state._bossInMainWorld || state.secretBossDefeated) && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+    state._bossInMainWorld = false;
+    state.secretBossDefeated = false;
+  }
+  // Sync score DOM — state was set above, but the HUD element still shows the
+  // pre-load value until the next addScore() fires. Update it now so resume
+  // immediately reflects the saved score.
+  try{
+    const _scoreEl = document.getElementById('score');
+    if(_scoreEl) _scoreEl.textContent = String(state.score|0).padStart(6,'0');
+  }catch(e){}
+}
+
+// Convert legacy state.collectedItems entries that have no .level field into
+// per-zone tagged entries. For each no-level entry, look up which zones contain
+// the title and create one tagged copy per zone. Shared titles credit every
+// zone they appear in (matches the prior implicit no-level fallback behaviour).
+function _migrateCollectedItemsLevels(){
+  if(!Array.isArray(state.collectedItems)) return;
+  if(typeof LEVELS === 'undefined' || typeof CONTENT_DATA === 'undefined') return;
+  const _out = [];
+  state.collectedItems.forEach(function(c){
+    if(!c) return;
+    if(c.level || !c.title){ _out.push(c); return; }
+    const _zones = LEVELS.filter(function(zn){
+      return (CONTENT_DATA[zn]||[]).some(function(it){ return it && it.title === c.title; });
+    });
+    if(_zones.length === 0){ _out.push(c); return; }
+    _zones.forEach(function(zn){ _out.push(Object.assign({}, c, { level: zn })); });
+  });
+  state.collectedItems = _out;
+}
+function _navSlotInnerHtml(slot){
+  const lvlIdx = slot.currentLevel|0;
+  const _r2 = (+slot.x||0)*(+slot.x||0) + (+slot.y||0)*(+slot.y||0);
+  const _inPen = _r2 < PEN_BARRIER_R*PEN_BARRIER_R;
+  let lvlName;
+  if(slot.outsideBarrier){
+    lvlName = (typeof LEVELS!=='undefined' && LEVELS[lvlIdx]) ? LEVELS[lvlIdx] : 'OUTER';
+  } else if(_inPen){
+    lvlName = 'EDITING';
+  } else if(lvlIdx === 1){
+    lvlName = 'RING ZONE';
+  } else {
+    lvlName = (typeof LEVELS!=='undefined' && LEVELS[lvlIdx]) ? LEVELS[lvlIdx] : ('ZONE '+lvlIdx);
+  }
+  const score = (slot.score|0).toString().padStart(6,'0');
+  const id = String(slot.id||'').toUpperCase();
+  return ''+
+    '<div style="font-size:13px;color:#ffe000;letter-spacing:3px;text-shadow:0 0 8px rgba(255,224,0,0.5);margin-bottom:8px;">'+id+'</div>'+
+    '<div style="font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.8;">score: '+score+'</div>'+
+    '<div style="font-size:8px;color:#aaa;letter-spacing:1px;line-height:1.8;">zone: '+lvlName+'</div>';
+}
+function _navHasSaves(){ return _navSavesLoad().length > 0; }
+
+// Title-click router: panel if saves exist, otherwise straight into a new game.
+function _navHandleTitleClick(e){
+  if(state.started) return;
+  const boring = document.getElementById('boring-mode-popup');
+  if(boring && boring.style.display === 'flex') return;
+  const panel = document.getElementById('nav-saved-panel');
+  if(panel && panel.style.display !== 'none') return; // panel already open — clicks on backdrop are no-ops
+  if(_navHasSaves()){
+    _navShowSavedPanel();
+  } else {
+    startGame();
+  }
+}
+function _navShowSavedPanel(){
+  const panel = document.getElementById('nav-saved-panel');
+  const list = document.getElementById('nav-saved-list');
+  if(!panel || !list) return;
+  const saves = _navSavesLoad().slice().sort(function(a,b){ return (b.lastPlayed|0) - (a.lastPlayed|0); });
+  list.innerHTML = saves.map(function(s){
+    const safeId = String(s.id||'').replace(/[^a-zA-Z0-9_-]/g,'');
+    return '<div onclick="event.stopPropagation();_navResumeSlot(\''+safeId+'\')" style="position:relative;cursor:pointer;padding:14px 16px;margin:8px 0;border:1px solid #ffe000;background:rgba(0,0,0,0.4);text-align:center;font-family:\'Press Start 2P\',monospace;transition:background 0.15s;" onmouseover="this.style.background=\'rgba(255,224,0,0.08)\'" onmouseout="this.style.background=\'rgba(0,0,0,0.4)\'">'+_navSlotInnerHtml(s)+'<span onclick="event.stopPropagation();_navDeleteSlot(\''+safeId+'\')" title="Delete save" style="position:absolute;top:4px;right:8px;color:#ff5555;font-size:18px;line-height:1;padding:4px 6px;cursor:pointer;font-family:\'Press Start 2P\',monospace;" onmouseover="this.style.color=\'#ff8888\'" onmouseout="this.style.color=\'#ff5555\'">×</span></div>';
+  }).join('');
+  // Hide elements that conflict with panel; keep title-card and stars
+  const sub = document.getElementById('intro-sub'); if(sub) sub.style.display = 'none';
+  const fs  = document.getElementById('fullscreen-hint'); if(fs)  fs.style.display = 'none';
+  const lb  = document.getElementById('leaderboard'); if(lb)  lb.style.display = 'none';
+  const bm  = document.getElementById('boring-mode-link'); if(bm)  bm.style.display = 'none';
+  panel.style.display = 'block';
+}
+function _navResumeSlot(id){
+  const saves = _navSavesLoad();
+  const slot = saves.find(function(s){ return s && s.id===id; });
+  if(!slot){ startGame(); return; }
+  _navSetActiveId(id);
+  _navApplySlot(slot);
+  startGame({ resume: true });
+}
+function _navDeleteSlot(id){
+  const saves = _navSavesLoad().filter(function(s){ return s && s.id !== id; });
+  _navSavesWrite(saves);
+  // Clear active pointer if it referenced the deleted slot
+  if(_navActiveId() === id){
+    try{ localStorage.removeItem('ps_navigator_active'); }catch(e){}
+  }
+  if(saves.length === 0){
+    // No saves left — close panel, restore title screen elements
+    const panel = document.getElementById('nav-saved-panel');
+    if(panel) panel.style.display = 'none';
+    const sub = document.getElementById('intro-sub'); if(sub) sub.style.display = '';
+    const fs  = document.getElementById('fullscreen-hint'); if(fs)  fs.style.display = '';
+    const lb  = document.getElementById('leaderboard'); if(lb)  lb.style.display = '';
+    const bm  = document.getElementById('boring-mode-link'); if(bm)  bm.style.display = '';
+  } else {
+    // Re-render with remaining slots
+    _navShowSavedPanel();
+  }
+}
+function _navStartNewFromPanel(){
+  const panel = document.getElementById('nav-saved-panel');
+  if(panel) panel.style.display = 'none';
+  startGame();
+}
+
 // ── Analytics — silent POST to Google Sheets ──
 const _ANALYTICS_URL = 'https://script.google.com/macros/s/AKfycbxQcS_M7eZe3ob69qbxaH3QDUUqDQGvec6BKDN94wildC5p3LGTSwytm_2ZyutpznB4/exec';
 const _analyticsSession = Date.now().toString(36) + Math.random().toString(36).slice(2,6);
@@ -3165,16 +3592,6 @@ const FONT_24B = 'bold 24px "Press Start 2P",monospace';
 let _curFont = '';
 function setFont(f) { if (f !== _curFont) { ctx.font = f; _curFont = f; } }
 
-// Cursor auto-hide: hide after 2s idle, show on move
-var _cursorHideTimer = null;
-function _showCursorResetTimer(){
-  document.body.classList.remove('cursor-hidden');
-  if(_cursorHideTimer) clearTimeout(_cursorHideTimer);
-  _cursorHideTimer = setTimeout(function(){ document.body.classList.add('cursor-hidden'); }, 2000);
-}
-document.addEventListener('mousemove', _showCursorResetTimer);
-_showCursorResetTimer();
-
 // Zone HUD icon hover + click (canvas has pointer-events:none, so listen on document)
 var _zoneHUDIcons = [];
 document.addEventListener('mousemove', function(e){
@@ -3198,6 +3615,17 @@ document.addEventListener('click', function(e){
   const mx = e.clientX, my = e.clientY;
   // Victory room: no canvas clicks (menu is HTML-based)
   if(state._victoryPhase === 'room') return;
+  // First-collection hint thumbnail — clickable to open the video
+  if(_viewHintTimer > 0 && _viewHintHitBox){
+    const hb = _viewHintHitBox;
+    if(mx >= hb.x && mx <= hb.x + hb.w && my >= hb.y && my <= hb.y + hb.h && hb.item){
+      _viewHintTimer = 0;        // dismiss the hint
+      _viewHintHitBox = null;
+      openContent(hb.item, true);
+      e.stopPropagation();
+      return;
+    }
+  }
   for(let i=0; i<_zoneHUDIcons.length; i++){
     const ic = _zoneHUDIcons[i];
     if(ic.collected && Math.abs(mx-ic.x)<ic.r && Math.abs(my-ic.y)<ic.r){
@@ -3288,7 +3716,7 @@ const LEVEL_BG = {
   EDITING: { bg:'#000408',    stars:['#ffffff','#00ffff','#0088ff','#aaeeff'] },
   ANIMATE: { bg:'#001a08',    stars:['#ffffff','#00ff88','#88ffcc','#ccffee'] },
   PHOTO:   { bg:'#1a1400',    stars:['#ffffff','#00ffff','#0088ff','#aaeeff'] },
-  DESIGN:  { bg:'#1a0030',    stars:['#ff2200','#ff8800','#ffe000','#ff69b4','#ff44aa'] }
+  VIBE:    { bg:'#1a0030',    stars:['#ff2200','#ff8800','#ffe000','#ff69b4','#ff44aa'] }
 };
 
 function initStars() {
@@ -3617,8 +4045,8 @@ const MOON_ORBIT_R      = 1300;  // 600px outside debris rings (700 + 600)
 let   _moonOrbitAng     = Math.PI;  // start to the left of Earth (approach side)
 
 // 2D zone lookup: returns level index (0-4) or -1 for asteroid belt
-// LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','DESIGN']
-//   0=DIRECT(left)  1=EDIT(centre)  2=ANIMATE(right)  3=PHOTO(top)  4=DESIGN(bottom)
+// LEVELS = ['DIRECT','EDITING','ANIMATE','PHOTO','VIBE']
+//   0=DIRECT(left)  1=EDIT(centre)  2=ANIMATE(right)  3=PHOTO(top)  4=VIBE(bottom)
 function zoneAt(wx, wy){
   const r2 = wx*wx + wy*wy;
   if(r2 < EDIT_R*EDIT_R)   return 1;
@@ -3711,18 +4139,25 @@ function populateCell(gcx, gcy){
   populatedCells.add(key);
   // EDIT zone objects are pre-clustered near launchpad — skip cell-based content spawning
   const allItems = lvlIdx === 1 ? [] : getLevelItems(lvlIdx);
-  const slotsToFill = allItems.length === 0 ? 0 : ((cellHash % 3 < 2) ? 1 : 0); // ~2/3 cells spawn content → ~3 instances per item
+  // Beacon race: suppress new ANIMATE content spawning while race is live, so the
+  // route can't grow mid-flight and orphan-collectibles can't appear after completion.
+  const _suppressContent = state._beaconRace && lvlIdx === 2;
+  const slotsToFill = (allItems.length === 0 || _suppressContent) ? 0 : ((cellHash % 3 < 2) ? 1 : 0); // ~2/3 cells spawn content → ~3 instances per item
 
   for(let slot=0; slot<slotsToFill; slot++){
     const itemIdx = (cellHash + slot * 7919) % allItems.length;
     const pick = allItems[itemIdx];
     if(!pick) continue;
-    // Cap at 3 instances per content item per zone
+    // Cap instances per content item per zone — 1 for DIRECT (guardian system
+    // assumes single instance per title), 3 elsewhere.
     const existingCount = state.objects.filter(o=>
       !o.collected && o.content && o.content.title===pick.title &&
       zoneAt(o.wx, o.wy) === lvlIdx
     ).length;
-    if(existingCount >= 3) continue;
+    // DIRECT, PHOTO, and VIBE use one-per-title (guardian/shy/delivery mechanics
+    // assume single instance per title); EDITING and elsewhere keep the cap of 3.
+    const _maxPerTitle = (lvlIdx === 0 || lvlIdx === 3 || lvlIdx === 4) ? 1 : 3;
+    if(existingCount >= _maxPerTitle) continue;
     for(let attempt=0; attempt<20; attempt++){
       const wx = gcx*CELL_SIZE + margin + dhash(gcx,gcy,slot*1000+attempt+10)*span;
       const wy = gcy*CELL_SIZE + margin + dhash(gcx,gcy,slot*1000+attempt+510)*span;
@@ -3846,19 +4281,28 @@ function tickGrid(){
   // NOTE: skip frame 0 to avoid culling freshly-placed objects on game start
   if(state.frameCount > 0 && state.frameCount % 60 === 0){
     const cullR = (CELL_RADIUS+3)*CELL_SIZE;
-    const permDone = new Set((state.collectedItems||[]).map(c=>c.title));
+    // Per-zone permanent-collected map. Title alone isn't enough — shared titles
+    // (e.g. MAKE ANYTHING is in both DIRECT and ANIMATE) would be incorrectly
+    // culled if the player collected one zone but not the other. Match by
+    // collectedItems entry's .level against the object's geographic zone.
+    const _permDoneByZone = {};
+    (state.collectedItems||[]).forEach(c=>{
+      if(!c || !c.title || !c.level) return;
+      if(!_permDoneByZone[c.level]) _permDoneByZone[c.level] = new Set();
+      _permDoneByZone[c.level].add(c.title);
+    });
 
-    // Remove: (a) objects whose item is permanently collected,
-    //         (b) uncollected objects far outside the populated radius
-    // Social objects (_social:true) survive distance cull — they live in every zone
     state.objects = state.objects.filter(o=>{
-      // Permanent stations (social, bio) are never removed — even after collecting
       if(o._permanent || o._bio || o._social) return true;
-      // Boost gem: keep if not yet collected (may be very far away)
+      if(o._beaconProtected) return true;
       if(o._boostGem && !o.collected) return true;
       if(o.collected) return false;
       const t = o.content&&o.content.title;
-      if(t && permDone.has(t)) return false;
+      if(t){
+        const _zIdx = zoneAt(o.wx, o.wy);
+        const _zName = _zIdx >= 0 ? LEVELS[_zIdx] : null;
+        if(_zName && _permDoneByZone[_zName] && _permDoneByZone[_zName].has(t)) return false;
+      }
       const _dx=o.wx-state.x, _dy=o.wy-state.y;
       if(Math.abs(_dx)>cullR || Math.abs(_dy)>cullR) return false;
       return true;
@@ -3866,7 +4310,7 @@ function tickGrid(){
 
     // Cap arrays
     if(state.objects.length>200){
-      const far=state.objects.filter(o=>!o._permanent&&!o._bio&&!o._social&&!o._boostGem&&!o.collected);
+      const far=state.objects.filter(o=>!o._permanent&&!o._bio&&!o._social&&!o._boostGem&&!o._beaconProtected&&!o.collected);
       far.sort((a,b)=>((b.wx-state.x)**2+(b.wy-state.y)**2)-((a.wx-state.x)**2+(a.wy-state.y)**2));
       const rm=new Set(far.slice(0,far.length-150));
       state.objects=state.objects.filter(o=>!rm.has(o));
@@ -3986,7 +4430,7 @@ function initObjects() {
   // Bio stations: permanent objects inside each zone, near EDIT border
   // No bio for DIRECT (lvlIdx=0). EDIT bio at world centre.
   // Bio stations: place inside each zone, reachable by normal exploration
-  // Zone centres: ANIMATE=right(0°), PHOTO=up(270°), DESIGN=down(90°), DIRECT=left(180°)
+  // Zone centres: ANIMATE=right(0°), PHOTO=up(270°), VIBE=down(90°), DIRECT=left(180°)
   // Each bio placed near zone centre but offset 400px outward to avoid zone label overlap
   const ZONE_MID_R2 = (EDIT_R + ZONE_R) / 2 + 400;
   const _bioZones = [
@@ -3999,15 +4443,13 @@ function initObjects() {
   _bioZones.forEach(({lvlIdx, wx, wy, ang, r})=>{
     const lvlName = LEVELS[lvlIdx];
     if(!LEVEL_BIOS[lvlName]) return;
-    const bioTitle = lvlName+' // ABOUT';
-    if((state.collectedItems||[]).some(c=>c.title===bioTitle)) return;
     const bx = wx !== undefined ? wx : Math.cos(ang)*r;
     const by = wy !== undefined ? wy : Math.sin(ang)*r;
     state.objects.push({
       wx: bx, wy: by,
       size:52, shape:'square', rotSpeed:0.004,
       pulsePhase: lvlIdx*0.9, colorIndex: (lvlIdx*5)%11,
-      content:{title:bioTitle,text:LEVEL_BIOS[lvlName],vimeoId:null,youtubeId:null,duration:30,isBio:true},
+      content:{title:lvlName+' // ABOUT',text:LEVEL_BIOS[lvlName],vimeoId:null,youtubeId:null,duration:30,isBio:true},
       collected: false, _permanent: true, _bio: true
     });
   });
@@ -4122,28 +4564,10 @@ function finishHullImplosion(){
     var _hwIdx = (typeof MOODS!=='undefined') ? MOODS.findIndex(function(m){ return m.name==='HOMEWARD'; }) : -1;
     if(_hwIdx>=0){ state.songIndex=_hwIdx; playSong(_hwIdx); } else { resumeMusic(); }
   } else {
-    // Tiered respawn: east-of-barrier -> space station, other outside -> near hatch, else edit centre
-    const _impX = state._implosionRingWx, _impY = state._implosionRingWy;
-    const _outside = (_impX*_impX + _impY*_impY) > BELT_OUTER*BELT_OUTER;
-    const _eastOfBarrier = _outside && _impX > 0;
-    if(_eastOfBarrier){
-      state.x=OUTER_TARGET_WX; state.y=OUTER_TARGET_WY;
-      state.outsideBarrier=true; state._committedInside=false;
-      state.currentLevel=-99; state._outerZoneKey='OUTER BARRIER';
-    } else if(_outside){
-      state.x=BELT_OUTER-600; state.y=0;
-      state.outsideBarrier=false; state._committedInside=true;
-      state.currentLevel=1;
-      updateLevelDisplay(LEVELS[1]);
-    } else {
-      state.x=0; state.y=0; resetEnclosure();
-      state.outsideBarrier=false; state._committedInside=true;
-      state.currentLevel=1;
-      updateLevelDisplay(LEVELS[1]);
-    }
-    state.vx=0; state.vy=0;
-    state.fuel=1.0;
-    state._prevX=state.x; state._prevY=state.y;
+    // Auto-respawn at EDIT zone centre (launchpad), no choice screen
+    state.x=0; state.y=0; state.vx=0; state.vy=0; resetEnclosure();
+    state.fuel=1.0; state.outsideBarrier=false; state._committedInside=true;
+    state._prevX=0; state._prevY=0;
     state._implodeTimer=0; state._driftingDead=false; state._refuelDenied=false;
     state._driftTimer=0; state._implosionCountdown=0; state._shipDestroyed=false;
     state._implosionRing=false; state.gameOver=false;
@@ -4152,11 +4576,12 @@ function finishHullImplosion(){
     document.getElementById('refuel-popup-title').textContent='⚠ FUEL CRITICAL';
     document.getElementById('refuel-popup-sub').innerHTML='SHIP ADRIFT.<br>EMERGENCY TANKER ON STANDBY.';
     document.getElementById('refuel-popup-btn').textContent='[ REQUEST REFUEL ]';
+    state.currentLevel=1;
     populatedCells.clear(); state.spaceRocks=[]; state.wormholes=(state.wormholes||[]).filter(w=>w._editWarp); state.wormholeZoneSet=new Set();
     state.objects=state.objects.filter(function(o){ return o._permanent||o._bio||o._social||o._barrierBoost; });
     initObjects(); initBarrierObjects();
-    updateFuelBar();
-    state.zoneCrossFlash={lvl:-3,timer:220,msg:_outside?'HULL RECONSTRUCTED':'HULL RECONSTRUCTED, RETURNED TO BASE',_col:'#00ffcc'};
+    updateLevelDisplay(LEVELS[1]); updateFuelBar();
+    state.zoneCrossFlash={lvl:-3,timer:220,msg:'HULL RECONSTRUCTED — RETURNED TO BASE',_col:'#00ffcc'};
     resumeMusic();
   }
 }
@@ -4165,7 +4590,7 @@ function finishHullImplosion(){
 function _spawnPostInterzoneContent(){
   const DEG = Math.PI / 180;
   // Ring 10 (index 9) gap angles: INTERZONE_GAP_DEGS[9%8]=90 → gaps at 90° and 270°
-  const gapAngle1 = 90 * DEG;   // toward DESIGN (positive y)
+  const gapAngle1 = 90 * DEG;   // toward VIBE (positive y)
   const gapAngle2 = 270 * DEG;  // toward PHOTO (negative y)
   const gapAngles = [gapAngle1, gapAngle2];
 
@@ -4276,6 +4701,20 @@ function tickWormholeTransition(){
       if(!state.visitedLevels) state.visitedLevels=new Set([1]);
       state.visitedLevels.add(t.destLevel);
       updateLevelDisplay(LEVELS[t.destLevel]);
+      // Warp landing pre-sets currentLevel, so the zone-change detector in the
+      // main loop sees _prevZone === nowZone and never fires its per-zone hooks.
+      // Trigger them explicitly here for the destination zone.
+      if(t.destLevel === 0){ try{ _forceSpawnMissingZoneTitles(0); }catch(e){} }
+      if(t.destLevel === 2){
+        try{ _forceSpawnMissingZoneTitles(2); }catch(e){}
+        // Heal stale completion flag if zone is actually incomplete
+        try{ _beaconRaceRecheckComplete(); }catch(e){}
+        if(!state._beaconRaceComplete_ANIMATE && !state._beaconRace){
+          setTimeout(_beaconRaceStart, 1500);
+        }
+      }
+      if(t.destLevel === 3){ try{ _forceSpawnMissingZoneTitles(3); }catch(e){} }
+      if(t.destLevel === 4){ try{ _forceSpawnMissingZoneTitles(4); }catch(e){} }
       if(t.isExitSecret){
         // silent — no zone flash on secret level exit
         // Preserve session state that initObjects() would reset
@@ -4323,16 +4762,28 @@ function drawWormholeTransition(){
 
   ctx.save();
 
-  // Contracting glow ring — starts beyond screen edge, shrinks to centre throughout warp
+  // Contracting glow ring — starts beyond screen edge, shrinks to centre throughout warp.
+  // Two staggered trailing rings join in during the final stage for a layered closing effect.
   {
     const maxR = Math.max(W,H) * 0.95;
-    const ringR = maxR * (1 - progress);
-    if(ringR > 0){
+    // Each ring: [startProgress, lineWidthScale, alphaScale]
+    // Main ring runs the full warp; the two extras only kick in at the final stage.
+    const rings = [
+      { start: 0.0, widthBase: 18, widthExtra: 22, alphaBase: 0.55, alphaExtra: 0.25 },
+      { start: 0.5, widthBase: 12, widthExtra: 18, alphaBase: 0.45, alphaExtra: 0.30 },
+      { start: 0.7, widthBase: 8,  widthExtra: 14, alphaBase: 0.40, alphaExtra: 0.35 }
+    ];
+    for(let ri = 0; ri < rings.length; ri++){
+      const cfg = rings[ri];
+      if(progress < cfg.start) continue;
+      const localP = (progress - cfg.start) / (1 - cfg.start);
+      const ringR = maxR * (1 - localP);
+      if(ringR <= 0) continue;
       ctx.beginPath();
       ctx.arc(W/2, H/2, ringR, 0, Math.PI*2);
       ctx.strokeStyle = lc;
-      ctx.lineWidth = 18 + (1-progress)*22;
-      ctx.globalAlpha = 0.55 + progress*0.25;
+      ctx.lineWidth = cfg.widthBase + (1-localP)*cfg.widthExtra;
+      ctx.globalAlpha = cfg.alphaBase + localP*cfg.alphaExtra;
       ctx.shadowBlur = 48*SB;
       ctx.shadowColor = lc;
       ctx.stroke();
@@ -5407,7 +5858,8 @@ window.addEventListener('keydown',e=>{
     if(document.getElementById('boring-mode-popup').style.display==='flex') return;
     // Ignore key for 600ms after returnToTitle (prevents Enter from score submit firing startGame)
     if(Date.now() - (window._titleReturnTime||0) < 600) return;
-    startGame(); return;
+    // Route through title-click handler so saved-game panel can intercept
+    _navHandleTitleClick(null); return;
   }
   // Any key closes mission briefing (brief delay after show prevents accidental close)
   {
@@ -5477,13 +5929,15 @@ function cycleFireMode(){
   // Fire mode toggle flash text
   const _fmMsg = state.fireMode==='wave' ? 'WIGGLE WAVE ACTIVATED' : state.fireMode==='boost2x' ? 'HYPER DRIVE ENGAGED' : 'THRUSTER BOOST ACTIVATED';
   state.zoneCrossFlash = { lvl:-3, timer:80, msg:_fmMsg, _col:'#00ffcc' };
-  // Handle wave popup toggle interaction
+  // Handle wave popup toggle interaction — auto-dismiss after the player has
+  // demonstrated both directions of the Z toggle (2 presses).
   const _wp = document.getElementById('wave-popup-overlay');
   if(_wp){
-    _wavePopupToggled = true;
+    _wavePopupToggleCount++;
     _updateWavePopupHighlight();
-    const closeBtn = document.getElementById('wave-popup-close');
-    if(closeBtn) closeBtn.style.display = '';
+    if(_wavePopupToggleCount >= 2){
+      _dismissWavePopup();
+    }
   }
 }
 function updateFireModeUI(){
@@ -5532,13 +5986,15 @@ function cycleShipMode(){
     const now=audioCtx.currentTime;
     [0,4,7,12,16,12,7,4,0].forEach((n,i)=>playBeep(noteFreq(660,n),now+i*0.06,0.1,'square',0.06));
   }
-  // Handle peanut popup toggle interaction
+  // Handle peanut popup toggle interaction — auto-dismiss after the player has
+  // demonstrated both directions of the X toggle (2 presses).
   const _pp = document.getElementById('peanut-popup-overlay');
   if(_pp){
-    _peanutPopupToggled = true;
+    _peanutPopupToggleCount++;
     _updatePeanutPopupHighlight();
-    const closeBtn = document.getElementById('peanut-popup-close');
-    if(closeBtn) closeBtn.style.display = '';
+    if(_peanutPopupToggleCount >= 2){
+      _dismissPeanutPopup();
+    }
   }
   // Handle bubble popup toggle interaction
   const _bp = document.getElementById('bubble-popup-overlay');
@@ -5787,21 +6243,67 @@ function updateWaveBeams(){
     for(let oi=0;oi<state.objects.length&&!hit;oi++){
       const obj=state.objects[oi];
       if(obj.collected)continue;
+      if(obj._beaconRaceHidden) continue;
       const r=obj.size+16;
       if((obj.wx-b.wx)**2+(obj.wy-b.wy)**2 < r*r){
+        // Beacon Race: enforce in-order collection — only the active beacon's object can be picked up.
+        // Guard runs BEFORE obj.collected=true so a wrong-beacon brush doesn't silently consume it.
+        if(state._beaconRace && state._beaconRace.beacons && state._beaconRace.beacons.length){
+          const _activeB = state._beaconRace.beacons[state._beaconRace.activeIdx];
+          if(_activeB && _activeB.objRef && _activeB.objRef !== obj && !obj._permanent && !obj._bio && !obj._social){
+            // Wrong object — absorb the beam (b.maxAge=0) but don't collect, don't open popup.
+            b.maxAge=0; hit=true;
+            return;
+          }
+        }
         if(!obj._permanent && !obj._bio && !obj._social){
           _lastCollectedObj = obj;
           obj.collected=true;
+          const _ct = obj.content && obj.content.title;
+          // Mirror path-2 cascade: mark same-title duplicates collected ONLY in the
+          // same zone. Shared titles (e.g. DIRECT/ANIMATE) must be collected
+          // separately per zone so each zone gets its own collectedItems entry.
+          if(_ct){
+            const _objZone = zoneAt(obj.wx, obj.wy);
+            state.objects.forEach(o=>{
+              if(o===obj || o._permanent || o._bio) return;
+              if(!o.content || o.content.title !== _ct) return;
+              if(zoneAt(o.wx, o.wy) !== _objZone) return;
+              o.collected = true;
+            });
+          }
         }
         b.maxAge=0; hit=true;
         if(!state.collectedItems) state.collectedItems=[];
-        if(!state.collectedItems.find(c=>c.title===obj.content.title)){
+        if(!state.collectedItems.find(c=>c.title===obj.content.title && c.level===(LEVELS[state.currentLevel]||'EDITING'))){
           const ci={title:obj.content.title, level:LEVELS[state.currentLevel]||'EDITING'};
           state.collectedItems.push(ci);
           persistCollect(ci);
+          _playCollectBell();
+          _spawnCollectBurst(obj.wx, obj.wy);
           _pendingFlyTitle = obj.content.title;
         }
         openContent(obj.content);
+        // Beacon Race: advance if this collected object is the active beacon's target
+        if(state._beaconRace && state._beaconRace.beacons && state._beaconRace.beacons.length){
+          const _br = state._beaconRace;
+          const _ab = _br.beacons[_br.activeIdx];
+          if(_ab && _ab.objRef === obj){
+            _ab.hit = true;
+            _br.activeIdx++;
+            addScore(250);
+            if(_br.activeIdx >= _br.beacons.length){
+              addScore(3000);
+              state._beaconRaceComplete_ANIMATE = true;
+              state.zoneCrossFlash = { lvl:-3, timer:300, pre:'BEACON RACE', msg:'COMPLETE — +3000 PTS', _col: LEVEL_COLORS.ANIMATE };
+              // Reset NEXT MISSION arrow delay so the race-complete flash gets
+              // a clean 6s window before zone-complete arrows appear.
+              state._zoneCompleteHintDelay = 360;
+              _beaconRaceAbort();
+              _beaconRaceRecheckComplete();
+            }
+          }
+        }
       }
     }
     if(!hit){
@@ -5857,6 +6359,13 @@ function updateWaveBeams(){
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
             const _secretThresh = (state.secretVisitCount > 0) ? 5 : 15;
+            // Self-heal stuck gating flags before the check: if either flag is
+            // set but no actual main-world boss exists, the flag is stuck and
+            // shouldn't permanently block re-entry.
+            if((state._bossInMainWorld || state.secretBossDefeated) && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+              state._bossInMainWorld = false;
+              state.secretBossDefeated = false;
+            }
             if(state._beltRocksDestroyed >= _secretThresh && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
               state.secretUnlocked = true;
               _sendAnalytics('secret_found');
@@ -5960,8 +6469,8 @@ function openBoringMode(){
   const content = document.getElementById('boring-mode-content');
   if(!popup || !content) return;
 
-  const zoneOrder = ['DIRECT','EDITING','ANIMATE','PHOTO','DESIGN'];
-  const zoneColors = {DIRECT:'#ff69b4',EDITING:'#00ffcc',ANIMATE:'#00ff88',PHOTO:'#ffcc00',DESIGN:'#ff8c00'};
+  const zoneOrder = ['DIRECT','EDITING','ANIMATE','PHOTO','VIBE'];
+  const zoneColors = {DIRECT:'#ff69b4',EDITING:'#00ffcc',ANIMATE:'#00ff88',PHOTO:'#ffcc00',VIBE:'#ff8c00'};
 
   let html = '';
   zoneOrder.forEach(zone => {
@@ -6135,6 +6644,21 @@ function update(){
   if(state._victoryPhase) tickVictory();
   if(!state.started||state.paused||state.gameOver)return;
   state.frameCount++;
+  // Auto-open launchpad enclosure if ship is inside it (e.g. after save/load
+  // restoration parked the ship at origin with closed walls).
+  if(state.launchpadWalls && state.launchpadWalls.closed && !state.launchpadWalls.opening && !state.inSecretLevel){
+    const _shipR2 = state.x * state.x + state.y * state.y;
+    if(_shipR2 < ENCLOSURE_INIT_R * ENCLOSURE_INIT_R){
+      state.launchpadWalls.opening = true;
+      state.launchpadWalls.openTimer = 0;
+    }
+  }
+  try{ _beaconRaceTick(); }catch(e){ console.error('beaconRace tick error:', e); }
+  try{ _directGuardiansTick(); }catch(e){ console.error('directGuardians tick error:', e); }
+  try{ _photoShyTick(); }catch(e){ console.error('photoShy tick error:', e); }
+  try{ _vibeBricksTick(); }catch(e){ console.error('vibeBricks tick error:', e); }
+  try{ _vibeLasersTick(); }catch(e){ console.error('vibeLasers tick error:', e); }
+  try{ _tickCollectBursts(); }catch(e){ console.error('collectBursts tick error:', e); }
 
 
   // ── Camera offset — shift player off-center near large bodies ──
@@ -6292,9 +6816,10 @@ function update(){
     let _fuelRate;
     if(state.outsideBarrier){
       // Per-pixel burn: same total fuel regardless of speed
-      // Target: 2x boost uses ~0.89 fuel over 62500px, leaving ~11% margin on reach
+      // Target: 2x boost uses ~0.92 fuel over 62500px (1736 frames at 36px/frame)
+      // 0.92/1736 = 0.00053 per frame at 36px/frame → 0.00053/36 per pixel = 0.0000147/px
       const _spd = Math.sqrt(state.vx*state.vx + state.vy*state.vy);
-      const _basePxRate = 0.0000142;
+      const _basePxRate = 0.0000147;
       // Proximity amplifier: within 15000px of target, 1x boost burns 4x more
       const _tDist = Math.sqrt((state.x-OUTER_TARGET_WX)**2 + state.y**2);
       const _proxAmp = (!state.boostDoubled && _tDist < 15000) ? (1 + 3*(1-_tDist/15000)) : 1;
@@ -6302,8 +6827,12 @@ function update(){
     } else {
       _fuelRate = state.fireMode==='boost2x' ? 0.000297*0.25 : 0.000297;
     }
-    // Skip fuel drain during boost pad effect — the pad is a free ride
-    if(!state.inSecretLevel && state._boostPadEffect <= 0) state.fuel=Math.max(0,state.fuel-_fuelRate);
+    // Skip fuel drain during boost pad effect — the pad is a free ride.
+    // Freeze fuel in DIRECT zone ONLY while it's incomplete — guardian fight
+    // needs full mobility, but once the zone is cleared it should behave like
+    // any other zone.
+    const _freezeForDirect = state.currentLevel === 0 && !state.completedLevel_0;
+    if(!state.inSecretLevel && state._boostPadEffect <= 0 && !_freezeForDirect) state.fuel=Math.max(0,state.fuel-_fuelRate);
     if(!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){ state.hsTail.push({vx:state.vx,vy:state.vy,age:0}); }
     state.hsTail.forEach(t=>t.age++);
     state.hsTail=state.hsTail.filter(t=>t.age<28);
@@ -6314,7 +6843,8 @@ function update(){
   }
 
   if((state.keys['ArrowUp']||state.keys['ArrowDown'])&&!state.hyperspace&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){
-    if(!state.inSecretLevel) state.fuel=Math.max(0,state.fuel-0.0001425);
+    const _freezeForDirect2 = state.currentLevel === 0 && !state.completedLevel_0;
+    if(!state.inSecretLevel && !_freezeForDirect2) state.fuel=Math.max(0,state.fuel-0.0001425);
   }
   if(state.inSecretLevel){ state.fuel=1.0; } updateFuelBar(); updateBossHP();
   if(!state.inSecretLevel && state.fuel<=0&&!state.gameOver&&!state.refuelShip&&!state.refuelRequested&&!state._driftingDead&&!state._implosionCountdown&&!state._implodeTimer){triggerFuelEmpty();}
@@ -6384,6 +6914,21 @@ function update(){
       state.currentLevel = nowZone;
       if(!state.visitedLevels) state.visitedLevels = new Set([1]);
       if(nowZone >= 0) state.visitedLevels.add(nowZone);
+      // Beacon Race: ANIMATE zone — fire on ANY entry (including dev-teleport)
+      if(nowZone === 2){
+        // Heal stale completion flag if zone is actually incomplete
+        try{ _beaconRaceRecheckComplete(); }catch(e){}
+        if(!state._beaconRaceComplete_ANIMATE && !state._beaconRace){
+          setTimeout(_beaconRaceStart, 1500);
+        }
+      }
+      // DIRECT-zone challenge is now the always-on guardian system (no entry trigger).
+      // Force-spawn any uncollected DIRECT / PHOTO / VIBE titles that never populated
+      // in cells the player visited — so completion is always reachable.
+      if(nowZone === 0){ try{ _forceSpawnMissingZoneTitles(0); }catch(e){} }
+      if(nowZone === 2){ try{ _forceSpawnMissingZoneTitles(2); }catch(e){} }
+      if(nowZone === 3){ try{ _forceSpawnMissingZoneTitles(3); }catch(e){} }
+      if(nowZone === 4){ try{ _forceSpawnMissingZoneTitles(4); }catch(e){} }
       _sendAnalytics('zone_enter', { zone: nowZone >= 0 ? LEVELS[nowZone] : 'BELT' });
       const _zLabel = nowZone >= 0 ? LEVELS[nowZone] : 'ASTEROID BELT';
       updateLevelDisplay(_zLabel);
@@ -6399,7 +6944,7 @@ function update(){
             }, 1400);
           }
         } else {
-          updateLevelDisplay('INTER');
+          updateLevelDisplay('RING ZONE');
         }
       } else if(nowZone >= 0 && nowZone !== 1 && state._interzoneComplete){
         // Outer zone entry — zone name flash first, then mission briefing
@@ -6411,14 +6956,24 @@ function update(){
         state[_zoneEntryKey]++;
         const _zoneItems = CONTENT_DATA[_zoneName] || [];
         const _zoneTotal = _zoneItems.length;
-        const _permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
+        // Strict per-zone: shared titles between zones are treated as separate
+        // objects — must be collected once in each zone to credit that zone.
+        const _permCollected = new Set((state.collectedItems||[]).filter(c=>c && c.level === _zoneName).map(c=>c.title));
         const _zoneCollected = _zoneItems.filter(it=>_permCollected.has(it.title)).length;
         // Catch-up: if all items collected but flag was never set (e.g. drifted zones during checkLevelComplete timeout)
-        if(!state['completedLevel_'+_mZone] && _zoneTotal > 0 && _zoneCollected >= _zoneTotal){
+        const _wasComplete = !!state['completedLevel_'+_mZone];
+        if(!_wasComplete && _zoneTotal > 0 && _zoneCollected >= _zoneTotal){
           state['completedLevel_'+_mZone] = true;
+          // Fresh completion via catch-up — fire the same stinger checkLevelComplete plays.
+          try{ _playZoneCompleteStinger(); }catch(e){}
         }
-        // Show mission text — skip if zone already completed, or if fighting boss
-        if(!state['completedLevel_'+_mZone] && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+        // Zone-clear flash on re-entry: confirm to the player every time they
+        // return to a finished zone that there's nothing left to do here.
+        if(state['completedLevel_'+_mZone] && _zoneTotal > 0 && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+          setTimeout(function(){
+            state.zoneCrossFlash = { lvl: -3, timer: 260, pre: 'ZONE CLEAR', msg: 'ALL ' + _zoneName + ' OBJECTS COLLECTED', _col: '#00ffcc' };
+          }, 1400);
+        } else if(!state['completedLevel_'+_mZone] && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
           if(_zoneTotal > 0 && _zoneCollected >= Math.ceil(_zoneTotal * 0.8)){
             setTimeout(function(){
               state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'MISSION 3:', msg: 'COLLECT ALL REMAINING ' + _zoneName + ' OBJECTS', _col: '#00ffcc' };
@@ -6454,7 +7009,7 @@ function update(){
         updateLevelDisplay('EDITING');
       } else if(!_nowInPen && state._wasInPen && !wormholeTransition){
         // Leaving pen into interzone — show MISSION 2 text + force-clear left HUD hint
-        updateLevelDisplay('INTER');
+        updateLevelDisplay('RING ZONE');
         state._hudHintAt = 0;
         if(!state._mission2Shown){
           state._mission2Shown = true;
@@ -6843,7 +7398,10 @@ function update(){
           state.zoneCrossFlash = { lvl: -3, timer: 300, pre: 'INTERZONE:', msg: _ringLabel, _col: '#00ffcc' };
         }
         // Final ring cleared — interzone complete sequence
-        if(ir2 === INTERZONE_RINGS.length - 1 && !state._interzoneComplete){
+        const _exitR = INTERZONE_RINGS[INTERZONE_RINGS.length - 1];
+        const _r2 = state.x*state.x + state.y*state.y;
+        const _nearExit = _r2 >= _exitR*_exitR && _r2 <= (_exitR + 200)*(_exitR + 200);
+        if(ir2 === INTERZONE_RINGS.length - 1 && !state._interzoneComplete && !state._peanutUnlocked && _nearExit){
           state._interzoneComplete = true;
           _sendAnalytics('interzone_complete');
           // Kill boosters
@@ -7278,6 +7836,13 @@ function update(){
           if(zoneAt(r.wx, r.wy) === -1){
             state._beltRocksDestroyed = (state._beltRocksDestroyed||0) + 1;
             const _secretThresh = (state.secretVisitCount > 0) ? 5 : 15;
+            // Self-heal stuck gating flags before the check: if either flag is
+            // set but no actual main-world boss exists, the flag is stuck and
+            // shouldn't permanently block re-entry.
+            if((state._bossInMainWorld || state.secretBossDefeated) && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+              state._bossInMainWorld = false;
+              state.secretBossDefeated = false;
+            }
             if(state._beltRocksDestroyed >= _secretThresh && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
               state.secretUnlocked = true;
               _sendAnalytics('secret_found');
@@ -7857,23 +8422,62 @@ function update(){
   if(!state.inSecretLevel){
     state.objects.forEach(obj=>{
       if(obj.collected)return;
+      if(obj._beaconRaceHidden) return;
       const _qdx=obj.wx-state.x,_qdy=obj.wy-state.y;
       if(_qdx*_qdx+_qdy*_qdy>360000)return;
       if((obj._permanent||obj._bio||obj._social) && obj._cooldown && obj._cooldown > state.frameCount) return;
       if(nearCenter(obj.wx,obj.wy,obj.size+14)){
+        // Beacon Race: enforce in-order collection — only the active beacon's object
+        if(state._beaconRace && state._beaconRace.beacons && state._beaconRace.beacons.length){
+          const _activeB = state._beaconRace.beacons[state._beaconRace.activeIdx];
+          if(_activeB && _activeB.objRef && _activeB.objRef !== obj && !obj._permanent && !obj._bio && !obj._social){
+            return;  // wrong object — skip collection during race
+          }
+        }
+        // Track interaction position for burst spawn — applies to all object
+        // types (incl. bio/social) so the burst lands on the actual object.
+        _lastCollectedObj = obj;
         // Permanent stations (social/bio) stay visible — don't mark collected
         if(!obj._permanent && !obj._bio && !obj._social){
-          _lastCollectedObj = obj;
           obj.collected=true;
           const ct=obj.content&&obj.content.title;
-          // Also mark other copies of same item (from other cells)
-          if(ct){ state.objects.forEach(o=>{ if(o!==obj&&!o._permanent&&!o._bio&&o.content&&o.content.title===ct) o.collected=true; }); }
+          // Mark same-title duplicates collected ONLY in the same zone. Shared
+          // titles (e.g. DIRECT/ANIMATE) need separate per-zone collection.
+          if(ct){
+            const _objZone = zoneAt(obj.wx, obj.wy);
+            state.objects.forEach(o=>{
+              if(o===obj || o._permanent || o._bio) return;
+              if(!o.content || o.content.title !== ct) return;
+              if(zoneAt(o.wx, o.wy) !== _objZone) return;
+              o.collected = true;
+            });
+          }
           if(ct && !(state.collectedItems||[]).find(c=>c.title===ct)) _pendingFlyTitle = ct;
         } else {
           // Set cooldown so it won't re-trigger until player moves away and returns
           obj._cooldown = state.frameCount + 180;
         }
         openContent(obj.content);
+        // Beacon Race: advance if this collected object is the active beacon's target
+        if(state._beaconRace && state._beaconRace.beacons && state._beaconRace.beacons.length){
+          const _br = state._beaconRace;
+          const _ab = _br.beacons[_br.activeIdx];
+          if(_ab && _ab.objRef === obj){
+            _ab.hit = true;
+            _br.activeIdx++;
+            addScore(250);
+            if(_br.activeIdx >= _br.beacons.length){
+              addScore(3000);
+              state._beaconRaceComplete_ANIMATE = true;
+              state.zoneCrossFlash = { lvl:-3, timer:300, pre:'BEACON RACE', msg:'COMPLETE — +3000 PTS', _col: LEVEL_COLORS.ANIMATE };
+              // Reset NEXT MISSION arrow delay so the race-complete flash gets
+              // a clean 6s window before zone-complete arrows appear.
+              state._zoneCompleteHintDelay = 360;
+              _beaconRaceAbort();
+              _beaconRaceRecheckComplete();
+            }
+          }
+        }
         // Bio objects: mark collected after first pickup so they disappear
         if(obj._bio && state.collectedItems.find(c=>c.title===obj.content.title)){
           obj.collected = true;
@@ -8114,6 +8718,7 @@ function requestRefuel(){
     const dist=900+Math.random()*400;
     const sx=state.x+Math.cos(ang)*dist;
     const sy=state.y+Math.sin(ang)*dist;
+    try{ _playRefuelAnthem(); }catch(e){}
     state.refuelShip={
       phase:'incoming', timer:0,
       wx:sx, wy:sy,
@@ -8128,7 +8733,7 @@ function hardRestart(){
   _dismissBubblePopup();
   _dismissWavePopup();
   // Reset first-collection animation state
-  _firstCollectAnimDone = false; _firstFuelAnimDone = false; _shipInputSeen = false;
+  _firstCollectZonesDone = new Set(); _firstFuelAnimDone = false; _shipInputSeen = false;
   _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
   _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
   _lastCollectedObj = null;
@@ -8842,6 +9447,7 @@ function tickBossExplosion(){
     var _svV2=state.visitedLevels,_svC2=state.collectedItems?state.collectedItems.slice():[],_svS2=state.score;
     populatedCells.clear();initStars();initObjects();resumeMusic();updateFireModeUI();
     state.visitedLevels=_svV2;state.collectedItems=_svC2;state.score=_svS2;
+    try{ _spawnEditWormholes(); }catch(e){}
   }
 }
 // ── Zone Object HUD — left-side vertical progress column ──
@@ -8884,7 +9490,15 @@ function drawZoneHUD(){
 
   const shape=ZONE_SHAPES[lvl];
   const col=LEVEL_OBJ_COLORS[zoneName]||LEVEL_COLORS[zoneName];
-  const collectedSet=new Set((state.collectedItems||[]).map(c=>c.title));
+  // Per-zone strictness: only count titles whose collectedItems entry is tagged
+  // to THIS zone (or legacy untagged entries). Otherwise cross-zone shared
+  // titles get marked collected here even when the separate per-zone object
+  // is still alive in the world.
+  const collectedSet=new Set(
+    (state.collectedItems||[])
+      .filter(c=>!c.level||c.level===zoneName)
+      .map(c=>c.title)
+  );
   const count=items.length;
 
   const iconSize=10;
@@ -9181,7 +9795,7 @@ function drawRadarMap(){
   if(_woDist <= mapR + outerR){
     var sectors = [
       { idx: 2, a1: -Q,   a2: Q,   col: LEVEL_COLORS.ANIMATE, lbl: 'ANI' },
-      { idx: 4, a1: Q,    a2: 3*Q, col: LEVEL_COLORS.DESIGN,  lbl: 'DES' },
+      { idx: 4, a1: Q,    a2: 3*Q, col: LEVEL_COLORS.VIBE,    lbl: 'VIB' },
       { idx: 3, a1: -3*Q, a2: -Q,  col: LEVEL_COLORS.PHOTO,   lbl: 'PHO' },
       { idx: 0, a1: 3*Q,  a2: 5*Q, col: LEVEL_COLORS.DIRECT,  lbl: 'DIR' }
     ];
@@ -9264,24 +9878,13 @@ function drawRadarMap(){
     ctx.stroke();
   }
 
-  // EDIT label at world centre
-  if(visited.has(1)){
-    var _eLabelDist = Math.sqrt((wox - mapX) * (wox - mapX) + (woy - mapY) * (woy - mapY));
-    if(_eLabelDist < mapR){
-      var editFs = viewR < 5000 ? 12 : viewR < 15000 ? 10 : 8;
-      ctx.font = editFs + 'px "Press Start 2P",monospace'; _curFont='';
-      ctx.fillStyle = 'rgba(0,255,204,0.5)';
-      ctx.textAlign = 'center';
-      ctx.textBaseline = 'middle';
-      ctx.fillText('EDITING', wox, woy);
-    }
-  }
+  // EDITING label removed — pen barrier ring already shows the centre zone
 
   // ── Object dots — uncollected content objects, offset by radar centre ──
   ctx.globalAlpha = 0.6;
   for(var oi = 0; oi < state.objects.length; oi++){
     var obj = state.objects[oi];
-    if(obj.collected || !obj.content || obj._bio || obj._social || obj._barrierBoost) continue;
+    if(obj.collected || !obj.content || obj._barrierBoost || obj._beaconRaceHidden) continue;
     var ox = mapX + (obj.wx - state._radarCX) * scale;
     var oy = mapY + (obj.wy - state._radarCY) * scale;
     var odx = ox - mapX, ody = oy - mapY;
@@ -9791,6 +10394,7 @@ function drawGame(){
   _fpSub._tObjs0=performance.now();
   if(!state.inSecretLevel || state._victoryPhase==='room') state.objects.forEach(obj=>{
     if(obj.collected)return;
+    if(obj._beaconRaceHidden) return;
     const sx=obj.wx-state.x+cx, sy=obj.wy-state.y+cy;
     const offScreen=sx<-60||sx>canvas.width+60||sy<-60||sy>canvas.height+60;
     if(offScreen) return;
@@ -11680,6 +12284,14 @@ function drawGame(){
 
   }
 
+  // Beacon Race overlay — world-space rings + small HUD timer
+  try{ _beaconRaceDraw(); }catch(e){ console.error('beaconRace draw error:', e); }
+  // Survival Defense overlay — world-space enemies + HUD
+  try{ _directGuardiansDraw(); }catch(e){ console.error('directGuardians draw error:', e); }
+  try{ _vibeBricksDraw(); }catch(e){ console.error('vibeBricks draw error:', e); }
+  try{ _vibeLasersDraw(); }catch(e){ console.error('vibeLasers draw error:', e); }
+  try{ _drawCollectBursts(); }catch(e){ console.error('collectBursts draw error:', e); }
+
   // Collision flash overlay — disabled for testing
   // if(state.collisionFlash>0){
   //   ctx.save();
@@ -11774,6 +12386,160 @@ function drawFuelObject(sx,sy,f){
 }
 
 //  SCORE & LEVEL
+// World-space starburst particle effect for collection feedback. A bright
+// expanding ring + radial spark particles that twinkle outward, drawn in the
+// same coordinate space as content objects.
+function _spawnCollectBurst(wx, wy){
+  if(!state.collectBursts) state.collectBursts = [];
+  // Central expanding ring
+  state.collectBursts.push({
+    kind: 'ring', wx: wx, wy: wy,
+    age: 0, maxAge: 26
+  });
+  // Outer radial sparks
+  const count = 16;
+  for(let i = 0; i < count; i++){
+    const ang = (i / count) * Math.PI * 2 + Math.random() * 0.4;
+    const spd = 3.5 + Math.random() * 3.5;
+    state.collectBursts.push({
+      kind: 'spark', wx: wx, wy: wy,
+      vx: Math.cos(ang) * spd, vy: Math.sin(ang) * spd,
+      age: 0, maxAge: 42 + Math.floor(Math.random() * 18),
+      hue: 38 + Math.random() * 22 // warm gold range
+    });
+  }
+}
+
+function _tickCollectBursts(){
+  if(!state.collectBursts || !state.collectBursts.length) return;
+  for(let i = state.collectBursts.length - 1; i >= 0; i--){
+    const p = state.collectBursts[i];
+    p.age++;
+    if(p.age >= p.maxAge){ state.collectBursts.splice(i, 1); continue; }
+    if(p.kind === 'spark'){
+      p.wx += p.vx;
+      p.wy += p.vy;
+      p.vx *= 0.91;
+      p.vy *= 0.91;
+    }
+  }
+}
+
+function _drawCollectBursts(){
+  if(!state.collectBursts || !state.collectBursts.length) return;
+  const cx = CX(), cy = CY();
+  const W = canvas.width, H = canvas.height;
+  state.collectBursts.forEach(function(p){
+    const sx = p.wx - state.x + cx;
+    const sy = p.wy - state.y + cy;
+    if(sx < -60 || sx > W + 60 || sy < -60 || sy > H + 60) return;
+    const tnorm = 1 - (p.age / p.maxAge);
+    if(p.kind === 'ring'){
+      const r = 8 + (1 - tnorm) * 48;
+      ctx.save();
+      ctx.globalAlpha = tnorm * 0.85;
+      ctx.strokeStyle = '#fff2a8';
+      ctx.shadowColor = '#ffd66a';
+      ctx.shadowBlur = 18;
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.stroke();
+      ctx.restore();
+    } else {
+      const r = 1.8 + tnorm * 2.2;
+      ctx.save();
+      ctx.globalAlpha = tnorm;
+      ctx.fillStyle = 'hsl(' + p.hue + ', 100%, ' + (60 + tnorm * 25) + '%)';
+      ctx.shadowColor = 'hsl(' + p.hue + ', 100%, 70%)';
+      ctx.shadowBlur = 10;
+      ctx.beginPath();
+      ctx.arc(sx, sy, r, 0, Math.PI * 2);
+      ctx.fill();
+      // Cross-spark line through centre for that "twinkle" star feel
+      ctx.strokeStyle = 'rgba(255, 240, 200, ' + (tnorm * 0.8) + ')';
+      ctx.lineWidth = 1;
+      ctx.beginPath();
+      ctx.moveTo(sx - r * 2, sy); ctx.lineTo(sx + r * 2, sy);
+      ctx.moveTo(sx, sy - r * 2); ctx.lineTo(sx, sy + r * 2);
+      ctx.stroke();
+      ctx.restore();
+    }
+  });
+}
+
+// Refuel anthem — low-register Star Wars-style "dum dum dum" bobbing groove.
+// Pre-schedules a repeating 4-bar phrase across the entire ~15s refuel
+// sequence (incoming 6s + refueling 4s + outgoing 5s). Low bass + sub pad +
+// octave shimmer. Plays once at the start of the refuel request.
+function _playRefuelAnthem(){
+  if(!audioCtx || state.sfxMuted) return;
+  const t0 = audioCtx.currentTime;
+  const DUR = 15.5;     // covers full incoming + refuel + outgoing window
+  // Baritone / horn range (C3–D4). Heroic, warm, not sub-bass.
+  const C3 = 130.81, D3 = 146.83, E3 = 164.81, F3 = 174.61,
+        G3 = 196.00, A3 = 220.00, Bb3 = 233.08, C4 = 261.63, D4 = 293.66;
+  // Heroic bobbing fanfare — 4-second phrase in C major, loops to fill DUR.
+  // Three confident pulses, leap up, descend, resolve.
+  const phrase = [
+    { n: G3,  t: 0.00, d: 0.42 },  // dum
+    { n: G3,  t: 0.55, d: 0.42 },  // dum
+    { n: G3,  t: 1.10, d: 0.42 },  // dum
+    { n: C4,  t: 1.70, d: 0.55 },  // heroic leap up to tonic
+    { n: G3,  t: 2.35, d: 0.40 },  // back down (fifth)
+    { n: A3,  t: 2.85, d: 0.40 },  // bobbing step
+    { n: F3,  t: 3.30, d: 0.22 },  // descent
+    { n: E3,  t: 3.55, d: 0.22 },
+    { n: C3,  t: 3.78, d: 0.20 }   // resolve to tonic before loop
+  ];
+  const phraseLen = 4.0;
+  for(let loop = 0; loop * phraseLen < DUR; loop++){
+    const offset = loop * phraseLen;
+    phrase.forEach(function(note){
+      if(offset + note.t > DUR) return;
+      // Triangle body for warmth + sine octave shimmer for brightness
+      playBeep(note.n,     t0 + offset + note.t, note.d, 'triangle', 0.11);
+      playBeep(note.n * 2, t0 + offset + note.t, note.d, 'sine',     0.04);
+    });
+  }
+  // Gentle held tonic pad underneath — sine only, no sawtooth buzz
+  playBeep(C3,     t0, DUR, 'sine', 0.04);
+  playBeep(C3 * 2, t0, DUR, 'sine', 0.02);
+}
+
+// Zone-complete stinger — bigger, more triumphant than the per-item bell.
+// Plays once on the false→true flip of any completedLevel_X flag (either via
+// checkLevelComplete or the zone-entry catch-up).
+function _playZoneCompleteStinger(){
+  if(!audioCtx || state.sfxMuted) return;
+  const t = audioCtx.currentTime;
+  // C major arpeggio C5→E5→G5→C6, then a sustained C major triad on top
+  playBeep(523.25,  t,        0.20, 'square',   0.10);
+  playBeep(659.25,  t + 0.14, 0.20, 'square',   0.10);
+  playBeep(783.99,  t + 0.28, 0.20, 'square',   0.10);
+  playBeep(1046.50, t + 0.42, 0.60, 'square',   0.12);
+  // Sustained chord layer for body / fullness
+  playBeep(1318.51, t + 0.42, 0.60, 'sine',     0.06);
+  playBeep(1567.98, t + 0.45, 0.55, 'sine',     0.05);
+  // High sparkle on top of the final beat
+  playBeep(2093.00, t + 0.48, 0.35, 'triangle', 0.04);
+}
+
+// Success chime for any object collection — ascending major arpeggio with
+// staggered onsets and overlapping decays for a sparkling rise. Fires once per
+// new collection (placed at each collectedItems push).
+function _playCollectBell(){
+  if(!audioCtx || state.sfxMuted) return;
+  const t = audioCtx.currentTime;
+  // E6 → G#6 → B6 → E7, each ~60ms apart, longer tail on the top note
+  playBeep(1318.5, t,        0.32, 'sine', 0.10);
+  playBeep(1661.2, t + 0.06, 0.34, 'sine', 0.09);
+  playBeep(1975.5, t + 0.12, 0.38, 'sine', 0.08);
+  playBeep(2637.0, t + 0.18, 0.50, 'sine', 0.07);
+  // Faint sparkle on top — octave higher, brief
+  playBeep(3951.0, t + 0.18, 0.18, 'triangle', 0.03);
+}
+
 function persistCollect(item){
   try{const sv=JSON.parse(localStorage.getItem('ps_collected')||'[]');
     if(!sv.find(x=>x.title===item.title)){sv.push(item);localStorage.setItem('ps_collected',JSON.stringify(sv));}
@@ -11972,18 +12738,20 @@ function openContent(item, replay=false){
   }
 
   if(!_contentPopupsOn && !replay){
-    if(item && item.title && !state.collectedItems.find(c=>c.title===item.title)){
+    const _curLvl = LEVELS[state.currentLevel] || null;
+    if(item && item.title && !state.collectedItems.find(c=>c.title===item.title && c.level===_curLvl)){
       if(item.duration){ addScore(Math.floor(item.duration*5)); }
       const pop = document.getElementById('score-popup');
       if(pop){ pop.textContent = item.duration ? '+'+Math.floor(item.duration*5)+' PTS' : '+PTS';
         pop.style.opacity='1'; setTimeout(()=>{ pop.style.opacity='0'; },800); }
-      state.collectedItems.push(item);
+      state.collectedItems.push(Object.assign({}, item, { level: LEVELS[state.currentLevel] || null }));
       persistCollect(item);
+      _playCollectBell();
+      if(_lastCollectedObj) _spawnCollectBurst(_lastCollectedObj.wx, _lastCollectedObj.wy);
       _spawnHudFlyAnim(item.title);
       _pendingFlyTitle = null; // consumed — prevent closeContent from replaying
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
-    if(audioCtx&&!state.sfxMuted){const now=audioCtx.currentTime;[0,4,7,12,16].forEach((n,i)=>playBeep(noteFreq(440,n),now+i*0.07,0.14,'square',0.055));}
     return;
   }
 
@@ -11991,12 +12759,15 @@ function openContent(item, replay=false){
   if(item.isSinglePhoto && item.singleUrl){
     // No music pause for photos — only video gets paused
     state.paused=true; state.contentOpen=true;
-    if(!replay && !state.collectedItems.find(c=>c.title===item.title)){
+    const _curLvlSp = LEVELS[state.currentLevel] || null;
+    if(!replay && !state.collectedItems.find(c=>c.title===item.title && c.level===_curLvlSp)){
       if(item.duration>0) addScore(item.duration*40);
-      state.collectedItems.push(item);
+      state.collectedItems.push(Object.assign({}, item, { level: _curLvlSp }));
       persistCollect(item);
+      _playCollectBell();
+      if(_lastCollectedObj) _spawnCollectBurst(_lastCollectedObj.wx, _lastCollectedObj.wy);
+      setTimeout(()=>{checkLevelComplete();checkAllLevelsCollected();},800);
     }
-    if(!replay&&!state.collectedItems.find(c=>c.title===item.title)){setTimeout(()=>{checkLevelComplete();checkAllLevelsCollected();},800);}
     openPhotoFullscreen(item.singleUrl, item.title!=='NAME'?item.title:'');
     return;
   }
@@ -12048,10 +12819,13 @@ function openContent(item, replay=false){
     popup.classList.add('open');
     // Social popup: game continues running, music keeps playing
     // state.paused stays false — no freeze
-    if(!replay && !state.collectedItems.find(c=>c.title===item.title)){
-      state.collectedItems.push(item);
+    const _curLvlSc = LEVELS[state.currentLevel] || null;
+    if(!replay && !state.collectedItems.find(c=>c.title===item.title && c.level===_curLvlSc)){
+      state.collectedItems.push(Object.assign({}, item, { level: _curLvlSc }));
       addScore(600);
       persistCollect(item);
+      _playCollectBell();
+      if(_lastCollectedObj) _spawnCollectBurst(_lastCollectedObj.wx, _lastCollectedObj.wy);
     }
     return;
   }
@@ -12061,14 +12835,14 @@ function openContent(item, replay=false){
   if(_hasVideo) pauseMusic();
   state.paused=true; state.contentOpen=true;
 
-  // Zone-aware theming: DESIGN gets website-matching yellow style
-  const _isDesign = (CONTENT_DATA.DESIGN||[]).some(d=>d.title===item.title);
+  // Zone-aware theming: VIBE gets warm orange style (matches zone color)
+  const _isVibe = (item.type === 'vibe') || (CONTENT_DATA.VIBE||[]).some(d=>d.title===item.title);
   const box=document.getElementById('content-box');
   const hdr=document.getElementById('content-header');
   const txtEl=document.getElementById('content-text');
   const lblEl=document.getElementById('gallery-label');
-  if(_isDesign){
-    box.classList.add('design-theme');
+  if(_isVibe){
+    box.classList.add('vibe-theme');
     box.style.background='#FAFFA5';
     box.style.border='3px solid #c8a000';
     box.style.boxShadow='0 0 30px rgba(250,255,165,0.4), 0 0 60px rgba(250,255,165,0.15)';
@@ -12077,7 +12851,7 @@ function openContent(item, replay=false){
     if(txtEl){txtEl.style.color='#333';txtEl.style.textShadow='none';}
     if(lblEl) lblEl.style.color='#666';
   } else {
-    box.classList.remove('design-theme');
+    box.classList.remove('vibe-theme');
     box.style.background='#000';
     box.style.border='3px solid #ff69b4';
     box.style.boxShadow='0 0 30px #ff69b4, 0 0 60px rgba(255,105,180,0.3)';
@@ -12106,7 +12880,23 @@ function openContent(item, replay=false){
   const galEl=document.getElementById('content-gallery');
   const galGrid=document.getElementById('gallery-grid');
   const galLabel=document.getElementById('gallery-label');
-  if(item.gallery&&item.gallery.length>0){
+  if(_isVibe){
+    // Vibe items: single full-width thumb, no grid, no lightbox-on-click
+    if(galLabel) galLabel.textContent='';
+    const _thumbUrl = item.thumb || (item.gallery && item.gallery[0] && item.gallery[0].url) || '';
+    if(_thumbUrl){
+      galGrid.style.display='block';
+      galGrid.style.gridTemplateColumns=''; galGrid.style.flexWrap=''; galGrid.style.flexDirection=''; galGrid.style.gap='';
+      galGrid.innerHTML='<div class="single-photo-wrap" style="cursor:default;">'
+        + '<img src="'+_thumbUrl+'" class="single-photo-img" loading="lazy" style="background:transparent;">'
+        + '</div>';
+      lightboxItems = [];
+      galEl.classList.add('has-items');
+    } else {
+      galEl.classList.remove('has-items');
+      galGrid.innerHTML=''; galGrid.style.display=''; lightboxItems=[];
+    }
+  } else if(item.gallery&&item.gallery.length>0){
     lightboxItems=item.gallery;
     if(galLabel) galLabel.textContent = item.subtitle || '';
     if(item.isSingle){
@@ -12115,37 +12905,10 @@ function openContent(item, replay=false){
         <img src="${item.gallery[0].url}" class="single-photo-img" loading="lazy">
         <div class="single-photo-hint">CLICK TO EXPAND</div>
       </div>`;
-    } else if(_isDesign && item._rows){
-      // Design items: row1 → text → remaining rows (matching website layout)
-      let lbIdx=0;
-      function _renderRow(row){
-        const rowHtml=row.map(img=>{
-          const idx=lbIdx++;
-          return `<div class="gallery-thumb design-thumb" onclick="openLightbox(${idx})" style="flex:1;min-width:0;">
-            <img src="${img.url}" alt="${img.caption}" loading="lazy" style="background:transparent;">
-            <div class="gallery-thumb-label">${img.caption}</div>
-          </div>`;
-        }).join('');
-        return `<div style="display:flex;gap:6px;">${rowHtml}</div>`;
-      }
-      const _heroCount=item._rows[0].length;
-      const _defaultHW=_heroCount===1?'50%':'100%';
-      const _hw=item._heroWidth||_defaultHW;
-      const _heroRow=`<div style="display:flex;gap:6px;justify-content:center;max-width:${_hw};margin:0 auto;">${item._rows[0].map(img=>{
-        const idx=lbIdx++;
-        return `<div class="gallery-thumb design-thumb" onclick="openLightbox(${idx})" style="flex:1;min-width:0;">
-          <img src="${img.url}" alt="${img.caption}" loading="lazy" style="background:transparent;">
-          <div class="gallery-thumb-label">${img.caption}</div>
-        </div>`;
-      }).join('')}</div>`;
-      const _restRows=item._rows.slice(1).map(r=>_renderRow(r)).join('');
-      const _designText=item.text?`<div style="color:#333;font-size:11px;line-height:2.6;white-space:pre-line;margin:16px 0;">${item.text.replace(/</g,'&lt;')}</div>`:'';
-      galGrid.style.display='flex'; galGrid.style.flexDirection='column'; galGrid.style.gap='6px';
-      galGrid.innerHTML=_heroRow+_designText+_restRows;
     } else {
-      const _thumbCls = _isDesign ? 'gallery-thumb design-thumb' : 'gallery-thumb photo-flex-thumb';
+      const _thumbCls = 'gallery-thumb photo-flex-thumb';
       const _gLen=item.gallery.length;
-      if(!_isDesign && _gLen>0){
+      if(_gLen>0){
         // Photo galleries: 6-col grid (items span 2 = 3 per row; even remainder spans 3 = bigger)
         galGrid.style.display='grid'; galGrid.style.gridTemplateColumns='repeat(6, 1fr)';
         galGrid.style.gap='6px'; galGrid.style.flexWrap=''; galGrid.style.flexDirection='';
@@ -12153,17 +12916,17 @@ function openContent(item, replay=false){
         galGrid.style.display='flex'; galGrid.style.flexWrap='wrap'; galGrid.style.flexDirection=''; galGrid.style.gap='6px';
       }
       galGrid.innerHTML=item.gallery.map((img,i)=>{
-        const _span=!_isDesign?(img.wide?'grid-column:1/-1;':'grid-column:span 2;'):'';
+        const _span=img.wide?'grid-column:1/-1;':'grid-column:span 2;';
         const _prt=img.portrait;
         const _divStyle=_span+(_prt?'align-self:stretch;overflow:hidden;':'');
         const _imgStyle=_prt?'object-fit:cover;width:100%;height:100%;':'';
         return `<div class="${_thumbCls}" onclick="openLightbox(${i})" style="${_divStyle}">
-          <img src="${img.url}" alt="${img.caption}" loading="lazy"${_isDesign?' style="background:transparent;"':_imgStyle?' style="'+_imgStyle+'"':''}>
+          <img src="${img.url}" alt="${img.caption}" loading="lazy"${_imgStyle?' style="'+_imgStyle+'"':''}>
           <div class="gallery-thumb-label">${img.caption}</div>
         </div>`;
       }).join('');
       // Even remainder of non-wide items: last-row items span 3 cols (bigger)
-      if(!_isDesign && _gLen>3){
+      if(_gLen>3){
         const _nonWide=item.gallery.filter(g=>!g.wide).length;
         const _rem=_nonWide%3;
         if(_rem===2){
@@ -12182,22 +12945,35 @@ function openContent(item, replay=false){
 
   const _body=document.getElementById('content-body');
   const _txtEl=document.getElementById('content-text');
-  if(_isDesign && item._rows){
-    // Text is rendered inline within gallery rows, hide separate text element
-    _txtEl.textContent='';
-    _txtEl.style.display='none';
+  if(_isVibe){
+    // Render client / description / tags / OPEN PROJECT button as structured HTML
+    const _esc = function(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); };
+    const _client = item.client ? '<div style="font-size:10px;color:#555;letter-spacing:2px;margin-bottom:14px;">'+_esc(item.client)+(item.section?' &middot; '+_esc(item.section):'')+'</div>' : '';
+    const _desc = item.description ? '<div style="color:#333;font-size:11px;line-height:2.4;margin-bottom:18px;white-space:pre-line;">'+_esc(item.description)+'</div>' : '';
+    const _tagsArr = (item.tags||[]).map(function(t){
+      return '<span style="display:inline-block;font-family:\'Press Start 2P\',monospace;font-size:8px;color:#666;border:1px solid #c8a000;background:rgba(200,160,0,0.06);padding:5px 9px;margin:3px 5px 3px 0;letter-spacing:1px;">'+_esc(t)+'</span>';
+    }).join('');
+    const _tags = _tagsArr ? '<div style="margin-bottom:20px;">'+_tagsArr+'</div>' : '';
+    const _btn = item.url
+      ? '<a href="'+_esc(item.url)+'" target="_blank" rel="noopener" onclick="event.stopPropagation()" style="display:inline-block;cursor:pointer;font-family:\'Press Start 2P\',monospace;font-size:9px;color:#000;background:#c8a000;border:1px solid #7a5f00;padding:12px 22px;letter-spacing:2px;text-decoration:none;">'+_esc(item.linkLabel||'OPEN PROJECT \u2197')+'</a>'
+      : '';
+    _txtEl.style.display='';
+    _txtEl.innerHTML = _client + _desc + _tags + _btn;
   } else {
     _txtEl.textContent=item.text;
     _txtEl.style.display='';
   }
-  // Ensure text element is after gallery for non-design items
+  // Ensure text element is after gallery
   _body.appendChild(_txtEl);
   document.getElementById('content-overlay').classList.add('open');
   if(!replay){
-    if(!state.collectedItems.find(c=>c.title===item.title)){
+    const _curLvlCO = LEVELS[state.currentLevel] || null;
+    if(!state.collectedItems.find(c=>c.title===item.title && c.level===_curLvlCO)){
       if(item.duration>0) addScore(item.duration*40);
-      state.collectedItems.push(item);
+      state.collectedItems.push(Object.assign({}, item, { level: _curLvlCO }));
       persistCollect(item);
+      _playCollectBell();
+      if(_lastCollectedObj) _spawnCollectBurst(_lastCollectedObj.wx, _lastCollectedObj.wy);
       _pendingFlyTitle = item.title; // queue fly-to-HUD animation for closeContent
       setTimeout(()=>{checkLevelComplete(); checkAllLevelsCollected();}, 800);
     }
@@ -12262,7 +13038,7 @@ function updateMissionBriefing(){
   // Mission 3: always shown with all zone sub-items
   var _allZonesDone = state.completedLevel_0 && state.completedLevel_2 && state.completedLevel_3 && state.completedLevel_4;
   html += mLine(_allZonesDone, 'MISSION 3: COLLECT ALL ZONE OBJECTS');
-  var _zoneList = [{idx:2,name:'ANIMATE'},{idx:3,name:'PHOTO'},{idx:4,name:'DESIGN'},{idx:0,name:'DIRECT'}];
+  var _zoneList = [{idx:2,name:'ANIMATE'},{idx:3,name:'PHOTO'},{idx:4,name:'VIBE'},{idx:0,name:'DIRECT'}];
   for(var _zi = 0; _zi < _zoneList.length; _zi++){
     var _z = _zoneList[_zi];
     var _done = state['completedLevel_'+_z.idx];
@@ -12312,15 +13088,34 @@ function closeContent(){
 function checkLevelComplete(){
   // Check ALL zones for completion — not just currentLevel — since the player
   // may have drifted to a different zone during the collection timeout
-  const permCollected = new Set((state.collectedItems||[]).map(c=>c.title));
   var _anyNewComplete = false;
   for(var _cli = 0; _cli < LEVELS.length; _cli++){
     if(state['completedLevel_'+_cli]) continue; // already done
     const _clName = LEVELS[_cli];
     const _clItems = CONTENT_DATA[_clName] || [];
-    if(_clItems.length > 0 && _clItems.every(it => permCollected.has(it.title))){
+    // Only count items collected IN this zone (filter by item.level === zone name).
+    // Fallback for legacy items missing .level: include them if title appears in CONTENT_DATA[zone] (handles direct-collision push at openContent which doesn't tag level).
+    const _zoneTitles = new Set(_clItems.map(function(it){ return it && it.title; }));
+    // Strict: only count items whose level explicitly matches this zone.
+    // Removed the no-level fallback that title-matched across zones — it caused
+    // shared titles (e.g. MAKE ANYTHING in DIRECT and ANIMATE) to falsely
+    // credit both zones from a single collection.
+    const _zoneCollected = new Set(
+      (state.collectedItems||[])
+        .filter(function(c){ return c && c.level === _clName; })
+        .map(function(c){ return c.title; })
+    );
+    if(_clItems.length > 0 && _clItems.every(it => _zoneCollected.has(it.title))){
       state['completedLevel_'+_cli] = true;
       _anyNewComplete = true;
+      // Silent catch-up for EDITING: if pen barrier already opened (editMissionComplete=true)
+      // then this is just retroactive flag-setting, not a fresh completion. Skip the flash.
+      if(_cli === 1 && state.editMissionComplete) continue;
+      // Only show the banner for the zone the player is currently in. If a
+      // different zone happens to satisfy completion (e.g. retroactive catch-up
+      // from migrated entries), silently set the flag and let the on-entry
+      // ZONE CLEAR flash surface it next time they visit.
+      if(state.currentLevel !== _cli) continue;
       const _capturedCL = _cli;
       setTimeout(()=>showLevelComplete(_capturedCL), 400);
     }
@@ -12333,6 +13128,7 @@ function showLevelComplete(lvlIdx){
   const lvlName = LEVELS[lvlIdx]||'EDITING';
   const bonus = 2000;
   addScore(bonus);
+  _playZoneCompleteStinger();
   // Flash centre banner
   const banner = document.getElementById('level-complete-banner');
   const textEl = document.getElementById('lcb-text');
@@ -12349,12 +13145,6 @@ function showLevelComplete(lvlIdx){
     }
     state.zoneCrossFlash = { lvl: -3, timer: 200, msg: 'EDITING COMPLETE! BARRIER OPENING...', _col: '#00ffcc' };
     state._nextMissionHintDelay = 360; // ~6 seconds before showing NEXT MISSION hint
-    if(audioCtx && !state.sfxMuted){
-      const _t = audioCtx.currentTime;
-      playBeep(440, _t, 0.15, 'sine', 0.12);
-      playBeep(660, _t + 0.15, 0.15, 'sine', 0.12);
-      playBeep(880, _t + 0.30, 0.2, 'sine', 0.15);
-    }
     // Catch-up: peanut unlock — DISABLED for now
     if(false && state.rocksDestroyed >= 1 && !state._peanutUnlocked){
       state._peanutUnlocked = true;
@@ -12386,7 +13176,8 @@ function checkAllLevelsCollected(){
     if(!levelItems.every(it=>permCollected.has(it.title))) return;
   }
   // All content collected! Spawn X2 boost star near player (if not already boosted)
-  if(!state.boostDoubled && !state._x2StarSpawned){
+  // Don't spawn if main world boss is alive guarding the hatch
+  if(!state.boostDoubled && !state._x2StarSpawned && (!state._bossInMainWorld || (state.mainWorldBoss && state.mainWorldBoss.dead))){
     state._x2StarSpawned = true;
     // Spawn within 415px of player, in a random direction
     const _ang = Math.random() * Math.PI * 2;
@@ -12427,7 +13218,7 @@ function openLightbox(idx){
   const lbBox=document.getElementById('gallery-lightbox');
   lbImg.src=lightboxItems[idx].url;
   document.getElementById('lightbox-caption').textContent=lightboxItems[idx].caption;
-  const _dTheme=document.getElementById('content-box').classList.contains('design-theme');
+  const _dTheme=document.getElementById('content-box').classList.contains('vibe-theme');
   if(_dTheme){
     lbBox.style.background='#FAFFA5';
     lbImg.style.border='none'; lbImg.style.boxShadow='none';
@@ -12513,7 +13304,7 @@ function showInfo(type){
     };
     const pPHOTO   = sector(-3*d, -d);
     const pANIMATE = sector(-d,    d);
-    const pDESIGN  = sector( d,  3*d);
+    const pVIBE    = sector( d,  3*d);
     const pDIRECT  = sector(3*d,  5*d);
 
     const col = (i) => i===cur ? '#00ffcc' : '#ffe000';
@@ -12533,6 +13324,7 @@ function showInfo(type){
       return `<text x="${x}" y="${y}" text-anchor="middle" dominant-baseline="middle" font-family="'Press Start 2P',monospace" font-size="9" fill="${c}" style="pointer-events:none;">${txt}</text>`;
     };
     const midZR = (r + R) / 2;
+    const _inPen = (state.x*state.x + state.y*state.y) < PEN_BARRIER_R*PEN_BARRIER_R;
     const zHtml = `<div style="text-align:center;margin-bottom:12px;color:rgba(255,255,255,0.7);font-size:10px;letter-spacing:2px;">CLICK A ZONE TO WARP</div>
     <svg width="${W}" height="${H}" style="max-width:100%;display:block;margin:0 auto;">
       <!-- Asteroid belt ring -->
@@ -12540,12 +13332,12 @@ function showInfo(type){
       <!-- Sector fills — discovery-gated -->
       ${_zSec(pPHOTO,   'zs-photo',   3, '255,224,0')}
       ${_zSec(pANIMATE, 'zs-animate', 2, '255,224,0')}
-      ${_zSec(pDESIGN,  'zs-design',  4, '255,224,0')}
+      ${_zSec(pVIBE,    'zs-vibe',    4, '255,224,0')}
       ${_zSec(pDIRECT,  'zs-direct',  0, '255,224,0')}
       <!-- Interzone ring — between pen barrier and EDIT_R -->
       <circle cx="${cx}" cy="${cy}" r="${(penRad+r)/2}" fill="none" stroke="${_izVisited?'rgba(0,255,204,0.15)':'rgba(40,40,40,0.15)'}" stroke-width="${r-penRad}" style="pointer-events:none;"/>
       <!-- EDIT inner circle — always accessible -->
-      <circle cx="${cx}" cy="${cy}" r="${penRad}" fill="${cur===1?'rgba(0,255,204,0.08)':'rgba(0,255,204,0)'}" id="zs-edit" style="${cur===1?'pointer-events:none;':'cursor:pointer;'}" ${cur!==1?`onclick="warpToLevelFromMenu(1);closeInfo();" onmouseover="document.getElementById('zs-edit').setAttribute('fill','rgba(0,255,204,0.12)')" onmouseout="document.getElementById('zs-edit').setAttribute('fill','rgba(0,255,204,0)')"`:''}"/>
+      <circle cx="${cx}" cy="${cy}" r="${penRad}" fill="${_inPen?'rgba(0,255,204,0.08)':'rgba(0,255,204,0)'}" id="zs-edit" style="${_inPen?'pointer-events:none;':'cursor:pointer;'}" ${!_inPen?`onclick="warpToLevelFromMenu(1);closeInfo();" onmouseover="document.getElementById('zs-edit').setAttribute('fill','rgba(0,255,204,0.12)')" onmouseout="document.getElementById('zs-edit').setAttribute('fill','rgba(0,255,204,0)')"`:''}"/>
       <!-- Pen barrier circle -->
       <circle cx="${cx}" cy="${cy}" r="${penRad}" fill="none" stroke="rgba(0,255,204,0.5)" stroke-width="1.5"/>
       <!-- Ring strokes -->
@@ -12559,7 +13351,7 @@ function showInfo(type){
       <!-- Zone labels — all discovery-gated -->
       ${_zLbl(3, 'PHOTO',   cx,           cy - midZR)}
       ${_zLbl(2, 'ANIMATE', cx + midZR,   cy)}
-      ${_zLbl(4, 'DESIGN',  cx,           cy + midZR)}
+      ${_zLbl(4, 'VIBE',    cx,           cy + midZR)}
       ${_zLbl(0, 'DIRECT',  cx - midZR,   cy)}
       ${_zLbl(1, 'EDITING', cx,           cy)}
       <!-- Interzone label -->
@@ -12812,7 +13604,7 @@ function initInsCanvases(){
   // 5 zone shapes
   var sr=document.getElementById('ins-shapes-row');
   if(sr&&sr.childElementCount===0){
-    var _insObjColors = [LEVEL_OBJ_COLORS.EDITING, LEVEL_OBJ_COLORS.DIRECT, LEVEL_OBJ_COLORS.ANIMATE, LEVEL_OBJ_COLORS.PHOTO, LEVEL_OBJ_COLORS.DESIGN];
+    var _insObjColors = [LEVEL_OBJ_COLORS.EDITING, LEVEL_OBJ_COLORS.DIRECT, LEVEL_OBJ_COLORS.ANIMATE, LEVEL_OBJ_COLORS.PHOTO, LEVEL_OBJ_COLORS.VIBE];
     ['square','octagon','circle','pentagon','triangle'].forEach(function(sh,i){
       var c=document.createElement('canvas');c.width=60;c.height=60;c.style.cssText='width:48px;height:48px;position:static;pointer-events:auto;display:inline-block;';
       sr.appendChild(c);
@@ -13033,6 +13825,1308 @@ function hexToRgb(hex){
   return `${r},${g},${b}`;
 }
 
+// ── Beacon Race (ANIMATE zone challenge) ──────────────────
+function _beaconRaceStart(){
+  if(state._beaconRaceComplete_ANIMATE) return;
+  if(state._beaconRace) return;
+  if(state.currentLevel !== 2) return;
+  // Use ALL uncollected ANIMATE-content objects (no cap)
+  const _animateObjs = (state.objects||[]).filter(function(o){
+    if(!o || !o.content || !o.content.title) return false;
+    if(o.collected) return false;
+    if(o._permanent || o._bio || o._social) return false;
+    return (CONTENT_DATA.ANIMATE||[]).some(function(it){ return it.title === o.content.title; });
+  });
+  // Force-spawn any uncollected ANIMATE title that has no current instance.
+  // populateCell only spawns content when the player visits a cell, so titles
+  // in unvisited cells would otherwise be excluded from the race.
+  const _animItemTitles = new Set((CONTENT_DATA.ANIMATE||[]).map(function(it){ return it.title; }));
+  // Per-zone strictness: only treat a title as "already collected for ANIMATE"
+  // if the collectedItems entry is tagged with level === 'ANIMATE' (or legacy
+  // untagged). Shared titles collected in DIRECT were previously included here,
+  // which silently dropped them from the race and left HUD slots empty.
+  const _collectedAnimTitles = new Set((state.collectedItems||[]).filter(function(c){
+    return c && c.title && _animItemTitles.has(c.title) && (!c.level || c.level === 'ANIMATE');
+  }).map(function(c){ return c.title; }));
+  const _presentTitles = new Set(_animateObjs.map(function(o){ return o.content.title; }));
+  (CONTENT_DATA.ANIMATE||[]).forEach(function(item, itemIdx){
+    if(!item || !item.title) return;
+    if(_collectedAnimTitles.has(item.title)) return;
+    if(_presentTitles.has(item.title)) return;
+    let _spawnX = 0, _spawnY = 0, _placed = false;
+    for(let attempt = 0; attempt < 30; attempt++){
+      const _ang = -Math.PI/4 + Math.random() * (Math.PI/2);
+      const _rad = EDIT_R + 300 + Math.random() * (BELT_R - EDIT_R - 600);
+      const wx = Math.cos(_ang) * _rad;
+      const wy = Math.sin(_ang) * _rad;
+      if(zoneAt(wx, wy) !== 2) continue;
+      _spawnX = wx; _spawnY = wy; _placed = true; break;
+    }
+    if(!_placed) return;
+    const _newObj = {
+      wx: _spawnX, wy: _spawnY,
+      shape: ZONE_SHAPES[2] || 'triangle',
+      size:  (16 + Math.random()*12) * 2,
+      content: item, collected: false,
+      pulsePhase: Math.random()*Math.PI*2,
+      colorIndex: (2*3 + itemIdx) % SPECTRUM.length,
+      rotSpeed:   (Math.random()-0.5)*0.03,
+      _beaconForceSpawned: true
+    };
+    state.objects.push(_newObj);
+    _animateObjs.push(_newObj);
+  });
+  if(_animateObjs.length === 0){
+    // No ANIMATE collectibles available — silent abort
+    return;
+  }
+  // Dedupe by title, picking the closest copy to the ship for each title.
+  // populateCell spawns up to 3 instances per content item; the rest get hidden
+  // for the duration of the race so the player sees exactly one beacon per title.
+  const _byTitle = {};
+  for(let i = 0; i < _animateObjs.length; i++){
+    const o = _animateObjs[i];
+    const t = o.content.title;
+    const dx = o.wx - state.x, dy = o.wy - state.y;
+    const d2 = dx*dx + dy*dy;
+    if(!_byTitle[t] || d2 < _byTitle[t]._d2){
+      _byTitle[t] = { obj: o, _d2: d2 };
+    }
+  }
+  const _unique = Object.keys(_byTitle).map(function(t){ return _byTitle[t].obj; });
+  // Build smooth route via nearest-neighbor from ship position.
+  // Eliminates ping-pong across the zone — each step goes to the closest
+  // remaining beacon. Not optimal TSP but visibly smooth in practice.
+  const _route = [];
+  const _pool = _unique.slice();
+  let _cx = state.x, _cy = state.y;
+  while(_pool.length){
+    let _bestI = 0, _bestD2 = Infinity;
+    for(let i = 0; i < _pool.length; i++){
+      const ddx = _pool[i].wx - _cx, ddy = _pool[i].wy - _cy;
+      const dd2 = ddx*ddx + ddy*ddy;
+      if(dd2 < _bestD2){ _bestD2 = dd2; _bestI = i; }
+    }
+    const chosen = _pool.splice(_bestI, 1)[0];
+    _route.push(chosen);
+    _cx = chosen.wx; _cy = chosen.wy;
+  }
+  const beacons = [];
+  const _routeSet = new Set(_route);
+  for(let i = 0; i < _route.length; i++){
+    const o = _route[i];
+    o._beaconProtected = true;  // shield from distance/permDone cull while race is live
+    o._beaconRaceHidden = false;
+    beacons.push({ x: o.wx, y: o.wy, hit: false, objRef: o });
+  }
+  // Hide non-route duplicates of any route title — render + collision suppressed.
+  const _routeTitles = new Set(_route.map(function(o){ return o.content.title; }));
+  (state.objects||[]).forEach(function(o){
+    if(!o || !o.content || !o.content.title) return;
+    if(_routeSet.has(o)) return;
+    if(o._permanent || o._bio || o._social) return;
+    if(_routeTitles.has(o.content.title)){
+      o._beaconRaceHidden = true;
+      o._beaconProtected = true; // also protect from cull while hidden
+    }
+  });
+  // Save fire mode + boost flag so we can restore on race end; force boost2x.
+  state._beaconRacePrevFireMode = state.fireMode;
+  state._beaconRacePrevBoostDoubled = !!state.boostDoubled;
+  state.boostDoubled = true;
+  state.fireMode = 'boost2x';
+  try{ updateFireModeUI(); }catch(e){}
+  const _timerFrames = Math.max(30 * 60, 5 * 60 * beacons.length) - 10 * 60;
+  state._beaconRace = {
+    beacons,
+    activeIdx: 0,
+    timer: _timerFrames,
+    pulse: 0
+  };
+  state.zoneCrossFlash = { lvl:-3, timer:240, pre:'CHALLENGE:', msg:'BEACON RACE — HIT ALL IN ORDER', _col: LEVEL_COLORS.ANIMATE };
+}
+
+function _beaconRaceAbort(){
+  if(state._beaconRace && state._beaconRace.beacons){
+    // Cascade-mark duplicates of any beacon whose target was hit as collected,
+    // so unhiding them doesn't reveal "ghost" copies of items the player already cleared.
+    // Done before unhide so the hidden flag still uniquely identifies suppressed dupes.
+    const _hitTitles = new Set();
+    state._beaconRace.beacons.forEach(function(b){
+      if(b && b.hit && b.objRef && b.objRef.content && b.objRef.content.title){
+        _hitTitles.add(b.objRef.content.title);
+      }
+    });
+    if(_hitTitles.size){
+      (state.objects||[]).forEach(function(o){
+        if(!o || !o.content || !o.content.title) return;
+        if(o._permanent || o._bio || o._social) return;
+        if(_hitTitles.has(o.content.title)) o.collected = true;
+      });
+    }
+    state._beaconRace.beacons.forEach(function(b){
+      if(b && b.objRef){
+        b.objRef._beaconProtected = false;
+        b.objRef._beaconRaceHidden = false;
+      }
+    });
+  }
+  // Unhide any duplicates we suppressed at race start.
+  (state.objects||[]).forEach(function(o){
+    if(o && o._beaconRaceHidden){
+      o._beaconRaceHidden = false;
+      o._beaconProtected = false;
+    }
+  });
+  // Restore pre-race fire mode + boost flag if we saved them.
+  if(typeof state._beaconRacePrevFireMode !== 'undefined'){
+    state.fireMode = state._beaconRacePrevFireMode;
+    state.boostDoubled = !!state._beaconRacePrevBoostDoubled;
+    delete state._beaconRacePrevFireMode;
+    delete state._beaconRacePrevBoostDoubled;
+    try{ updateFireModeUI(); }catch(e){}
+  }
+  state._beaconRace = null;
+}
+
+// Belt-and-suspenders: if completion fired but uncollected ANIMATE items still
+// exist (or some ANIMATE titles lack an ANIMATE-tagged collectedItems entry —
+// e.g. force-spawn was previously gated by cross-zone collection), clear the
+// flag so the race re-arms on re-entry.
+function _beaconRaceRecheckComplete(){
+  if(!state._beaconRaceComplete_ANIMATE) return;
+  const _animTitles = new Set((CONTENT_DATA.ANIMATE||[]).map(it => it.title));
+  const _remaining = (state.objects||[]).filter(function(o){
+    if(!o || !o.content || !o.content.title) return false;
+    if(o.collected) return false;
+    if(o._permanent || o._bio || o._social) return false;
+    return _animTitles.has(o.content.title);
+  }).length;
+  // Per-zone completion check — every ANIMATE title must have an
+  // ANIMATE-tagged collectedItems entry (or legacy untagged).
+  const _animCollectedForZone = new Set((state.collectedItems||[]).filter(function(c){
+    return c && c.title && _animTitles.has(c.title) && (!c.level || c.level === 'ANIMATE');
+  }).map(function(c){ return c.title; }));
+  let _missingForZone = 0;
+  _animTitles.forEach(function(t){ if(!_animCollectedForZone.has(t)) _missingForZone++; });
+  if(_remaining > 0 || _missingForZone > 0){
+    state._beaconRaceComplete_ANIMATE = false;
+  }
+}
+
+function _beaconRaceResetANIMATE(){
+  // Re-uncollect every ANIMATE content object so race restarts fresh on re-entry
+  const _animTitles = new Set((CONTENT_DATA.ANIMATE||[]).map(it => it.title));
+  if(Array.isArray(state.objects)){
+    state.objects.forEach(function(o){
+      if(!o || !o.content || !o.content.title) return;
+      if(o._permanent || o._bio || o._social) return;
+      if(_animTitles.has(o.content.title)) o.collected = false;
+    });
+  }
+  if(Array.isArray(state.collectedItems)){
+    state.collectedItems = state.collectedItems.filter(function(c){
+      if(!c) return false;
+      if(c.level === 'ANIMATE') return false;
+      if(c.title && _animTitles.has(c.title)) return false;
+      return true;
+    });
+  }
+  // Clear completion flag so the race re-arms on next ANIMATE entry.
+  state._beaconRaceComplete_ANIMATE = false;
+}
+
+function _beaconRaceTick(){
+  const br = state._beaconRace;
+  if(!br) return;
+  if(state.paused || state.menuOpen || state.contentOpen) return;
+  // Leaving ANIMATE mid-race counts as a FAIL — wipe any ANIMATE objects
+  // collected during the run so the zone resets to zero progress.
+  if(state.currentLevel !== 2){
+    state.zoneCrossFlash = { lvl:-3, timer:200, pre:'BEACON RACE', msg:'ABANDONED — PROGRESS RESET', _col:'#ff5555' };
+    _beaconRaceAbort();
+    _beaconRaceResetANIMATE();
+    return;
+  }
+  br.pulse = (br.pulse + 1) % 60;
+  br.timer--;
+  if(br.timer <= 0){
+    // Bounce ship out to ring-zone edge of ANIMATE (just inside EDIT_R, ANIMATE-side = +x)
+    const _bx = (EDIT_R - 100);
+    const _by = 0;
+    state.x = _bx; state.y = _by;
+    state.vx = 0; state.vy = 0;
+    state._prevX = _bx; state._prevY = _by;
+    state.zoneCrossFlash = { lvl:-3, timer:240, pre:'MISSION FAILED', msg:'TRY AGAIN', _col:'#ff5555' };
+    // Tear down race state first (cascade + unhide + restore boost), then wipe
+    // ALL ANIMATE progress — reset is the last word on failure so partial hits
+    // don't survive the bounce-out.
+    _beaconRaceAbort();
+    _beaconRaceResetANIMATE();
+    return;
+  }
+}
+
+function _beaconRaceDraw(){
+  const br = state._beaconRace;
+  if(!br) return;
+  const cx = CX(), cy = CY();
+  const W = canvas.width, H = canvas.height;
+  // Dotted line ONLY from ship to current target beacon
+  ctx.save();
+  ctx.strokeStyle = LEVEL_COLORS.ANIMATE;
+  ctx.setLineDash([8, 8]);
+  const next = br.beacons[br.activeIdx];
+  if(next){
+    ctx.globalAlpha = 0.9;
+    ctx.lineWidth = 3;
+    // Start the dashed line offset away from the ship so the first two dashes
+    // (16px of dash pattern) don't draw on top of the ship sprite.
+    const _tsx = next.x - state.x + cx;
+    const _tsy = next.y - state.y + cy;
+    const _ddx = _tsx - cx, _ddy = _tsy - cy;
+    const _dlen = Math.sqrt(_ddx * _ddx + _ddy * _ddy);
+    const _shipClear = 32; // two dashes + two gaps of the [8,8] pattern
+    if(_dlen > _shipClear){
+      const _ox = cx + (_ddx / _dlen) * _shipClear;
+      const _oy = cy + (_ddy / _dlen) * _shipClear;
+      ctx.beginPath();
+      ctx.moveTo(_ox, _oy);
+      ctx.lineTo(_tsx, _tsy);
+      ctx.stroke();
+    }
+  }
+  ctx.setLineDash([]);
+  ctx.restore();
+  br.beacons.forEach(function(b, i){
+    const sx = b.x - state.x + cx;
+    const sy = b.y - state.y + cy;
+    if(sx < -100 || sx > W+100 || sy < -100 || sy > H+100) return;
+    const isActive = (i === br.activeIdx);
+    const isHit = b.hit;
+    const baseR = 60;
+    const pulseR = isActive ? baseR + Math.sin(br.pulse * 0.2) * 10 : baseR;
+    ctx.save();
+    ctx.lineWidth = isActive ? 4 : 2;
+    if(isHit){
+      ctx.strokeStyle = '#ffe000';
+      ctx.globalAlpha = 0.8;
+    } else if(isActive){
+      ctx.strokeStyle = LEVEL_COLORS.ANIMATE;
+      ctx.globalAlpha = 1;
+    } else {
+      ctx.strokeStyle = LEVEL_COLORS.ANIMATE;
+      ctx.globalAlpha = 0.3;
+    }
+    ctx.beginPath();
+    ctx.arc(sx, sy, pulseR, 0, Math.PI*2);
+    ctx.stroke();
+    ctx.font = "10px 'Press Start 2P',monospace";
+    ctx.fillStyle = ctx.strokeStyle;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(i+1), sx, sy);
+    ctx.restore();
+  });
+  // Persistent HUD — match zoneCrossFlash style (centered, larger)
+  ctx.save();
+  const _hudY = H * 0.18;
+  ctx.font = "bold 24px 'Press Start 2P',monospace";
+  ctx.fillStyle = LEVEL_COLORS.ANIMATE;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const secs = Math.ceil(br.timer / 60);
+  ctx.fillText('BEACON RACE  ' + br.activeIdx + '/' + br.beacons.length + '   ' + secs + 's', W/2, _hudY);
+  ctx.restore();
+}
+
+// Force-spawn any zone titles that are uncollected but not currently present
+// in state.objects. populateCell only spawns content for cells the player has
+// actually visited, so titles in unvisited cells would otherwise be impossible
+// to collect — preventing zone completion entirely. Called on zone entry.
+function _forceSpawnMissingZoneTitles(zoneIdx){
+  if(zoneIdx < 0 || zoneIdx > 4) return;
+  const zoneName = LEVELS[zoneIdx];
+  if(!zoneName) return;
+  const items = CONTENT_DATA[zoneName] || [];
+  if(items.length === 0) return;
+  const _collected = new Set((state.collectedItems||[])
+    .filter(function(c){ return c && c.level === zoneName; })
+    .map(function(c){ return c.title; }));
+  const _present = new Set((state.objects||[])
+    .filter(function(o){
+      return o && o.content && o.content.title && !o.collected
+        && !o._permanent && !o._bio && !o._social
+        && items.some(function(it){ return it.title === o.content.title; });
+    })
+    .map(function(o){ return o.content.title; }));
+  items.forEach(function(item, itemIdx){
+    if(!item || !item.title) return;
+    if(_collected.has(item.title)) return;
+    if(_present.has(item.title)) return;
+    let sx = 0, sy = 0, placed = false;
+    for(let attempt = 0; attempt < 60; attempt++){
+      const ang = (Math.random() - 0.5) * 2 * Math.PI;
+      const rad = EDIT_R + 300 + Math.random() * (BELT_R - EDIT_R - 600);
+      const wx = Math.cos(ang) * rad;
+      const wy = Math.sin(ang) * rad;
+      if(zoneAt(wx, wy) !== zoneIdx) continue;
+      sx = wx; sy = wy; placed = true; break;
+    }
+    if(!placed) return;
+    state.objects.push({
+      wx: sx, wy: sy,
+      shape: ZONE_SHAPES[zoneIdx] || 'triangle',
+      size:  (16 + Math.random()*12) * 2,
+      content: item, collected: false,
+      pulsePhase: Math.random()*Math.PI*2,
+      colorIndex: (zoneIdx*3 + itemIdx) % SPECTRUM.length,
+      rotSpeed:   (Math.random()-0.5)*0.03,
+      _zoneForceSpawned: true
+    });
+  });
+}
+
+// ── VIBE Zone Brick Barricades + Laser ─────
+// Each VIBE item is enclosed by two concentric rings of chunky 8-bit bricks.
+// Ship can't pass through. In VIBE only, Space fires a straight laser that
+// chips bricks (HP 2 each). Clear a path → laser hits the item → it collects.
+const _VIBE_BRICK_SIZE    = 22;
+const _VIBE_BRICK_HP      = 2;
+const _VIBE_INNER_R       = 56;
+const _VIBE_OUTER_R       = 92;
+const _VIBE_INNER_COUNT   = 14;
+const _VIBE_OUTER_COUNT   = 20;
+const _VIBE_ROT_SPEED     = 0.008;   // rad/frame — inner +, outer −
+const _VIBE_BRICK_JITTER  = 1.6;     // radial breathing amplitude
+const _VIBE_JITTER_FREQ   = 0.055;   // breathing frequency
+const _VIBE_LASER_SPEED   = 22;
+const _VIBE_LASER_MAX_AGE = 70;      // frames before laser despawns
+const _VIBE_LASER_COOLDOWN = 6;      // frames between auto-fire shots
+const _VIBE_SHIP_R        = 14;
+
+function _ensureVibeBricks(obj){
+  if(obj._vibeBricks) return;
+  const bricks = [];
+  for(let i = 0; i < _VIBE_INNER_COUNT; i++){
+    const a = (i / _VIBE_INNER_COUNT) * Math.PI * 2;
+    bricks.push({
+      baseAng: a,
+      radius:  _VIBE_INNER_R,
+      phase:   Math.random() * Math.PI * 2,
+      layer:   'inner',
+      hp:      _VIBE_BRICK_HP,
+      x: obj.wx + Math.cos(a) * _VIBE_INNER_R,
+      y: obj.wy + Math.sin(a) * _VIBE_INNER_R
+    });
+  }
+  for(let i = 0; i < _VIBE_OUTER_COUNT; i++){
+    const a = (i / _VIBE_OUTER_COUNT) * Math.PI * 2 + 0.08;
+    bricks.push({
+      baseAng: a,
+      radius:  _VIBE_OUTER_R,
+      phase:   Math.random() * Math.PI * 2,
+      layer:   'outer',
+      hp:      _VIBE_BRICK_HP,
+      x: obj.wx + Math.cos(a) * _VIBE_OUTER_R,
+      y: obj.wy + Math.sin(a) * _VIBE_OUTER_R
+    });
+  }
+  obj._vibeBricks = bricks;
+}
+
+// Recompute every uncollected brick's world position from its base angle plus
+// the layer-direction rotation phase and a small radial breathing jitter.
+// Called at the top of the tick so ship + laser collisions use fresh positions.
+function _vibeUpdateBrickPositions(obj){
+  if(!obj || !obj._vibeBricks) return;
+  const f = state.frameCount || 0;
+  const rotPhase = _VIBE_ROT_SPEED * f;
+  for(let i = 0; i < obj._vibeBricks.length; i++){
+    const b = obj._vibeBricks[i];
+    if(b.hp <= 0) continue;
+    const dir = (b.layer === 'inner') ? 1 : -1;
+    const ang = b.baseAng + dir * rotPhase;
+    const r   = b.radius + Math.sin(f * _VIBE_JITTER_FREQ + b.phase) * _VIBE_BRICK_JITTER;
+    b.x = obj.wx + Math.cos(ang) * r;
+    b.y = obj.wy + Math.sin(ang) * r;
+  }
+}
+
+function _vibeBricksTick(){
+  // Only relevant in VIBE — pre-init bricks on uncollected VIBE-content objs and
+  // resolve ship-vs-brick collisions every frame.
+  if(state.currentLevel !== 4) return;
+  const vibeTitles = (CONTENT_DATA.VIBE||[]).map(function(it){ return it && it.title; });
+  state.objects.forEach(function(obj){
+    if(!obj || !obj.content || !obj.content.title || obj.collected) return;
+    if(obj._permanent || obj._bio || obj._social) return;
+    if(vibeTitles.indexOf(obj.content.title) < 0) return;
+    _ensureVibeBricks(obj);
+    _vibeUpdateBrickPositions(obj);
+    const half = _VIBE_BRICK_SIZE / 2;
+    obj._vibeBricks.forEach(function(b){
+      if(b.hp <= 0) return;
+      // Closest point on AABB to ship centre
+      const cx = Math.max(b.x - half, Math.min(state.x, b.x + half));
+      const cy = Math.max(b.y - half, Math.min(state.y, b.y + half));
+      const ndx = state.x - cx, ndy = state.y - cy;
+      const dist = Math.hypot(ndx, ndy);
+      if(dist < _VIBE_SHIP_R && dist > 0.0001){
+        const nx = ndx / dist, ny = ndy / dist;
+        const push = _VIBE_SHIP_R - dist + 1;
+        state.x += nx * push;
+        state.y += ny * push;
+        const vDotN = state.vx * nx + state.vy * ny;
+        if(vDotN < 0){
+          state.vx -= 1.4 * vDotN * nx;
+          state.vy -= 1.4 * vDotN * ny;
+        }
+      } else if(dist <= 0.0001){
+        // Centred on brick — push out along nearest axis
+        state.x += _VIBE_SHIP_R + 1;
+      }
+    });
+  });
+}
+
+function _vibeFireLaser(){
+  if(!state.vibeLasers) state.vibeLasers = [];
+  // Cap concurrent lasers to avoid flooding
+  if(state.vibeLasers.length > 24) return;
+  const ang = state.angle || 0;
+  state.vibeLasers.push({
+    x:  state.x + Math.sin(ang) * 24,
+    y:  state.y - Math.cos(ang) * 24,
+    vx: Math.sin(ang) * _VIBE_LASER_SPEED,
+    vy: -Math.cos(ang) * _VIBE_LASER_SPEED,
+    age: 0
+  });
+  if(audioCtx && !state.sfxMuted){
+    const t = audioCtx.currentTime;
+    playBeep(1200, t,       0.06, 'square',   0.05);
+    playBeep(600,  t + 0.01, 0.05, 'sawtooth', 0.03);
+  }
+}
+
+function _vibeLasersTick(){
+  // Auto-fire while Space held in VIBE — classic arcade feel.
+  // Disable once VIBE is fully collected so it stops firing pointlessly.
+  if(state.currentLevel === 4 && !state.completedLevel_4 && state.keys && state.keys['Space']
+     && !state.paused && !state.gameOver && !state.contentOpen && state.started){
+    if(state._vibeLastFireTick === undefined) state._vibeLastFireTick = -999;
+    if((state.frameCount || 0) - state._vibeLastFireTick >= _VIBE_LASER_COOLDOWN){
+      _vibeFireLaser();
+      state._vibeLastFireTick = state.frameCount || 0;
+    }
+  }
+  if(!state.vibeLasers || !state.vibeLasers.length) return;
+  const half = _VIBE_BRICK_SIZE / 2;
+  const vibeTitles = (CONTENT_DATA.VIBE||[]).map(function(it){ return it && it.title; });
+  // Sub-step per frame so a fast laser can't tunnel through a brick of equal size
+  const SUB = 3;
+  for(let i = state.vibeLasers.length - 1; i >= 0; i--){
+    const l = state.vibeLasers[i];
+    l.age++;
+    if(l.age >= _VIBE_LASER_MAX_AGE){ state.vibeLasers.splice(i, 1); continue; }
+    let consumed = false;
+    for(let s = 0; s < SUB && !consumed; s++){
+      l.x += l.vx / SUB;
+      l.y += l.vy / SUB;
+      for(let oi = 0; oi < state.objects.length && !consumed; oi++){
+        const obj = state.objects[oi];
+        if(!obj || !obj.content || !obj.content.title || obj.collected) continue;
+        if(obj._permanent || obj._bio || obj._social) continue;
+        if(vibeTitles.indexOf(obj.content.title) < 0) continue;
+        if(obj._vibeBricks){
+          for(let bi = 0; bi < obj._vibeBricks.length; bi++){
+            const b = obj._vibeBricks[bi];
+            if(b.hp <= 0) continue;
+            if(Math.abs(l.x - b.x) < half && Math.abs(l.y - b.y) < half){
+              b.hp--;
+              consumed = true;
+              if(audioCtx && !state.sfxMuted){
+                const tt = audioCtx.currentTime;
+                playBeep(220, tt, 0.05, 'square', 0.05);
+              }
+              if(b.hp <= 0 && !obj._vibeBonusAwarded){
+                let _allDown = true;
+                for(let _bj = 0; _bj < obj._vibeBricks.length; _bj++){
+                  if(obj._vibeBricks[_bj].hp > 0){ _allDown = false; break; }
+                }
+                if(_allDown){
+                  obj._vibeBonusAwarded = true;
+                  addScore(10000);
+                  try{ _spawnCollectBurst(obj.wx, obj.wy); }catch(e){}
+                  if(audioCtx && !state.sfxMuted){
+                    const _bt = audioCtx.currentTime;
+                    playBeep(523.25, _bt,        0.18, 'square',   0.11);
+                    playBeep(659.25, _bt + 0.10, 0.18, 'square',   0.11);
+                    playBeep(783.99, _bt + 0.20, 0.18, 'square',   0.11);
+                    playBeep(1046.50,_bt + 0.30, 0.45, 'square',   0.13);
+                    playBeep(1318.51,_bt + 0.30, 0.45, 'sine',     0.07);
+                    playBeep(1567.98,_bt + 0.34, 0.40, 'sine',     0.06);
+                    playBeep(2093.00,_bt + 0.40, 0.30, 'triangle', 0.05);
+                    playBeep(110,    _bt,        0.50, 'sawtooth', 0.06);
+                  }
+                }
+              }
+              break;
+            }
+          }
+        }
+      }
+      // Asteroid destruction (mirrors wave-beam pattern — splits big rocks).
+      if(!consumed && state.spaceRocks){
+        for(let ri = state.spaceRocks.length - 1; ri >= 0; ri--){
+          const r = state.spaceRocks[ri];
+          const _rr = r.size + 10;
+          if((r.wx - l.x) * (r.wx - l.x) + (r.wy - l.y) * (r.wy - l.y) < _rr * _rr){
+            if(r.size > 12){
+              const frags = 2 + Math.floor(Math.random() * 3);
+              for(let fi = 0; fi < frags; fi++){
+                const fa = Math.random() * Math.PI * 2;
+                const fspd = 1 + Math.random() * 2;
+                state.spaceRocks.push(makeRock(
+                  r.wx + (Math.random() - 0.5) * r.size * 0.5,
+                  r.wy + (Math.random() - 0.5) * r.size * 0.5,
+                  Math.max(5, r.size * 0.35),
+                  Math.cos(fa) * fspd, Math.sin(fa) * fspd
+                ));
+              }
+            }
+            state.spaceRocks.splice(ri, 1);
+            addScore(200);
+            state.rocksDestroyed = (state.rocksDestroyed || 0) + 1;
+            if(zoneAt(r.wx, r.wy) === -1){
+              state._beltRocksDestroyed = (state._beltRocksDestroyed || 0) + 1;
+              const _secretThresh = (state.secretVisitCount > 0) ? 5 : 15;
+              if((state._bossInMainWorld || state.secretBossDefeated) && !(state.mainWorldBoss && !state.mainWorldBoss.dead)){
+                state._bossInMainWorld = false;
+                state.secretBossDefeated = false;
+              }
+              if(state._beltRocksDestroyed >= _secretThresh && !state.secretUnlocked && !state.secretBossDefeated && !state._bossInMainWorld){
+                state.secretUnlocked = true;
+                try{ _sendAnalytics('secret_found'); }catch(e){}
+              }
+            }
+            consumed = true;
+            break;
+          }
+        }
+      }
+    }
+    if(consumed) state.vibeLasers.splice(i, 1);
+  }
+}
+
+function _vibeBricksDraw(){
+  if(state.currentLevel !== 4) return;
+  const cxC = CX(), cyC = CY();
+  const W = canvas.width, H = canvas.height;
+  const half = _VIBE_BRICK_SIZE / 2;
+  const vibeTitles = (CONTENT_DATA.VIBE||[]).map(function(it){ return it && it.title; });
+  ctx.save();
+  state.objects.forEach(function(obj){
+    if(!obj || !obj.content || !obj.content.title || obj.collected) return;
+    if(obj._permanent || obj._bio || obj._social) return;
+    if(vibeTitles.indexOf(obj.content.title) < 0) return;
+    if(!obj._vibeBricks) return;
+    obj._vibeBricks.forEach(function(b){
+      if(b.hp <= 0) return;
+      const sx = b.x - state.x + cxC;
+      const sy = b.y - state.y + cyC;
+      if(sx < -30 || sx > W + 30 || sy < -30 || sy > H + 30) return;
+      // HP 2 = bright/full, HP 1 = cracked/dim
+      const isCracked = b.hp < _VIBE_BRICK_HP;
+      const fill = b.layer === 'inner'
+        ? (isCracked ? '#3a6a8a' : '#5fb4e0')
+        : (isCracked ? '#5a4a8a' : '#9b7bd4');
+      const edge = b.layer === 'inner' ? '#aedfff' : '#d8c0ff';
+      ctx.fillStyle = fill;
+      ctx.fillRect(sx - half, sy - half, _VIBE_BRICK_SIZE, _VIBE_BRICK_SIZE);
+      ctx.strokeStyle = edge;
+      ctx.lineWidth = 2;
+      ctx.strokeRect(sx - half + 1, sy - half + 1, _VIBE_BRICK_SIZE - 2, _VIBE_BRICK_SIZE - 2);
+      // Inner pixel for that chunky 8-bit feel
+      if(!isCracked){
+        ctx.fillStyle = edge;
+        ctx.fillRect(sx - 3, sy - 3, 6, 6);
+      } else {
+        // Crack marks
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 1.5;
+        ctx.beginPath();
+        ctx.moveTo(sx - 6, sy - 4); ctx.lineTo(sx - 2, sy + 1); ctx.lineTo(sx + 2, sy - 2);
+        ctx.stroke();
+      }
+    });
+  });
+  ctx.restore();
+}
+
+function _vibeLasersDraw(){
+  if(!state.vibeLasers || !state.vibeLasers.length) return;
+  const cxC = CX(), cyC = CY();
+  const W = canvas.width, H = canvas.height;
+  ctx.save();
+  state.vibeLasers.forEach(function(l){
+    const sx = l.x - state.x + cxC;
+    const sy = l.y - state.y + cyC;
+    if(sx < -20 || sx > W + 20 || sy < -20 || sy > H + 20) return;
+    // Short bright bolt with trail
+    const tailLen = 14;
+    const tx = sx - (l.vx / _VIBE_LASER_SPEED) * tailLen;
+    const ty = sy - (l.vy / _VIBE_LASER_SPEED) * tailLen;
+    ctx.strokeStyle = '#ffe000';
+    ctx.shadowColor = '#ffaa00';
+    ctx.shadowBlur = 12;
+    ctx.lineWidth = 3;
+    ctx.beginPath();
+    ctx.moveTo(tx, ty);
+    ctx.lineTo(sx, sy);
+    ctx.stroke();
+    // Hot core
+    ctx.shadowBlur = 0;
+    ctx.fillStyle = '#ffffff';
+    ctx.beginPath(); ctx.arc(sx, sy, 2.5, 0, Math.PI * 2); ctx.fill();
+  });
+  ctx.restore();
+}
+
+// (Maze + drag-and-drop are obsolete; their function bodies remain below as
+// dead code referenced only by legacy callers. New VIBE mechanic is the brick
+// barricade + laser above. Kept intentionally short to minimise dead-code area.)
+function _ensureVibeMaze(){ /* obsolete — no-op */ }
+// ── PHOTO Zone Shy Subjects ────────────────
+// PHOTO items behave like skittish wildlife: they hold a "home" position and
+// drift back to it when undisturbed, but flee from the ship when it gets close.
+// Closer = faster flee. To collect, the player has to chase them down — the
+// inverse verb of DIRECT (which pushes the ship away from objects).
+const _SHY_FLEE_R     = 420;    // ship distance at which item begins fleeing
+const _SHY_RELEASE_R  = 820;    // ship distance at which item stops fleeing and returns home
+const _SHY_MAX_DRIFT  = 1400;   // max distance item may drift from home before forced return
+const _SHY_FLEE_SPD   = 6.5;    // max flee speed (ship boost is 18+, so always catchable)
+const _SHY_HOME_SPD   = 2.4;    // max return-to-home speed
+
+function _photoShyTick(){
+  if(state.paused || state.menuOpen || state.contentOpen) return;
+  if(!state.objects) return;
+  const _photoTitles = new Set((CONTENT_DATA.PHOTO||[]).map(function(it){ return it && it.title; }));
+  state.objects.forEach(function(obj){
+    if(!obj || !obj.content || !obj.content.title) return;
+    if(obj._permanent || obj._bio || obj._social) return;
+    if(obj.collected) return;
+    // PHOTO-content objects only, by title — so an item that flees into DIRECT
+    // geographically still behaves like a PHOTO subject (and won't pick up
+    // DIRECT-zone guardians).
+    if(!_photoTitles.has(obj.content.title)) return;
+    // Lazy-init shy state on first sight of this object
+    if(obj._shyInit === undefined){
+      obj._shyHomeX = obj.wx;
+      obj._shyHomeY = obj.wy;
+      obj._shyVx = 0;
+      obj._shyVy = 0;
+      obj._shyInit = true;
+    }
+    const dx = state.x - obj.wx, dy = state.y - obj.wy;
+    const d  = Math.hypot(dx, dy);
+    const hdx = obj.wx - obj._shyHomeX, hdy = obj.wy - obj._shyHomeY;
+    const hD  = Math.hypot(hdx, hdy);
+
+    let mode;
+    if(hD > _SHY_MAX_DRIFT)         mode = 'return-forced';
+    else if(d < _SHY_FLEE_R)        mode = 'flee';
+    else if(d > _SHY_RELEASE_R && hD > 30) mode = 'return';
+    else                            mode = 'idle';
+
+    if(mode === 'flee'){
+      // Flee force scales with proximity — closer ship = harder push.
+      const prox = 1 - (d / _SHY_FLEE_R);
+      const f = 0.18 + prox * 0.45;
+      const awayX = -dx / (d || 1), awayY = -dy / (d || 1);
+      obj._shyVx += awayX * f;
+      obj._shyVy += awayY * f;
+    } else if(mode === 'return-forced'){
+      // Hard pull back inside the drift cage
+      obj._shyVx += (-hdx / (hD || 1)) * 0.28;
+      obj._shyVy += (-hdy / (hD || 1)) * 0.28;
+    } else if(mode === 'return'){
+      // Gentle drift back home
+      obj._shyVx += (-hdx / (hD || 1)) * 0.08;
+      obj._shyVy += (-hdy / (hD || 1)) * 0.08;
+      obj._shyVx *= 0.94;
+      obj._shyVy *= 0.94;
+    } else {
+      // Idle: settle near home with damping
+      obj._shyVx += (-hdx / (hD || 1)) * 0.03;
+      obj._shyVy += (-hdy / (hD || 1)) * 0.03;
+      obj._shyVx *= 0.90;
+      obj._shyVy *= 0.90;
+    }
+
+    const _maxSpd = mode === 'flee' ? _SHY_FLEE_SPD : _SHY_HOME_SPD;
+    const sp = Math.hypot(obj._shyVx, obj._shyVy);
+    if(sp > _maxSpd){
+      obj._shyVx = (obj._shyVx / sp) * _maxSpd;
+      obj._shyVy = (obj._shyVy / sp) * _maxSpd;
+    }
+    // Stay inside PHOTO — if the next position would cross any zone boundary
+    // (into DIRECT, ANIMATE, EDIT, or the belt) reject the move and reflect
+    // velocity. Items can still flee aggressively up to the boundary but never
+    // through it.
+    const _nx = obj.wx + obj._shyVx;
+    const _ny = obj.wy + obj._shyVy;
+    if(zoneAt(_nx, _ny) === 3){
+      obj.wx = _nx;
+      obj.wy = _ny;
+    } else {
+      obj._shyVx *= -0.4;
+      obj._shyVy *= -0.4;
+    }
+  });
+}
+
+// ── DIRECT Zone Guardians ──────────────────
+// Ambient hazard: each uncollected DIRECT-zone content object is surrounded by
+// purple guardian orbs that orbit it, pursue the player on approach, and bounce
+// the ship toward EDIT (back out of the zone). Not a timed challenge — they
+// exist as long as objects exist. Lazily attached to each object as needed;
+// lifecycle follows the object (cull/collect = guardians gone with it).
+const _GUARD_COUNT      = 4;     // orbs per object
+const _GUARD_ORBIT_R    = 70;    // orbit radius
+const _GUARD_LEASH      = 480;   // max distance from guarded object
+const _GUARD_PURSUE_D   = 320;   // distance at which guardian engages player
+const _GUARD_HIT_R      = 28;    // guardian collision radius (visual orb ~13, force-field extends well beyond)
+const _GUARD_SHIP_R     = 14;    // ship body radius for collision
+const _GUARD_BOUNCE_F   = 14;    // velocity magnitude applied to ship on bounce
+const _GUARD_HIT_PTS    = -10;   // score penalty per contact (fires once per entry, not per frame)
+
+// Dedup: enforce one instance per title for DIRECT-content objects that are
+// actually IN the DIRECT zone. Both checks matter — shared titles (e.g.
+// MAKE ANYTHING is in DIRECT and ANIMATE) shouldn't be deduped or guarded
+// when they're sitting in ANIMATE during a beacon race.
+function _dedupDirectObjects(){
+  const _directTitles = new Set((CONTENT_DATA.DIRECT||[]).map(function(it){ return it && it.title; }));
+  const _seen = new Set();
+  (state.objects||[]).forEach(function(o){
+    if(!o || !o.content || !o.content.title) return;
+    if(o._permanent || o._bio || o._social) return;
+    if(o.collected) return;
+    if(!_directTitles.has(o.content.title)) return;
+    if(zoneAt(o.wx, o.wy) !== 0) return; // not geographically in DIRECT — skip
+    if(_seen.has(o.content.title)){
+      o.collected = true;
+    } else {
+      _seen.add(o.content.title);
+    }
+  });
+}
+
+function _liveDirectObjs(){
+  const _directTitles = new Set((CONTENT_DATA.DIRECT||[]).map(function(it){ return it && it.title; }));
+  return (state.objects||[]).filter(function(o){
+    return o && o.content && o.content.title && !o.collected
+      && !o._permanent && !o._bio && !o._social
+      && _directTitles.has(o.content.title)
+      && zoneAt(o.wx, o.wy) === 0;
+  });
+}
+
+function _spawnGuardiansForObj(obj){
+  // Split roles: half attackers (engage at full pursue range with flanking
+  // offsets), half guards (stay close, only engage at short range).
+  const _attackerCount = Math.floor(_GUARD_COUNT / 2);
+  for(let i = 0; i < _GUARD_COUNT; i++){
+    const ang = (i / _GUARD_COUNT) * Math.PI * 2 + Math.random() * 0.4;
+    const _isAttacker = i < _attackerCount;
+    state.directGuardians.push({
+      objRef: obj,
+      _targetTitle: obj.content.title,
+      role: _isAttacker ? 'attacker' : 'guard',
+      // Attackers each carry a unique angular offset around the player so
+      // they converge from different directions rather than the same vector.
+      _flankOffset: _isAttacker ? (i / Math.max(1, _attackerCount)) * Math.PI * 2 : 0,
+      orbitAng: ang,
+      x: obj.wx + Math.cos(ang) * _GUARD_ORBIT_R,
+      y: obj.wy + Math.sin(ang) * _GUARD_ORBIT_R,
+      vx: 0, vy: 0,
+      pulse: Math.random() * 60,
+      mode: 'orbit'
+    });
+  }
+}
+
+// Reattach orphaned guardians (collected/culled target) to another live obj.
+// Picks the NEAREST live object to where the orb currently is and enters
+// 'migrate' mode for a swift transit at boosted speed. Increasing density on
+// survivors is a natural consequence — orbs converge on closest remaining
+// objects, so geographically clustered objects get crowded fast.
+function _migrateOrphanGuardians(liveObjs){
+  if(liveObjs.length === 0) return false;
+  let migrated = false;
+  state.directGuardians.forEach(function(g){
+    const stillLive = g.objRef && !g.objRef.collected && liveObjs.indexOf(g.objRef) >= 0;
+    if(stillLive) return;
+    // Prefer a live obj with the same title (cull/respawn case — orb stays put)
+    const sameTitle = liveObjs.find(function(o){ return o.content.title === g._targetTitle; });
+    if(sameTitle){ g.objRef = sameTitle; return; }
+    // Migrate to the nearest live object
+    let best = liveObjs[0], bestD2 = Infinity;
+    liveObjs.forEach(function(o){
+      const dx = o.wx - g.x, dy = o.wy - g.y;
+      const d2 = dx*dx + dy*dy;
+      if(d2 < bestD2){ bestD2 = d2; best = o; }
+    });
+    g.objRef = best;
+    g._targetTitle = best.content.title;
+    g.orbitAng = Math.random() * Math.PI * 2;
+    g.mode = 'migrate'; // boosted transit speed until arrival
+    migrated = true;
+  });
+  return migrated;
+}
+
+function _directGuardiansTick(){
+  // Tick whenever DIRECT objects exist, even if player is elsewhere — keeps
+  // orbs in orbit so they're ready when the player returns.
+  if(state.paused || state.menuOpen || state.contentOpen) return;
+  if(!state.directGuardians) state.directGuardians = [];
+
+  _dedupDirectObjects();
+  const liveObjs = _liveDirectObjs();
+  if(liveObjs.length === 0){
+    // DIRECT cleared: release orbs into free-roam through the asteroid belt
+    // instead of despawning. They drift along the belt orbit indefinitely.
+    state.directGuardians.forEach(function(g){
+      if(g.mode === 'roam') return;
+      g.mode = 'roam';
+      g.objRef = null;
+      g._targetTitle = null;
+      g._tangDir = (Math.random() < 0.5) ? 1 : -1;
+      // Give them an outward kick so they head toward the belt
+      const _ang = Math.atan2(g.y, g.x);
+      g.vx += Math.cos(_ang) * 1.6;
+      g.vy += Math.sin(_ang) * 1.6;
+    });
+  } else {
+    _migrateOrphanGuardians(liveObjs);
+    // Spawn N guardians for any title that doesn't yet have any.
+    const _guardedTitles = new Set(state.directGuardians.map(function(g){ return g._targetTitle; }));
+    liveObjs.forEach(function(obj){
+      if(_guardedTitles.has(obj.content.title)) return;
+      _spawnGuardiansForObj(obj);
+    });
+  }
+
+  // Update each guardian
+  state.directGuardians.forEach(function(g){
+    g.pulse++;
+    const pdx = state.x - g.x, pdy = state.y - g.y;
+    const pDist = Math.hypot(pdx, pdy);
+
+    if(g.mode === 'roam'){
+      // Free-roam in the asteroid belt: pull toward mid-belt radius, drift
+      // tangentially, with light random jitter. No leash, no object.
+      const _r = Math.hypot(g.x, g.y) || 1;
+      const _midR = (BELT_R + BELT_OUTER) / 2;
+      const _angFromOrigin = Math.atan2(g.y, g.x);
+      const _radialErr = _midR - _r;
+      const _radialF = (_radialErr > 0 ? 1 : -1) * Math.min(0.18, Math.abs(_radialErr) * 0.001);
+      g.vx += Math.cos(_angFromOrigin) * _radialF;
+      g.vy += Math.sin(_angFromOrigin) * _radialF;
+      const _tangF = 0.14;
+      g.vx += -Math.sin(_angFromOrigin) * _tangF * (g._tangDir || 1);
+      g.vy +=  Math.cos(_angFromOrigin) * _tangF * (g._tangDir || 1);
+      // Random jitter so they don't move in lockstep
+      g.vx += (Math.random() - 0.5) * 0.08;
+      g.vy += (Math.random() - 0.5) * 0.08;
+      g.vx *= 0.93;
+      g.vy *= 0.93;
+      // Speed cap for roam
+      const _rSp = Math.hypot(g.vx, g.vy);
+      const _rMax = 3.2;
+      if(_rSp > _rMax){ g.vx = (g.vx/_rSp) * _rMax; g.vy = (g.vy/_rSp) * _rMax; }
+      g.x += g.vx;
+      g.y += g.vy;
+      // Bounce check still applies — roaming orbs are still hazards
+      const _rpdx = state.x - g.x, _rpdy = state.y - g.y;
+      const _rpDist = Math.hypot(_rpdx, _rpdy);
+      const _rHitR = _GUARD_HIT_R + _GUARD_SHIP_R;
+      if(_rpDist < _rHitR){
+        const awayX = _rpdx / (_rpDist || 1);
+        const awayY = _rpdy / (_rpDist || 1);
+        state.x = g.x + awayX * (_rHitR + 1);
+        state.y = g.y + awayY * (_rHitR + 1);
+        // In the belt, "toward EDIT" still points inward — keeps the shove
+        // narrative consistent (orbs push you out of their space).
+        const _sR = Math.hypot(state.x, state.y) || 1;
+        const _toEditNX = -state.x / _sR;
+        const _toEditNY = -state.y / _sR;
+        const blendX = _toEditNX * 0.5 + awayX * 0.5;
+        const blendY = _toEditNY * 0.5 + awayY * 0.5;
+        const bM = Math.hypot(blendX, blendY) || 1;
+        state.vx = (blendX / bM) * _GUARD_BOUNCE_F;
+        state.vy = (blendY / bM) * _GUARD_BOUNCE_F;
+        if(!g._inRange){
+          addScore(_GUARD_HIT_PTS);
+          g._inRange = true;
+          if(audioCtx && !state.sfxMuted){
+            const _t = audioCtx.currentTime;
+            playBeep(110, _t,      0.10, 'square',   0.10);
+            playBeep(165, _t+0.01, 0.08, 'sawtooth', 0.06);
+            playBeep(82,  _t,      0.14, 'sine',     0.08);
+          }
+        }
+        g.vx -= awayX * 3;
+        g.vy -= awayY * 3;
+      } else {
+        g._inRange = false;
+      }
+      return;
+    }
+
+    const obj = g.objRef;
+    if(!obj){ g.mode = 'roam'; return; }
+    const odx = g.x - obj.wx, ody = g.y - obj.wy;
+    const oDist = Math.hypot(odx, ody);
+    // Role gates: attackers engage at full pursue range; guards only engage
+    // when the player gets close (half range). This keeps half the swarm near
+    // the object even when others rush out — wall behaviour vs swarm rush.
+    const _pursueR = g.role === 'guard' ? _GUARD_PURSUE_D * 0.5 : _GUARD_PURSUE_D;
+
+    // Mode selection. Migrate (long-range transit after object collected) takes
+    // priority and persists until orb arrives at the new object's orbit zone.
+    if(g.mode === 'migrate'){
+      if(oDist < _GUARD_ORBIT_R * 1.4) g.mode = 'orbit'; // arrived
+    } else if(oDist > _GUARD_LEASH){
+      g.mode = 'return';
+    } else if(pDist < _pursueR){
+      g.mode = 'pursue';
+    } else {
+      g.mode = 'orbit';
+    }
+
+    if(g.mode === 'migrate'){
+      // Beeline to new object at boosted speed
+      g.vx += (-odx / (oDist || 1)) * 0.35;
+      g.vy += (-ody / (oDist || 1)) * 0.35;
+    } else if(g.mode === 'pursue'){
+      let tx, ty;
+      if(g.role === 'attacker'){
+        // Flanking offset: aim at a point offset from player by this orb's
+        // unique angle, so attackers converge from different vectors rather
+        // than all charging the same point. Distance pulls in as orb closes.
+        const _flankR = Math.min(70, pDist * 0.4);
+        tx = state.x + Math.cos(g._flankOffset||0) * _flankR;
+        ty = state.y + Math.sin(g._flankOffset||0) * _flankR;
+      } else {
+        // Guards target the player directly when they engage (rare, close range)
+        tx = state.x; ty = state.y;
+      }
+      const tdx = tx - g.x, tdy = ty - g.y;
+      const tD = Math.hypot(tdx, tdy) || 1;
+      const acc = g.role === 'attacker' ? 0.28 : 0.20;
+      g.vx += (tdx / tD) * acc;
+      g.vy += (tdy / tD) * acc;
+    } else if(g.mode === 'return'){
+      g.vx += (-odx / (oDist || 1)) * 0.22;
+      g.vy += (-ody / (oDist || 1)) * 0.22;
+    } else {
+      g.orbitAng += 0.025;
+      const tx = obj.wx + Math.cos(g.orbitAng) * _GUARD_ORBIT_R;
+      const ty = obj.wy + Math.sin(g.orbitAng) * _GUARD_ORBIT_R;
+      g.vx += (tx - g.x) * 0.05;
+      g.vy += (ty - g.y) * 0.05;
+      g.vx *= 0.88;
+      g.vy *= 0.88;
+    }
+
+    // Max speed by mode + role
+    const _maxSpd =
+      g.mode === 'migrate' ? 6.8 :
+      g.mode === 'pursue'  ? (g.role === 'attacker' ? 5.5 : 3.6) :
+      g.mode === 'return'  ? 4.0 :
+      3.4;
+    const sp = Math.hypot(g.vx, g.vy);
+    if(sp > _maxSpd){ g.vx = (g.vx/sp) * _maxSpd; g.vy = (g.vy/sp) * _maxSpd; }
+    g.x += g.vx;
+    g.y += g.vy;
+
+    const _hitR = _GUARD_HIT_R + _GUARD_SHIP_R;
+    if(pDist < _hitR){
+      // Hard collision: ship can't penetrate the orb. Clamp position to outside
+      // the hit radius along the away-from-orb direction, every frame.
+      const awayX = pdx / (pDist || 1);
+      const awayY = pdy / (pDist || 1);
+      state.x = g.x + awayX * (_hitR + 1);
+      state.y = g.y + awayY * (_hitR + 1);
+      // Bounce velocity: blend "toward EDIT" with "away from orb" so the ship
+      // is shoved back toward zone exit. Applied every frame in contact, no
+      // cooldown — sustained contact = sustained shove.
+      const _sR = Math.hypot(state.x, state.y) || 1;
+      const _toEditNX = -state.x / _sR;
+      const _toEditNY = -state.y / _sR;
+      const blendX = _toEditNX * 0.75 + awayX * 0.25;
+      const blendY = _toEditNY * 0.75 + awayY * 0.25;
+      const bM = Math.hypot(blendX, blendY) || 1;
+      state.vx = (blendX / bM) * _GUARD_BOUNCE_F;
+      state.vy = (blendY / bM) * _GUARD_BOUNCE_F;
+      // Penalty + sfx fire once per contact: only on the frame the ship enters range.
+      if(!g._inRange){
+        addScore(_GUARD_HIT_PTS);
+        g._inRange = true;
+        if(audioCtx && !state.sfxMuted){
+          const _t = audioCtx.currentTime;
+          // Low purple thump: detuned square pair, short envelope
+          playBeep(110, _t,      0.10, 'square',   0.10);
+          playBeep(165, _t+0.01, 0.08, 'sawtooth', 0.06);
+          playBeep(82,  _t,      0.14, 'sine',     0.08);
+        }
+      }
+      // Kick guardian back so it doesn't stick to the ship
+      g.vx -= awayX * 3;
+      g.vy -= awayY * 3;
+    } else {
+      g._inRange = false;
+    }
+  });
+}
+
+function _directGuardiansDraw(){
+  if(!state.directGuardians || !state.directGuardians.length) return;
+  const cx = CX(), cy = CY();
+  const W = canvas.width, H = canvas.height;
+  state.directGuardians.forEach(function(g){
+    const sx = g.x - state.x + cx;
+    const sy = g.y - state.y + cy;
+    if(sx < -60 || sx > W+60 || sy < -60 || sy > H+60) return;
+    const baseR = 14;
+    const pulseR = baseR + Math.sin(g.pulse * 0.14) * 3;
+    ctx.save();
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.18)';
+    ctx.beginPath(); ctx.arc(sx, sy, pulseR + 11, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = 'rgba(168, 85, 247, 0.45)';
+    ctx.beginPath(); ctx.arc(sx, sy, pulseR + 5, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = '#c97bff';
+    ctx.beginPath(); ctx.arc(sx, sy, pulseR, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  });
+}
+
+// ── Survival Defense (DIRECT zone challenge) ──
+function _survivalStart(){
+  if(state._survivalComplete_DIRECT) return;
+  if(state._survival) return;
+  if(state.currentLevel !== 0) return;
+  state._survival = {
+    enemies: [],
+    waveIdx: 0,
+    waveTimer: 0,         // frames until next wave (60 = 1s)
+    waveSizes: [3,4,5,6], // enemies per wave
+    timer: 30 * 60,       // 30s survival window
+    iframes: 0,           // post-hit invuln frames
+    hitFlash: 0           // visual feedback frames
+  };
+  state.zoneCrossFlash = { lvl:-3, timer:240, pre:'CHALLENGE:', msg:'SURVIVAL — DEFEND FOR 30s', _col: LEVEL_COLORS.DIRECT };
+}
+
+function _survivalAbort(){
+  if(state._survival){
+    state._survival.enemies = [];
+    state._survival = null;
+  }
+}
+
+function _survivalSpawnWave(){
+  const sv = state._survival;
+  if(!sv) return;
+  if(sv.waveIdx >= sv.waveSizes.length) return;
+  const count = sv.waveSizes[sv.waveIdx];
+  // Spawn around the PLAYER, not zone centre — enemies must be visible/threatening
+  // immediately. Previous code spawned at (-13184, 0) which is deep in the void from
+  // the player's typical entry position; enemies took 15-20s to reach you.
+  const spawnR = 900;
+  for(let i=0; i<count; i++){
+    const ang = (i / count) * Math.PI * 2 + Math.random() * 0.5;
+    sv.enemies.push({
+      x: state.x + Math.cos(ang) * spawnR,
+      y: state.y + Math.sin(ang) * spawnR,
+      vx: 0, vy: 0,
+      hp: 1,
+      r: 18,
+      dead: false,
+      explodeT: 0
+    });
+  }
+  sv.waveIdx++;
+  sv.waveTimer = 7 * 60;  // 7s between waves
+}
+
+function _survivalTick(){
+  const sv = state._survival;
+  if(!sv) return;
+  if(state.paused || state.menuOpen || state.contentOpen) return;
+  if(state.currentLevel !== 0){ _survivalAbort(); return; }
+
+  // Wave scheduling
+  if(sv.waveIdx === 0){ _survivalSpawnWave(); }
+  if(sv.waveTimer > 0) sv.waveTimer--;
+  if(sv.waveTimer <= 0 && sv.waveIdx < sv.waveSizes.length){ _survivalSpawnWave(); }
+
+  // Enemy update (homing)
+  const speed = 2.4;
+  sv.enemies.forEach(function(e){
+    if(e.dead){
+      e.explodeT++;
+      return;
+    }
+    const dx = state.x - e.x, dy = state.y - e.y;
+    const d = Math.hypot(dx, dy) || 1;
+    e.vx += (dx/d) * 0.06;
+    e.vy += (dy/d) * 0.06;
+    // Cap speed
+    const sp = Math.hypot(e.vx, e.vy);
+    if(sp > speed){ e.vx = (e.vx/sp)*speed; e.vy = (e.vy/sp)*speed; }
+    e.x += e.vx;
+    e.y += e.vy;
+
+    // Collision with ship (skip if invuln)
+    if(sv.iframes <= 0){
+      const cdx = state.x - e.x, cdy = state.y - e.y;
+      if(cdx*cdx + cdy*cdy < (e.r + 14)*(e.r + 14)){
+        sv.iframes = 60;
+        sv.hitFlash = 20;
+        state.fuel = Math.max(0, state.fuel - 0.10);
+        // Don't kill enemy — they continue past
+      }
+    }
+
+    // Boost-ram kill (ship has high speed and is in hyperspace OR carrying high momentum)
+    const shipSp = Math.hypot(state.vx||0, state.vy||0);
+    if(state.hyperspace && shipSp > 8){
+      const cdx = state.x - e.x, cdy = state.y - e.y;
+      if(cdx*cdx + cdy*cdy < (e.r + 24)*(e.r + 24)){
+        e.dead = true;
+        addScore(150);
+      }
+    }
+  });
+
+  // Wave-beam kills — if state.waveBeams exists and is an array of {x,y,r}
+  if(Array.isArray(state.waveBeams) && state.waveBeams.length){
+    sv.enemies.forEach(function(e){
+      if(e.dead) return;
+      state.waveBeams.forEach(function(wb){
+        if(!wb) return;
+        const wbR = wb.r || 80;
+        const wdx = wb.x - e.x, wdy = wb.y - e.y;
+        if(wdx*wdx + wdy*wdy < (wbR + e.r)*(wbR + e.r)){
+          e.dead = true;
+          addScore(150);
+        }
+      });
+    });
+  }
+
+  // Cull dead enemies after explosion frames
+  sv.enemies = sv.enemies.filter(function(e){ return !(e.dead && e.explodeT > 30); });
+
+  // Decrement timers
+  if(sv.iframes > 0) sv.iframes--;
+  if(sv.hitFlash > 0) sv.hitFlash--;
+  sv.timer--;
+
+  // Win condition
+  if(sv.timer <= 0){
+    addScore(3000);
+    state._survivalComplete_DIRECT = true;
+    state.zoneCrossFlash = { lvl:-3, timer:300, pre:'SURVIVAL', msg:'COMPLETE — +3000 PTS', _col: LEVEL_COLORS.DIRECT };
+    _survivalAbort();
+    return;
+  }
+}
+
+function _survivalDraw(){
+  const sv = state._survival;
+  if(!sv) return;
+  const cx = CX(), cy = CY();
+  const W = canvas.width, H = canvas.height;
+  // Off-screen direction arrows: for any live enemy outside the viewport, draw
+  // a small arrow at the screen edge pointing toward them so the player can
+  // tell where threats are coming from before they're visible.
+  const _edgePad = 40;
+  sv.enemies.forEach(function(e){
+    if(e.dead) return;
+    const sx = e.x - state.x + cx;
+    const sy = e.y - state.y + cy;
+    if(sx >= 0 && sx <= W && sy >= 0 && sy <= H) return; // on-screen, skip arrow
+    // Clip the ship→enemy ray to the viewport edge
+    const dx = sx - cx, dy = sy - cy;
+    const halfW = W/2 - _edgePad, halfH = H/2 - _edgePad;
+    const tX = dx !== 0 ? halfW / Math.abs(dx) : Infinity;
+    const tY = dy !== 0 ? halfH / Math.abs(dy) : Infinity;
+    const t = Math.min(tX, tY);
+    const ex = cx + dx * t, ey = cy + dy * t;
+    const ang = Math.atan2(dy, dx);
+    ctx.save();
+    ctx.translate(ex, ey);
+    ctx.rotate(ang);
+    ctx.fillStyle = '#ff5555';
+    ctx.shadowColor = '#ff5555'; ctx.shadowBlur = 8;
+    ctx.beginPath();
+    ctx.moveTo(14, 0);
+    ctx.lineTo(-8, -8);
+    ctx.lineTo(-8, 8);
+    ctx.closePath();
+    ctx.fill();
+    ctx.restore();
+  });
+  sv.enemies.forEach(function(e){
+    const sx = e.x - state.x + cx;
+    const sy = e.y - state.y + cy;
+    if(sx < -100 || sx > W+100 || sy < -100 || sy > H+100) return;
+    ctx.save();
+    if(e.dead){
+      const t = e.explodeT;
+      const r = e.r + t * 1.5;
+      ctx.globalAlpha = Math.max(0, 1 - t/30);
+      ctx.strokeStyle = '#ffaa44';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(sx, sy, r, 0, Math.PI*2); ctx.stroke();
+    } else {
+      // Triangle aimed at ship
+      const ang = Math.atan2(state.y - e.y, state.x - e.x);
+      ctx.translate(sx, sy);
+      ctx.rotate(ang);
+      ctx.fillStyle = '#ff5555';
+      ctx.strokeStyle = '#ff8888';
+      ctx.lineWidth = 2;
+      ctx.beginPath();
+      ctx.moveTo(e.r, 0);
+      ctx.lineTo(-e.r*0.7, e.r*0.7);
+      ctx.lineTo(-e.r*0.7, -e.r*0.7);
+      ctx.closePath();
+      ctx.fill(); ctx.stroke();
+    }
+    ctx.restore();
+  });
+  // Hit flash overlay
+  if(sv.hitFlash > 0){
+    ctx.save();
+    ctx.fillStyle = 'rgba(255,80,80,' + (sv.hitFlash/40) + ')';
+    ctx.fillRect(0, 0, W, H);
+    ctx.restore();
+  }
+  // HUD
+  ctx.save();
+  ctx.font = "12px 'Press Start 2P',monospace";
+  ctx.fillStyle = LEVEL_COLORS.DIRECT;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+  const secs = Math.ceil(sv.timer / 60);
+  const w = Math.min(sv.waveIdx, sv.waveSizes.length);
+  ctx.fillText('SURVIVAL  WAVE ' + w + '/' + sv.waveSizes.length + '   ' + secs + 's', W/2, 40);
+  ctx.restore();
+}
+
 //  LEADERBOARD — seeded fiction
 const LB_NAMES=['RAVEN_X','NOVA__01','PIET__00','T_SUESS_','ORBITAL9','STARFALL','VOIDHAWK','MNEMO_SY','KALEDRMS','ASTRAEA_'];
 const LB_BASE= [14200,11800,10200,8750,7300,5900,4100,2700,1500,800];
@@ -13126,8 +15220,9 @@ function initLeaderboardWithScore(topInitials, topScore){
   loadGlobalScores(global=>renderLeaderboard(rows, topInitials, topScore, global));
 }
 
-function startGame(){
+function startGame(opts){
   if(state.started)return;
+  const _isResume = !!(opts && opts.resume);
   _analyticsStartTime = Date.now();
   _analyticsDeathCount = 0;
   _analyticsActions = [];
@@ -13137,20 +15232,69 @@ function startGame(){
   if(!window._contentManifestsReady){
     const sub=document.getElementById('intro-sub');
     if(sub) sub.textContent='LOADING CONTENT...';
-    setTimeout(startGame,200);
+    setTimeout(function(){ startGame(opts); }, 200);
     return;
   }
   state.started=true;
   document.getElementById('intro').style.display='none';
   window._holdMusicForInstructions = true;
   // Reset first-collection animation state
-  _firstCollectAnimDone = false; _firstFuelAnimDone = false; _shipInputSeen = false;
+  if(_isResume){
+    // Resume: skip the slow first-time animations — player has already seen them
+    _firstCollectZonesDone = new Set(LEVELS); _firstFuelAnimDone = true; _shipInputSeen = true;
+  } else {
+    _firstCollectZonesDone = new Set(); _firstFuelAnimDone = false; _shipInputSeen = false;
+  }
   _hudFlyAnims = []; _fuelFlyAnims = []; _radialBursts = [];
   _viewHintTimer = 0; _fuelHintTimer = 0; _fuelFillAnim = 0; _fuelFillTarget = 0; _pendingFuelAmount = 0;
   _lastCollectedObj = null;
+  // Saved-game slot: create new on fresh start; resume already had state hydrated by _navApplySlot
+  if(!_isResume){
+    try{ _navSlotCreate(); }catch(e){}
+  }
+  // Snapshot resume position before init can disturb it
+  const _resumeX = _isResume ? state.x : 0;
+  const _resumeY = _isResume ? state.y : 0;
+  const _resumeVX = 0;
+  const _resumeVY = 0;
+  const _resumeAngle = _isResume ? state.angle : 0;
+  // initObjects() resets currentLevel + visitedLevels — snapshot them too on resume
+  // so radar/HUD reflect saved progress instead of a fresh "EDIT-only" set.
+  const _resumeCurrentLevel = _isResume ? state.currentLevel : 1;
+  const _resumeVisitedLevels = _isResume && state.visitedLevels
+    ? new Set(state.visitedLevels) : null;
   initAudio();initStars();initObjects();initBarrierObjects();_spawnPostInterzoneContent();
-  state.collectedItems = [];
-  state._prevX=0; state._prevY=0;
+  if(_isResume){
+    // Restore ship pose (init may have moved ship to launchpad)
+    state.x = _resumeX; state.y = _resumeY;
+    state.vx = _resumeVX; state.vy = _resumeVY;
+    state.angle = _resumeAngle;
+    state._prevX = _resumeX; state._prevY = _resumeY;
+    // Restore zone progress
+    if(typeof _resumeCurrentLevel === 'number') state.currentLevel = _resumeCurrentLevel;
+    if(_resumeVisitedLevels) state.visitedLevels = _resumeVisitedLevels;
+    // Mark world objects as already collected for any saved item
+    if(Array.isArray(state.collectedItems) && Array.isArray(state.objects)){
+      const _titles = new Set(state.collectedItems.map(function(c){ return c && c.title; }).filter(Boolean));
+      state.objects.forEach(function(o){
+        if(o && o.content && o.content.title && _titles.has(o.content.title)) o.collected = true;
+      });
+    }
+    state._missionShown = true;
+    state._wasInPen = (state.x*state.x + state.y*state.y) < PEN_BARRIER_R*PEN_BARRIER_R;
+    let _resumeLabel = 'RING ZONE';
+    if(state.outsideBarrier){
+      _resumeLabel = (state.currentLevel >= 0 && LEVELS[state.currentLevel]) ? LEVELS[state.currentLevel] : 'OUTER';
+    } else if(state._wasInPen){
+      _resumeLabel = 'EDITING';
+    } else if(state.currentLevel >= 0 && state.currentLevel !== 1 && LEVELS[state.currentLevel]){
+      _resumeLabel = LEVELS[state.currentLevel];
+    }
+    window._resumeHudLabel = _resumeLabel;
+  } else {
+    state.collectedItems = [];
+    state._prevX=0; state._prevY=0;
+  }
   // Teleport to Moon if returning from victory walk — restore full post-victory state
   if(window._teleportToMoonOnStart){
     window._teleportToMoonOnStart = false;
@@ -13172,8 +15316,12 @@ function startGame(){
     state.x = moonX; state.y = moonY; state.vx = 0; state.vy = 0;
     state._prevX = moonX; state._prevY = moonY;
   }
-  updateLevelDisplay('EDITING');updateFuelBar();updateFireModeUI();
+  updateLevelDisplay(window._resumeHudLabel || 'EDITING');
+  window._resumeHudLabel = null;
+  updateFuelBar();updateFireModeUI();
   updateAllObjectsList(); updateMusicDrawer(); _updateMuteUI();
+  // Resume skips first-mission/instructions overlay — player is already mid-game
+  if(_isResume) return;
   // Show mission briefing on first launch; open menu drawer
   setTimeout(()=>{
     if(!state._missionShown){
@@ -13227,6 +15375,15 @@ function loop(timestamp) {
   _lastFrameTime = timestamp || performance.now();
   const _dt = Math.min(_rawDt, _TARGET_DT * 3);
   state._dtScale = _dt / _TARGET_DT;
+
+  // Saved-game auto-sync — every 2s while actively playing
+  if(state.started && !state.paused && !state.menuOpen && !state.contentOpen){
+    const _nowMs = Date.now();
+    if(_nowMs - _navLastSyncMs >= _NAV_SYNC_INTERVAL_MS){
+      _navLastSyncMs = _nowMs;
+      try{ _navSlotSync(); }catch(e){}
+    }
+  }
 
   try{tickBossExplosion();}catch(e){console.error('tickBossExplosion error:',e);}
   const _pBg=performance.now();
@@ -13933,9 +16090,8 @@ function drawEarth(ctx, cx, cy){
 }
 
 function drawMoon(ctx, cx, cy){
-  // Orbit around Earth at 0.25px per 2 frames, only ticks when player nears Earth
-  const _dxE = state.x - EARTH_WX, _dyE = state.y - EARTH_WY;
-  if(_dxE*_dxE + _dyE*_dyE < 2500*2500) _moonOrbitAng += 0.125 / MOON_ORBIT_R;
+  // Orbit around Earth at 0.25px per 2 frames
+  _moonOrbitAng += 0.125 / MOON_ORBIT_R;
   const moonWX = EARTH_WX + Math.cos(_moonOrbitAng) * MOON_ORBIT_R;
   const moonWY = EARTH_WY + Math.sin(_moonOrbitAng) * MOON_ORBIT_R;
   const screenX = moonWX - state.x + cx;
@@ -14702,6 +16858,15 @@ function returnToTitleWithScore(initials, score){
   introEl.removeAttribute('style');
   introEl.style.display = 'flex';
 
+  // Reset saved-game panel back to hidden + show all default intro children
+  const _navPanel = document.getElementById('nav-saved-panel');
+  if(_navPanel) _navPanel.style.display = 'none';
+  ['intro-sub','fullscreen-hint','leaderboard','boring-mode-link'].forEach(function(id){
+    const el = document.getElementById(id); if(el) el.style.display = '';
+  });
+  // Clear active slot id so next "Start New" creates a fresh slot
+  _navSetActiveId(null);
+
   // Rebuild leaderboard with new score at top
   initLeaderboardWithScore(initials, score);
 
@@ -14775,7 +16940,13 @@ function triggerSecretLevelUnlock(){
 }
 
 function enterSecretLevel(){
-  // Block re-entry if boss is already in the main world
+  // Self-heal: if _bossInMainWorld is true but no actual main-world boss exists,
+  // the flag is stuck — clear it so re-entry isn't blocked forever.
+  if(state._bossInMainWorld && !state.mainWorldBoss){
+    state._bossInMainWorld = false;
+    state.secretBossDefeated = false;
+  }
+  // Block re-entry if boss is genuinely already in the main world
   if(state._bossInMainWorld) return;
   state.inSecretLevel = true;
   state.paused = false;
@@ -15639,6 +17810,13 @@ function killMainWorldBoss(){
   }
 }
 function exitSecretLevel(){
+  // Defensive: if _bossInMainWorld was set but there is no secretBoss to spawn
+  // (e.g. player exited via BH without engaging boss but the flag got stuck),
+  // clear it so future re-entry isn't permanently blocked.
+  if(state._bossInMainWorld && !state.secretBoss){
+    state._bossInMainWorld = false;
+    state.secretBossDefeated = false;
+  }
   // Spawn boss in main world if it was captured by BH
   if(state._bossInMainWorld && state.secretBoss){
     const _sb=state.secretBoss;
@@ -15712,6 +17890,7 @@ function exitSecretLevel(){
   state.score = _svScore;
   updateLevelDisplay(LEVELS[1]);
   selectTrack(3);
+  try{ _spawnEditWormholes(); }catch(e){}
 }
 
 function _spawnEditWormholes(){
@@ -15720,7 +17899,7 @@ function _spawnEditWormholes(){
   const _wr = 320; // just beyond fully extended enclosure walls (90+200=290)
   const _ws = 48;  // 1.25× normal size (38*1.25)
   // Place each warp in the direction of its target zone
-  // 0=DIRECT(left,π) 2=ANIMATE(right,0) 3=PHOTO(top,-π/2) 4=DESIGN(bottom,π/2)
+  // 0=DIRECT(left,π) 2=ANIMATE(right,0) 3=PHOTO(top,-π/2) 4=VIBE(bottom,π/2)
   const _zoneAngles = { 0: Math.PI, 2: 0, 3: -Math.PI/2, 4: Math.PI/2 };
   LEVELS.forEach((lvl, i) => {
     if(i === 1) return; // skip EDIT→EDIT
@@ -16635,17 +18814,40 @@ function drawSecretLevel(ctx,cx,cy){
     var _cl = (state.currentLevel !== undefined && state.currentLevel !== null && state.currentLevel >= 0) ? state.currentLevel : 1;
     var zone=typeof LEVELS!=='undefined'?LEVELS[_cl]:'EDITING';
     var items=(typeof CONTENT_DATA!=='undefined'?CONTENT_DATA[zone]||[]:[]);
-    items.forEach(function(it){if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push(it);});
+    // Tag each push with .level so per-zone completion check credits this zone
+    items.forEach(function(it){
+      if(!state.collectedItems.find(function(c){return c.title===it.title && c.level===zone;})){
+        state.collectedItems.push(Object.assign({}, it, { level: zone }));
+      }
+    });
     state.objects.forEach(function(o){if(o.content&&items.find(function(it){return it.title===o.content.title;}))o.collected=true;});
+    // EDIT zone: also open the pen barrier directly (in case mission flag was missed)
+    if(_cl === 1){
+      state.editMissionComplete = true;
+      if(state.penBarrier && state.penBarrier.closed){
+        state.penBarrier.opening = true;
+        state.penBarrier.openTimer = 0;
+      }
+    }
     if(typeof checkLevelComplete==='function') checkLevelComplete();
     if(typeof checkAllLevelsCollected==='function') checkAllLevelsCollected();
   };
   window.devCollectAll = function(){
     if(typeof LEVELS==='undefined'||typeof CONTENT_DATA==='undefined') return;
     LEVELS.forEach(function(zone){
-      (CONTENT_DATA[zone]||[]).forEach(function(it){if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push(it);});
+      (CONTENT_DATA[zone]||[]).forEach(function(it){
+        if(!state.collectedItems.find(function(c){return c.title===it.title && c.level===zone;})){
+          state.collectedItems.push(Object.assign({}, it, { level: zone }));
+        }
+      });
     });
     state.objects.forEach(function(o){if(o.content)o.collected=true;});
+    // Open the pen barrier so EDIT-zone gates lift
+    state.editMissionComplete = true;
+    if(state.penBarrier && state.penBarrier.closed){
+      state.penBarrier.opening = true;
+      state.penBarrier.openTimer = 0;
+    }
     if(typeof checkLevelComplete==='function') checkLevelComplete();
     if(typeof checkAllLevelsCollected==='function') checkAllLevelsCollected();
   };
@@ -16653,7 +18855,10 @@ function drawSecretLevel(ctx,cx,cy){
     var items=window._devObjItems;
     if(!items||!items[idx]) return;
     var it=items[idx];
-    if(!state.collectedItems.find(function(c){return c.title===it.title;}))state.collectedItems.push({title:it.title});
+    var _zone = (state.currentLevel !== undefined && state.currentLevel !== null && state.currentLevel >= 0) ? LEVELS[state.currentLevel] : null;
+    if(!state.collectedItems.find(function(c){return c.title===it.title && c.level===_zone;})){
+      state.collectedItems.push(Object.assign({}, it, { level: _zone }));
+    }
     it.obj.collected=true;
     _objListFrame=59;
   };
