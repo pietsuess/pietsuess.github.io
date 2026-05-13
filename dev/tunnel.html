@@ -5570,12 +5570,12 @@ window.onload = function() {
             return;
         }
         if (_inBonusLevel && currentSector === 2) {
-            // S2B TARGET SHOOT — bullseye every ~500 units (~48 targets per 24k level, 3× density).
-            // Each target sits within a small radial twist of the previous one (~29° max),
-            // so the player follows a rotation rather than chasing big angle jumps.
-            if (Math.abs(zPos - _lastBullseyeZ) < 500) return;
+            // S2B TARGET SHOOT — bullseye every ~250 units (~96 targets per 24k level).
+            // Each target sits within a tiny radial twist of the previous (~9° max), so the
+            // player follows a continuous gentle drift rather than chasing big angle jumps.
+            if (Math.abs(zPos - _lastBullseyeZ) < 250) return;
             _lastBullseyeZ = zPos;
-            _bullseyeAngle += (Math.random() - 0.5) * 1.0; // ±0.5 rad ≈ ±29° drift per target — slightly more chase
+            _bullseyeAngle += (Math.random() - 0.5) * 0.3; // ±0.15 rad ≈ ±9° drift per target
             var _bMesh = _createBullseye(zPos, _bullseyeAngle);
             scene.add(_bMesh); items.push(_bMesh);
             return;
@@ -8702,6 +8702,22 @@ window.onload = function() {
                 btn.style.cssText = base;
                 col.appendChild(btn);
             }
+            // Add a BONUS button at the bottom of each sector column when the player has
+            // cleared the sector's zone — lets them re-enter the bonus instead of it being
+            // a one-shot on fresh-clear.
+            try {
+                var _bKey = 'S' + s + 'B';
+                var _hasBonus = (typeof SPAWN_TUNING !== 'undefined') && SPAWN_TUNING[_bKey];
+                var _zoneClearedForS = (typeof isZoneComplete === 'function') && isZoneComplete(s);
+                if (_hasBonus && _zoneClearedForS) {
+                    var bbtn = document.createElement('button');
+                    bbtn.className = 'menu-btn';
+                    bbtn.setAttribute('data-bonus-sector', String(s));
+                    bbtn.textContent = 'B';
+                    bbtn.style.cssText = 'width:auto;margin:0;padding:8px 4px;font-size:8px;letter-spacing:1px;text-align:center;border-color:#ff66cc;color:#ff66cc;background:rgba(255,102,204,0.08);box-shadow:0 0 8px rgba(255,102,204,0.25);';
+                    col.appendChild(bbtn);
+                }
+            } catch(e) {}
             grid.appendChild(col);
         }
     }
@@ -8723,6 +8739,21 @@ window.onload = function() {
         }
         var last = 0;
         var handler = function(e) {
+            // BONUS-button tap → enter the bonus for that sector.
+            var bTgt = e.target && e.target.closest ? e.target.closest('[data-bonus-sector]') : null;
+            if (bTgt && grid.contains(bTgt)) {
+                e.preventDefault(); e.stopPropagation();
+                var nowB = Date.now();
+                if (nowB - last < 300) return;
+                last = nowB;
+                var bs = parseInt(bTgt.getAttribute('data-bonus-sector'), 10);
+                if (!isFinite(bs) || bs < 1) return;
+                try { ov.style.display = 'none'; } catch(err) {}
+                try { document.body.style.touchAction = 'none'; } catch(err) {}
+                try { currentSector = bs; currentLevel = 1; } catch(err) {}
+                try { _startBonusLevel(); } catch(err) {}
+                return;
+            }
             var tgt = e.target && e.target.closest ? e.target.closest('[data-sector]') : null;
             if (!tgt || !grid.contains(tgt)) return;
             e.preventDefault(); e.stopPropagation();
