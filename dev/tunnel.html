@@ -1065,6 +1065,11 @@
         if (!pages || !tabs.length) return;
         function setActive(idx) {
             tabs.forEach(function(t, i){ t.classList.toggle('active', i === idx); });
+            // Leaving the SHIPS tab (idx 4) → reset turntable preview to the actual active ship.
+            // Avoids the case where an unowned preview lingers when scrubbing through other tabs.
+            if (idx !== 4) {
+                try { if (window.__resetShipPreview) window.__resetShipPreview(); } catch(e) {}
+            }
         }
         tabs.forEach(function(t, i){
             t.addEventListener('click', function(){
@@ -2461,6 +2466,16 @@ window.onload = function() {
     var activeShip = 'deltawing';
     var previewShipId = activeShip; // turntable preview only — does NOT affect gameplay
     window.__getPreviewShipId = function() { try { return previewShipId; } catch(e) { return 'deltawing'; } };
+    // Called by the store-tab switcher when leaving the SHIPS tab — snaps the turntable preview
+    // back to the actual active ship so an unowned preview doesn't linger.
+    window.__resetShipPreview = function() {
+        try {
+            if (previewShipId !== activeShip) {
+                previewShipId = activeShip;
+                if (window.__tunnelStoreShipReload) window.__tunnelStoreShipReload(activeShip);
+            }
+        } catch(e) {}
+    };
     var WEAPON_COOLDOWN = [0, 0.30, 0.22, 0.12, 0.20];
     var WEAPON_MAX_AMMO = [0, 100, 60, 40, 20];
     var WEAPON_PER_ROUND_COST = [0, 0.5, 0.8, 3, 5];
