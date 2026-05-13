@@ -5571,14 +5571,18 @@ window.onload = function() {
             return;
         }
         if (_inBonusLevel && currentSector === 2) {
-            // S2B TARGET SHOOT — bullseye every ~250 units (~96 targets per 24k level).
-            // Each target sits within a tiny radial twist of the previous (~9° max), so the
-            // player follows a continuous gentle drift rather than chasing big angle jumps.
-            if (Math.abs(zPos - _lastBullseyeZ) < 250) return;
+            // S2B TARGET SHOOT — full-ring target carpet every 300 units, 5 targets per ring,
+            // each ring rotated 0.25 rad from the previous so the whole carpet twists down the
+            // tunnel. Player can't get them all — score by quantity hit.
+            if (Math.abs(zPos - _lastBullseyeZ) < 300) return;
             _lastBullseyeZ = zPos;
-            _bullseyeAngle += (Math.random() - 0.5) * 0.3; // ±0.15 rad ≈ ±9° drift per target
-            var _bMesh = _createBullseye(zPos, _bullseyeAngle);
-            scene.add(_bMesh); items.push(_bMesh);
+            _bullseyeAngle += 0.25; // consistent twist per ring (no random jitter)
+            var _targetsPerRing = 5;
+            for (var _ti = 0; _ti < _targetsPerRing; _ti++) {
+                var _tAngle = _bullseyeAngle + (_ti / _targetsPerRing) * Math.PI * 2;
+                var _tMesh = _createBullseye(zPos, _tAngle);
+                scene.add(_tMesh); items.push(_tMesh);
+            }
             return;
         }
         let rand = Math.random();
@@ -7496,41 +7500,39 @@ window.onload = function() {
         for (var k = 0; k < loopCount; k++) {
             var loopBaseZ = seedZ - (k * loopLen);
             var loopRot = (k * 0.35) % (Math.PI * 2);
-            // 1. RING OF 5 SHIELD ORBS (force-field stars), evenly spaced around tube at single Z.
-            for (var s = 0; s < 5; s++) {
-                var starAngle = loopRot + (s / 5) * Math.PI * 2;
+            // 1. RING OF 3 SHIELD ORBS (force-field stars) — fewer than before, since two barriers follow.
+            for (var s = 0; s < 3; s++) {
+                var starAngle = loopRot + (s / 3) * Math.PI * 2;
                 var starMesh = new THREE.Mesh(starGeo, starMat.clone());
                 starMesh.position.set(Math.cos(starAngle) * hover, Math.sin(starAngle) * hover, loopBaseZ);
                 starMesh.userData = { type: 'star', hitRadius: 5.5, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.3 };
                 scene.add(starMesh); items.push(starMesh);
             }
-            // 2. FULL BARRIER right after the orb ring.
-            var barrierZ = loopBaseZ - (loopLen * 0.18);
-            var barrierMesh = new THREE.Mesh(buildBarrierGeo(Math.PI * 2), barrierMat);
-            barrierMesh.position.set(0, 0, barrierZ);
-            barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: Math.PI * 2, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
-            scene.add(barrierMesh); items.push(barrierMesh);
-            // 3. SIX GOLD RINGS in 4 lanes — staggered Z so player threads through, bonus pickup line.
-            //    4 angular lanes evenly spread; rings 1-4 fill the lanes, rings 5-6 bracket two of them at offset Z.
+            // 2. TWO FULL BARRIERS back-to-back right after the orb ring.
+            var barrierZ1 = loopBaseZ - (loopLen * 0.18);
+            var barrierZ2 = loopBaseZ - (loopLen * 0.24);
+            for (var bz = 0; bz < 2; bz++) {
+                var bZpos = (bz === 0) ? barrierZ1 : barrierZ2;
+                var barrierMesh = new THREE.Mesh(buildBarrierGeo(Math.PI * 2), barrierMat);
+                barrierMesh.position.set(0, 0, bZpos);
+                barrierMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: Math.PI * 2, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+                scene.add(barrierMesh); items.push(barrierMesh);
+            }
+            // 3. EIGHTEEN GOLD RINGS — 6 lanes × 3 Z positions, dense bonus pickup field.
             var laneAngles = [];
-            for (var li = 0; li < 4; li++) laneAngles.push(loopRot + (li / 4) * Math.PI * 2);
-            var ringDefs = [
-                { lane: 0, dz: 0.36 },
-                { lane: 1, dz: 0.42 },
-                { lane: 2, dz: 0.48 },
-                { lane: 3, dz: 0.54 },
-                { lane: 0, dz: 0.62 },
-                { lane: 2, dz: 0.68 }
-            ];
-            for (var ri = 0; ri < ringDefs.length; ri++) {
-                var def = ringDefs[ri];
-                var gAngle = laneAngles[def.lane];
-                var gZ = loopBaseZ - (loopLen * def.dz);
-                var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
-                gMesh.position.set(Math.cos(gAngle) * hover, Math.sin(gAngle) * hover, gZ);
-                gMesh.rotation.z = gAngle;
-                gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
-                scene.add(gMesh); items.push(gMesh);
+            for (var li = 0; li < 6; li++) laneAngles.push(loopRot + (li / 6) * Math.PI * 2);
+            var zSlots = [0.36, 0.48, 0.60, 0.72, 0.84, 0.92];
+            for (var zi = 0; zi < zSlots.length; zi++) {
+                for (var la = 0; la < laneAngles.length; la++) {
+                    if (((zi + la) % 2) === 0) continue; // checker pattern → ~half = 18 rings/loop
+                    var gAngle = laneAngles[la];
+                    var gZ = loopBaseZ - (loopLen * zSlots[zi]);
+                    var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                    gMesh.position.set(Math.cos(gAngle) * hover, Math.sin(gAngle) * hover, gZ);
+                    gMesh.rotation.z = gAngle;
+                    gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                    scene.add(gMesh); items.push(gMesh);
+                }
             }
         }
     }
