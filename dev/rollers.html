@@ -192,6 +192,62 @@
     mesh.quaternion.setFromUnitVectors(Y_AXIS, dir);
   }
 
+  // ── CLOUDS: low-poly puffs drifting slowly above the surface ──
+  // Each cloud is a small cluster of overlapping squashed spheres at a
+  // random lat/lon, sitting at random altitude in the lower atmosphere.
+  // Per-cloud drift axis (slightly tilted from world Y) gives varied motion.
+  const clouds = [];
+  const CLOUD_COUNT = 110;
+  const cloudMat = new THREE.MeshLambertMaterial({ color: 0xfff8ec });
+  function buildCloud(seed) {
+    const g = new THREE.Group();
+    const lobeCount = 4 + Math.floor(lmRand(seed + 1.1) * 4); // 4 to 7
+    for (let i = 0; i < lobeCount; i++) {
+      const r = 14 + lmRand(seed + i * 0.37) * 22;
+      const lobe = new THREE.Mesh(new THREE.SphereGeometry(r, 8, 6), cloudMat);
+      lobe.position.set(
+        (lmRand(seed + i * 0.51) - 0.5) * 55,
+        (lmRand(seed + i * 0.83) - 0.5) * 12,
+        (lmRand(seed + i * 1.13) - 0.5) * 55
+      );
+      lobe.scale.y = 0.55; // squash so clouds read horizontal, not spherical
+      g.add(lobe);
+    }
+    return g;
+  }
+  for (let i = 0; i < CLOUD_COUNT; i++) {
+    const lon = lmRand(i * 7.3 + 100) * Math.PI * 2;
+    const lat = (lmRand(i * 11.7 + 200) - 0.5) * Math.PI * 0.95;
+    const alt = 480 + lmRand(i * 5.5 + 300) * 480;
+    const dir = new THREE.Vector3(
+      Math.cos(lat) * Math.cos(lon),
+      Math.sin(lat),
+      Math.cos(lat) * Math.sin(lon)
+    );
+    const cloud = buildCloud(i * 0.91 + 50);
+    cloud.position.copy(dir).multiplyScalar(WORLD_R + alt);
+    cloud.quaternion.setFromUnitVectors(Y_AXIS, dir);
+    const axisTilt = lmRand(i * 13.1 + 400) * 0.35;
+    const axisLon = lmRand(i * 17.3 + 500) * Math.PI * 2;
+    cloud.userData.driftAxis = new THREE.Vector3(
+      Math.sin(axisTilt) * Math.cos(axisLon),
+      Math.cos(axisTilt),
+      Math.sin(axisTilt) * Math.sin(axisLon)
+    );
+    cloud.userData.driftRate = 0.003 + lmRand(i * 19.3 + 600) * 0.007;
+    scene.add(cloud);
+    clouds.push(cloud);
+  }
+  const _cloudDir = new THREE.Vector3();
+  function updateClouds(dt) {
+    for (let i = 0; i < clouds.length; i++) {
+      const c = clouds[i];
+      c.position.applyAxisAngle(c.userData.driftAxis, c.userData.driftRate * dt);
+      _cloudDir.copy(c.position).normalize();
+      c.quaternion.setFromUnitVectors(Y_AXIS, _cloudDir);
+    }
+  }
+
   // ── AUDIO: simple synth piano notes ──
   let audioCtx = null;
   function ensureAudio() {
@@ -971,6 +1027,7 @@
     updateZone();
     updateWaypoints(dt);
     updateCompanion(dt);
+    updateClouds(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
