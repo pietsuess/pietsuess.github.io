@@ -3844,65 +3844,6 @@ window.onload = function() {
     scene.add(tube1);
     scene.add(tube2);
 
-    // ── SKYHAWK environment (built lazily; hidden until _enterSkyhawkEnv is called) ──
-    // A flat checkerboard ground plane plus distant mountain silhouettes — the open-sky
-    // landscape that defines Captain Skyhawk's look. Replaces the tube wireframe entirely.
-    var _skyhawkGround = null, _skyhawkMountains = null;
-    function _buildSkyhawkEnv() {
-        if (_skyhawkGround) return;
-        // Procedural checkerboard ground texture (Mode 7-style green/teal grid).
-        var cnv = document.createElement('canvas');
-        cnv.width = 256; cnv.height = 256;
-        var cctx = cnv.getContext('2d');
-        cctx.fillStyle = '#003322'; cctx.fillRect(0, 0, 256, 256);
-        cctx.fillStyle = '#00aa66';
-        for (var gy = 0; gy < 8; gy++) {
-            for (var gx = 0; gx < 8; gx++) {
-                if ((gx + gy) % 2 === 0) cctx.fillRect(gx * 32, gy * 32, 32, 32);
-            }
-        }
-        var gtex = new THREE.CanvasTexture(cnv);
-        gtex.wrapS = gtex.wrapT = THREE.RepeatWrapping;
-        gtex.repeat.set(40, 200);
-        var groundMat = new THREE.MeshBasicMaterial({ map: gtex, side: THREE.DoubleSide, fog: true });
-        var groundGeo = new THREE.PlaneGeometry(3000, 80000);
-        _skyhawkGround = new THREE.Mesh(groundGeo, groundMat);
-        _skyhawkGround.rotation.x = -Math.PI / 2;
-        _skyhawkGround.position.y = -tubeRadius - 6;
-        _skyhawkGround.position.z = -30000;
-        _skyhawkGround.visible = false;
-        scene.add(_skyhawkGround);
-        // Distant mountain silhouettes — angular triangles, repositioned each frame to follow camera.
-        var mtVerts = [];
-        for (var mi = 0; mi < 60; mi++) {
-            var x = (mi - 30) * 180;
-            var h = 50 + Math.random() * 110;
-            var w = 90 + Math.random() * 100;
-            mtVerts.push(x - w, -tubeRadius - 6, 0);
-            mtVerts.push(x + w, -tubeRadius - 6, 0);
-            mtVerts.push(x, -tubeRadius - 6 + h, 0);
-        }
-        var mtGeo = new THREE.BufferGeometry();
-        mtGeo.setAttribute('position', new THREE.Float32BufferAttribute(mtVerts, 3));
-        var mtMat = new THREE.MeshBasicMaterial({ color: 0x102244, side: THREE.DoubleSide, fog: false });
-        _skyhawkMountains = new THREE.Mesh(mtGeo, mtMat);
-        _skyhawkMountains.visible = false;
-        scene.add(_skyhawkMountains);
-    }
-    function _enterSkyhawkEnv() {
-        _buildSkyhawkEnv();
-        tube1.visible = false; tube2.visible = false;
-        _skyhawkGround.visible = true;
-        _skyhawkMountains.visible = true;
-        try { scene.background.setHex(0x33aaff); } catch(e) {}
-        try { scene.fog.color.setHex(0x55bbff); scene.fog.near = 200; scene.fog.far = 1500; } catch(e) {}
-    }
-    function _exitSkyhawkEnv() {
-        if (_skyhawkGround) _skyhawkGround.visible = false;
-        if (_skyhawkMountains) _skyhawkMountains.visible = false;
-        tube1.visible = true; tube2.visible = true;
-    }
-
     // --- Hyper Boost Tracers ---
     const TRACER_COUNT = 40;
     const tracerGroup = new THREE.Group();
@@ -5513,39 +5454,12 @@ window.onload = function() {
             speedRunTarget: 30,
             pylons: null
         },
-        // SKYHAWK — hidden dev-mode level inspired by Captain Skyhawk's tunnel sequence.
-        // Activated via ?skyhawk=1 URL flag. Sliding-window walls in sunset palette.
-        'SKYHAWK': {
-            isBonus: true,
-            blocks: false, shields: false, barriers: true, knots: false, mines: false,
-            ramps: false, stars: false, boost: false,
-            baseHazard: 0, baseRing: 1.0, baseShields: 0,
-            levelEscalation: 0, barrierThreshold: 0,
-            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
-            srSpacing: 40, srCountMin: 0, srCountMax: 0,
-            srTwistMin: 0.15, srTwistMax: 0.3,
-            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
-            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
-            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
-            knotShare: 0, blockShare: 0,
-            baseSpeed: 360, levelSpeed: 360,
-            baseLength: 22000, levelLength: 22000,
-            spiralStep: 0.8,
-            spiralPattern: null, // bypass procedural — _spawnSkyhawkLevel handles it
-            rotMult: 1.0,
-            isSpeedRun: true,
-            speedRunTarget: 50,
-            pylons: null
-        }
     };
-    // Skyhawk hidden-level flag — set when player enters via ?skyhawk=1.
-    var _inSkyhawk = false;
     // Bonus level state — transient (NOT persisted to session JSON).
     // When true, _getTuning + carousel close + triggerVictory + sector HUD
     // route through the per-sector 'SnB' bonus ring-grab between sector clears.
     var _inBonusLevel = false;
     function _getTuning(sector, level) {
-        if (_inSkyhawk && SPAWN_TUNING['SKYHAWK']) return SPAWN_TUNING['SKYHAWK'];
         if (_inBonusLevel && SPAWN_TUNING['S' + sector + 'B']) {
             return SPAWN_TUNING['S' + sector + 'B'];
         }
@@ -7011,13 +6925,6 @@ window.onload = function() {
         var r = tubeRadius - 6;
         var baseZ = camera.position.z - 600;
 
-        // SKYHAWK — hidden dev level, custom Captain Skyhawk-style sliding-window walls.
-        if (_inSkyhawk) {
-            _spawnOriginZ = camera.position.z;
-            _spawnSkyhawkLevel();
-            return;
-        }
-
         // S3B POWER LOOP — pre-place 8 deterministic loops; bypass procedural spawn entirely.
         if (_inBonusLevel && currentSector === 3) {
             _spawnOriginZ = camera.position.z;
@@ -7619,40 +7526,6 @@ window.onload = function() {
         updateCollectionHUD();
         initializeFlight(false);
     }
-    // ── SKYHAWK launch ──
-    // Hidden dev-mode level. Sets the flag, configures speed/length from SKYHAWK tuning,
-    // applies sunset palette to wireframe + fog, then enters flight via initializeFlight.
-    function _startSkyhawk() {
-        _inSkyhawk = true;
-        contentSpawnedThisRun = [];
-        _bonusBullseyeHit = 0; _bonusBullseyeMiss = 0;
-        _bonusBarrierHits = 0;
-        _bonusRingsThisRun = 0;
-        var t = SPAWN_TUNING['SKYHAWK'] || {};
-        sectorDistance = t.levelLength || t.baseLength || 22000;
-        var spd = t.baseSpeed || 360;
-        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
-        // Swap the tube wireframe for the Skyhawk open-sky environment (ground + mountains + sky).
-        try { _enterSkyhawkEnv(); } catch(e) {}
-        try { document.getElementById('sector-text').innerText = 'SKYHAWK'; } catch(e) {}
-        try { var _zn = document.getElementById('zone-name'); if (_zn) { _zn.innerText = 'SKYHAWK'; _zn.style.color = '#ffaa00'; } } catch(e) {}
-        sectorStartScore = score;
-        combo = 0;
-        shieldsUp = false; shieldsUpTimer = 0;
-        // Hide the carousel, start screen, and any session UI before launch.
-        try { document.getElementById('start-screen').style.display = 'none'; } catch(e) {}
-        try { document.getElementById('tr-session-screen').style.display = 'none'; } catch(e) {}
-        initializeFlight(false);
-    }
-    // ── SKYHAWK spawner ──
-    // Captain Skyhawk-inspired tunnel: dense walls each with a SMALL gap, gap position shifts
-    // ~90° between successive walls (the iconic "sliding window" effect). Sunset palette,
-    // sparse gold rings between walls. Activated via _inSkyhawk + ?skyhawk=1 URL flag.
-    function _spawnSkyhawkLevel() {
-        // Environment-only build for now: ground + sky + mountains via _enterSkyhawkEnv().
-        // No walls, no rings, no obstacles — pure landscape feel for testing the look.
-    }
-
     // ── S3B POWER LOOP spawner ──
     // Builds 12 deterministic loops over the level: [3 force-field stars in a half-ring with gaps]
     // → [full barrier ring] → [4 gold rings spread across the tube]. The shield from any star
@@ -8788,9 +8661,6 @@ window.onload = function() {
                     var _ssft = document.getElementById('start-screen');
                     if (_ssft) _ssft.style.display = 'none';
                     runFinalCinematic();
-                } else if (window._skyhawkMode) {
-                    try { AudioEngine.init(); } catch(_) {}
-                    try { _startSkyhawk(); } catch(_) { initializeFlight(true); }
                 } else {
                     initializeFlight(true);
                 }
@@ -8803,7 +8673,6 @@ window.onload = function() {
         document.addEventListener('mousedown', anyKeyStart);
     }
     if (location.search.indexOf('final=1') !== -1) { window._finalTestMode = true; }
-    if (location.search.indexOf('skyhawk=1') !== -1) { window._skyhawkMode = true; }
     initTitleScreen();
 
     const bindTap = (id, fn) => {
@@ -11067,10 +10936,6 @@ window.onload = function() {
             tube2.position.z += moveDist;
             if (tube1.position.z > tubeLen / 2) tube1.position.z = tube2.position.z - tubeLen;
             if (tube2.position.z > tubeLen / 2) tube2.position.z = tube1.position.z - tubeLen;
-            // Skyhawk: keep mountains on the horizon — they always sit a fixed distance ahead.
-            if (_inSkyhawk && _skyhawkMountains) {
-                _skyhawkMountains.position.z = camera.position.z - 1200;
-            }
 
             for(let i = items.length - 1; i >= 0; i--) {
                 let item = items[i];
@@ -19645,8 +19510,9 @@ illum 3
     var hullKg     = (meta && typeof meta.hullKg     === 'number') ? meta.hullKg     : SHIP_KG_HULL_DEFAULT;
     var maxHealth  = (meta && typeof meta.maxHealth  === 'number') ? meta.maxHealth  : 100;
     var dmgMult    = (meta && typeof meta.dmgMult    === 'number') ? meta.dmgMult    : 1.0;
+    var speedMult  = (meta && typeof meta.speedMult  === 'number') ? meta.speedMult  : 1.0;
     var totalKg = hullKg + (WEAPON_KG[a.w]||0) + (SHIELD_KG[a.s]||0);
-    var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg);
+    var top = (SPEED_TOP[a.sp]||SPEED_TOP[0]) * (hullKg / totalKg) * speedMult;
     // Scale anchors — full bar = MAX, empty bar = 0.
     // HULL/TOTAL use MIN-anchored ranges so bars reflect where the value sits in the *realistic* spectrum.
     // (Plain 0-MAX put 4200kg at 8/10 and 7450kg at 9/10 — not a useful comparison.)
