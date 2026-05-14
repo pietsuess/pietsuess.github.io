@@ -6,323 +6,497 @@
 <title>PIET SUESS ARCADE</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap" rel="stylesheet">
 <style>
 :root {
-  --crt-bg: #060812;
-  --crt-fg: #ddeeff;
-  --crt-cyan: #00f0ff;
-  --crt-magenta: #ff3df0;
-  --crt-yellow: #ffe000;
-  --crt-green: #00ff88;
-  --crt-red: #ff4444;
+  --bg: #06080f;
+  --frame: #2a3550;
+  --frame-bright: #5d7aa8;
+  --fg: #ddeeff;
+  --muted: #6f86b0;
+  --cyan: #00f0ff;
+  --magenta: #ff3df0;
+  --yellow: #ffe000;
+  --green: #00ff88;
+  --red: #ff4444;
+  --gold: #ffb830;
+  --orange: #ff8a3d;
 }
 * { box-sizing: border-box; margin: 0; padding: 0; }
 html, body {
   height: 100%;
-  background: var(--crt-bg);
-  color: var(--crt-fg);
+  background: var(--bg);
+  color: var(--fg);
   font-family: 'Press Start 2P', monospace;
+  font-size: 16px;
   overflow: hidden;
   user-select: none;
   -webkit-tap-highlight-color: transparent;
 }
 
-/* CRT envelope: subtle radial vignette + scanlines */
+/* ── CRT envelope ───────────────────────── */
 .crt {
   position: fixed; inset: 0;
   background:
-    radial-gradient(ellipse at center, rgba(20,30,60,0.4) 0%, rgba(0,0,0,0.85) 100%),
-    var(--crt-bg);
+    radial-gradient(ellipse at center, rgba(20,30,60,0.5) 0%, rgba(0,0,0,0.95) 100%),
+    var(--bg);
   display: flex;
-  flex-direction: column;
-  align-items: stretch;
-  padding: clamp(12px, 2.5vh, 28px) clamp(12px, 3vw, 40px);
-  gap: clamp(8px, 1.5vh, 18px);
+  align-items: center;
+  justify-content: center;
+  padding: 24px 16px;
 }
-.crt::before {
-  /* scanlines */
+.crt::before { /* scanlines */
   content: '';
   position: absolute; inset: 0;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(255,255,255,0.04) 0px,
-    rgba(255,255,255,0.04) 1px,
+    rgba(255,255,255,0.045) 0px,
+    rgba(255,255,255,0.045) 1px,
     transparent 1px,
     transparent 3px
   );
   pointer-events: none;
   z-index: 100;
 }
-.crt::after {
-  /* faint chromatic-ab glow */
+.crt::after { /* outer vignette */
   content: '';
   position: absolute; inset: 0;
-  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+  background: radial-gradient(ellipse at center, transparent 35%, rgba(0,0,0,0.75) 100%);
   pointer-events: none;
   z-index: 99;
 }
 
-/* ── Top marquee ─────────────────────── */
-.marquee {
+/* ── Cabinet frame ──────────────────────── */
+.cabinet {
   position: relative;
-  border: 2px solid var(--crt-yellow);
-  background: linear-gradient(to bottom, rgba(255,224,0,0.08), rgba(255,224,0,0.02));
-  padding: clamp(8px, 1.5vh, 16px) 18px;
-  text-align: center;
-  letter-spacing: 0.4em;
-  font-size: clamp(12px, 2.2vh, 22px);
-  color: var(--crt-yellow);
-  text-shadow: 0 0 8px rgba(255,224,0,0.7), 0 0 18px rgba(255,224,0,0.4);
-  z-index: 2;
-}
-.marquee .star {
-  display: inline-block;
-  color: var(--crt-yellow);
-  animation: blink 1.2s steps(2) infinite;
-}
-@keyframes blink {
-  0%, 49% { opacity: 1; }
-  50%, 100% { opacity: 0.2; }
-}
-
-/* ── Game grid ───────────────────────── */
-.grid {
-  flex: 1;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  grid-template-rows: 1fr 1fr;
-  gap: clamp(12px, 2vh, 24px);
-  position: relative;
-  z-index: 2;
-  min-height: 0;
-}
-
-.tile {
-  position: relative;
-  border: 3px solid #1d2540;
+  width: min(560px, 100%);
+  max-height: calc(100vh - 48px);
   background:
-    radial-gradient(ellipse at center, rgba(0,40,80,0.7) 0%, rgba(0,0,0,0.95) 100%);
+    linear-gradient(180deg, #0c1224 0%, #060912 100%);
+  border: 4px solid var(--frame);
+  border-radius: 6px;
+  box-shadow:
+    0 0 0 2px rgba(0,0,0,0.6),
+    0 0 32px rgba(0,240,255,0.15),
+    inset 0 0 60px rgba(0,40,90,0.25);
   display: flex;
   flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
+  z-index: 2;
   overflow: hidden;
-  padding: clamp(16px, 3vh, 32px);
-  transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
-}
-.tile.locked { cursor: not-allowed; opacity: 0.55; }
-.tile:hover:not(.locked), .tile.selected:not(.locked) {
-  border-color: var(--crt-cyan);
-  box-shadow:
-    0 0 0 2px rgba(0,240,255,0.25),
-    0 0 24px rgba(0,240,255,0.45),
-    inset 0 0 60px rgba(0,240,255,0.08);
-  transform: translateY(-2px);
-}
-.tile.selected:not(.locked) .start-prompt {
-  animation: blink 0.7s steps(2) infinite;
 }
 
-/* Per-tile mini scanlines */
-.tile::before {
+/* corner bolts */
+.cabinet .bolt {
+  position: absolute;
+  width: 8px; height: 8px;
+  background: #5a6f95;
+  border-radius: 50%;
+  box-shadow: inset 0 0 0 1px #1a2238, 0 0 4px rgba(0,0,0,0.6);
+  z-index: 4;
+}
+.cabinet .bolt.tl { top: 6px; left: 6px; }
+.cabinet .bolt.tr { top: 6px; right: 6px; }
+.cabinet .bolt.bl { bottom: 6px; left: 6px; }
+.cabinet .bolt.br { bottom: 6px; right: 6px; }
+
+/* ── Marquee ─────────────────────────────── */
+.marquee {
+  position: relative;
+  border-bottom: 2px solid var(--frame);
+  background:
+    linear-gradient(180deg, rgba(255,184,48,0.18), rgba(255,184,48,0.04) 60%, rgba(0,0,0,0.4)),
+    radial-gradient(ellipse at top, rgba(255,224,0,0.12), transparent 70%);
+  padding: 18px 18px 16px;
+  text-align: center;
+  overflow: hidden;
+}
+/* faint diagonal sheen across the marquee */
+.marquee::after {
+  content: '';
+  position: absolute; inset: 0;
+  background: linear-gradient(105deg, transparent 35%, rgba(255,255,255,0.06) 50%, transparent 65%);
+  pointer-events: none;
+}
+.marquee .presents {
+  display: block;
+  font-size: 8px;
+  letter-spacing: 0.5em;
+  color: #ff69b4;
+  text-shadow: 0 0 8px rgba(255,105,180,0.7), 0 0 16px rgba(255,105,180,0.25);
+  margin-bottom: 8px;
+  transform: translateX(0.25em);
+}
+.marquee .arcade-word {
+  display: inline-block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: 32px;
+  letter-spacing: 0.18em;
+  line-height: 1;
+  color: var(--yellow);
+  text-shadow: 0 0 10px rgba(255,224,0,0.7), 0 0 22px rgba(255,224,0,0.3);
+}
+.marquee .arcade-side {
+  display: inline-block;
+  vertical-align: top;
+  font-size: 24px;
+  color: var(--yellow);
+  text-shadow: 0 0 8px rgba(255,224,0,0.8);
+  margin: 0 0.4em;
+  animation: blink 1.2s steps(2) infinite;
+}
+
+/* ── Attract preview banner ───────────── */
+.preview {
+  position: relative;
+  height: clamp(140px, 26vh, 240px);
+  border-bottom: 2px solid var(--frame);
+  background: #000;
+  overflow: hidden;
+}
+.preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  display: block;
+  pointer-events: none; /* clicks pass through; row click launches */
+}
+.preview .preview-placeholder {
+  position: absolute; inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--frame-bright);
+  font-size: 8px;
+  letter-spacing: 0.5em;
+  text-shadow: 0 0 8px rgba(120,150,200,0.3);
+  background:
+    repeating-linear-gradient(45deg,
+      transparent 0 6px,
+      rgba(120,150,200,0.06) 6px 12px);
+}
+.preview::after { /* extra scanline tint over the preview */
   content: '';
   position: absolute; inset: 0;
   background: repeating-linear-gradient(
     to bottom,
-    rgba(255,255,255,0.025) 0px,
-    rgba(255,255,255,0.025) 1px,
+    rgba(255,255,255,0.05) 0px,
+    rgba(255,255,255,0.05) 1px,
     transparent 1px,
-    transparent 4px
+    transparent 3px
   );
   pointer-events: none;
 }
 
-.title-art {
+/* ── Copyright strip ─────────────────── */
+.copyright {
+  text-align: center;
+  padding: 12px 8px;
+  border-bottom: 2px solid var(--frame);
+  background: rgba(0,0,0,0.35);
+  font-size: 8px;
+  letter-spacing: 0.35em;
+  color: #6f86b0;
+  text-shadow: 0 0 6px rgba(120,150,200,0.25);
+  line-height: 1.8;
+}
+.copyright .sym { color: #ffb830; margin-right: 0.4em; }
+.copyright .yr { color: #ffe000; text-shadow: 0 0 6px rgba(255,224,0,0.5); }
+.copyright .sep { color: var(--frame-bright); margin: 0 0.7em; }
+.copyright .ln { display: block; }
+.copyright .accent { color: #ffb830; }
+
+/* ── Game list ─────────────────────────── */
+.list {
   flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 100%;
+  overflow-y: auto;
+  padding: 14px 0;
+  scrollbar-width: thin;
+  scrollbar-color: var(--frame) transparent;
+}
+.list::-webkit-scrollbar { width: 6px; }
+.list::-webkit-scrollbar-thumb { background: var(--frame); border-radius: 3px; }
+
+.row {
   position: relative;
+  display: grid;
+  grid-template-columns: 28px 36px 1fr auto auto;
+  align-items: center;
+  gap: 14px;
+  padding: 12px 18px;
+  cursor: pointer;
+  border-left: 3px solid transparent;
+  transition: background 0.12s, border-color 0.12s;
 }
 
-.tile .start-prompt {
-  margin-top: clamp(10px, 2vh, 18px);
-  font-size: clamp(8px, 1.4vh, 13px);
-  letter-spacing: 0.3em;
-  color: var(--crt-green);
-  text-shadow: 0 0 8px rgba(0,255,136,0.6);
+.devs {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #99aacc;
 }
-.tile.locked .start-prompt {
-  color: var(--crt-red);
-  text-shadow: 0 0 8px rgba(255,68,68,0.5);
-  animation: none;
+.devs svg {
+  display: block;
+  shape-rendering: crispEdges;
+  image-rendering: pixelated;
+}
+.row.selected:not(.locked) .devs { color: var(--cyan); }
+.row.locked .devs { color: #3a4a68; }
+.row:not(.locked):hover, .row.selected:not(.locked) {
+  background: linear-gradient(to right, rgba(0,240,255,0.10), transparent 80%);
+  border-left-color: var(--cyan);
+}
+.row.locked { cursor: not-allowed; opacity: 0.55; }
+.row.selected .cursor { opacity: 1; animation: blink 0.7s steps(2) infinite; }
+
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.15; }
 }
 
-/* ── Title styles per-game ───────────── */
+.cursor {
+  color: var(--cyan);
+  font-size: 16px;
+  text-shadow: 0 0 8px rgba(0,240,255,0.8);
+  opacity: 0;
+}
+.num {
+  color: var(--muted);
+  font-size: 8px;
+  letter-spacing: 0.1em;
+  text-align: right;
+}
 
-/* NAVIGATOR — chrome/perspective + grid */
-.title-navigator {
+.body { min-width: 0; }
+.title { font-size: 16px; letter-spacing: 0.05em; line-height: 1.1; }
+.tagline {
+  margin-top: 8px;
   font-family: 'Press Start 2P', monospace;
-  font-size: clamp(18px, 4vw, 44px);
-  letter-spacing: 0.08em;
-  background: linear-gradient(
-    180deg,
-    #e8f6ff 0%,
-    #5cd2ff 30%,
-    #0066aa 55%,
-    #003a66 70%,
-    #66ddff 95%
-  );
+  font-size: 8px;
+  letter-spacing: 0.15em;
+  color: var(--muted);
+  text-transform: uppercase;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.action {
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  padding: 8px 10px;
+  border: 2px solid currentColor;
+  color: var(--green);
+  text-shadow: 0 0 6px rgba(0,255,136,0.6);
+  white-space: nowrap;
+}
+.row.locked .action {
+  color: var(--red);
+  text-shadow: 0 0 6px rgba(255,68,68,0.4);
+}
+.row.selected:not(.locked) .action {
+  background: rgba(0,255,136,0.12);
+}
+
+/* ── Per-game title style overrides ───── */
+/* Navigator + Tunnel Runner share brand DNA: bright pink title, pulse glow */
+.byline {
+  display: block;
+  font-size: 9px;
+  letter-spacing: 0.25em;
+  color: #ff69b4;
+  text-shadow: 0 0 6px rgba(255,105,180,0.6);
+  margin-bottom: 5px;
+}
+.title.t-navigator,
+.title.t-tunnel {
+  color: #ff1493;
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px rgba(255,20,147,0.6), 0 0 18px rgba(255,20,147,0.22);
+}
+.row.selected:not(.locked) .title.t-navigator,
+.row.selected:not(.locked) .title.t-tunnel {
+  animation: titlePulse 1.6s ease-in-out infinite;
+}
+@keyframes titlePulse {
+  0%, 100% { text-shadow: 0 0 8px rgba(255,20,147,0.5),  0 0 16px rgba(255,20,147,0.15); }
+  50%      { text-shadow: 0 0 22px rgba(255,20,147,1),   0 0 44px rgba(255,20,147,0.5); }
+}
+.title.t-cubetoss {
+  font-size: 16px;
+  letter-spacing: 0.05em;
+  background: linear-gradient(135deg, #f4c542, #e8735a, #d4547a);
   -webkit-background-clip: text;
   background-clip: text;
   -webkit-text-fill-color: transparent;
-  text-shadow: 0 0 20px rgba(0,240,255,0.5);
-  filter: drop-shadow(0 4px 0 #022) drop-shadow(0 6px 12px rgba(0,200,255,0.4));
-  transform: perspective(400px) rotateX(12deg);
-  text-align: center;
+  filter: drop-shadow(0 0 10px rgba(244,197,66,0.25));
 }
-.title-navigator-sub {
-  display: block;
-  margin-top: 12px;
-  font-size: clamp(8px, 1.2vw, 12px);
-  letter-spacing: 0.5em;
-  color: var(--crt-magenta);
-  text-shadow: 0 0 6px rgba(255,61,240,0.7);
-  -webkit-text-fill-color: var(--crt-magenta);
-  transform: none;
+.title.t-rollers {
+  color: var(--orange);
+  letter-spacing: 0.18em;
+  text-shadow: 0 0 8px rgba(255,138,61,0.55), 0 0 18px rgba(255,138,61,0.2);
 }
-
-/* CUBE TOSS — chunky 3D blocks (Donkey Kong era) */
-.title-cubetoss {
-  font-family: 'Press Start 2P', monospace;
-  font-size: clamp(18px, 4vw, 44px);
-  letter-spacing: 0.05em;
-  color: var(--crt-yellow);
-  text-shadow:
-    2px 0 0 #d99a00,
-    4px 0 0 #b87a00,
-    6px 0 0 #8b5a00,
-    6px 4px 0 #503300,
-    6px 6px 14px rgba(0,0,0,0.7);
-  text-align: center;
-  line-height: 1.05;
-}
-
-/* COMING SOON placeholders */
-.title-locked {
-  font-family: 'VT323', monospace;
-  font-size: clamp(22px, 5vw, 56px);
-  letter-spacing: 0.15em;
+.title.t-locked {
+  font-size: 16px;
+  letter-spacing: 0.18em;
   color: #4a6080;
-  text-shadow: 0 0 12px rgba(80,120,180,0.4);
-  text-align: center;
-}
-.title-locked .small {
-  display: block;
-  font-family: 'Press Start 2P', monospace;
-  font-size: clamp(8px, 1.2vw, 12px);
-  letter-spacing: 0.3em;
-  color: #2d3d5c;
-  margin-top: 12px;
+  text-shadow: 0 0 8px rgba(80,120,180,0.35);
 }
 
-/* ── Bottom marquee ──────────────────── */
-.footer {
-  position: relative;
-  border: 2px solid #2a3550;
-  background: rgba(10,15,30,0.6);
-  padding: 10px 14px;
-  text-align: center;
-  font-size: clamp(8px, 1.3vh, 11px);
-  letter-spacing: 0.35em;
-  color: #99aacc;
-  z-index: 2;
+.row.locked .tagline { color: #3a4a68; }
+
+/* ── Bottom hint bar ───────────────────── */
+.hint {
+  border-top: 2px solid var(--frame);
+  background: rgba(8,12,24,0.7);
+  padding: 12px 16px;
   display: flex;
   align-items: center;
-  justify-content: center;
-  gap: clamp(8px, 2vw, 24px);
+  justify-content: space-between;
+  font-size: 8px;
+  letter-spacing: 0.25em;
+  color: var(--muted);
+  gap: 12px;
   flex-wrap: wrap;
 }
-.footer .coin {
-  color: var(--crt-yellow);
-  animation: blink 0.9s steps(2) infinite;
-}
-.footer .sep { color: #44557a; }
+.hint .keys { color: var(--fg); }
+.hint .sep { color: var(--frame-bright); }
+.hint .coin { color: var(--yellow); animation: blink 0.9s steps(2) infinite; }
 
-/* ── Responsive ──────────────────────── */
+/* ── Mobile ─────────────────────────────── */
 @media (max-width: 540px) {
-  .marquee { letter-spacing: 0.25em; font-size: 11px; padding: 8px 6px; }
-  .grid { gap: 10px; }
-  .tile { padding: 14px 10px; border-width: 2px; }
-  .title-navigator { font-size: 22px; }
-  .title-cubetoss { font-size: 22px;
-    text-shadow:
-      1px 0 0 #d99a00,
-      2px 0 0 #b87a00,
-      3px 0 0 #8b5a00,
-      3px 2px 0 #503300,
-      3px 3px 8px rgba(0,0,0,0.7);
-  }
-  .title-locked { font-size: 32px; }
-  .footer { font-size: 8px; letter-spacing: 0.2em; gap: 8px; }
+  .cabinet { border-width: 2px; }
+  .marquee { padding: 12px 8px; }
+  .marquee .arcade-word { font-size: 24px; }
+  .marquee .arcade-side { font-size: 16px; }
+  .row { grid-template-columns: 16px 24px 1fr auto auto; gap: 8px; padding: 12px 10px; }
+  .devs { gap: 4px; }
+  .title { font-size: 12px; }
+  .title.t-cubetoss { font-size: 12px; }
+  .title.t-locked { font-size: 12px; }
+  .tagline { font-size: 8px; letter-spacing: 0.1em; }
+  .action { padding: 6px 8px; letter-spacing: 0.18em; }
 }
 </style>
 </head>
 <body>
 <div class="crt">
 
-  <div class="marquee">
-    <span class="star">★</span>
-    &nbsp;P&nbsp;I&nbsp;E&nbsp;T&nbsp;&nbsp;&nbsp;S&nbsp;U&nbsp;E&nbsp;S&nbsp;S&nbsp;&nbsp;&nbsp;A&nbsp;R&nbsp;C&nbsp;A&nbsp;D&nbsp;E&nbsp;
-    <span class="star">★</span>
-  </div>
+  <div class="cabinet">
+    <span class="bolt tl"></span><span class="bolt tr"></span>
+    <span class="bolt bl"></span><span class="bolt br"></span>
 
-  <div class="grid" id="grid">
+    <div class="marquee">
+      <span class="presents">PIET SUESS</span>
+      <span class="arcade-side">★</span>
+      <span class="arcade-word">ARCADE</span>
+      <span class="arcade-side">★</span>
+    </div>
 
-    <div class="tile" data-slot="0" data-href-desktop="/navigator.html" data-href-mobile="/tunnel.html">
-      <div class="title-art">
-        <div>
-          <div class="title-navigator">NAVIGATOR</div>
-          <span class="title-navigator-sub">TUNNEL RUNNER</span>
+    <div class="preview" id="preview">
+      <iframe id="preview-frame" src="about:blank" title="Game preview" loading="lazy" sandbox="allow-scripts allow-same-origin" tabindex="-1" aria-hidden="true"></iframe>
+      <div class="preview-placeholder" id="preview-placeholder">ATTRACT MODE OFFLINE</div>
+    </div>
+
+    <div class="copyright">
+      <span class="ln">ALL RIGHTS RESERVED <span class="sep">·</span> PROGRAM ROM v.4.4</span>
+      <span class="ln">LICENSED FOR HOME PLAY <span class="sep">·</span> NO REFUNDS <span class="sep">·</span> ©1988</span>
+    </div>
+
+    <div class="list" id="list">
+
+      <div class="row" data-href-desktop="/navigator.html" data-href-mobile="/navigator.html">
+        <div class="cursor">▶</div>
+        <div class="num">01</div>
+        <div class="body">
+          <div class="title t-navigator">NAVIGATOR</div>
+          <div class="tagline">A cosmic journey</div>
         </div>
+        <div class="devs">
+          <svg viewBox="0 0 7 7" width="20" height="20" aria-label="Desktop" fill="currentColor"><rect x="0" y="0" width="7" height="1"/><rect x="0" y="1" width="1" height="3"/><rect x="6" y="1" width="1" height="3"/><rect x="0" y="4" width="7" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="1" y="6" width="5" height="1"/></svg>
+        </div>
+        <div class="action">PLAY ▸</div>
       </div>
-      <div class="start-prompt">▶ PRESS START</div>
+
+      <div class="row" data-href-desktop="/tunnel.html" data-href-mobile="/tunnel.html">
+        <div class="cursor">▶</div>
+        <div class="num">02</div>
+        <div class="body">
+          <div class="title t-tunnel">TUNNEL RUNNER</div>
+          <div class="tagline">High-speed intercept</div>
+        </div>
+        <div class="devs">
+          <svg viewBox="0 0 5 8" width="13" height="20" aria-label="Mobile" fill="currentColor"><rect x="0" y="0" width="5" height="1"/><rect x="0" y="1" width="1" height="6"/><rect x="4" y="1" width="1" height="6"/><rect x="0" y="7" width="5" height="1"/><rect x="2" y="6" width="1" height="1"/></svg>
+        </div>
+        <div class="action">PLAY ▸</div>
+      </div>
+
+      <div class="row" data-href-desktop="/cube-toss.html" data-href-mobile="/cube-toss-mobile.html">
+        <div class="cursor">▶</div>
+        <div class="num">03</div>
+        <div class="body">
+          <div class="title t-cubetoss">Cube Toss</div>
+          <div class="tagline">Tap anywhere to play</div>
+        </div>
+        <div class="devs">
+          <svg viewBox="0 0 5 8" width="13" height="20" aria-label="Mobile" fill="currentColor"><rect x="0" y="0" width="5" height="1"/><rect x="0" y="1" width="1" height="6"/><rect x="4" y="1" width="1" height="6"/><rect x="0" y="7" width="5" height="1"/><rect x="2" y="6" width="1" height="1"/></svg>
+          <svg viewBox="0 0 7 7" width="20" height="20" aria-label="Desktop" fill="currentColor"><rect x="0" y="0" width="7" height="1"/><rect x="0" y="1" width="1" height="3"/><rect x="6" y="1" width="1" height="3"/><rect x="0" y="4" width="7" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="1" y="6" width="5" height="1"/></svg>
+        </div>
+        <div class="action">PLAY ▸</div>
+      </div>
+
+      <div class="row" data-href-desktop="/rollers.html" data-href-mobile="/rollers.html">
+        <div class="cursor">▶</div>
+        <div class="num">04</div>
+        <div class="body">
+          <div class="title t-rollers">ROLLERS</div>
+          <div class="tagline">Open-sky arcade flyer</div>
+        </div>
+        <div class="devs">
+          <svg viewBox="0 0 7 7" width="20" height="20" aria-label="Desktop" fill="currentColor"><rect x="0" y="0" width="7" height="1"/><rect x="0" y="1" width="1" height="3"/><rect x="6" y="1" width="1" height="3"/><rect x="0" y="4" width="7" height="1"/><rect x="3" y="5" width="1" height="1"/><rect x="1" y="6" width="5" height="1"/></svg>
+        </div>
+        <div class="action">PLAY ▸</div>
+      </div>
+
+      <div class="row locked">
+        <div class="cursor">▶</div>
+        <div class="num">05</div>
+        <div class="body">
+          <div class="title t-locked">??? ???</div>
+          <div class="tagline">Coming soon</div>
+        </div>
+        <div class="devs"></div>
+        <div class="action">LOCKED</div>
+      </div>
+
+      <div class="row locked">
+        <div class="cursor">▶</div>
+        <div class="num">06</div>
+        <div class="body">
+          <div class="title t-locked">??? ???</div>
+          <div class="tagline">Coming soon</div>
+        </div>
+        <div class="devs"></div>
+        <div class="action">LOCKED</div>
+      </div>
+
+      <div class="row locked">
+        <div class="cursor">▶</div>
+        <div class="num">07</div>
+        <div class="body">
+          <div class="title t-locked">??? ???</div>
+          <div class="tagline">Coming soon</div>
+        </div>
+        <div class="devs"></div>
+        <div class="action">LOCKED</div>
+      </div>
+
     </div>
 
-    <div class="tile" data-slot="1" data-href-desktop="/cube-toss.html" data-href-mobile="/cube-toss-mobile.html">
-      <div class="title-art">
-        <div class="title-cubetoss">CUBE<br>TOSS</div>
-      </div>
-      <div class="start-prompt">▶ PRESS START</div>
+    <div class="hint">
+      <div><span class="keys">↑↓</span> MOVE <span class="sep">·</span> <span class="keys">⏎</span> START</div>
+      <div><span class="coin">INSERT COIN</span> <span class="sep">·</span> © 2026</div>
     </div>
 
-    <div class="tile locked" data-slot="2">
-      <div class="title-art">
-        <div class="title-locked">??? ???<span class="small">COMING SOON</span></div>
-      </div>
-      <div class="start-prompt">— LOCKED —</div>
-    </div>
-
-    <div class="tile locked" data-slot="3">
-      <div class="title-art">
-        <div class="title-locked">??? ???<span class="small">COMING SOON</span></div>
-      </div>
-      <div class="start-prompt">— LOCKED —</div>
-    </div>
-
-  </div>
-
-  <div class="footer">
-    <span class="coin">INSERT COIN</span>
-    <span class="sep">•</span>
-    <span>1 PLAYER START</span>
-    <span class="sep">•</span>
-    <span>HI-SCORE 00000</span>
-    <span class="sep">•</span>
-    <span>© 2026 PIET SUESS</span>
   </div>
 
 </div>
@@ -330,34 +504,61 @@ html, body {
 <script>
 (function(){
   var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
-  var tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
+  var rows = Array.prototype.slice.call(document.querySelectorAll('.row'));
   var sel = 0;
+  var frame = document.getElementById('preview-frame');
+  var placeholder = document.getElementById('preview-placeholder');
+  var previewTimer = null;
+
+  // Initial: first non-locked
+  for (var i = 0; i < rows.length; i++) {
+    if (!rows[i].classList.contains('locked')) { sel = i; break; }
+  }
 
   function paint() {
-    tiles.forEach(function(t, i){
-      t.classList.toggle('selected', i === sel);
-    });
+    rows.forEach(function(r, i){ r.classList.toggle('selected', i === sel); });
+    schedulePreview();
   }
-  function launch(t) {
-    if (t.classList.contains('locked')) return;
-    var href = isMobile ? (t.dataset.hrefMobile || t.dataset.hrefDesktop) : (t.dataset.hrefDesktop || t.dataset.hrefMobile);
+
+  function schedulePreview() {
+    if (previewTimer) clearTimeout(previewTimer);
+    previewTimer = setTimeout(updatePreview, 220);
+  }
+  function updatePreview() {
+    var r = rows[sel];
+    if (!r || r.classList.contains('locked')) {
+      frame.style.display = 'none';
+      placeholder.style.display = 'flex';
+      if (frame.src !== 'about:blank') frame.src = 'about:blank';
+      return;
+    }
+    var href = isMobile ? (r.dataset.hrefMobile || r.dataset.hrefDesktop) : (r.dataset.hrefDesktop || r.dataset.hrefMobile);
+    if (!href) return;
+    // Add ?attract=1 so games can opt-in to demo behaviour later. No-op for games that ignore it.
+    var sep = href.indexOf('?') === -1 ? '?' : '&';
+    var target = href + sep + 'attract=1';
+    if (frame.getAttribute('src') !== target) {
+      placeholder.style.display = 'none';
+      frame.style.display = 'block';
+      frame.src = target;
+    }
+  }
+  function launch(r) {
+    if (r.classList.contains('locked')) return;
+    var href = isMobile ? (r.dataset.hrefMobile || r.dataset.hrefDesktop) : (r.dataset.hrefDesktop || r.dataset.hrefMobile);
     if (href) window.location.href = href;
   }
-  tiles.forEach(function(t, i){
-    t.addEventListener('click', function(){
-      if (i === sel) launch(t); else { sel = i; paint(); }
+  rows.forEach(function(r, i){
+    r.addEventListener('click', function(){
+      if (i === sel) launch(r); else { sel = i; paint(); }
     });
-    t.addEventListener('mouseenter', function(){ sel = i; paint(); });
+    r.addEventListener('mouseenter', function(){ sel = i; paint(); });
   });
 
   document.addEventListener('keydown', function(e){
-    var cols = 2;
-    var key = e.key;
-    if (key === 'ArrowRight') { sel = (sel + 1) % tiles.length; paint(); e.preventDefault(); }
-    else if (key === 'ArrowLeft') { sel = (sel - 1 + tiles.length) % tiles.length; paint(); e.preventDefault(); }
-    else if (key === 'ArrowDown') { sel = (sel + cols) % tiles.length; paint(); e.preventDefault(); }
-    else if (key === 'ArrowUp') { sel = (sel - cols + tiles.length) % tiles.length; paint(); e.preventDefault(); }
-    else if (key === 'Enter' || key === ' ') { launch(tiles[sel]); e.preventDefault(); }
+    if (e.key === 'ArrowDown') { sel = (sel + 1) % rows.length; paint(); e.preventDefault(); }
+    else if (e.key === 'ArrowUp') { sel = (sel - 1 + rows.length) % rows.length; paint(); e.preventDefault(); }
+    else if (e.key === 'Enter' || e.key === ' ') { launch(rows[sel]); e.preventDefault(); }
   });
 
   paint();
