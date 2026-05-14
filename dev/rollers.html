@@ -8,7 +8,6 @@
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
   #game { display: block; width: 100vw; height: 100vh;
           image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
-  #hud { display: none; }
   #zone {
     position: fixed; top: 14px; right: 16px; z-index: 6;
     font-family: 'Press Start 2P', 'Courier New', monospace;
@@ -16,55 +15,23 @@
     color: #ffe000; pointer-events: none;
     background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 4px;
   }
-  #gems {
-    position: fixed; top: 50px; right: 16px; z-index: 6;
+  #subtitle {
+    position: fixed; bottom: 36px; left: 50%; transform: translateX(-50%);
+    z-index: 6; max-width: 80vw;
     font-family: 'Press Start 2P', 'Courier New', monospace;
-    font-size: 12px; letter-spacing: 2px;
-    color: #ffe066; pointer-events: none;
-    background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 4px;
+    font-size: 11px; letter-spacing: 2px; line-height: 1.6;
+    color: #fffff0; pointer-events: none;
+    background: rgba(0,0,0,0.45); padding: 10px 18px; border-radius: 4px;
+    opacity: 0; transition: opacity 1.4s ease;
+    text-align: center; text-transform: lowercase;
   }
-  #hud-top { position: absolute; top: 8px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; font-size: 12px; letter-spacing: 2px; }
-  #hud-bottom { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 12px; align-items: flex-end; }
-  #radar {
-    width: 96px; height: 96px; border: 2px solid #ffe000; border-radius: 50%;
-    background: rgba(0, 32, 64, 0.65); box-shadow: 0 0 8px rgba(255,224,0,0.6) inset;
-    position: relative; overflow: hidden;
-  }
-  .radar-blip { position: absolute; width: 4px; height: 4px; border-radius: 50%; transform: translate(-50%, -50%); }
-  .blip-hill { background: #ff7733; box-shadow: 0 0 4px #ff7733; }
-  .blip-hole { background: #66ccff; box-shadow: 0 0 4px #66ccff; }
-  .blip-found { opacity: 0.4; }
-  #radar-self { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6px; height: 6px; background: #ffe000; border-radius: 50%; z-index: 2; }
-  #radar-cone { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
-                border-left: 8px solid transparent; border-right: 8px solid transparent;
-                border-bottom: 14px solid rgba(255,224,0,0.4);
-                transform-origin: 50% 100%; transform: translate(-50%, -100%); }
-  #stat-block { font-size: 10px; letter-spacing: 1px; line-height: 1.6; color: #66ddff; text-shadow: 0 0 4px rgba(102,221,255,0.6); }
-  #hint { position: absolute; bottom: 14px; right: 14px; font-size: 8px; letter-spacing: 1px; color: #88aacc; text-align: right; line-height: 1.5; }
+  #subtitle.show { opacity: 1; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="zone">ZONE <span id="zone-val">0°,90°</span></div>
-<div id="gems">GEMS <span id="gems-val">0/0</span></div>
-<div id="hud">
-  <div id="hud-top">
-    <div>FOUND <span id="found">0</span>/<span id="total">0</span></div>
-    <div>HDG <span id="hdg">N</span></div>
-  </div>
-  <div id="hud-bottom">
-    <div id="radar">
-      <div id="radar-cone"></div>
-      <div id="radar-self"></div>
-    </div>
-    <div id="stat-block">
-      X <span id="px">0</span><br>
-      Z <span id="pz">0</span><br>
-      SPD <span id="spd">0</span>
-    </div>
-  </div>
-  <div id="hint">WASD / ARROWS<br>DRAG TO STEER</div>
-</div>
+<div id="subtitle"></div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script>
 (function(){
@@ -75,9 +42,9 @@
   const scene = new THREE.Scene();
   // Muted sky + warm haze so the whole world reads as soft clay rather than neon.
   scene.background = new THREE.Color(0xb8c8d4);
-  scene.fog = new THREE.Fog(0xc8b8a0, 2500, 7000);
+  scene.fog = new THREE.Fog(0xc8b8a0, 2500, 8000);
 
-  const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 4000);
+  const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 5000);
 
   const canvas = document.getElementById('game');
   const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false });
@@ -103,8 +70,7 @@
   // ── WORLD: large sphere — ball rolls on its surface, no edges ──
   const WORLD_R = 6000;
 
-  // Fine-grained grass texture, tiled across the sphere. No grid — zone is
-  // shown in a small HUD readout instead.
+  // Fine-grained grass texture, tiled across the sphere.
   const cnv = document.createElement('canvas');
   cnv.width = 128; cnv.height = 128;
   const cctx = cnv.getContext('2d');
@@ -123,11 +89,39 @@
   groundTex.minFilter = THREE.LinearMipMapLinearFilter;
   groundTex.generateMipmaps = true;
   groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
-  groundTex.repeat.set(140, 70);
+  groundTex.repeat.set(1, 1);
   const worldMat = new THREE.MeshLambertMaterial({ map: groundTex });
+  // Triplanar projection so the grass tile size stays consistent across the sphere.
+  worldMat.onBeforeCompile = function(shader) {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNor;'
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nvWPos = position;\nvWNor = normalize(normal);'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      '#include <common>\nvarying vec3 vWPos;\nvarying vec3 vWNor;'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <map_fragment>',
+      [
+        'const float TRI_SCALE = 0.013;',
+        'vec3 absN = abs(normalize(vWNor));',
+        'vec3 cX = texture2D(map, vWPos.yz * TRI_SCALE).rgb;',
+        'vec3 cY = texture2D(map, vWPos.xz * TRI_SCALE).rgb;',
+        'vec3 cZ = texture2D(map, vWPos.xy * TRI_SCALE).rgb;',
+        'float wSum = absN.x + absN.y + absN.z;',
+        'vec3 w = absN / max(wSum, 0.0001);',
+        'vec3 triCol = cX * w.x + cY * w.y + cZ * w.z;',
+        'diffuseColor.rgb *= triCol;'
+      ].join('\n')
+    );
+  };
 
   // ── TERRAIN FEATURES: hills + craters scattered around the sphere ──
-  // Each feature is a Gaussian bump at a direction (unit vector) on the sphere.
   function lmRand(seed) { return Math.abs(Math.sin(seed * 12.9898) * 43758.5453 % 1); }
   const features = [];
   const FEATURE_COUNT = 80;
@@ -139,7 +133,6 @@
       Math.cos(lat),
       Math.sin(lat) * Math.sin(lon)
     );
-    // Angular radius (radians) — feature footprint on the sphere.
     const r = 0.035 + lmRand(i + 71) * 0.06;
     const isHole = lmRand(i + 89) < 0.45;
     const amp = isHole
@@ -178,39 +171,420 @@
   const worldMesh = new THREE.Mesh(worldGeo, worldMat);
   scene.add(worldMesh);
 
-  // ── COLLECTIBLES: glowing gems scattered across the surface ──
   const Y_AXIS = new THREE.Vector3(0, 1, 0);
-  const _radial = new THREE.Vector3();
-  const _qLM = new THREE.Quaternion();
-  const collectibles = [];
-  const COLLECT_TARGET = 70;
-  for (let i = 0; i < COLLECT_TARGET; i++) {
-    const lon = lmRand(i + 1.7) * 2 * Math.PI;
-    const lat = Math.acos(2 * lmRand(i + 4.3) - 1);
-    if (lat < 0.08) continue;            // skip a tiny cap right at the spawn pole
-    _radial.set(
-      Math.sin(lat) * Math.cos(lon),
-      Math.cos(lat),
-      Math.sin(lat) * Math.sin(lon)
+
+  // Convert lon/lat (degrees) to a unit direction on the sphere.
+  function lonLatToDir(lonDeg, latDeg) {
+    const lon = lonDeg * Math.PI / 180;
+    const lat = latDeg * Math.PI / 180;
+    return new THREE.Vector3(
+      Math.cos(lat) * Math.cos(lon),
+      Math.sin(lat),
+      Math.cos(lat) * Math.sin(lon)
     );
-    const size = 14;
-    const geo = new THREE.IcosahedronGeometry(size, 0);
-    const col = new THREE.Color().setHSL(lmRand(i + 11.3), 0.9, 0.6);
-    const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col, emissiveIntensity: 0.45, flatShading: true });
-    const gem = new THREE.Mesh(geo, mat);
-    const surfaceR = WORLD_R + terrainOffset(_radial) + size + 4;
-    gem.position.copy(_radial).multiplyScalar(surfaceR);
-    _qLM.setFromUnitVectors(Y_AXIS, _radial);
-    gem.quaternion.copy(_qLM);
-    gem.userData.collected = false;
-    gem.userData.size = size;
-    scene.add(gem);
-    collectibles.push(gem);
   }
 
+  // Place a mesh at the surface position along dir, with its local +Y axis
+  // pointing radially outward (so models built "standing up" sit upright).
+  function placeOnSurface(mesh, dir, extraHeight) {
+    const surfaceR = WORLD_R + terrainOffset(dir);
+    mesh.position.copy(dir).multiplyScalar(surfaceR + (extraHeight || 0));
+    mesh.quaternion.setFromUnitVectors(Y_AXIS, dir);
+  }
+
+  // ── AUDIO: simple synth piano notes ──
+  let audioCtx = null;
+  function ensureAudio() {
+    if (!audioCtx) {
+      try { audioCtx = new (window.AudioContext || window.webkitAudioContext)(); }
+      catch (e) { audioCtx = null; }
+    }
+    if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+    return audioCtx;
+  }
+  function playNote(freq, duration, volume) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const now = ctx.currentTime;
+    const vol = (volume == null ? 0.28 : volume);
+    // Two oscillators an octave apart for a slightly chimey overtone.
+    const osc1 = ctx.createOscillator();
+    const osc2 = ctx.createOscillator();
+    osc1.type = 'triangle'; osc2.type = 'sine';
+    osc1.frequency.value = freq;
+    osc2.frequency.value = freq * 2;
+    const gain = ctx.createGain();
+    const gain2 = ctx.createGain();
+    gain2.gain.value = 0.18;
+    osc1.connect(gain); osc2.connect(gain2); gain2.connect(gain);
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(vol, now + 0.015);
+    gain.gain.exponentialRampToValueAtTime(0.0008, now + duration);
+    gain.connect(ctx.destination);
+    osc1.start(now); osc2.start(now);
+    osc1.stop(now + duration + 0.05);
+    osc2.stop(now + duration + 0.05);
+  }
+
+  // Continuous hum for the listening stone (WP1) until activated.
+  let stoneHum = null;
+  function startStoneHum() {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const osc = ctx.createOscillator();
+    osc.type = 'sine'; osc.frequency.value = 65.4; // C2
+    const gain = ctx.createGain();
+    gain.gain.value = 0.0;
+    osc.connect(gain); gain.connect(ctx.destination);
+    osc.start();
+    stoneHum = { osc: osc, gain: gain };
+  }
+  function setStoneHumGain(g) {
+    if (!stoneHum) return;
+    const ctx = audioCtx;
+    if (!ctx) return;
+    stoneHum.gain.gain.linearRampToValueAtTime(g, ctx.currentTime + 0.15);
+  }
+  function stopStoneHum() {
+    if (!stoneHum || !audioCtx) return;
+    const now = audioCtx.currentTime;
+    stoneHum.gain.gain.cancelScheduledValues(now);
+    stoneHum.gain.gain.setValueAtTime(stoneHum.gain.gain.value, now);
+    stoneHum.gain.gain.linearRampToValueAtTime(0.0, now + 0.6);
+    stoneHum.osc.stop(now + 0.7);
+    stoneHum = null;
+  }
+
+  // ── SUBTITLE: brief on-screen caption ──
+  const subEl = document.getElementById('subtitle');
+  let subTimer = null;
+  function showSubtitle(text, holdMs) {
+    subEl.textContent = text;
+    subEl.classList.add('show');
+    if (subTimer) clearTimeout(subTimer);
+    subTimer = setTimeout(function(){ subEl.classList.remove('show'); }, holdMs || 3200);
+  }
+
+  // ── WAYPOINTS: the seven-link chain ──
+  // Notes: C major pentatonic ascending, last note brighter.
+  // Captions are short, evocative, lowercase.
+  const wpData = [
+    { name: 'stone',   lon:  30, lat:  65, proximityR: 110, note: 261.63, caption: 'the stone listens, then sings' },
+    { name: 'circle',  lon:  85, lat:  35, proximityR:  60, note: 293.66, caption: 'the footprints stop circling' },
+    { name: 'room',    lon: 140, lat:  10, proximityR:  90, note: 329.63, caption: 'the lamp clicks off' },
+    { name: 'comp',    lon: 190, lat: -15, proximityR:  55, note: 392.00, caption: 'something rolls beside you' },
+    { name: 'tower',   lon: 230, lat: -35, proximityR:  90, note: 440.00, caption: 'the empty chair is yours' },
+    { name: 'eye',     lon: 280, lat: -55, proximityR: 110, note: 523.25, caption: 'the eye closes, slowly' },
+    { name: 'seam',    lon:   0, lat: -84, proximityR: 320, note: 659.25, caption: 'the world opens' },
+  ];
+
+  // Build helpers (one per waypoint).
+
+  function buildStone() {
+    const g = new THREE.Group();
+    const stoneGeo = new THREE.BoxGeometry(14, 130, 8);
+    stoneGeo.translate(0, 65, 0);
+    const mat = new THREE.MeshLambertMaterial({ color: 0x6d6d6f });
+    const stone = new THREE.Mesh(stoneGeo, mat);
+    stone.rotation.x = 0.09;
+    stone.rotation.z = -0.05;
+    g.add(stone);
+    // Two small base stones for weight
+    const baseMat = new THREE.MeshLambertMaterial({ color: 0x55554f });
+    const b1 = new THREE.Mesh(new THREE.BoxGeometry(20, 6, 12), baseMat);
+    b1.position.set(0, 3, 0);
+    g.add(b1);
+    g.userData.stone = stone;
+    return g;
+  }
+
+  function buildFootprintCircle() {
+    const g = new THREE.Group();
+    const footMat = new THREE.MeshLambertMaterial({ color: 0x3c3a26 });
+    const N = 28;
+    const RING_R = 30;
+    for (let i = 0; i < N; i++) {
+      const a = (i / N) * Math.PI * 2;
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(2.4, 0.4, 4), footMat);
+      // Place on the ring, tangentially oriented.
+      const offset = (i % 2 === 0) ? 0.6 : -0.6;
+      const cx = Math.cos(a) * RING_R + Math.cos(a + Math.PI/2) * offset;
+      const cz = Math.sin(a) * RING_R + Math.sin(a + Math.PI/2) * offset;
+      foot.position.set(cx, 0.5, cz);
+      foot.rotation.y = -a + Math.PI / 2;
+      g.add(foot);
+    }
+    return g;
+  }
+
+  function buildLivingRoom() {
+    const g = new THREE.Group();
+    const wood = new THREE.MeshLambertMaterial({ color: 0x6a3f24 });
+    // Chair
+    const chair = new THREE.Group();
+    const seat = new THREE.Mesh(new THREE.BoxGeometry(4, 0.6, 4), wood);
+    seat.position.y = 3.6;
+    chair.add(seat);
+    const back = new THREE.Mesh(new THREE.BoxGeometry(4, 5, 0.5), wood);
+    back.position.set(0, 6.2, -1.75);
+    chair.add(back);
+    const legCoords = [[-1.6,-1.6],[1.6,-1.6],[-1.6,1.6],[1.6,1.6]];
+    for (let i = 0; i < legCoords.length; i++) {
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.4, 0.4), wood);
+      leg.position.set(legCoords[i][0], 1.7, legCoords[i][1]);
+      chair.add(leg);
+    }
+    chair.position.set(-5, 0, 0);
+    chair.rotation.y = 0.4;
+    g.add(chair);
+    // Side table
+    const table = new THREE.Group();
+    const top = new THREE.Mesh(new THREE.BoxGeometry(3, 0.35, 2.4), wood);
+    top.position.y = 4;
+    table.add(top);
+    const tLegs = [[-1.2,-0.9],[1.2,-0.9],[-1.2,0.9],[1.2,0.9]];
+    for (let i = 0; i < tLegs.length; i++) {
+      const tl = new THREE.Mesh(new THREE.BoxGeometry(0.3, 3.8, 0.3), wood);
+      tl.position.set(tLegs[i][0], 1.9, tLegs[i][1]);
+      table.add(tl);
+    }
+    table.position.set(3, 0, -1);
+    g.add(table);
+    // Lamp (on the table area)
+    const lampPole = new THREE.Mesh(new THREE.BoxGeometry(0.3, 7.5, 0.3), new THREE.MeshLambertMaterial({ color: 0x222226 }));
+    lampPole.position.set(5.5, 3.75, -3);
+    g.add(lampPole);
+    const shade = new THREE.Mesh(
+      new THREE.CylinderGeometry(1.2, 1.6, 1.6, 12, 1, true),
+      new THREE.MeshLambertMaterial({ color: 0xc6a878, side: THREE.DoubleSide })
+    );
+    shade.position.set(5.5, 8, -3);
+    g.add(shade);
+    const bulbMat = new THREE.MeshLambertMaterial({ color: 0xffeeaa, emissive: 0xffcc55, emissiveIntensity: 1.2 });
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.7, 16, 12), bulbMat);
+    bulb.position.set(5.5, 7.4, -3);
+    g.add(bulb);
+    g.userData.bulb = bulb;
+    g.userData.bulbMat = bulbMat;
+    // Book on the grass
+    const book = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.25, 1.1), new THREE.MeshLambertMaterial({ color: 0xb8985a }));
+    book.position.set(-1, 0.15, 5);
+    book.rotation.y = 0.6;
+    g.add(book);
+    return g;
+  }
+
+  function buildCompanionMesh() {
+    const g = new THREE.Group();
+    const body = new THREE.Mesh(new THREE.SphereGeometry(6.5, 32, 20), new THREE.MeshLambertMaterial({ color: 0xfdfdfa }));
+    g.add(body);
+    const eyeMat = new THREE.MeshBasicMaterial({ color: 0x111111 });
+    const eL = new THREE.Mesh(new THREE.SphereGeometry(0.85, 12, 8), eyeMat);
+    const eR = new THREE.Mesh(new THREE.SphereGeometry(0.85, 12, 8), eyeMat);
+    // Eyes face +Z by default; the companion's facing will be set per-frame.
+    eL.position.set(-1.7, 1.7, 5.6);
+    eR.position.set( 1.7, 1.7, 5.6);
+    g.add(eL); g.add(eR);
+    return g;
+  }
+
+  function buildTowerOfChairs() {
+    const g = new THREE.Group();
+    const wood = new THREE.MeshLambertMaterial({ color: 0x7a4925 });
+    const N = 32;          // chair count
+    const CH = 8.5;        // per-chair vertical span
+    function makeChair() {
+      const c = new THREE.Group();
+      const seat = new THREE.Mesh(new THREE.BoxGeometry(5, 0.6, 5), wood);
+      seat.position.y = 3.4;
+      c.add(seat);
+      const back = new THREE.Mesh(new THREE.BoxGeometry(5, 4.2, 0.5), wood);
+      back.position.set(0, 5.7, -2.25);
+      c.add(back);
+      const legs = [[-2,-2],[2,-2],[-2,2],[2,2]];
+      for (let i = 0; i < legs.length; i++) {
+        const leg = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.2, 0.4), wood);
+        leg.position.set(legs[i][0], 1.6, legs[i][1]);
+        c.add(leg);
+      }
+      return c;
+    }
+    for (let i = 0; i < N; i++) {
+      const c = makeChair();
+      c.position.y = i * CH;
+      c.rotation.y = i * 0.78 + Math.sin(i * 1.3) * 0.4;
+      // Slight wobble in X and Z as it goes up
+      c.position.x = Math.sin(i * 0.7) * 1.2;
+      c.position.z = Math.cos(i * 0.5) * 1.2;
+      g.add(c);
+    }
+    // Lone chair on the ground, slightly off-center, just-vacated angle.
+    const lone = makeChair();
+    lone.position.set(14, 0, 6);
+    lone.rotation.y = 0.55;
+    g.add(lone);
+    g.userData.loneChair = lone;
+    return g;
+  }
+
+  function buildEye() {
+    const g = new THREE.Group();
+    // Half-buried eyeball: full sphere, lowered so half is below local-y=0.
+    const eyeballMat = new THREE.MeshLambertMaterial({ color: 0xfdf8e8 });
+    const eyeball = new THREE.Mesh(new THREE.SphereGeometry(40, 48, 32), eyeballMat);
+    eyeball.position.y = -10;
+    g.add(eyeball);
+    // Iris pivot at eyeball center; child iris+pupil sit on its top.
+    const irisPivot = new THREE.Object3D();
+    irisPivot.position.y = -10;
+    g.add(irisPivot);
+    const iris = new THREE.Mesh(
+      new THREE.CircleGeometry(15, 28),
+      new THREE.MeshBasicMaterial({ color: 0x3a78aa, side: THREE.DoubleSide })
+    );
+    iris.position.y = 40.05;
+    iris.rotation.x = -Math.PI / 2;
+    irisPivot.add(iris);
+    const pupil = new THREE.Mesh(
+      new THREE.CircleGeometry(6, 18),
+      new THREE.MeshBasicMaterial({ color: 0x000000, side: THREE.DoubleSide })
+    );
+    pupil.position.y = 40.1;
+    pupil.rotation.x = -Math.PI / 2;
+    irisPivot.add(pupil);
+    // Eyelid: a sphere shell that, when active, rotates over the eyeball.
+    // Half-sphere via setting phiLength.
+    const lid = new THREE.Mesh(
+      new THREE.SphereGeometry(41, 48, 32, 0, Math.PI * 2, 0, Math.PI / 2),
+      new THREE.MeshLambertMaterial({ color: 0xe8d8b8, side: THREE.DoubleSide })
+    );
+    lid.position.y = -10;
+    // Start with lid rotated fully away (looks like no lid, eye is wide open).
+    lid.rotation.x = Math.PI;
+    g.add(lid);
+    g.userData.irisPivot = irisPivot;
+    g.userData.lid = lid;
+    g.userData.eyeballCenterLocalY = -10;
+    return g;
+  }
+
+  function buildSeam() {
+    // Long thin slab carrying a starfield texture. Starts as a thin sliver
+    // (scale.z very small), animates to full width when activated.
+    const g = new THREE.Group();
+    const seamL = 800;
+    const seamW = 220;
+    // Starfield canvas
+    const sCanvas = document.createElement('canvas');
+    sCanvas.width = 1024; sCanvas.height = 256;
+    const sctx = sCanvas.getContext('2d');
+    // Deep night gradient: top is sky-edge teal, fades to indigo-black.
+    const grad = sctx.createLinearGradient(0, 0, 0, 256);
+    grad.addColorStop(0, '#0a1830');
+    grad.addColorStop(0.4, '#040816');
+    grad.addColorStop(1, '#02040c');
+    sctx.fillStyle = grad;
+    sctx.fillRect(0, 0, 1024, 256);
+    // Stars
+    for (let i = 0; i < 1100; i++) {
+      const x = Math.random() * 1024;
+      const y = Math.random() * 256;
+      const r = Math.random() < 0.04 ? 2.4 : (Math.random() < 0.25 ? 1.4 : 0.6);
+      const a = 0.25 + Math.random() * 0.75;
+      sctx.fillStyle = 'rgba(255,255,255,' + a + ')';
+      sctx.beginPath();
+      sctx.arc(x, y, r, 0, Math.PI * 2);
+      sctx.fill();
+    }
+    // A few colour twinkles
+    for (let i = 0; i < 14; i++) {
+      const x = Math.random() * 1024;
+      const y = Math.random() * 256;
+      const hue = Math.random() < 0.5 ? '#9fb8ff' : '#ffd9a8';
+      sctx.fillStyle = hue;
+      sctx.beginPath(); sctx.arc(x, y, 1.6, 0, Math.PI * 2); sctx.fill();
+    }
+    const seamTex = new THREE.CanvasTexture(sCanvas);
+    seamTex.magFilter = THREE.LinearFilter;
+    seamTex.minFilter = THREE.LinearMipMapLinearFilter;
+    const seamMat = new THREE.MeshBasicMaterial({ map: seamTex });
+    const seamGeo = new THREE.PlaneGeometry(seamL, seamW);
+    seamGeo.rotateX(-Math.PI / 2);
+    const seamMesh = new THREE.Mesh(seamGeo, seamMat);
+    seamMesh.position.y = 0.6;
+    // Initially almost-closed slit.
+    seamMesh.scale.z = 0.015;
+    g.add(seamMesh);
+    g.userData.slab = seamMesh;
+    g.userData.openAmount = 0; // 0 closed → 1 fully open
+    return g;
+  }
+
+  // ── Build waypoints and place them on the sphere. ──
+  const builders = [
+    buildStone,
+    buildFootprintCircle,
+    buildLivingRoom,
+    function() { return null; }, // companion mesh is added separately below
+    buildTowerOfChairs,
+    buildEye,
+    buildSeam,
+  ];
+
+  const waypoints = wpData.map(function(data, i) {
+    const dir = lonLatToDir(data.lon, data.lat);
+    const surfaceR = WORLD_R + terrainOffset(dir);
+    const surfacePos = dir.clone().multiplyScalar(surfaceR);
+    const mesh = builders[i]();
+    if (mesh) {
+      placeOnSurface(mesh, dir, 0);
+      scene.add(mesh);
+    }
+    return {
+      data: data,
+      dir: dir,
+      surfacePos: surfacePos,
+      mesh: mesh,
+      activated: false,
+    };
+  });
+
+  // ── BEAM: vertical pillar of light pointing at the current target ──
+  const BEAM_H = 4200;
+  const beamGeo = new THREE.CylinderGeometry(8, 2, BEAM_H, 12, 1, true);
+  beamGeo.translate(0, BEAM_H / 2, 0); // base at local origin
+  const beamMat = new THREE.MeshBasicMaterial({
+    color: 0xffe885,
+    transparent: true,
+    opacity: 0.35,
+    blending: THREE.AdditiveBlending,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const beam = new THREE.Mesh(beamGeo, beamMat);
+  scene.add(beam);
+
+  function placeBeam(wpIndex) {
+    if (wpIndex == null || wpIndex >= waypoints.length) { beam.visible = false; return; }
+    beam.visible = true;
+    const wp = waypoints[wpIndex];
+    placeOnSurface(beam, wp.dir, 0);
+  }
+
+  // ── COMPANION CREATURE ──
+  // Lives at WP4 location until that waypoint is reached; then follows the
+  // player with a 2-second time delay.
+  const companion = buildCompanionMesh();
+  placeOnSurface(companion, waypoints[3].dir, 6);
+  scene.add(companion);
+
+  // Ring buffer of recent player position + forward, used for delayed follow.
+  const BUFFER_SECONDS = 2.0;
+  const positionHistory = []; // each entry: { t, pos, fwd }
+
+  let companionActive = false;
+
   // ── SHIP: classic two-tone ball, light red on top hemisphere, blue on bottom ──
-  // Hemispheres split by the sphere's object-space Y axis so colours stay
-  // welded to the geometry and rotate with the rolling ball.
   const SHIP_R = 10;
   const ballMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
   ballMat.onBeforeCompile = function(shader) {
@@ -244,14 +618,11 @@
   const ball = new THREE.Mesh(new THREE.SphereGeometry(SHIP_R, 48, 32), ballMat);
   scene.add(ball);
 
-  // Ship state — 3D position/velocity, constrained to the world sphere surface.
-  //   ballPos        live 3D position; always at distance (WORLD_R + SHIP_R) from origin
-  //   ballVel        tangent velocity vector (perpendicular to local up)
-  //   ballForward    tangent unit vector — the player's "facing" direction on the surface
+  // Ship state.
   const BALL_ALT = WORLD_R + SHIP_R;
-  const ballPos = new THREE.Vector3(0, BALL_ALT, 0);   // spawn at the world's "north pole"
+  const ballPos = new THREE.Vector3(0, BALL_ALT, 0);   // spawn at the world's north pole
   const ballVel = new THREE.Vector3();
-  const ballForward = new THREE.Vector3(0, 0, -1);     // initial facing direction
+  const ballForward = new THREE.Vector3(0, 0, -1);
 
   const MAX_SPEED = 200;
   const ACCEL = 260;
@@ -259,7 +630,6 @@
   const TURN_RATE = 1.8;
   const FRICTION = 0.985;
 
-  // Reusable scratch vectors / quaternion to avoid per-frame allocation.
   const _up = new THREE.Vector3();
   const _tmp = new THREE.Vector3();
   const _tmp2 = new THREE.Vector3();
@@ -272,17 +642,17 @@
   const keys = {};
   window.addEventListener('keydown', function(e) {
     keys[e.code] = true;
+    ensureAudio();
     if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].indexOf(e.code) >= 0) e.preventDefault();
   });
   window.addEventListener('keyup', function(e) { keys[e.code] = false; });
 
-  // Touch / mouse drag as analog stick.
   let dragStart = null, dragNow = null;
   function getXY(e) {
     const t = e.touches ? e.touches[0] : e;
     return { x: t.clientX, y: t.clientY };
   }
-  function onStart(e) { dragStart = getXY(e); dragNow = dragStart; e.preventDefault(); }
+  function onStart(e) { dragStart = getXY(e); dragNow = dragStart; ensureAudio(); e.preventDefault(); }
   function onMove(e) { if (!dragStart) return; dragNow = getXY(e); e.preventDefault(); }
   function onEnd() { dragStart = null; dragNow = null; }
   canvas.addEventListener('touchstart', onStart, { passive: false });
@@ -303,8 +673,6 @@
       const dx = dragNow.x - dragStart.x;
       const dy = dragNow.y - dragStart.y;
       const DEAD = 8;
-      // Drag up beyond 80 px ramps up to a 3× boost (240 px = full boost).
-      // Drag down is plain reverse, capped at -1.
       if (Math.abs(dy) > DEAD) {
         const raw = -dy / 80;
         throttle += Math.max(-1, Math.min(3, raw));
@@ -317,40 +685,203 @@
     };
   }
 
-  // ── HUD: zone readout — lat/lon to the nearest 1° so it ticks while you roll. ──
+  // ── HUD: zone readout ──
   const zoneEl = document.getElementById('zone-val');
   function updateZone() {
     const dir = ballPos.clone().normalize();
     const lat = 90 - Math.acos(Math.max(-1, Math.min(1, dir.y))) * 180 / Math.PI;
     let lon = Math.atan2(dir.z, dir.x) * 180 / Math.PI;
     if (lon < 0) lon += 360;
-    const lonR = Math.round(lon);
-    const latR = Math.round(lat);
-    zoneEl.textContent = lonR + '°,' + latR + '°';
+    zoneEl.textContent = Math.round(lon) + '°,' + Math.round(lat) + '°';
   }
 
-  // ── HUD: gem collection counter + per-frame collision check ──
-  const gemsEl = document.getElementById('gems-val');
-  gemsEl.textContent = '0/' + collectibles.length;
-  let gemsCollected = 0;
-  const COLLECT_DIST = 28;
-  const COLLECT_DIST_SQ = COLLECT_DIST * COLLECT_DIST;
-  function updateGems(dt) {
-    for (let i = 0; i < collectibles.length; i++) {
-      const g = collectibles[i];
-      if (g.userData.collected) continue;
-      // Spin uncollected gems for visibility.
-      g.rotateY(dt * 1.6);
-      const dx = g.position.x - ballPos.x;
-      const dy = g.position.y - ballPos.y;
-      const dz = g.position.z - ballPos.z;
-      if (dx*dx + dy*dy + dz*dz < COLLECT_DIST_SQ) {
-        g.userData.collected = true;
-        g.visible = false;
-        gemsCollected++;
-        gemsEl.textContent = gemsCollected + '/' + collectibles.length;
+  // ── WAYPOINT STATE ──
+  let currentWP = 0;
+  placeBeam(0);
+
+  function activateWP(i) {
+    const wp = waypoints[i];
+    wp.activated = true;
+    playNote(wp.data.note, 2.2);
+    showSubtitle(wp.data.caption, 3800);
+
+    if (i === 0) {
+      stopStoneHum();
+    } else if (i === 2) {
+      // Lamp clicks off.
+      if (wp.mesh && wp.mesh.userData.bulbMat) {
+        wp.mesh.userData.bulbMat.emissiveIntensity = 0;
+        wp.mesh.userData.bulbMat.color.setHex(0x6a6258);
+        wp.mesh.userData.bulbMat.needsUpdate = true;
       }
+    } else if (i === 3) {
+      companionActive = true;
+    } else if (i === 5) {
+      // Begin eye-closing animation.
+      wp.mesh.userData.closeStartT = performance.now();
+    } else if (i === 6) {
+      // Begin seam opening.
+      wp.mesh.userData.openStartT = performance.now();
     }
+
+    currentWP = i + 1;
+    if (currentWP < 4) {
+      placeBeam(currentWP);
+    } else if (currentWP < waypoints.length) {
+      // From WP5 onward, no beam; companion guides via vibe.
+      placeBeam(currentWP);
+      // Re-tint beam softer for the later half so it doesn't dominate.
+      beam.material.opacity = 0.22;
+      beam.material.color.setHex(0xfff2c2);
+    } else {
+      beam.visible = false;
+    }
+  }
+
+  // Per-frame eye tracking. The iris rotates to face the player, clamped to
+  // the upper hemisphere of the eyeball.
+  const _eyeCenter = new THREE.Vector3();
+  const _eyeWorldQ = new THREE.Quaternion();
+  const _eyeInvQ = new THREE.Quaternion();
+  const _eyeLocalDir = new THREE.Vector3();
+  function trackEye(eyeMesh) {
+    if (!eyeMesh || !eyeMesh.userData.irisPivot) return;
+    const pivot = eyeMesh.userData.irisPivot;
+    // World position of the eyeball center.
+    eyeMesh.getWorldPosition(_eyeCenter);
+    _eyeCenter.add(_tmp.copy(eyeMesh.up).multiplyScalar(0)); // noop; placeholder
+    // Direction in world space from eyeball center to player.
+    _tmp2.subVectors(ballPos, _eyeCenter).normalize();
+    // Convert to eye-local frame.
+    eyeMesh.getWorldQuaternion(_eyeWorldQ);
+    _eyeInvQ.copy(_eyeWorldQ).invert();
+    _eyeLocalDir.copy(_tmp2).applyQuaternion(_eyeInvQ);
+    // Clamp Y so iris stays above the horizon line.
+    if (_eyeLocalDir.y < 0.12) {
+      _eyeLocalDir.y = 0.12;
+      _eyeLocalDir.normalize();
+    }
+    // Aim pivot so its local +Y points along localDir.
+    pivot.quaternion.setFromUnitVectors(Y_AXIS, _eyeLocalDir);
+  }
+
+  function animateEyeClosing(eyeMesh) {
+    const startT = eyeMesh.userData.closeStartT;
+    if (!startT) return;
+    const t = (performance.now() - startT) / 1000;
+    const lid = eyeMesh.userData.lid;
+    if (!lid) return;
+    // Phase 1: brief blink + reopen. Phase 2: long slow close.
+    if (t < 0.25) {
+      lid.rotation.x = Math.PI + (1 - t / 0.25) * 0; // open
+      lid.rotation.x = Math.PI - (t / 0.25) * Math.PI; // close fast
+    } else if (t < 0.55) {
+      const k = (t - 0.25) / 0.3;
+      lid.rotation.x = 0 + k * Math.PI; // open back
+    } else if (t < 5.5) {
+      const k = (t - 0.55) / 4.95;
+      const eased = k * k * (3 - 2 * k); // smoothstep
+      lid.rotation.x = Math.PI - eased * Math.PI; // close slowly
+    } else {
+      lid.rotation.x = 0; // closed
+    }
+  }
+
+  function animateSeamOpening(seamMesh) {
+    const startT = seamMesh.userData.openStartT;
+    if (!startT) return;
+    const t = (performance.now() - startT) / 1000;
+    const slab = seamMesh.userData.slab;
+    if (!slab) return;
+    const k = Math.min(1, t / 6);
+    const eased = k * k * (3 - 2 * k);
+    slab.scale.z = 0.015 + eased * (1 - 0.015);
+    seamMesh.userData.openAmount = eased;
+  }
+
+  function updateWaypoints(dt) {
+    // Per-frame visual updates.
+    const wpStone = waypoints[0];
+    if (wpStone && !wpStone.activated) {
+      // Hum gets louder as player approaches.
+      const dist = ballPos.distanceTo(wpStone.surfacePos);
+      const k = Math.max(0, Math.min(1, 1 - dist / 1200));
+      setStoneHumGain(0.02 + k * 0.07);
+    }
+    // Foot circle: gentle rotation about local up so the prints feel alive.
+    const wpCircle = waypoints[1];
+    if (wpCircle && wpCircle.mesh && !wpCircle.activated) {
+      wpCircle.mesh.rotateOnAxis(Y_AXIS, dt * 0.18);
+    }
+    // Eye tracks player (always, before and after closing it stays oriented).
+    const wpEye = waypoints[5];
+    if (wpEye && wpEye.mesh) {
+      if (!wpEye.activated) trackEye(wpEye.mesh);
+      if (wpEye.activated) animateEyeClosing(wpEye.mesh);
+    }
+    // Seam opens once activated.
+    const wpSeam = waypoints[6];
+    if (wpSeam && wpSeam.mesh && wpSeam.activated) animateSeamOpening(wpSeam.mesh);
+
+    // Beam pulse: subtle opacity breathing so it reads as "live".
+    if (beam.visible) {
+      const baseO = (currentWP >= 4) ? 0.22 : 0.35;
+      beam.material.opacity = baseO + Math.sin(performance.now() * 0.003) * 0.06;
+    }
+
+    // Proximity check for the next waypoint.
+    if (currentWP < waypoints.length) {
+      const wp = waypoints[currentWP];
+      const dx = wp.surfacePos.x - ballPos.x;
+      const dy = wp.surfacePos.y - ballPos.y;
+      const dz = wp.surfacePos.z - ballPos.z;
+      const d2 = dx*dx + dy*dy + dz*dz;
+      const r = wp.data.proximityR;
+      if (d2 < r * r) activateWP(currentWP);
+    }
+  }
+
+  function updateCompanion(dt) {
+    // Push current ball state into history.
+    positionHistory.push({
+      t: performance.now(),
+      pos: ballPos.clone(),
+      fwd: ballForward.clone(),
+    });
+    // Trim entries older than BUFFER_SECONDS + a buffer.
+    const cutoff = performance.now() - BUFFER_SECONDS * 1000 - 800;
+    while (positionHistory.length > 0 && positionHistory[0].t < cutoff) {
+      positionHistory.shift();
+    }
+    if (!companionActive) {
+      // Idle: hold at spawn position, slight bob.
+      const bob = Math.sin(performance.now() * 0.002) * 0.4;
+      placeOnSurface(companion, waypoints[3].dir, 6 + bob);
+      return;
+    }
+    // Active: find the entry from BUFFER_SECONDS ago and place there.
+    const target = performance.now() - BUFFER_SECONDS * 1000;
+    let entry = positionHistory[0];
+    for (let i = 0; i < positionHistory.length; i++) {
+      if (positionHistory[i].t > target) break;
+      entry = positionHistory[i];
+    }
+    if (!entry) return;
+    // Position: at the past ball pos, lifted slightly so companion sits on surface.
+    const dir = entry.pos.clone().normalize();
+    const surfaceR = WORLD_R + terrainOffset(dir) + 6;
+    companion.position.copy(dir).multiplyScalar(surfaceR);
+    // Orient: local +Y = up, local +Z = forward (from past entry).
+    // Build a basis: up = dir, forward = entry.fwd (re-tangent), right = up × fwd.
+    const up = dir;
+    const fwd = entry.fwd.clone();
+    fwd.addScaledVector(up, -fwd.dot(up)).normalize();
+    const right = new THREE.Vector3().crossVectors(up, fwd).normalize();
+    const m = new THREE.Matrix4().makeBasis(right, up, fwd);
+    companion.quaternion.setFromRotationMatrix(m);
+    // Roll the body around the right-axis so it looks like it's actually rolling.
+    const rollSpeed = entry.fwd.length() > 0 ? 1 : 0;
+    companion.children[0].rotateX(rollSpeed * dt * 2);
   }
 
   // ── FRAME LOOP ──
@@ -363,26 +894,18 @@
 
     const inp = readInput();
 
-    // Local frame at ball position: up = radial direction outward from world centre.
     _up.copy(ballPos).normalize();
-
-    // Re-orthogonalize forward against current up (parallel transport keeps the
-    // facing direction tangent to the sphere as the ball wanders around it).
     ballForward.addScaledVector(_up, -ballForward.dot(_up)).normalize();
 
-    // Steering: rotate forward around the local up axis.
     if (inp.steer !== 0) ballForward.applyAxisAngle(_up, -inp.steer * TURN_RATE * dt);
 
-    // Throttle: accelerate along forward.
     if (inp.throttle > 0) {
       ballVel.addScaledVector(ballForward, inp.throttle * ACCEL * dt);
     } else if (inp.throttle < 0) {
       ballVel.addScaledVector(ballForward, inp.throttle * REVERSE_ACCEL * dt);
     }
 
-    // Gravity from terrain gradient — pulls ball downhill in the tangent plane.
-    // Sample the terrain offset at ball position ± eps in forward and right directions
-    // (rotating the radial direction around right/forward by a small angle).
+    // Gravity from terrain gradient.
     {
       const dir = _tmp.copy(ballPos).normalize();
       const right = _tmp2.crossVectors(ballForward, _up).normalize();
@@ -393,9 +916,6 @@
       const dL = dir.clone().applyAxisAngle(ballForward, -EPS);
       const dhdf = (terrainOffset(dF) - terrainOffset(dB)) / (2 * EPS);
       const dhdr = (terrainOffset(dR) - terrainOffset(dL)) / (2 * EPS);
-      // Tangent-plane gravity from the terrain gradient. Capped so the steepest
-      // hills don't pin the ball — full throttle (and especially boost) can
-      // always crawl uphill.
       const GRAVITY = 0.08;
       const MAX_GRAV_ACCEL = 180;
       let gf = -dhdf * GRAVITY;
@@ -409,43 +929,33 @@
       ballVel.addScaledVector(right,       gr * dt);
     }
 
-    // Keep velocity tangent to the surface (remove any radial component).
     ballVel.addScaledVector(_up, -ballVel.dot(_up));
-
-    // Friction.
     ballVel.multiplyScalar(Math.pow(FRICTION, dt * 60));
 
-    // Cap speed. Boost: when throttle is between 1 and 3, the speed cap scales
-    // with it, so dragging up past the normal-max threshold unlocks up to 3× MAX_SPEED.
     const targetMax = MAX_SPEED * Math.max(1, inp.throttle);
     const speed = ballVel.length();
     if (speed > targetMax) ballVel.multiplyScalar(targetMax / speed);
 
-    // Move and re-project to the (bumpy) sphere surface — altitude follows
-    // the local terrain offset so the ball rides over hills and into craters.
     ballPos.addScaledVector(ballVel, dt);
     const ballDir = _tmp.copy(ballPos).normalize();
     const surfH = WORLD_R + terrainOffset(ballDir) + SHIP_R;
     ballPos.copy(ballDir).multiplyScalar(surfH);
 
-    // Recompute up after the move; re-tangent velocity + forward to the new tangent plane.
     _up.copy(ballPos).normalize();
     ballVel.addScaledVector(_up, -ballVel.dot(_up));
     ballForward.addScaledVector(_up, -ballForward.dot(_up)).normalize();
 
-    // Position the ball mesh on the sphere.
     ball.position.copy(ballPos);
 
-    // Roll the ball based on actual motion: axis = up × motion, angle = arc/R.
     const ds = ballVel.length() * dt;
     if (ds > 0.0001) {
-      _tmp.copy(ballVel).normalize();          // motion direction
+      _tmp.copy(ballVel).normalize();
       _rollAxis.crossVectors(_up, _tmp).normalize();
       _q.setFromAxisAngle(_rollAxis, ds / SHIP_R);
       ball.quaternion.premultiply(_q);
     }
 
-    // ── CHASE CAMERA: behind ball along -forward, above along +up. ──
+    // Chase camera.
     const CAM_BACK = 80;
     const CAM_UP = 75;
     _camTarget.copy(ballPos)
@@ -459,7 +969,8 @@
     camera.lookAt(_lookAt);
 
     updateZone();
-    updateGems(dt);
+    updateWaypoints(dt);
+    updateCompanion(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
@@ -471,9 +982,16 @@
   _lookAt.copy(ballPos).addScaledVector(ballForward, 40).addScaledVector(_up, 14);
   camera.lookAt(_lookAt);
 
+  // Begin the stone hum quietly so the player notices it as they approach.
+  // (Will be inaudible until first user interaction unlocks audio context.)
+  startStoneHum();
+  setStoneHumGain(0.02);
+
+  // Opening cue: very subtle whisper of a subtitle.
+  showSubtitle('something is humming nearby', 4500);
+
   frame();
 })();
 </script>
 <script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"a11cf00d63584cab8d7127e61488d9f6","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
-</body>
-</html>
+</body></html>
