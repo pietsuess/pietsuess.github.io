@@ -2443,7 +2443,7 @@ window.onload = function() {
     // --- Ship catalog: alt ships unlocked by clearing sector 2 (or finding the secret in S2). ---
     var SHIP_CATALOG = [
         { id: 'deltawing',  name: 'DELTAWING',  hullKg: 4500, hitRadius: 3.5, maxHealth: 100, dmgMult: 1.00, speedMult: 1.00, price: 0,    default: true },
-        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, speedMult: 1.00, price: 3000, default: false },
+        { id: 'stealthwing',name: 'STEALTHWING',hullKg: 4200, hitRadius: 2.8, maxHealth: 130, dmgMult: 0.85, speedMult: 1.15, price: 3000, default: false },
         { id: 'blockwing',  name: 'BLOCKWING',  hullKg: 7500, hitRadius: 3.8, maxHealth: 325, dmgMult: 0.65, speedMult: 0.85, price: 3700, default: false }
     ];
     var SHIP_CATALOG_BY_ID = {}; SHIP_CATALOG.forEach(function(s){ SHIP_CATALOG_BY_ID[s.id] = s; });
@@ -2455,6 +2455,15 @@ window.onload = function() {
     function _shipStat(name, fallback) {
         var meta = SHIP_CATALOG_BY_ID[activeShip] || SHIP_CATALOG_BY_ID.deltawing;
         return (meta && meta[name] != null) ? meta[name] : fallback;
+    }
+    // Speed factor = ship speedMult × (hullKg / totalKg). Heavier loadout slows the ship.
+    function _shipSpeedFactor() {
+        var sMult = _shipStat('speedMult', 1.0);
+        var hull = _shipStat('hullKg', 4500);
+        var wKg = (window.__weaponKg && window.__weaponKg[weaponTier]) || 0;
+        var sKg = (window.__shieldKg && window.__shieldKg[shieldTier]) || 0;
+        var total = hull + wKg + sKg;
+        return sMult * (hull / total);
     }
     window.__shipDataIds = _shipDataIds; // expose for turntable IIFE in separate script tag
     window.__shipCatalog = SHIP_CATALOG_BY_ID; // expose catalog so turntable refresh() reads active hullKg
@@ -2607,7 +2616,7 @@ window.onload = function() {
                 if (typeof scene !== 'undefined' && scene.fog && _zone.fogColor != null) scene.fog.color.setHex(_zone.fogColor);
                 if (typeof scene !== 'undefined' && scene.background && _zone.fogColor != null && scene.background.setHex) scene.background.setHex(_zone.fogColor);
                 sectorDistance = _zone.length;
-                baseSpeed = _zone.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipStat('speedMult', 1.0);
+                baseSpeed = _zone.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipSpeedFactor();
             }
         } catch(e) {}
         try {
@@ -4514,7 +4523,7 @@ window.onload = function() {
             if (typeof currentSector === 'number' && typeof getLevelScaledZone === 'function') {
                 var _zSwap = getLevelScaledZone(currentSector);
                 if (_zSwap && typeof _zSwap.speed === 'number') {
-                    baseSpeed = _zSwap.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipStat('speedMult', 1.0);
+                    baseSpeed = _zSwap.speed * (SPEED_MULTIPLIERS[speedTier] || 1) * _shipSpeedFactor();
                 }
             }
         } catch(e) {}
@@ -7601,7 +7610,7 @@ window.onload = function() {
         var t = SPAWN_TUNING['S' + currentSector + 'B'] || {};
         sectorDistance = t.levelLength || t.baseLength || 6000;
         var spd = t.baseSpeed || 320;
-        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
         // Keep current zone visuals — bonus level reuses just-cleared sector's palette.
         try { document.getElementById('sector-text').innerText = 'BONUS'; } catch(e) {}
         sectorStartScore = score;
@@ -7622,7 +7631,7 @@ window.onload = function() {
         var t = SPAWN_TUNING['SKYHAWK'] || {};
         sectorDistance = t.levelLength || t.baseLength || 22000;
         var spd = t.baseSpeed || 360;
-        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
         // Swap the tube wireframe for the Skyhawk open-sky environment (ground + mountains + sky).
         try { _enterSkyhawkEnv(); } catch(e) {}
         try { document.getElementById('sector-text').innerText = 'SKYHAWK'; } catch(e) {}
@@ -7736,7 +7745,7 @@ window.onload = function() {
             try { _trSaveMaxReached(currentSector, currentLevel); } catch(e) {}
             var zoneB = getLevelScaledZone(currentSector);
             sectorDistance = zoneB.length;
-            baseSpeed = zoneB.speed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+            baseSpeed = zoneB.speed * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
             document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
             document.getElementById('zone-name').innerText = zoneB.name;
             document.getElementById('zone-name').style.color = zoneB.color;
@@ -7792,7 +7801,7 @@ window.onload = function() {
         var zone = getLevelScaledZone(currentSector);
         sectorDistance = zone.length;
         baseSpeed = zone.speed;
-        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+        baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
         document.getElementById('sector-text').innerText = _inBonusLevel ? 'BONUS' : (currentSector + '-' + currentLevel);
         document.getElementById('zone-name').innerText = zone.name;
         document.getElementById('zone-name').style.color = zone.color;
@@ -8312,7 +8321,7 @@ window.onload = function() {
             if (!preserveScore) collectedContent = { EDIT:new Set(), PHOTO:new Set(), DIRECT:new Set(), ANIMATE:new Set(), VIBE:new Set() };
             var zone0 = getLevelScaledZone(currentSector);
             baseSpeed = zone0.speed;
-            baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+            baseSpeed = baseSpeed * SPEED_MULTIPLIERS[speedTier] * _shipSpeedFactor();
             sectorDistance = zone0.length;
             if (!preserveScore) sectorStartScore = 0;
             combo = 0;
@@ -9203,7 +9212,7 @@ window.onload = function() {
         var _descText = desc || '';
         // Append weight badge for shield/weapon items (not speed, not NONE)
         if (!isSpeed && !isNone) {
-            var _kgArr = isShield ? (window.__shieldKg || [0,200,800,2400,60]) : (window.__weaponKg || [0,150,320,280,850]);
+            var _kgArr = isShield ? (window.__shieldKg || [0,200,800,2400,240]) : (window.__weaponKg || [0,150,320,280,850]);
             var _kg = _kgArr[idx];
             if (typeof _kg === 'number' && _kg > 0) {
                 _descText = _descText + ' · +' + _kg + 'kg';
@@ -19343,7 +19352,7 @@ illum 3
     return SHIP_KG_HULL_DEFAULT;
   }
   var WEAPON_KG    = [0, 150, 320, 280, 850];
-  var SHIELD_KG    = [0, 200, 800, 2400, 60];
+  var SHIELD_KG    = [0, 200, 800, 2400, 240];
   // Expose for store item rows (weight badges)
   try { window.__weaponKg = WEAPON_KG; window.__shieldKg = SHIELD_KG; } catch(e) {}
   var SPEED_TOP    = [1140, 1320, 1500, 1740, 1980]; // km/min — equivalent to [19, 22, 25, 29, 33] km/s, scaled by SPEED_MULTIPLIERS.
