@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>PIET SUESS ARCADE</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323&display=swap" rel="stylesheet">
+<style>
+:root {
+  --crt-bg: #060812;
+  --crt-fg: #ddeeff;
+  --crt-cyan: #00f0ff;
+  --crt-magenta: #ff3df0;
+  --crt-yellow: #ffe000;
+  --crt-green: #00ff88;
+  --crt-red: #ff4444;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  height: 100%;
+  background: var(--crt-bg);
+  color: var(--crt-fg);
+  font-family: 'Press Start 2P', monospace;
+  overflow: hidden;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* CRT envelope: subtle radial vignette + scanlines */
+.crt {
+  position: fixed; inset: 0;
+  background:
+    radial-gradient(ellipse at center, rgba(20,30,60,0.4) 0%, rgba(0,0,0,0.85) 100%),
+    var(--crt-bg);
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  padding: clamp(12px, 2.5vh, 28px) clamp(12px, 3vw, 40px);
+  gap: clamp(8px, 1.5vh, 18px);
+}
+.crt::before {
+  /* scanlines */
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.04) 0px,
+    rgba(255,255,255,0.04) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+  pointer-events: none;
+  z-index: 100;
+}
+.crt::after {
+  /* faint chromatic-ab glow */
+  content: '';
+  position: absolute; inset: 0;
+  background: radial-gradient(ellipse at center, transparent 50%, rgba(0,0,0,0.6) 100%);
+  pointer-events: none;
+  z-index: 99;
+}
+
+/* ── Top marquee ─────────────────────── */
+.marquee {
+  position: relative;
+  border: 2px solid var(--crt-yellow);
+  background: linear-gradient(to bottom, rgba(255,224,0,0.08), rgba(255,224,0,0.02));
+  padding: clamp(8px, 1.5vh, 16px) 18px;
+  text-align: center;
+  letter-spacing: 0.4em;
+  font-size: clamp(12px, 2.2vh, 22px);
+  color: var(--crt-yellow);
+  text-shadow: 0 0 8px rgba(255,224,0,0.7), 0 0 18px rgba(255,224,0,0.4);
+  z-index: 2;
+}
+.marquee .star {
+  display: inline-block;
+  color: var(--crt-yellow);
+  animation: blink 1.2s steps(2) infinite;
+}
+@keyframes blink {
+  0%, 49% { opacity: 1; }
+  50%, 100% { opacity: 0.2; }
+}
+
+/* ── Game grid ───────────────────────── */
+.grid {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: clamp(12px, 2vh, 24px);
+  position: relative;
+  z-index: 2;
+  min-height: 0;
+}
+
+.tile {
+  position: relative;
+  border: 3px solid #1d2540;
+  background:
+    radial-gradient(ellipse at center, rgba(0,40,80,0.7) 0%, rgba(0,0,0,0.95) 100%);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  overflow: hidden;
+  padding: clamp(16px, 3vh, 32px);
+  transition: border-color 0.18s, transform 0.18s, box-shadow 0.18s;
+}
+.tile.locked { cursor: not-allowed; opacity: 0.55; }
+.tile:hover:not(.locked), .tile.selected:not(.locked) {
+  border-color: var(--crt-cyan);
+  box-shadow:
+    0 0 0 2px rgba(0,240,255,0.25),
+    0 0 24px rgba(0,240,255,0.45),
+    inset 0 0 60px rgba(0,240,255,0.08);
+  transform: translateY(-2px);
+}
+.tile.selected:not(.locked) .start-prompt {
+  animation: blink 0.7s steps(2) infinite;
+}
+
+/* Per-tile mini scanlines */
+.tile::before {
+  content: '';
+  position: absolute; inset: 0;
+  background: repeating-linear-gradient(
+    to bottom,
+    rgba(255,255,255,0.025) 0px,
+    rgba(255,255,255,0.025) 1px,
+    transparent 1px,
+    transparent 4px
+  );
+  pointer-events: none;
+}
+
+.title-art {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  position: relative;
+}
+
+.tile .start-prompt {
+  margin-top: clamp(10px, 2vh, 18px);
+  font-size: clamp(8px, 1.4vh, 13px);
+  letter-spacing: 0.3em;
+  color: var(--crt-green);
+  text-shadow: 0 0 8px rgba(0,255,136,0.6);
+}
+.tile.locked .start-prompt {
+  color: var(--crt-red);
+  text-shadow: 0 0 8px rgba(255,68,68,0.5);
+  animation: none;
+}
+
+/* ── Title styles per-game ───────────── */
+
+/* NAVIGATOR — chrome/perspective + grid */
+.title-navigator {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(18px, 4vw, 44px);
+  letter-spacing: 0.08em;
+  background: linear-gradient(
+    180deg,
+    #e8f6ff 0%,
+    #5cd2ff 30%,
+    #0066aa 55%,
+    #003a66 70%,
+    #66ddff 95%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  text-shadow: 0 0 20px rgba(0,240,255,0.5);
+  filter: drop-shadow(0 4px 0 #022) drop-shadow(0 6px 12px rgba(0,200,255,0.4));
+  transform: perspective(400px) rotateX(12deg);
+  text-align: center;
+}
+.title-navigator-sub {
+  display: block;
+  margin-top: 12px;
+  font-size: clamp(8px, 1.2vw, 12px);
+  letter-spacing: 0.5em;
+  color: var(--crt-magenta);
+  text-shadow: 0 0 6px rgba(255,61,240,0.7);
+  -webkit-text-fill-color: var(--crt-magenta);
+  transform: none;
+}
+
+/* CUBE TOSS — chunky 3D blocks (Donkey Kong era) */
+.title-cubetoss {
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(18px, 4vw, 44px);
+  letter-spacing: 0.05em;
+  color: var(--crt-yellow);
+  text-shadow:
+    2px 0 0 #d99a00,
+    4px 0 0 #b87a00,
+    6px 0 0 #8b5a00,
+    6px 4px 0 #503300,
+    6px 6px 14px rgba(0,0,0,0.7);
+  text-align: center;
+  line-height: 1.05;
+}
+
+/* COMING SOON placeholders */
+.title-locked {
+  font-family: 'VT323', monospace;
+  font-size: clamp(22px, 5vw, 56px);
+  letter-spacing: 0.15em;
+  color: #4a6080;
+  text-shadow: 0 0 12px rgba(80,120,180,0.4);
+  text-align: center;
+}
+.title-locked .small {
+  display: block;
+  font-family: 'Press Start 2P', monospace;
+  font-size: clamp(8px, 1.2vw, 12px);
+  letter-spacing: 0.3em;
+  color: #2d3d5c;
+  margin-top: 12px;
+}
+
+/* ── Bottom marquee ──────────────────── */
+.footer {
+  position: relative;
+  border: 2px solid #2a3550;
+  background: rgba(10,15,30,0.6);
+  padding: 10px 14px;
+  text-align: center;
+  font-size: clamp(8px, 1.3vh, 11px);
+  letter-spacing: 0.35em;
+  color: #99aacc;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vw, 24px);
+  flex-wrap: wrap;
+}
+.footer .coin {
+  color: var(--crt-yellow);
+  animation: blink 0.9s steps(2) infinite;
+}
+.footer .sep { color: #44557a; }
+
+/* ── Responsive ──────────────────────── */
+@media (max-width: 540px) {
+  .marquee { letter-spacing: 0.25em; font-size: 11px; padding: 8px 6px; }
+  .grid { gap: 10px; }
+  .tile { padding: 14px 10px; border-width: 2px; }
+  .title-navigator { font-size: 22px; }
+  .title-cubetoss { font-size: 22px;
+    text-shadow:
+      1px 0 0 #d99a00,
+      2px 0 0 #b87a00,
+      3px 0 0 #8b5a00,
+      3px 2px 0 #503300,
+      3px 3px 8px rgba(0,0,0,0.7);
+  }
+  .title-locked { font-size: 32px; }
+  .footer { font-size: 8px; letter-spacing: 0.2em; gap: 8px; }
+}
+</style>
+</head>
+<body>
+<div class="crt">
+
+  <div class="marquee">
+    <span class="star">★</span>
+    &nbsp;P&nbsp;I&nbsp;E&nbsp;T&nbsp;&nbsp;&nbsp;S&nbsp;U&nbsp;E&nbsp;S&nbsp;S&nbsp;&nbsp;&nbsp;A&nbsp;R&nbsp;C&nbsp;A&nbsp;D&nbsp;E&nbsp;
+    <span class="star">★</span>
+  </div>
+
+  <div class="grid" id="grid">
+
+    <div class="tile" data-slot="0" data-href-desktop="/navigator.html" data-href-mobile="/tunnel.html">
+      <div class="title-art">
+        <div>
+          <div class="title-navigator">NAVIGATOR</div>
+          <span class="title-navigator-sub">TUNNEL RUNNER</span>
+        </div>
+      </div>
+      <div class="start-prompt">▶ PRESS START</div>
+    </div>
+
+    <div class="tile" data-slot="1" data-href-desktop="/cube-toss.html" data-href-mobile="/cube-toss-mobile.html">
+      <div class="title-art">
+        <div class="title-cubetoss">CUBE<br>TOSS</div>
+      </div>
+      <div class="start-prompt">▶ PRESS START</div>
+    </div>
+
+    <div class="tile locked" data-slot="2">
+      <div class="title-art">
+        <div class="title-locked">??? ???<span class="small">COMING SOON</span></div>
+      </div>
+      <div class="start-prompt">— LOCKED —</div>
+    </div>
+
+    <div class="tile locked" data-slot="3">
+      <div class="title-art">
+        <div class="title-locked">??? ???<span class="small">COMING SOON</span></div>
+      </div>
+      <div class="start-prompt">— LOCKED —</div>
+    </div>
+
+  </div>
+
+  <div class="footer">
+    <span class="coin">INSERT COIN</span>
+    <span class="sep">•</span>
+    <span>1 PLAYER START</span>
+    <span class="sep">•</span>
+    <span>HI-SCORE 00000</span>
+    <span class="sep">•</span>
+    <span>© 2026 PIET SUESS</span>
+  </div>
+
+</div>
+
+<script>
+(function(){
+  var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  var tiles = Array.prototype.slice.call(document.querySelectorAll('.tile'));
+  var sel = 0;
+
+  function paint() {
+    tiles.forEach(function(t, i){
+      t.classList.toggle('selected', i === sel);
+    });
+  }
+  function launch(t) {
+    if (t.classList.contains('locked')) return;
+    var href = isMobile ? (t.dataset.hrefMobile || t.dataset.hrefDesktop) : (t.dataset.hrefDesktop || t.dataset.hrefMobile);
+    if (href) window.location.href = href;
+  }
+  tiles.forEach(function(t, i){
+    t.addEventListener('click', function(){
+      if (i === sel) launch(t); else { sel = i; paint(); }
+    });
+    t.addEventListener('mouseenter', function(){ sel = i; paint(); });
+  });
+
+  document.addEventListener('keydown', function(e){
+    var cols = 2;
+    var key = e.key;
+    if (key === 'ArrowRight') { sel = (sel + 1) % tiles.length; paint(); e.preventDefault(); }
+    else if (key === 'ArrowLeft') { sel = (sel - 1 + tiles.length) % tiles.length; paint(); e.preventDefault(); }
+    else if (key === 'ArrowDown') { sel = (sel + cols) % tiles.length; paint(); e.preventDefault(); }
+    else if (key === 'ArrowUp') { sel = (sel - cols + tiles.length) % tiles.length; paint(); e.preventDefault(); }
+    else if (key === 'Enter' || key === ' ') { launch(tiles[sel]); e.preventDefault(); }
+  });
+
+  paint();
+})();
+</script>
+</body>
+</html>
