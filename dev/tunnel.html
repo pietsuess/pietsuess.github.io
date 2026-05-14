@@ -3835,6 +3835,65 @@ window.onload = function() {
     scene.add(tube1);
     scene.add(tube2);
 
+    // ── SKYHAWK environment (built lazily; hidden until _enterSkyhawkEnv is called) ──
+    // A flat checkerboard ground plane plus distant mountain silhouettes — the open-sky
+    // landscape that defines Captain Skyhawk's look. Replaces the tube wireframe entirely.
+    var _skyhawkGround = null, _skyhawkMountains = null;
+    function _buildSkyhawkEnv() {
+        if (_skyhawkGround) return;
+        // Procedural checkerboard ground texture (Mode 7-style green/teal grid).
+        var cnv = document.createElement('canvas');
+        cnv.width = 256; cnv.height = 256;
+        var cctx = cnv.getContext('2d');
+        cctx.fillStyle = '#003322'; cctx.fillRect(0, 0, 256, 256);
+        cctx.fillStyle = '#00aa66';
+        for (var gy = 0; gy < 8; gy++) {
+            for (var gx = 0; gx < 8; gx++) {
+                if ((gx + gy) % 2 === 0) cctx.fillRect(gx * 32, gy * 32, 32, 32);
+            }
+        }
+        var gtex = new THREE.CanvasTexture(cnv);
+        gtex.wrapS = gtex.wrapT = THREE.RepeatWrapping;
+        gtex.repeat.set(40, 200);
+        var groundMat = new THREE.MeshBasicMaterial({ map: gtex, side: THREE.DoubleSide, fog: true });
+        var groundGeo = new THREE.PlaneGeometry(3000, 80000);
+        _skyhawkGround = new THREE.Mesh(groundGeo, groundMat);
+        _skyhawkGround.rotation.x = -Math.PI / 2;
+        _skyhawkGround.position.y = -tubeRadius - 6;
+        _skyhawkGround.position.z = -30000;
+        _skyhawkGround.visible = false;
+        scene.add(_skyhawkGround);
+        // Distant mountain silhouettes — angular triangles, repositioned each frame to follow camera.
+        var mtVerts = [];
+        for (var mi = 0; mi < 60; mi++) {
+            var x = (mi - 30) * 180;
+            var h = 50 + Math.random() * 110;
+            var w = 90 + Math.random() * 100;
+            mtVerts.push(x - w, -tubeRadius - 6, 0);
+            mtVerts.push(x + w, -tubeRadius - 6, 0);
+            mtVerts.push(x, -tubeRadius - 6 + h, 0);
+        }
+        var mtGeo = new THREE.BufferGeometry();
+        mtGeo.setAttribute('position', new THREE.Float32BufferAttribute(mtVerts, 3));
+        var mtMat = new THREE.MeshBasicMaterial({ color: 0x102244, side: THREE.DoubleSide, fog: false });
+        _skyhawkMountains = new THREE.Mesh(mtGeo, mtMat);
+        _skyhawkMountains.visible = false;
+        scene.add(_skyhawkMountains);
+    }
+    function _enterSkyhawkEnv() {
+        _buildSkyhawkEnv();
+        tube1.visible = false; tube2.visible = false;
+        _skyhawkGround.visible = true;
+        _skyhawkMountains.visible = true;
+        try { scene.background.setHex(0x33aaff); } catch(e) {}
+        try { scene.fog.color.setHex(0x55bbff); scene.fog.near = 200; scene.fog.far = 1500; } catch(e) {}
+    }
+    function _exitSkyhawkEnv() {
+        if (_skyhawkGround) _skyhawkGround.visible = false;
+        if (_skyhawkMountains) _skyhawkMountains.visible = false;
+        tube1.visible = true; tube2.visible = true;
+    }
+
     // --- Hyper Boost Tracers ---
     const TRACER_COUNT = 40;
     const tracerGroup = new THREE.Group();
@@ -7564,12 +7623,8 @@ window.onload = function() {
         sectorDistance = t.levelLength || t.baseLength || 22000;
         var spd = t.baseSpeed || 360;
         baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
-        // Skyhawk palette: cyan tube, dark blue fog, sector text shows SKYHAWK.
-        try {
-            wireMat.color.setHex(0x00ddff);
-            scene.fog.color.setHex(0x000820);
-            scene.background.setHex(0x000820);
-        } catch(e) {}
+        // Swap the tube wireframe for the Skyhawk open-sky environment (ground + mountains + sky).
+        try { _enterSkyhawkEnv(); } catch(e) {}
         try { document.getElementById('sector-text').innerText = 'SKYHAWK'; } catch(e) {}
         try { var _zn = document.getElementById('zone-name'); if (_zn) { _zn.innerText = 'SKYHAWK'; _zn.style.color = '#ffaa00'; } } catch(e) {}
         sectorStartScore = score;
@@ -7585,43 +7640,8 @@ window.onload = function() {
     // ~90° between successive walls (the iconic "sliding window" effect). Sunset palette,
     // sparse gold rings between walls. Activated via _inSkyhawk + ?skyhawk=1 URL flag.
     function _spawnSkyhawkLevel() {
-        var seedZ = camera.position.z - 600;
-        var totalLen = sectorDistance * 0.90;
-        var wallSpacing = 110; // dense — ~200 walls in a 22000 level
-        var wallCount = Math.floor(totalLen / wallSpacing);
-        var hover = tubeRadius - 6;
-        // Skyhawk-yellow barrier material — clone so we don't mutate the global one.
-        var skyMat = barrierMat.clone();
-        if (skyMat.color && skyMat.color.setHex) skyMat.color.setHex(0xffaa00);
-        if (skyMat.emissive && skyMat.emissive.setHex) skyMat.emissive.setHex(0x884400);
-        // Sliding-window gap angle — increment by 90° per wall, with occasional 180° flip.
-        var gapAngle = 0;
-        var gapArc = Math.PI * 0.42; // ~75° opening
-        var arcLen = Math.PI * 2 - gapArc;
-        for (var k = 0; k < wallCount; k++) {
-            var wz = seedZ - (k * wallSpacing);
-            // Sliding pattern: alternate +90°, +90°, +180° to create Skyhawk's signature staggered windows.
-            var phase = k % 4;
-            if (phase === 0)      gapAngle += Math.PI * 0.5;
-            else if (phase === 1) gapAngle += Math.PI * 0.5;
-            else if (phase === 2) gapAngle += Math.PI;
-            else                  gapAngle -= Math.PI * 0.5;
-            var wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), skyMat);
-            wallMesh.position.set(0, 0, wz);
-            wallMesh.rotation.z = gapAngle;
-            wallMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: arcLen, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
-            scene.add(wallMesh); items.push(wallMesh);
-            // Gold ring in the gap, halfway between this wall and the next — bonus reward for threading.
-            if (k < wallCount - 1) {
-                var rZ = wz - wallSpacing * 0.5;
-                var rAng = gapAngle; // place at the same gap angle so it's reachable through the window
-                var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
-                gMesh.position.set(Math.cos(rAng) * hover, Math.sin(rAng) * hover, rZ);
-                gMesh.rotation.z = rAng;
-                gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
-                scene.add(gMesh); items.push(gMesh);
-            }
-        }
+        // Environment-only build for now: ground + sky + mountains via _enterSkyhawkEnv().
+        // No walls, no rings, no obstacles — pure landscape feel for testing the look.
     }
 
     // ── S3B POWER LOOP spawner ──
@@ -11038,6 +11058,10 @@ window.onload = function() {
             tube2.position.z += moveDist;
             if (tube1.position.z > tubeLen / 2) tube1.position.z = tube2.position.z - tubeLen;
             if (tube2.position.z > tubeLen / 2) tube2.position.z = tube1.position.z - tubeLen;
+            // Skyhawk: keep mountains on the horizon — they always sit a fixed distance ahead.
+            if (_inSkyhawk && _skyhawkMountains) {
+                _skyhawkMountains.position.z = camera.position.z - 1200;
+            }
 
             for(let i = items.length - 1; i >= 0; i--) {
                 let item = items[i];
