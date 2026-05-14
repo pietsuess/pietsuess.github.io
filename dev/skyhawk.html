@@ -6,7 +6,6 @@
 <title>SKYHAWK</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
-  /* Render canvas at low resolution and scale up with pixelated filter for the NES-era feel. */
   #game { display: block; width: 100vw; height: 100vh;
           image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
   #hud {
@@ -17,104 +16,119 @@
   #hud-top { position: absolute; top: 8px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; font-size: 12px; letter-spacing: 2px; }
   #hud-bottom { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 12px; align-items: flex-end; }
   #radar {
-    width: 88px; height: 88px; border: 2px solid #ffe000; border-radius: 50%;
+    width: 96px; height: 96px; border: 2px solid #ffe000; border-radius: 50%;
     background: rgba(0, 32, 64, 0.65); box-shadow: 0 0 8px rgba(255,224,0,0.6) inset;
     position: relative; overflow: hidden;
   }
-  .radar-blip { position: absolute; width: 4px; height: 4px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 4px #00ff66; }
-  #radar-self { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6px; height: 6px; background: #ffe000; border-radius: 50%; }
+  .radar-blip { position: absolute; width: 4px; height: 4px; border-radius: 50%; transform: translate(-50%, -50%); }
+  .blip-hill { background: #ff7733; box-shadow: 0 0 4px #ff7733; }
+  .blip-hole { background: #66ccff; box-shadow: 0 0 4px #66ccff; }
+  .blip-found { opacity: 0.4; }
+  #radar-self { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6px; height: 6px; background: #ffe000; border-radius: 50%; z-index: 2; }
+  #radar-cone { position: absolute; left: 50%; top: 50%; width: 0; height: 0; pointer-events: none;
+                border-left: 8px solid transparent; border-right: 8px solid transparent;
+                border-bottom: 14px solid rgba(255,224,0,0.4);
+                transform-origin: 50% 100%; transform: translate(-50%, -100%); }
   #stat-block { font-size: 10px; letter-spacing: 1px; line-height: 1.6; color: #66ddff; text-shadow: 0 0 4px rgba(102,221,255,0.6); }
+  #hint { position: absolute; bottom: 14px; right: 14px; font-size: 8px; letter-spacing: 1px; color: #88aacc; text-align: right; line-height: 1.5; }
 </style>
 </head>
 <body>
 <canvas id="game"></canvas>
 <div id="hud">
   <div id="hud-top">
-    <div>SCORE 000000</div>
-    <div>FUEL ████████░░</div>
+    <div>FOUND <span id="found">0</span>/<span id="total">0</span></div>
+    <div>HDG <span id="hdg">N</span></div>
   </div>
   <div id="hud-bottom">
     <div id="radar">
+      <div id="radar-cone"></div>
       <div id="radar-self"></div>
     </div>
     <div id="stat-block">
-      ALT 100<br>
-      SPD <span id="spd">0</span><br>
-      HDG N
+      X <span id="px">0</span><br>
+      Z <span id="pz">0</span><br>
+      SPD <span id="spd">0</span>
     </div>
   </div>
+  <div id="hint">WASD / ARROWS<br>DRAG TO STEER</div>
 </div>
 <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script>
 (function(){
-  // Render at low resolution for the chunky retro feel; CSS scales the canvas up.
   const RENDER_W = 320, RENDER_H = 240;
 
   const scene = new THREE.Scene();
-  // Bright NES-palette-inspired cyan sky.
   scene.background = new THREE.Color(0x40c0ff);
+  scene.fog = new THREE.Fog(0x88c8ff, 600, 1800);
 
-  const camera = new THREE.PerspectiveCamera(58, RENDER_W / RENDER_H, 0.5, 4000);
-  // High chase view: well above + behind the ship, tilted DOWN so the horizon sits in the upper
-  // third and the ground fills most of the screen — the signature "looking down at the world" feel.
-  camera.position.set(0, 70, 50);
-  camera.lookAt(0, 0, -100);
+  const camera = new THREE.PerspectiveCamera(62, RENDER_W / RENDER_H, 0.5, 4000);
 
   const canvas = document.getElementById('game');
   const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false });
   renderer.setPixelRatio(1);
   renderer.setSize(RENDER_W, RENDER_H, false);
 
-  // Lighting.
-  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
-  const sun = new THREE.DirectionalLight(0xffffe0, 0.7);
-  sun.position.set(-300, 400, 200);
+  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+  const sun = new THREE.DirectionalLight(0xffffe0, 0.9);
+  sun.position.set(-300, 500, 200);
   scene.add(sun);
 
-  // ── HORIZON STRIP: a bright cyan band that anchors the meeting line of ground + sky ──
-  const horizonGeo = new THREE.PlaneGeometry(8000, 80);
-  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x88e0ff });
-  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
-  horizon.position.set(0, 8, -1900);
-  scene.add(horizon);
+  // ── ZONE: one large area, ~4000x4000 with hills + craters baked into terrain ──
+  const ZONE = 4000;
+  const HALF = ZONE / 2;
 
-  // ── MOUNTAIN RIDGE: connected jagged peaks across the horizon ──
-  function buildMountainRidge(color, baseY, peakHMin, peakHMax, peakSpacing, count, zPos, seed) {
-    const verts = [];
-    for (let i = 0; i < count; i++) {
-      const x = (i - count / 2) * peakSpacing;
-      const xn = (i + 1 - count / 2) * peakSpacing;
-      // Pseudo-random peak height seeded by index + seed for stability.
-      const r = Math.abs(Math.sin((i + seed) * 12.9898) * 43758.5453 % 1);
-      const h = peakHMin + r * (peakHMax - peakHMin);
-      verts.push(x, baseY, 0,  xn, baseY, 0,  (x + xn) / 2, baseY + h, 0);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    const mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide });
-    const mesh = new THREE.Mesh(geo, mat);
-    mesh.position.set(0, 0, zPos);
-    return mesh;
+  // Deterministic features so radar and terrain agree.
+  function rand(seed) { return Math.abs(Math.sin(seed * 12.9898) * 43758.5453 % 1); }
+  const features = [];
+  const FEATURE_COUNT = 28;
+  for (let i = 0; i < FEATURE_COUNT; i++) {
+    const r1 = rand(i + 1.1);
+    const r2 = rand(i + 2.7);
+    const r3 = rand(i + 5.3);
+    const r4 = rand(i + 9.4);
+    // Keep features away from spawn (center).
+    let fx, fz, dCenter;
+    let tries = 0;
+    do {
+      fx = (rand(i + 11 + tries) - 0.5) * (ZONE - 400);
+      fz = (rand(i + 23 + tries) - 0.5) * (ZONE - 400);
+      dCenter = Math.hypot(fx, fz);
+      tries++;
+    } while (dCenter < 250 && tries < 8);
+    const isHole = r3 < 0.45;
+    const radius = 60 + r1 * 140;
+    const amp = isHole ? -(30 + r2 * 50) : (40 + r2 * 70);
+    features.push({ x: fx, z: fz, r: radius, amp: amp, type: isHole ? 'hole' : 'hill', found: false });
   }
-  // Two layers — far darker ridge behind, mid lighter ridge in front for parallax depth.
-  const farRidge = buildMountainRidge(0x1a3066, 4, 60, 180, 200, 50, -1850, 7);
-  const nearRidge = buildMountainRidge(0x3060a0, 3, 30, 90, 140, 60, -1650, 13);
-  scene.add(farRidge);
-  scene.add(nearRidge);
 
-  // ── GROUND: bright green hilly terrain with chunky checker overlay ──
-  const GROUND_W = 4000, GROUND_L = 6000;
-  const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_L, 80, 160);
-  // Displace vertices for rolling hills.
+  function terrainHeight(x, z) {
+    // Rolling base.
+    let h = Math.sin(x * 0.0035) * 5 + Math.cos(z * 0.0028) * 7 + Math.sin((x + z) * 0.006) * 3;
+    // Discrete features (Gaussian falloff).
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      const dx = x - f.x, dz = z - f.z;
+      const d2 = dx * dx + dz * dz;
+      const fall = Math.exp(-d2 / (f.r * f.r));
+      h += f.amp * fall;
+    }
+    return h;
+  }
+
+  // ── GROUND geometry: subdivide enough for features to read clearly ──
+  const SEG = 200;
+  const groundGeo = new THREE.PlaneGeometry(ZONE, ZONE, SEG, SEG);
   const pos = groundGeo.attributes.position;
   for (let i = 0; i < pos.count; i++) {
+    // Plane is XY before rotation; after rotation.x = -PI/2, Y maps to -Z.
     const x = pos.getX(i);
     const y = pos.getY(i);
-    const h = Math.sin(x * 0.004) * 4 + Math.cos(y * 0.003) * 6 + Math.sin((x + y) * 0.007) * 3;
-    pos.setZ(i, h);
+    pos.setZ(i, terrainHeight(x, -y));
   }
   groundGeo.computeVertexNormals();
-  // Build a chunky checker texture for that 8-bit ground feel.
+
+  // Chunky checker texture.
   const cnv = document.createElement('canvas');
   cnv.width = 64; cnv.height = 64;
   const cctx = cnv.getContext('2d');
@@ -129,123 +143,263 @@
   groundTex.magFilter = THREE.NearestFilter;
   groundTex.minFilter = THREE.NearestFilter;
   groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
-  groundTex.repeat.set(60, 100);
+  groundTex.repeat.set(80, 80);
   const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
   const ground = new THREE.Mesh(groundGeo, groundMat);
   ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, 0, -GROUND_L / 2 + 600);
+  ground.position.set(0, 0, 0);
   scene.add(ground);
 
-  // ── SHIP: chunky low-poly arrow, light grey with cyan canopy stripe ──
+  // ── Distant horizon ridges for depth (static, ring around zone) ──
+  function buildRidge(color, radius, baseY, peakHMin, peakHMax, count, seed) {
+    const verts = [];
+    for (let i = 0; i < count; i++) {
+      const a1 = (i / count) * Math.PI * 2;
+      const a2 = ((i + 1) / count) * Math.PI * 2;
+      const am = (a1 + a2) / 2;
+      const r = rand(i + seed);
+      const h = peakHMin + r * (peakHMax - peakHMin);
+      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
+      const x2 = Math.cos(a2) * radius, z2 = Math.sin(a2) * radius;
+      const xm = Math.cos(am) * radius, zm = Math.sin(am) * radius;
+      verts.push(x1, baseY, z1,  x2, baseY, z2,  xm, baseY + h, zm);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    const mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide, fog: false });
+    return new THREE.Mesh(geo, mat);
+  }
+  scene.add(buildRidge(0x1a3066, 2400, 4, 80, 220, 80, 7));
+  scene.add(buildRidge(0x3060a0, 2200, 3, 40, 120, 100, 13));
+
+  // ── SHIP: half-sphere dome riding the ground ──
+  const SHIP_R = 14;
   const shipGroup = new THREE.Group();
-  // Body: extruded triangle
-  const bodyShape = new THREE.Shape();
-  bodyShape.moveTo(0, 5);
-  bodyShape.lineTo(-3.5, -3.5);
-  bodyShape.lineTo(0, -1.5);
-  bodyShape.lineTo(3.5, -3.5);
-  bodyShape.closePath();
-  const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, { depth: 1.4, bevelEnabled: false });
-  bodyGeo.center();
-  bodyGeo.rotateX(-Math.PI / 2);
-  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xc8c8d4 });
-  const body = new THREE.Mesh(bodyGeo, bodyMat);
-  shipGroup.add(body);
-  // Canopy: small dark cyan bump on top
-  const canopy = new THREE.Mesh(
-    new THREE.BoxGeometry(1.4, 0.8, 1.8),
-    new THREE.MeshLambertMaterial({ color: 0x1a4a8a })
-  );
-  canopy.position.set(0, 0.7, 0.2);
-  shipGroup.add(canopy);
-  // Tail fin
-  const fin = new THREE.Mesh(
-    new THREE.BoxGeometry(0.4, 1.6, 1.2),
-    new THREE.MeshLambertMaterial({ color: 0xa0a0a8 })
-  );
-  fin.position.set(0, 0.8, -1.8);
-  shipGroup.add(fin);
-  shipGroup.scale.setScalar(1.4);
-  shipGroup.position.set(0, 6, 0);
+  const domeGeo = new THREE.SphereGeometry(SHIP_R, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
+  const domeMat = new THREE.MeshLambertMaterial({ color: 0xff5533 });
+  const dome = new THREE.Mesh(domeGeo, domeMat);
+  shipGroup.add(dome);
+  // Flat underside cap so it reads as solid from low angles.
+  const baseGeo = new THREE.CircleGeometry(SHIP_R, 20);
+  const baseMat = new THREE.MeshLambertMaterial({ color: 0x882211 });
+  const base = new THREE.Mesh(baseGeo, baseMat);
+  base.rotation.x = Math.PI / 2;
+  shipGroup.add(base);
+  // Forward marker — a darker patch on the front of the dome so heading is readable.
+  const noseGeo = new THREE.SphereGeometry(SHIP_R * 0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
+  const noseMat = new THREE.MeshLambertMaterial({ color: 0xffee66 });
+  const nose = new THREE.Mesh(noseGeo, noseMat);
+  nose.position.set(0, SHIP_R * 0.55, -SHIP_R * 0.65);
+  shipGroup.add(nose);
   scene.add(shipGroup);
 
-  // ── INPUT: drag horizontally to steer ──
-  let touchX = null, baseX = 0;
-  let shipTargetX = 0;
-  const SHIP_X_MAX = 90;
-  function onStart(e) {
+  // Ship state.
+  let shipX = 0, shipZ = 0;
+  let yaw = 0; // 0 = facing -Z (north)
+  let speed = 0;
+  const MAX_SPEED = 160;
+  const ACCEL = 220;
+  const REVERSE_SPEED = -60;
+  const TURN_RATE = 1.8; // rad/s at full input
+  const DRAG = 0.85;
+
+  // ── INPUT ──
+  const keys = {};
+  window.addEventListener('keydown', function(e) {
+    keys[e.code] = true;
+    if (['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','KeyW','KeyA','KeyS','KeyD'].indexOf(e.code) >= 0) e.preventDefault();
+  });
+  window.addEventListener('keyup', function(e) { keys[e.code] = false; });
+
+  // Touch / mouse drag as analog stick.
+  let dragStart = null, dragNow = null;
+  function getXY(e) {
     const t = e.touches ? e.touches[0] : e;
-    touchX = t.clientX;
-    baseX = shipTargetX;
-    e.preventDefault();
+    return { x: t.clientX, y: t.clientY };
   }
-  function onMove(e) {
-    if (touchX === null) return;
-    const t = e.touches ? e.touches[0] : e;
-    const dx = t.clientX - touchX;
-    shipTargetX = Math.max(-SHIP_X_MAX, Math.min(SHIP_X_MAX, baseX + dx * 0.4));
-    e.preventDefault();
-  }
-  function onEnd() { touchX = null; }
+  function onStart(e) { dragStart = getXY(e); dragNow = dragStart; e.preventDefault(); }
+  function onMove(e) { if (!dragStart) return; dragNow = getXY(e); e.preventDefault(); }
+  function onEnd() { dragStart = null; dragNow = null; }
   canvas.addEventListener('touchstart', onStart, { passive: false });
   canvas.addEventListener('touchmove', onMove, { passive: false });
   canvas.addEventListener('touchend', onEnd);
   canvas.addEventListener('mousedown', onStart);
   canvas.addEventListener('mousemove', onMove);
   canvas.addEventListener('mouseup', onEnd);
+  canvas.addEventListener('mouseleave', onEnd);
 
-  // ── HUD radar blip animator ──
-  const radar = document.getElementById('radar');
-  // Add a sweeping "scan" arc for atmosphere
-  const sweep = document.createElement('div');
-  sweep.style.cssText = 'position:absolute;left:50%;top:50%;width:50%;height:2px;background:linear-gradient(90deg,#00ff66,transparent);transform-origin:left center;pointer-events:none;';
-  radar.appendChild(sweep);
+  function readInput() {
+    let throttle = 0, steer = 0;
+    if (keys['KeyW'] || keys['ArrowUp']) throttle += 1;
+    if (keys['KeyS'] || keys['ArrowDown']) throttle -= 1;
+    if (keys['KeyA'] || keys['ArrowLeft']) steer -= 1;
+    if (keys['KeyD'] || keys['ArrowRight']) steer += 1;
+    if (dragStart && dragNow) {
+      const dx = dragNow.x - dragStart.x;
+      const dy = dragNow.y - dragStart.y;
+      const DEAD = 8;
+      if (Math.abs(dy) > DEAD) throttle += Math.max(-1, Math.min(1, -dy / 80));
+      if (Math.abs(dx) > DEAD) steer += Math.max(-1, Math.min(1, dx / 80));
+    }
+    return {
+      throttle: Math.max(-1, Math.min(1, throttle)),
+      steer: Math.max(-1, Math.min(1, steer))
+    };
+  }
+
+  // ── HUD ──
+  const radarEl = document.getElementById('radar');
+  const radarCone = document.getElementById('radar-cone');
+  const blipEls = [];
+  for (let i = 0; i < features.length; i++) {
+    const el = document.createElement('div');
+    el.className = 'radar-blip ' + (features[i].type === 'hill' ? 'blip-hill' : 'blip-hole');
+    radarEl.appendChild(el);
+    blipEls.push(el);
+  }
+  document.getElementById('total').textContent = features.length;
+  const foundEl = document.getElementById('found');
+  const hdgEl = document.getElementById('hdg');
+  const pxEl = document.getElementById('px');
+  const pzEl = document.getElementById('pz');
+  const spdEl = document.getElementById('spd');
+
+  const RADAR_RANGE = 1400; // world units shown across radar diameter
+  const FOUND_RANGE = 120;  // get within this to "discover" a feature
+
+  function compassLetter(rad) {
+    // yaw=0 → -Z (N). Positive yaw rotates ship local -Z toward -X (W).
+    let deg = (rad * 180 / Math.PI) % 360;
+    if (deg < 0) deg += 360;
+    const dirs = ['N','NW','W','SW','S','SE','E','NE'];
+    return dirs[Math.round(deg / 45) % 8];
+  }
 
   // ── FRAME LOOP ──
   let lastT = performance.now();
-  let groundScrollT = 0;
-  const SPEED = 240;
-  const spdEl = document.getElementById('spd');
-  let sweepAng = 0;
+  let foundCount = 0;
 
   function frame() {
     const now = performance.now();
     const dt = Math.min(0.05, (now - lastT) / 1000);
     lastT = now;
 
-    // Ship lateral easing + bank roll
-    shipGroup.position.x += (shipTargetX - shipGroup.position.x) * 0.12;
-    const lateralVel = shipTargetX - shipGroup.position.x;
-    shipGroup.rotation.z = -shipGroup.position.x * 0.012 + lateralVel * -0.008;
-    shipGroup.rotation.y = -shipGroup.position.x * 0.003;
+    const inp = readInput();
 
-    // Camera chases with slight lag for chase-cam feel; matches the high tilted-down setup above.
-    camera.position.x += (shipGroup.position.x * 0.7 - camera.position.x) * 0.1;
-    camera.lookAt(shipGroup.position.x * 0.85, 0, -100);
+    // Throttle integrates into forward speed; reverse capped.
+    if (inp.throttle > 0) {
+      speed += inp.throttle * ACCEL * dt;
+    } else if (inp.throttle < 0) {
+      speed += inp.throttle * ACCEL * 0.7 * dt;
+    } else {
+      // Coast: ease toward zero.
+      speed *= Math.pow(DRAG, dt * 4);
+    }
+    speed = Math.max(REVERSE_SPEED, Math.min(MAX_SPEED, speed));
 
-    // Scroll ground texture toward camera to fake forward motion.
-    groundScrollT += dt * SPEED * 0.0008;
-    groundTex.offset.y = -groundScrollT;
+    // Steering — more responsive while moving; minimal when nearly stopped.
+    const steerScale = 0.4 + 0.6 * Math.min(1, Math.abs(speed) / MAX_SPEED);
+    // Reverse flips steering so it feels natural.
+    const steerSign = speed >= 0 ? 1 : -1;
+    yaw -= inp.steer * TURN_RATE * steerScale * steerSign * dt;
 
-    // Mountain parallax: far ridge slow, near ridge faster.
-    farRidge.position.x = -shipGroup.position.x * 0.15;
-    nearRidge.position.x = -shipGroup.position.x * 0.3;
+    // World-forward vector. yaw=0 → (0,0,-1). Positive yaw rotates toward -X.
+    const fwdX = -Math.sin(yaw);
+    const fwdZ = -Math.cos(yaw);
 
-    // Radar sweep animation
-    sweepAng = (sweepAng + dt * 120) % 360;
-    sweep.style.transform = 'rotate(' + sweepAng + 'deg)';
+    shipX += fwdX * speed * dt;
+    shipZ += fwdZ * speed * dt;
 
-    spdEl.textContent = Math.round(SPEED);
+    // Clamp to zone with soft stop.
+    const EDGE = HALF - 60;
+    if (shipX > EDGE)  { shipX = EDGE;  speed *= 0.5; }
+    if (shipX < -EDGE) { shipX = -EDGE; speed *= 0.5; }
+    if (shipZ > EDGE)  { shipZ = EDGE;  speed *= 0.5; }
+    if (shipZ < -EDGE) { shipZ = -EDGE; speed *= 0.5; }
+
+    // Ride the terrain — ship base sits at ground height.
+    const groundY = terrainHeight(shipX, shipZ);
+    shipGroup.position.set(shipX, groundY, shipZ);
+    shipGroup.rotation.y = yaw;
+    // Pitch/roll tilt by sampling neighboring heights, for that "rides the contour" feel.
+    const sx = 12;
+    const hFwd  = terrainHeight(shipX + fwdX * sx, shipZ + fwdZ * sx);
+    const hBack = terrainHeight(shipX - fwdX * sx, shipZ - fwdZ * sx);
+    const rightX = -fwdZ, rightZ = fwdX;
+    const hRight = terrainHeight(shipX + rightX * sx, shipZ + rightZ * sx);
+    const hLeft  = terrainHeight(shipX - rightX * sx, shipZ - rightZ * sx);
+    const pitch = Math.atan2(hFwd - hBack, sx * 2);
+    const roll  = Math.atan2(hRight - hLeft, sx * 2);
+    shipGroup.rotation.set(0, yaw, 0);
+    shipGroup.rotateX(-pitch);
+    shipGroup.rotateZ(-roll);
+
+    // ── CHASE CAMERA: sits behind & above the ship, looking just past it ──
+    const CAM_BACK = 70;
+    const CAM_UP = 38;
+    const camX = shipX - fwdX * CAM_BACK;
+    const camZ = shipZ - fwdZ * CAM_BACK;
+    const camY = groundY + CAM_UP;
+    // Smooth follow to avoid jitter on bumps.
+    camera.position.x += (camX - camera.position.x) * Math.min(1, dt * 6);
+    camera.position.y += (camY - camera.position.y) * Math.min(1, dt * 4);
+    camera.position.z += (camZ - camera.position.z) * Math.min(1, dt * 6);
+    camera.lookAt(shipX + fwdX * 40, groundY + 6, shipZ + fwdZ * 40);
+
+    // ── DISCOVERY: mark features within FOUND_RANGE ──
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      if (f.found) continue;
+      const dx = f.x - shipX, dz = f.z - shipZ;
+      if (dx * dx + dz * dz < FOUND_RANGE * FOUND_RANGE) {
+        f.found = true;
+        foundCount++;
+      }
+    }
+
+    // ── HUD update ──
+    // Radar: rotates with ship heading so "up" on radar is ship-forward.
+    const cos = Math.cos(-yaw), sin = Math.sin(-yaw);
+    for (let i = 0; i < features.length; i++) {
+      const f = features[i];
+      let dx = f.x - shipX, dz = f.z - shipZ;
+      // Rotate world delta into ship-local frame.
+      const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
+      const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
+      const dist = Math.hypot(lx, lz);
+      const el = blipEls[i];
+      if (dist > RADAR_RANGE / 2) { el.style.display = 'none'; continue; }
+      el.style.display = 'block';
+      // Map: ship-local +Z (behind) is down on radar, -Z (forward) is up.
+      const px = 50 + (lx / (RADAR_RANGE / 2)) * 50;
+      const py = 50 + (lz / (RADAR_RANGE / 2)) * 50;
+      el.style.left = px + '%';
+      el.style.top = py + '%';
+      el.classList.toggle('blip-found', f.found);
+    }
+    radarCone.style.transform = 'translate(-50%, -100%) rotate(0deg)';
+
+    foundEl.textContent = foundCount;
+    hdgEl.textContent = compassLetter(yaw);
+    pxEl.textContent = Math.round(shipX);
+    pzEl.textContent = Math.round(shipZ);
+    spdEl.textContent = Math.round(Math.abs(speed));
 
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
+
+  // Initial camera placement so first frame isn't a snap.
+  camera.position.set(0, terrainHeight(0, 0) + 38, 70);
+  camera.lookAt(0, 6, -40);
+
   frame();
 
   window.addEventListener('resize', function() {
-    // Keep render resolution fixed (320x240) — CSS handles upscaling.
+    // Fixed render resolution; CSS scales the canvas.
   });
 })();
 </script>
+<script defer src="https://static.cloudflareinsights.com/beacon.min.js/v8c78df7c7c0f484497ecbca7046644da1771523124516" integrity="sha512-8DS7rgIrAmghBFwoOTujcf6D9rXvH8xm8JQ1Ja01h9QX8EzXldiszufYa4IFfKdLUKTTrnSFXLDkUEOTrZQ8Qg==" data-cf-beacon='{"version":"2024.11.0","token":"a11cf00d63584cab8d7127e61488d9f6","r":1,"server_timing":{"name":{"cfCacheStatus":true,"cfEdge":true,"cfExtPri":true,"cfL4":true,"cfOrigin":true,"cfSpeedBrain":true},"location_startswith":null}}' crossorigin="anonymous"></script>
 </body>
 </html>
