@@ -3,15 +3,25 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>SKYHAWK</title>
+<title>ROLLERS</title>
 <style>
   html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
   #game { display: block; width: 100vw; height: 100vh;
           image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
-  #hud {
-    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+  #hud { display: none; }
+  #zone {
+    position: fixed; top: 14px; right: 16px; z-index: 6;
     font-family: 'Press Start 2P', 'Courier New', monospace;
-    color: #ffe000;
+    font-size: 12px; letter-spacing: 2px;
+    color: #ffe000; pointer-events: none;
+    background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 4px;
+  }
+  #gems {
+    position: fixed; top: 50px; right: 16px; z-index: 6;
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    font-size: 12px; letter-spacing: 2px;
+    color: #ffe066; pointer-events: none;
+    background: rgba(0,0,0,0.35); padding: 8px 12px; border-radius: 4px;
   }
   #hud-top { position: absolute; top: 8px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; font-size: 12px; letter-spacing: 2px; }
   #hud-bottom { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 12px; align-items: flex-end; }
@@ -35,6 +45,8 @@
 </head>
 <body>
 <canvas id="game"></canvas>
+<div id="zone">ZONE <span id="zone-val">0°,90°</span></div>
+<div id="gems">GEMS <span id="gems-val">0/0</span></div>
 <div id="hud">
   <div id="hud-top">
     <div>FOUND <span id="found">0</span>/<span id="total">0</span></div>
@@ -61,8 +73,9 @@
   const BASE_W = 360;
 
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x40c0ff);
-  scene.fog = new THREE.Fog(0x88c8ff, 600, 1800);
+  // Muted sky + warm haze so the whole world reads as soft clay rather than neon.
+  scene.background = new THREE.Color(0xb8c8d4);
+  scene.fog = new THREE.Fog(0xc8b8a0, 2500, 7000);
 
   const camera = new THREE.PerspectiveCamera(62, 1, 0.5, 4000);
 
@@ -81,143 +94,179 @@
   fitRenderer();
   window.addEventListener('resize', fitRenderer);
 
-  scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-  const sun = new THREE.DirectionalLight(0xffffe0, 0.9);
+  // High diffuse ambient + soft warm sun gives the matte, low-contrast clay shading.
+  scene.add(new THREE.AmbientLight(0xfff0d8, 0.75));
+  const sun = new THREE.DirectionalLight(0xffe6c0, 0.55);
   sun.position.set(-300, 500, 200);
   scene.add(sun);
 
-  // ── ZONE: one large area, ~4000x4000 with hills + craters baked into terrain ──
-  const ZONE = 4000;
-  const HALF = ZONE / 2;
+  // ── WORLD: large sphere — ball rolls on its surface, no edges ──
+  const WORLD_R = 6000;
 
-  // Deterministic features so radar and terrain agree.
-  function rand(seed) { return Math.abs(Math.sin(seed * 12.9898) * 43758.5453 % 1); }
+  // Fine-grained grass texture, tiled across the sphere. No grid — zone is
+  // shown in a small HUD readout instead.
+  const cnv = document.createElement('canvas');
+  cnv.width = 128; cnv.height = 128;
+  const cctx = cnv.getContext('2d');
+  cctx.fillStyle = '#7e9258';
+  cctx.fillRect(0, 0, 128, 128);
+  for (let i = 0; i < 1800; i++) {
+    const x = Math.random() * 128, y = Math.random() * 128;
+    const a = 0.05 + Math.random() * 0.12;
+    cctx.fillStyle = Math.random() < 0.5
+      ? 'rgba(60,72,40,' + a + ')'
+      : 'rgba(180,196,140,' + a * 0.7 + ')';
+    cctx.fillRect(x, y, 1 + Math.random() * 1.6, 1 + Math.random() * 1.6);
+  }
+  const groundTex = new THREE.CanvasTexture(cnv);
+  groundTex.magFilter = THREE.LinearFilter;
+  groundTex.minFilter = THREE.LinearMipMapLinearFilter;
+  groundTex.generateMipmaps = true;
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+  groundTex.repeat.set(140, 70);
+  const worldMat = new THREE.MeshLambertMaterial({ map: groundTex });
+
+  // ── TERRAIN FEATURES: hills + craters scattered around the sphere ──
+  // Each feature is a Gaussian bump at a direction (unit vector) on the sphere.
+  function lmRand(seed) { return Math.abs(Math.sin(seed * 12.9898) * 43758.5453 % 1); }
   const features = [];
-  const FEATURE_COUNT = 28;
+  const FEATURE_COUNT = 80;
   for (let i = 0; i < FEATURE_COUNT; i++) {
-    const r1 = rand(i + 1.1);
-    const r2 = rand(i + 2.7);
-    const r3 = rand(i + 5.3);
-    const r4 = rand(i + 9.4);
-    // Keep features away from spawn (center).
-    let fx, fz, dCenter;
-    let tries = 0;
-    do {
-      fx = (rand(i + 11 + tries) - 0.5) * (ZONE - 400);
-      fz = (rand(i + 23 + tries) - 0.5) * (ZONE - 400);
-      dCenter = Math.hypot(fx, fz);
-      tries++;
-    } while (dCenter < 250 && tries < 8);
-    const isHole = r3 < 0.45;
-    const radius = 60 + r1 * 140;
-    const amp = isHole ? -(30 + r2 * 50) : (40 + r2 * 70);
-    features.push({ x: fx, z: fz, r: radius, amp: amp, type: isHole ? 'hole' : 'hill', found: false });
+    const lon = lmRand(i + 31) * 2 * Math.PI;
+    const lat = Math.acos(2 * lmRand(i + 53) - 1);
+    const dir = new THREE.Vector3(
+      Math.sin(lat) * Math.cos(lon),
+      Math.cos(lat),
+      Math.sin(lat) * Math.sin(lon)
+    );
+    // Angular radius (radians) — feature footprint on the sphere.
+    const r = 0.035 + lmRand(i + 71) * 0.06;
+    const isHole = lmRand(i + 89) < 0.45;
+    const amp = isHole
+      ? -(80 + lmRand(i + 103) * 140)
+      :  (90 + lmRand(i + 117) * 160);
+    features.push({ dir: dir, r: r, amp: amp });
   }
 
-  function terrainHeight(x, z) {
-    // Rolling base.
-    let h = Math.sin(x * 0.0035) * 5 + Math.cos(z * 0.0028) * 7 + Math.sin((x + z) * 0.006) * 3;
-    // Discrete features (Gaussian falloff).
+  function terrainOffset(dir) {
+    let h = 0;
     for (let i = 0; i < features.length; i++) {
       const f = features[i];
-      const dx = x - f.x, dz = z - f.z;
-      const d2 = dx * dx + dz * dz;
-      const fall = Math.exp(-d2 / (f.r * f.r));
-      h += f.amp * fall;
+      const dot = Math.max(-1, Math.min(1, dir.x * f.dir.x + dir.y * f.dir.y + dir.z * f.dir.z));
+      const arc = Math.acos(dot);
+      if (arc > f.r * 3) continue;
+      h += f.amp * Math.exp(-(arc * arc) / (f.r * f.r));
     }
     return h;
   }
 
-  // ── GROUND geometry: subdivide enough for features to read clearly ──
-  const SEG = 200;
-  const groundGeo = new THREE.PlaneGeometry(ZONE, ZONE, SEG, SEG);
-  const pos = groundGeo.attributes.position;
-  for (let i = 0; i < pos.count; i++) {
-    // Plane is XY before rotation; after rotation.x = -PI/2, Y maps to -Z.
-    const x = pos.getX(i);
-    const y = pos.getY(i);
-    pos.setZ(i, terrainHeight(x, -y));
-  }
-  groundGeo.computeVertexNormals();
-
-  // Chunky checker texture.
-  const cnv = document.createElement('canvas');
-  cnv.width = 64; cnv.height = 64;
-  const cctx = cnv.getContext('2d');
-  cctx.fillStyle = '#00a040'; cctx.fillRect(0, 0, 64, 64);
-  cctx.fillStyle = '#30d060';
-  for (let gy = 0; gy < 4; gy++) {
-    for (let gx = 0; gx < 4; gx++) {
-      if ((gx + gy) % 2 === 0) cctx.fillRect(gx * 16, gy * 16, 16, 16);
+  // Build world geometry and displace vertices radially by the terrain offset.
+  const worldGeo = new THREE.SphereGeometry(WORLD_R, 256, 160);
+  {
+    const pos = worldGeo.attributes.position;
+    const v = new THREE.Vector3();
+    for (let i = 0; i < pos.count; i++) {
+      v.set(pos.getX(i), pos.getY(i), pos.getZ(i));
+      const len = v.length();
+      const n = v.clone().divideScalar(len);
+      const h = terrainOffset(n);
+      v.copy(n).multiplyScalar(WORLD_R + h);
+      pos.setX(i, v.x); pos.setY(i, v.y); pos.setZ(i, v.z);
     }
+    worldGeo.computeVertexNormals();
   }
-  const groundTex = new THREE.CanvasTexture(cnv);
-  groundTex.magFilter = THREE.NearestFilter;
-  groundTex.minFilter = THREE.NearestFilter;
-  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
-  groundTex.repeat.set(80, 80);
-  const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
-  const ground = new THREE.Mesh(groundGeo, groundMat);
-  ground.rotation.x = -Math.PI / 2;
-  ground.position.set(0, 0, 0);
-  scene.add(ground);
+  const worldMesh = new THREE.Mesh(worldGeo, worldMat);
+  scene.add(worldMesh);
 
-  // ── Distant horizon ridges for depth (static, ring around zone) ──
-  function buildRidge(color, radius, baseY, peakHMin, peakHMax, count, seed) {
-    const verts = [];
-    for (let i = 0; i < count; i++) {
-      const a1 = (i / count) * Math.PI * 2;
-      const a2 = ((i + 1) / count) * Math.PI * 2;
-      const am = (a1 + a2) / 2;
-      const r = rand(i + seed);
-      const h = peakHMin + r * (peakHMax - peakHMin);
-      const x1 = Math.cos(a1) * radius, z1 = Math.sin(a1) * radius;
-      const x2 = Math.cos(a2) * radius, z2 = Math.sin(a2) * radius;
-      const xm = Math.cos(am) * radius, zm = Math.sin(am) * radius;
-      verts.push(x1, baseY, z1,  x2, baseY, z2,  xm, baseY + h, zm);
-    }
-    const geo = new THREE.BufferGeometry();
-    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
-    const mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide, fog: false });
-    return new THREE.Mesh(geo, mat);
+  // ── COLLECTIBLES: glowing gems scattered across the surface ──
+  const Y_AXIS = new THREE.Vector3(0, 1, 0);
+  const _radial = new THREE.Vector3();
+  const _qLM = new THREE.Quaternion();
+  const collectibles = [];
+  const COLLECT_TARGET = 70;
+  for (let i = 0; i < COLLECT_TARGET; i++) {
+    const lon = lmRand(i + 1.7) * 2 * Math.PI;
+    const lat = Math.acos(2 * lmRand(i + 4.3) - 1);
+    if (lat < 0.08) continue;            // skip a tiny cap right at the spawn pole
+    _radial.set(
+      Math.sin(lat) * Math.cos(lon),
+      Math.cos(lat),
+      Math.sin(lat) * Math.sin(lon)
+    );
+    const size = 14;
+    const geo = new THREE.IcosahedronGeometry(size, 0);
+    const col = new THREE.Color().setHSL(lmRand(i + 11.3), 0.9, 0.6);
+    const mat = new THREE.MeshLambertMaterial({ color: col, emissive: col, emissiveIntensity: 0.45, flatShading: true });
+    const gem = new THREE.Mesh(geo, mat);
+    const surfaceR = WORLD_R + terrainOffset(_radial) + size + 4;
+    gem.position.copy(_radial).multiplyScalar(surfaceR);
+    _qLM.setFromUnitVectors(Y_AXIS, _radial);
+    gem.quaternion.copy(_qLM);
+    gem.userData.collected = false;
+    gem.userData.size = size;
+    scene.add(gem);
+    collectibles.push(gem);
   }
-  scene.add(buildRidge(0x1a3066, 2400, 4, 80, 220, 80, 7));
-  scene.add(buildRidge(0x3060a0, 2200, 3, 40, 120, 100, 13));
 
-  // ── SHIP: rolling sphere with painted bands so the spin reads visually ──
-  const SHIP_R = 14;
-  const sCnv = document.createElement('canvas');
-  sCnv.width = 256; sCnv.height = 128;
-  const sctx = sCnv.getContext('2d');
-  sctx.fillStyle = '#ff5533'; sctx.fillRect(0, 0, 256, 128);
-  sctx.fillStyle = '#882211';
-  // Equator stripe.
-  sctx.fillRect(0, 56, 256, 16);
-  // Two perpendicular meridian stripes (converge at poles, give a globe feel).
-  sctx.fillRect(56, 0, 16, 128);
-  sctx.fillRect(184, 0, 16, 128);
-  const ballTex = new THREE.CanvasTexture(sCnv);
-  ballTex.magFilter = THREE.NearestFilter;
-  ballTex.minFilter = THREE.NearestFilter;
-  const ballMat = new THREE.MeshLambertMaterial({ map: ballTex });
-  const ball = new THREE.Mesh(new THREE.SphereGeometry(SHIP_R, 24, 18), ballMat);
+  // ── SHIP: classic two-tone ball, light red on top hemisphere, blue on bottom ──
+  // Hemispheres split by the sphere's object-space Y axis so colours stay
+  // welded to the geometry and rotate with the rolling ball.
+  const SHIP_R = 10;
+  const ballMat = new THREE.MeshLambertMaterial({ color: 0xffffff });
+  ballMat.onBeforeCompile = function(shader) {
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <common>',
+      '#include <common>\nvarying vec3 vSurfN;'
+    );
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      '#include <begin_vertex>\nvSurfN = normalize(position);'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <common>',
+      '#include <common>\nvarying vec3 vSurfN;'
+    );
+    shader.fragmentShader = shader.fragmentShader.replace(
+      'vec4 diffuseColor = vec4( diffuse, opacity );',
+      [
+        'vec3 col;',
+        'if (abs(vSurfN.y) < 0.025) {',
+        '  col = vec3(0.10, 0.08, 0.08);',  // thin dark seam at equator
+        '} else if (vSurfN.y > 0.0) {',
+        '  col = vec3(0.92, 0.36, 0.36);',  // light red top
+        '} else {',
+        '  col = vec3(0.18, 0.42, 0.87);',  // blue bottom
+        '}',
+        'vec4 diffuseColor = vec4(col, opacity);'
+      ].join('\n')
+    );
+  };
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(SHIP_R, 48, 32), ballMat);
   scene.add(ball);
 
-  // Ship state. Velocity is a free 2D world vector so gravity can pull
-  // the ball downhill independent of where the camera (yaw) is pointing.
-  let shipX = 0, shipZ = 0;
-  let yaw = 0; // 0 = facing -Z (north)
-  let velX = 0, velZ = 0;
-  const MAX_SPEED = 200;
-  const ACCEL = 260;            // throttle force along heading
-  const REVERSE_ACCEL = 180;    // weaker reverse force
-  const TURN_RATE = 1.8;        // rad/s at full input
-  const FRICTION = 0.985;       // rolling drag per frame (~60fps reference)
-  const GRAVITY = 380;          // pulls ball downhill — tuned so craters suck you in
+  // Ship state — 3D position/velocity, constrained to the world sphere surface.
+  //   ballPos        live 3D position; always at distance (WORLD_R + SHIP_R) from origin
+  //   ballVel        tangent velocity vector (perpendicular to local up)
+  //   ballForward    tangent unit vector — the player's "facing" direction on the surface
+  const BALL_ALT = WORLD_R + SHIP_R;
+  const ballPos = new THREE.Vector3(0, BALL_ALT, 0);   // spawn at the world's "north pole"
+  const ballVel = new THREE.Vector3();
+  const ballForward = new THREE.Vector3(0, 0, -1);     // initial facing direction
 
-  // Reusable scratch objects for the per-frame rolling rotation.
-  const ROLL_AXIS = new THREE.Vector3();
-  const ROLL_Q = new THREE.Quaternion();
+  const MAX_SPEED = 200;
+  const ACCEL = 260;
+  const REVERSE_ACCEL = 180;
+  const TURN_RATE = 1.8;
+  const FRICTION = 0.985;
+
+  // Reusable scratch vectors / quaternion to avoid per-frame allocation.
+  const _up = new THREE.Vector3();
+  const _tmp = new THREE.Vector3();
+  const _tmp2 = new THREE.Vector3();
+  const _camTarget = new THREE.Vector3();
+  const _lookAt = new THREE.Vector3();
+  const _rollAxis = new THREE.Vector3();
+  const _q = new THREE.Quaternion();
 
   // ── INPUT ──
   const keys = {};
@@ -254,46 +303,58 @@
       const dx = dragNow.x - dragStart.x;
       const dy = dragNow.y - dragStart.y;
       const DEAD = 8;
-      if (Math.abs(dy) > DEAD) throttle += Math.max(-1, Math.min(1, -dy / 80));
+      // Drag up beyond 80 px ramps up to a 3× boost (240 px = full boost).
+      // Drag down is plain reverse, capped at -1.
+      if (Math.abs(dy) > DEAD) {
+        const raw = -dy / 80;
+        throttle += Math.max(-1, Math.min(3, raw));
+      }
       if (Math.abs(dx) > DEAD) steer += Math.max(-1, Math.min(1, dx / 80));
     }
     return {
-      throttle: Math.max(-1, Math.min(1, throttle)),
+      throttle: Math.max(-1, Math.min(3, throttle)),
       steer: Math.max(-1, Math.min(1, steer))
     };
   }
 
-  // ── HUD ──
-  const radarEl = document.getElementById('radar');
-  const radarCone = document.getElementById('radar-cone');
-  const blipEls = [];
-  for (let i = 0; i < features.length; i++) {
-    const el = document.createElement('div');
-    el.className = 'radar-blip ' + (features[i].type === 'hill' ? 'blip-hill' : 'blip-hole');
-    radarEl.appendChild(el);
-    blipEls.push(el);
+  // ── HUD: zone readout — lat/lon to the nearest 1° so it ticks while you roll. ──
+  const zoneEl = document.getElementById('zone-val');
+  function updateZone() {
+    const dir = ballPos.clone().normalize();
+    const lat = 90 - Math.acos(Math.max(-1, Math.min(1, dir.y))) * 180 / Math.PI;
+    let lon = Math.atan2(dir.z, dir.x) * 180 / Math.PI;
+    if (lon < 0) lon += 360;
+    const lonR = Math.round(lon);
+    const latR = Math.round(lat);
+    zoneEl.textContent = lonR + '°,' + latR + '°';
   }
-  document.getElementById('total').textContent = features.length;
-  const foundEl = document.getElementById('found');
-  const hdgEl = document.getElementById('hdg');
-  const pxEl = document.getElementById('px');
-  const pzEl = document.getElementById('pz');
-  const spdEl = document.getElementById('spd');
 
-  const RADAR_RANGE = 1400; // world units shown across radar diameter
-  const FOUND_RANGE = 120;  // get within this to "discover" a feature
-
-  function compassLetter(rad) {
-    // yaw=0 → -Z (N). Positive yaw rotates ship local -Z toward -X (W).
-    let deg = (rad * 180 / Math.PI) % 360;
-    if (deg < 0) deg += 360;
-    const dirs = ['N','NW','W','SW','S','SE','E','NE'];
-    return dirs[Math.round(deg / 45) % 8];
+  // ── HUD: gem collection counter + per-frame collision check ──
+  const gemsEl = document.getElementById('gems-val');
+  gemsEl.textContent = '0/' + collectibles.length;
+  let gemsCollected = 0;
+  const COLLECT_DIST = 28;
+  const COLLECT_DIST_SQ = COLLECT_DIST * COLLECT_DIST;
+  function updateGems(dt) {
+    for (let i = 0; i < collectibles.length; i++) {
+      const g = collectibles[i];
+      if (g.userData.collected) continue;
+      // Spin uncollected gems for visibility.
+      g.rotateY(dt * 1.6);
+      const dx = g.position.x - ballPos.x;
+      const dy = g.position.y - ballPos.y;
+      const dz = g.position.z - ballPos.z;
+      if (dx*dx + dy*dy + dz*dz < COLLECT_DIST_SQ) {
+        g.userData.collected = true;
+        g.visible = false;
+        gemsCollected++;
+        gemsEl.textContent = gemsCollected + '/' + collectibles.length;
+      }
+    }
   }
 
   // ── FRAME LOOP ──
   let lastT = performance.now();
-  let foundCount = 0;
 
   function frame() {
     const now = performance.now();
@@ -302,126 +363,113 @@
 
     const inp = readInput();
 
-    // Yaw (camera heading) responds to steer input directly. Steering doesn't
-    // depend on speed — you can pivot the view even when sitting still in a hole.
-    yaw -= inp.steer * TURN_RATE * dt;
+    // Local frame at ball position: up = radial direction outward from world centre.
+    _up.copy(ballPos).normalize();
 
-    // World-forward vector. yaw=0 → (0,0,-1). Positive yaw rotates toward -X.
-    const fwdX = -Math.sin(yaw);
-    const fwdZ = -Math.cos(yaw);
+    // Re-orthogonalize forward against current up (parallel transport keeps the
+    // facing direction tangent to the sphere as the ball wanders around it).
+    ballForward.addScaledVector(_up, -ballForward.dot(_up)).normalize();
 
-    // Throttle: accel along the heading.
+    // Steering: rotate forward around the local up axis.
+    if (inp.steer !== 0) ballForward.applyAxisAngle(_up, -inp.steer * TURN_RATE * dt);
+
+    // Throttle: accelerate along forward.
     if (inp.throttle > 0) {
-      velX += fwdX * inp.throttle * ACCEL * dt;
-      velZ += fwdZ * inp.throttle * ACCEL * dt;
+      ballVel.addScaledVector(ballForward, inp.throttle * ACCEL * dt);
     } else if (inp.throttle < 0) {
-      velX += fwdX * inp.throttle * REVERSE_ACCEL * dt;
-      velZ += fwdZ * inp.throttle * REVERSE_ACCEL * dt;
+      ballVel.addScaledVector(ballForward, inp.throttle * REVERSE_ACCEL * dt);
     }
 
-    // Gravity from terrain slope. Sample gradient with central differences;
-    // downhill direction is the negative gradient.
-    const eps = 6;
-    const dhdx = (terrainHeight(shipX + eps, shipZ) - terrainHeight(shipX - eps, shipZ)) / (2 * eps);
-    const dhdz = (terrainHeight(shipX, shipZ + eps) - terrainHeight(shipX, shipZ - eps)) / (2 * eps);
-    velX -= dhdx * GRAVITY * dt;
-    velZ -= dhdz * GRAVITY * dt;
-
-    // Rolling friction.
-    const fk = Math.pow(FRICTION, dt * 60);
-    velX *= fk;
-    velZ *= fk;
-
-    // Cap speed magnitude.
-    let speedMag = Math.sqrt(velX * velX + velZ * velZ);
-    if (speedMag > MAX_SPEED) {
-      const s = MAX_SPEED / speedMag;
-      velX *= s; velZ *= s; speedMag = MAX_SPEED;
-    }
-
-    shipX += velX * dt;
-    shipZ += velZ * dt;
-
-    // Clamp to zone — kill velocity into the wall so we don't grind.
-    const EDGE = HALF - 60;
-    if (shipX > EDGE)  { shipX = EDGE;  if (velX > 0) velX = 0; }
-    if (shipX < -EDGE) { shipX = -EDGE; if (velX < 0) velX = 0; }
-    if (shipZ > EDGE)  { shipZ = EDGE;  if (velZ > 0) velZ = 0; }
-    if (shipZ < -EDGE) { shipZ = -EDGE; if (velZ < 0) velZ = 0; }
-
-    // Ride the terrain — sphere centre sits one radius above the ground.
-    const groundY = terrainHeight(shipX, shipZ);
-    ball.position.set(shipX, groundY + SHIP_R, shipZ);
-
-    // Roll the sphere in world frame based on actual motion direction
-    // (not heading) so gravity-driven slides also spin the ball correctly.
-    const ds = speedMag * dt;
-    if (ds > 0.0001) {
-      const mx = velX / speedMag, mz = velZ / speedMag;
-      // Right-of-motion vector is the rolling axis.
-      ROLL_AXIS.set(-mz, 0, mx);
-      ROLL_Q.setFromAxisAngle(ROLL_AXIS, -ds / SHIP_R);
-      ball.quaternion.premultiply(ROLL_Q);
-    }
-
-    // ── CHASE CAMERA: sits behind & above the ship, looking just past it ──
-    const CAM_BACK = 70;
-    const CAM_UP = 38;
-    const camX = shipX - fwdX * CAM_BACK;
-    const camZ = shipZ - fwdZ * CAM_BACK;
-    const camY = groundY + CAM_UP;
-    // Smooth follow to avoid jitter on bumps.
-    camera.position.x += (camX - camera.position.x) * Math.min(1, dt * 6);
-    camera.position.y += (camY - camera.position.y) * Math.min(1, dt * 4);
-    camera.position.z += (camZ - camera.position.z) * Math.min(1, dt * 6);
-    camera.lookAt(shipX + fwdX * 40, groundY + 6, shipZ + fwdZ * 40);
-
-    // ── DISCOVERY: mark features within FOUND_RANGE ──
-    for (let i = 0; i < features.length; i++) {
-      const f = features[i];
-      if (f.found) continue;
-      const dx = f.x - shipX, dz = f.z - shipZ;
-      if (dx * dx + dz * dz < FOUND_RANGE * FOUND_RANGE) {
-        f.found = true;
-        foundCount++;
+    // Gravity from terrain gradient — pulls ball downhill in the tangent plane.
+    // Sample the terrain offset at ball position ± eps in forward and right directions
+    // (rotating the radial direction around right/forward by a small angle).
+    {
+      const dir = _tmp.copy(ballPos).normalize();
+      const right = _tmp2.crossVectors(ballForward, _up).normalize();
+      const EPS = 0.004;
+      const dF = dir.clone().applyAxisAngle(right, -EPS);
+      const dB = dir.clone().applyAxisAngle(right,  EPS);
+      const dR = dir.clone().applyAxisAngle(ballForward,  EPS);
+      const dL = dir.clone().applyAxisAngle(ballForward, -EPS);
+      const dhdf = (terrainOffset(dF) - terrainOffset(dB)) / (2 * EPS);
+      const dhdr = (terrainOffset(dR) - terrainOffset(dL)) / (2 * EPS);
+      // Tangent-plane gravity from the terrain gradient. Capped so the steepest
+      // hills don't pin the ball — full throttle (and especially boost) can
+      // always crawl uphill.
+      const GRAVITY = 0.08;
+      const MAX_GRAV_ACCEL = 180;
+      let gf = -dhdf * GRAVITY;
+      let gr = -dhdr * GRAVITY;
+      const gMag = Math.sqrt(gf * gf + gr * gr);
+      if (gMag > MAX_GRAV_ACCEL) {
+        const s = MAX_GRAV_ACCEL / gMag;
+        gf *= s; gr *= s;
       }
+      ballVel.addScaledVector(ballForward, gf * dt);
+      ballVel.addScaledVector(right,       gr * dt);
     }
 
-    // ── HUD update ──
-    // Radar: rotates with ship heading so "up" on radar is ship-forward.
-    const cos = Math.cos(-yaw), sin = Math.sin(-yaw);
-    for (let i = 0; i < features.length; i++) {
-      const f = features[i];
-      let dx = f.x - shipX, dz = f.z - shipZ;
-      // Rotate world delta into ship-local frame.
-      const lx = dx * Math.cos(yaw) - dz * Math.sin(yaw);
-      const lz = dx * Math.sin(yaw) + dz * Math.cos(yaw);
-      const dist = Math.hypot(lx, lz);
-      const el = blipEls[i];
-      if (dist > RADAR_RANGE / 2) { el.style.display = 'none'; continue; }
-      el.style.display = 'block';
-      // Map: ship-local +Z (behind) is down on radar, -Z (forward) is up.
-      const px = 50 + (lx / (RADAR_RANGE / 2)) * 50;
-      const py = 50 + (lz / (RADAR_RANGE / 2)) * 50;
-      el.style.left = px + '%';
-      el.style.top = py + '%';
-      el.classList.toggle('blip-found', f.found);
+    // Keep velocity tangent to the surface (remove any radial component).
+    ballVel.addScaledVector(_up, -ballVel.dot(_up));
+
+    // Friction.
+    ballVel.multiplyScalar(Math.pow(FRICTION, dt * 60));
+
+    // Cap speed. Boost: when throttle is between 1 and 3, the speed cap scales
+    // with it, so dragging up past the normal-max threshold unlocks up to 3× MAX_SPEED.
+    const targetMax = MAX_SPEED * Math.max(1, inp.throttle);
+    const speed = ballVel.length();
+    if (speed > targetMax) ballVel.multiplyScalar(targetMax / speed);
+
+    // Move and re-project to the (bumpy) sphere surface — altitude follows
+    // the local terrain offset so the ball rides over hills and into craters.
+    ballPos.addScaledVector(ballVel, dt);
+    const ballDir = _tmp.copy(ballPos).normalize();
+    const surfH = WORLD_R + terrainOffset(ballDir) + SHIP_R;
+    ballPos.copy(ballDir).multiplyScalar(surfH);
+
+    // Recompute up after the move; re-tangent velocity + forward to the new tangent plane.
+    _up.copy(ballPos).normalize();
+    ballVel.addScaledVector(_up, -ballVel.dot(_up));
+    ballForward.addScaledVector(_up, -ballForward.dot(_up)).normalize();
+
+    // Position the ball mesh on the sphere.
+    ball.position.copy(ballPos);
+
+    // Roll the ball based on actual motion: axis = up × motion, angle = arc/R.
+    const ds = ballVel.length() * dt;
+    if (ds > 0.0001) {
+      _tmp.copy(ballVel).normalize();          // motion direction
+      _rollAxis.crossVectors(_up, _tmp).normalize();
+      _q.setFromAxisAngle(_rollAxis, ds / SHIP_R);
+      ball.quaternion.premultiply(_q);
     }
-    radarCone.style.transform = 'translate(-50%, -100%) rotate(0deg)';
 
-    foundEl.textContent = foundCount;
-    hdgEl.textContent = compassLetter(yaw);
-    pxEl.textContent = Math.round(shipX);
-    pzEl.textContent = Math.round(shipZ);
-    spdEl.textContent = Math.round(speedMag);
+    // ── CHASE CAMERA: behind ball along -forward, above along +up. ──
+    const CAM_BACK = 80;
+    const CAM_UP = 75;
+    _camTarget.copy(ballPos)
+      .addScaledVector(ballForward, -CAM_BACK)
+      .addScaledVector(_up, CAM_UP);
+    camera.position.lerp(_camTarget, Math.min(1, dt * 6));
+    camera.up.copy(_up);
+    _lookAt.copy(ballPos)
+      .addScaledVector(ballForward, 40)
+      .addScaledVector(_up, 14);
+    camera.lookAt(_lookAt);
 
+    updateZone();
+    updateGems(dt);
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
   }
 
-  // Initial camera placement so first frame isn't a snap.
-  camera.position.set(0, terrainHeight(0, 0) + 38, 70);
-  camera.lookAt(0, 6, -40);
+  // Initial camera placement so the first frame isn't a snap.
+  _up.copy(ballPos).normalize();
+  camera.up.copy(_up);
+  camera.position.copy(ballPos).addScaledVector(ballForward, -80).addScaledVector(_up, 75);
+  _lookAt.copy(ballPos).addScaledVector(ballForward, 40).addScaledVector(_up, 14);
+  camera.lookAt(_lookAt);
 
   frame();
 })();
