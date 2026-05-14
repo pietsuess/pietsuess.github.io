@@ -2,38 +2,250 @@
 <html>
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Captain Skyhawk</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SKYHAWK</title>
 <style>
-  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; }
-  iframe { width: 100%; height: 100%; border: 0; display: block; }
-  #fallback {
-    position: fixed; inset: 0; display: none; align-items: center; justify-content: center;
-    color: #ffe000; font-family: 'Courier New', monospace; text-align: center; padding: 24px;
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
+  /* Render canvas at low resolution and scale up with pixelated filter for the NES-era feel. */
+  #game { display: block; width: 100vw; height: 100vh;
+          image-rendering: pixelated; image-rendering: -moz-crisp-edges; image-rendering: crisp-edges; }
+  #hud {
+    position: fixed; inset: 0; pointer-events: none; z-index: 5;
+    font-family: 'Press Start 2P', 'Courier New', monospace;
+    color: #ffe000;
   }
-  #fallback a { color: #66ddff; }
+  #hud-top { position: absolute; top: 8px; left: 0; right: 0; display: flex; justify-content: space-between; padding: 0 14px; font-size: 12px; letter-spacing: 2px; }
+  #hud-bottom { position: absolute; bottom: 14px; left: 14px; display: flex; gap: 12px; align-items: flex-end; }
+  #radar {
+    width: 88px; height: 88px; border: 2px solid #ffe000; border-radius: 50%;
+    background: rgba(0, 32, 64, 0.65); box-shadow: 0 0 8px rgba(255,224,0,0.6) inset;
+    position: relative; overflow: hidden;
+  }
+  .radar-blip { position: absolute; width: 4px; height: 4px; background: #00ff66; border-radius: 50%; box-shadow: 0 0 4px #00ff66; }
+  #radar-self { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 6px; height: 6px; background: #ffe000; border-radius: 50%; }
+  #stat-block { font-size: 10px; letter-spacing: 1px; line-height: 1.6; color: #66ddff; text-shadow: 0 0 4px rgba(102,221,255,0.6); }
 </style>
 </head>
 <body>
-<iframe id="frame" src="https://www.retrogames.cz/play_1195-NES.php" allow="fullscreen; gamepad" allowfullscreen></iframe>
-<div id="fallback">
-  <div>
-    <div style="font-size:18px;letter-spacing:3px;margin-bottom:18px;">CAPTAIN SKYHAWK</div>
-    <div style="font-size:12px;letter-spacing:2px;opacity:0.8;line-height:1.6;">
-      Embed blocked by host. Open directly:<br><br>
-      <a href="https://www.retrogames.cz/play_1195-NES.php" target="_blank">retrogames.cz/play_1195-NES.php</a>
+<canvas id="game"></canvas>
+<div id="hud">
+  <div id="hud-top">
+    <div>SCORE 000000</div>
+    <div>FUEL ████████░░</div>
+  </div>
+  <div id="hud-bottom">
+    <div id="radar">
+      <div id="radar-self"></div>
+    </div>
+    <div id="stat-block">
+      ALT 100<br>
+      SPD <span id="spd">0</span><br>
+      HDG N
     </div>
   </div>
 </div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
 <script>
-  // If the iframe fails to load (X-Frame-Options block), show the fallback link.
-  var f = document.getElementById('frame');
-  var fb = document.getElementById('fallback');
-  var loaded = false;
-  f.addEventListener('load', function(){ loaded = true; });
-  setTimeout(function(){
-    if (!loaded) { f.style.display = 'none'; fb.style.display = 'flex'; }
-  }, 4000);
+(function(){
+  // Render at low resolution for the chunky retro feel; CSS scales the canvas up.
+  const RENDER_W = 320, RENDER_H = 240;
+
+  const scene = new THREE.Scene();
+  // Bright NES-palette-inspired cyan sky.
+  scene.background = new THREE.Color(0x40c0ff);
+
+  const camera = new THREE.PerspectiveCamera(58, RENDER_W / RENDER_H, 0.5, 4000);
+  // High chase view: well above + behind the ship, tilted DOWN so the horizon sits in the upper
+  // third and the ground fills most of the screen — the signature "looking down at the world" feel.
+  camera.position.set(0, 70, 50);
+  camera.lookAt(0, 0, -100);
+
+  const canvas = document.getElementById('game');
+  const renderer = new THREE.WebGLRenderer({ canvas: canvas, antialias: false });
+  renderer.setPixelRatio(1);
+  renderer.setSize(RENDER_W, RENDER_H, false);
+
+  // Lighting.
+  scene.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const sun = new THREE.DirectionalLight(0xffffe0, 0.7);
+  sun.position.set(-300, 400, 200);
+  scene.add(sun);
+
+  // ── HORIZON STRIP: a bright cyan band that anchors the meeting line of ground + sky ──
+  const horizonGeo = new THREE.PlaneGeometry(8000, 80);
+  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x88e0ff });
+  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
+  horizon.position.set(0, 8, -1900);
+  scene.add(horizon);
+
+  // ── MOUNTAIN RIDGE: connected jagged peaks across the horizon ──
+  function buildMountainRidge(color, baseY, peakHMin, peakHMax, peakSpacing, count, zPos, seed) {
+    const verts = [];
+    for (let i = 0; i < count; i++) {
+      const x = (i - count / 2) * peakSpacing;
+      const xn = (i + 1 - count / 2) * peakSpacing;
+      // Pseudo-random peak height seeded by index + seed for stability.
+      const r = Math.abs(Math.sin((i + seed) * 12.9898) * 43758.5453 % 1);
+      const h = peakHMin + r * (peakHMax - peakHMin);
+      verts.push(x, baseY, 0,  xn, baseY, 0,  (x + xn) / 2, baseY + h, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(verts, 3));
+    const mat = new THREE.MeshBasicMaterial({ color: color, side: THREE.DoubleSide });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.set(0, 0, zPos);
+    return mesh;
+  }
+  // Two layers — far darker ridge behind, mid lighter ridge in front for parallax depth.
+  const farRidge = buildMountainRidge(0x1a3066, 4, 60, 180, 200, 50, -1850, 7);
+  const nearRidge = buildMountainRidge(0x3060a0, 3, 30, 90, 140, 60, -1650, 13);
+  scene.add(farRidge);
+  scene.add(nearRidge);
+
+  // ── GROUND: bright green hilly terrain with chunky checker overlay ──
+  const GROUND_W = 4000, GROUND_L = 6000;
+  const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_L, 80, 160);
+  // Displace vertices for rolling hills.
+  const pos = groundGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i);
+    const h = Math.sin(x * 0.004) * 4 + Math.cos(y * 0.003) * 6 + Math.sin((x + y) * 0.007) * 3;
+    pos.setZ(i, h);
+  }
+  groundGeo.computeVertexNormals();
+  // Build a chunky checker texture for that 8-bit ground feel.
+  const cnv = document.createElement('canvas');
+  cnv.width = 64; cnv.height = 64;
+  const cctx = cnv.getContext('2d');
+  cctx.fillStyle = '#00a040'; cctx.fillRect(0, 0, 64, 64);
+  cctx.fillStyle = '#30d060';
+  for (let gy = 0; gy < 4; gy++) {
+    for (let gx = 0; gx < 4; gx++) {
+      if ((gx + gy) % 2 === 0) cctx.fillRect(gx * 16, gy * 16, 16, 16);
+    }
+  }
+  const groundTex = new THREE.CanvasTexture(cnv);
+  groundTex.magFilter = THREE.NearestFilter;
+  groundTex.minFilter = THREE.NearestFilter;
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+  groundTex.repeat.set(60, 100);
+  const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, 0, -GROUND_L / 2 + 600);
+  scene.add(ground);
+
+  // ── SHIP: chunky low-poly arrow, light grey with cyan canopy stripe ──
+  const shipGroup = new THREE.Group();
+  // Body: extruded triangle
+  const bodyShape = new THREE.Shape();
+  bodyShape.moveTo(0, 5);
+  bodyShape.lineTo(-3.5, -3.5);
+  bodyShape.lineTo(0, -1.5);
+  bodyShape.lineTo(3.5, -3.5);
+  bodyShape.closePath();
+  const bodyGeo = new THREE.ExtrudeGeometry(bodyShape, { depth: 1.4, bevelEnabled: false });
+  bodyGeo.center();
+  bodyGeo.rotateX(-Math.PI / 2);
+  const bodyMat = new THREE.MeshLambertMaterial({ color: 0xc8c8d4 });
+  const body = new THREE.Mesh(bodyGeo, bodyMat);
+  shipGroup.add(body);
+  // Canopy: small dark cyan bump on top
+  const canopy = new THREE.Mesh(
+    new THREE.BoxGeometry(1.4, 0.8, 1.8),
+    new THREE.MeshLambertMaterial({ color: 0x1a4a8a })
+  );
+  canopy.position.set(0, 0.7, 0.2);
+  shipGroup.add(canopy);
+  // Tail fin
+  const fin = new THREE.Mesh(
+    new THREE.BoxGeometry(0.4, 1.6, 1.2),
+    new THREE.MeshLambertMaterial({ color: 0xa0a0a8 })
+  );
+  fin.position.set(0, 0.8, -1.8);
+  shipGroup.add(fin);
+  shipGroup.scale.setScalar(1.4);
+  shipGroup.position.set(0, 6, 0);
+  scene.add(shipGroup);
+
+  // ── INPUT: drag horizontally to steer ──
+  let touchX = null, baseX = 0;
+  let shipTargetX = 0;
+  const SHIP_X_MAX = 90;
+  function onStart(e) {
+    const t = e.touches ? e.touches[0] : e;
+    touchX = t.clientX;
+    baseX = shipTargetX;
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (touchX === null) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - touchX;
+    shipTargetX = Math.max(-SHIP_X_MAX, Math.min(SHIP_X_MAX, baseX + dx * 0.4));
+    e.preventDefault();
+  }
+  function onEnd() { touchX = null; }
+  canvas.addEventListener('touchstart', onStart, { passive: false });
+  canvas.addEventListener('touchmove', onMove, { passive: false });
+  canvas.addEventListener('touchend', onEnd);
+  canvas.addEventListener('mousedown', onStart);
+  canvas.addEventListener('mousemove', onMove);
+  canvas.addEventListener('mouseup', onEnd);
+
+  // ── HUD radar blip animator ──
+  const radar = document.getElementById('radar');
+  // Add a sweeping "scan" arc for atmosphere
+  const sweep = document.createElement('div');
+  sweep.style.cssText = 'position:absolute;left:50%;top:50%;width:50%;height:2px;background:linear-gradient(90deg,#00ff66,transparent);transform-origin:left center;pointer-events:none;';
+  radar.appendChild(sweep);
+
+  // ── FRAME LOOP ──
+  let lastT = performance.now();
+  let groundScrollT = 0;
+  const SPEED = 240;
+  const spdEl = document.getElementById('spd');
+  let sweepAng = 0;
+
+  function frame() {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+
+    // Ship lateral easing + bank roll
+    shipGroup.position.x += (shipTargetX - shipGroup.position.x) * 0.12;
+    const lateralVel = shipTargetX - shipGroup.position.x;
+    shipGroup.rotation.z = -shipGroup.position.x * 0.012 + lateralVel * -0.008;
+    shipGroup.rotation.y = -shipGroup.position.x * 0.003;
+
+    // Camera chases with slight lag for chase-cam feel; matches the high tilted-down setup above.
+    camera.position.x += (shipGroup.position.x * 0.7 - camera.position.x) * 0.1;
+    camera.lookAt(shipGroup.position.x * 0.85, 0, -100);
+
+    // Scroll ground texture toward camera to fake forward motion.
+    groundScrollT += dt * SPEED * 0.0008;
+    groundTex.offset.y = -groundScrollT;
+
+    // Mountain parallax: far ridge slow, near ridge faster.
+    farRidge.position.x = -shipGroup.position.x * 0.15;
+    nearRidge.position.x = -shipGroup.position.x * 0.3;
+
+    // Radar sweep animation
+    sweepAng = (sweepAng + dt * 120) % 360;
+    sweep.style.transform = 'rotate(' + sweepAng + 'deg)';
+
+    spdEl.textContent = Math.round(SPEED);
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  frame();
+
+  window.addEventListener('resize', function() {
+    // Keep render resolution fixed (320x240) — CSS handles upscaling.
+  });
+})();
 </script>
 </body>
 </html>
