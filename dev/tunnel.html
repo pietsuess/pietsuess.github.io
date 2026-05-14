@@ -5444,13 +5444,40 @@ window.onload = function() {
             isSpeedRun: true,
             speedRunTarget: 30,
             pylons: null
+        },
+        // SKYHAWK — hidden dev-mode level inspired by Captain Skyhawk's tunnel sequence.
+        // Activated via ?skyhawk=1 URL flag. Sliding-window walls in sunset palette.
+        'SKYHAWK': {
+            isBonus: true,
+            blocks: false, shields: false, barriers: true, knots: false, mines: false,
+            ramps: false, stars: false, boost: false,
+            baseHazard: 0, baseRing: 1.0, baseShields: 0,
+            levelEscalation: 0, barrierThreshold: 0,
+            normalMinDist: 800, gapChance: 1, gapSizeMin: 0.6, gapSizeMax: 1.1,
+            srSpacing: 40, srCountMin: 0, srCountMax: 0,
+            srTwistMin: 0.15, srTwistMax: 0.3,
+            srGapMin: 0.9, srGapMax: 1.3, srMinDist: 400,
+            spacing: 50, startOffset: 400, maxSpawnPct: 0.92,
+            starChance: 0, contentChance: 0, boostChance: 0, boostRingCount: 0,
+            knotShare: 0, blockShare: 0,
+            baseSpeed: 360, levelSpeed: 360,
+            baseLength: 22000, levelLength: 22000,
+            spiralStep: 0.8,
+            spiralPattern: null, // bypass procedural — _spawnSkyhawkLevel handles it
+            rotMult: 1.0,
+            isSpeedRun: true,
+            speedRunTarget: 50,
+            pylons: null
         }
     };
+    // Skyhawk hidden-level flag — set when player enters via ?skyhawk=1.
+    var _inSkyhawk = false;
     // Bonus level state — transient (NOT persisted to session JSON).
     // When true, _getTuning + carousel close + triggerVictory + sector HUD
     // route through the per-sector 'SnB' bonus ring-grab between sector clears.
     var _inBonusLevel = false;
     function _getTuning(sector, level) {
+        if (_inSkyhawk && SPAWN_TUNING['SKYHAWK']) return SPAWN_TUNING['SKYHAWK'];
         if (_inBonusLevel && SPAWN_TUNING['S' + sector + 'B']) {
             return SPAWN_TUNING['S' + sector + 'B'];
         }
@@ -6916,6 +6943,13 @@ window.onload = function() {
         var r = tubeRadius - 6;
         var baseZ = camera.position.z - 600;
 
+        // SKYHAWK — hidden dev level, custom Captain Skyhawk-style sliding-window walls.
+        if (_inSkyhawk) {
+            _spawnOriginZ = camera.position.z;
+            _spawnSkyhawkLevel();
+            return;
+        }
+
         // S3B POWER LOOP — pre-place 8 deterministic loops; bypass procedural spawn entirely.
         if (_inBonusLevel && currentSector === 3) {
             _spawnOriginZ = camera.position.z;
@@ -7517,8 +7551,81 @@ window.onload = function() {
         updateCollectionHUD();
         initializeFlight(false);
     }
+    // ── SKYHAWK launch ──
+    // Hidden dev-mode level. Sets the flag, configures speed/length from SKYHAWK tuning,
+    // applies sunset palette to wireframe + fog, then enters flight via initializeFlight.
+    function _startSkyhawk() {
+        _inSkyhawk = true;
+        contentSpawnedThisRun = [];
+        _bonusBullseyeHit = 0; _bonusBullseyeMiss = 0;
+        _bonusBarrierHits = 0;
+        _bonusRingsThisRun = 0;
+        var t = SPAWN_TUNING['SKYHAWK'] || {};
+        sectorDistance = t.levelLength || t.baseLength || 22000;
+        var spd = t.baseSpeed || 360;
+        baseSpeed = spd * SPEED_MULTIPLIERS[speedTier] * _shipStat('speedMult', 1.0);
+        // Skyhawk palette: cyan tube, dark blue fog, sector text shows SKYHAWK.
+        try {
+            wireMat.color.setHex(0x00ddff);
+            scene.fog.color.setHex(0x000820);
+            scene.background.setHex(0x000820);
+        } catch(e) {}
+        try { document.getElementById('sector-text').innerText = 'SKYHAWK'; } catch(e) {}
+        try { var _zn = document.getElementById('zone-name'); if (_zn) { _zn.innerText = 'SKYHAWK'; _zn.style.color = '#ffaa00'; } } catch(e) {}
+        sectorStartScore = score;
+        combo = 0;
+        shieldsUp = false; shieldsUpTimer = 0;
+        // Hide the carousel, start screen, and any session UI before launch.
+        try { document.getElementById('start-screen').style.display = 'none'; } catch(e) {}
+        try { document.getElementById('tr-session-screen').style.display = 'none'; } catch(e) {}
+        initializeFlight(false);
+    }
+    // ── SKYHAWK spawner ──
+    // Captain Skyhawk-inspired tunnel: dense walls each with a SMALL gap, gap position shifts
+    // ~90° between successive walls (the iconic "sliding window" effect). Sunset palette,
+    // sparse gold rings between walls. Activated via _inSkyhawk + ?skyhawk=1 URL flag.
+    function _spawnSkyhawkLevel() {
+        var seedZ = camera.position.z - 600;
+        var totalLen = sectorDistance * 0.90;
+        var wallSpacing = 110; // dense — ~200 walls in a 22000 level
+        var wallCount = Math.floor(totalLen / wallSpacing);
+        var hover = tubeRadius - 6;
+        // Skyhawk-yellow barrier material — clone so we don't mutate the global one.
+        var skyMat = barrierMat.clone();
+        if (skyMat.color && skyMat.color.setHex) skyMat.color.setHex(0xffaa00);
+        if (skyMat.emissive && skyMat.emissive.setHex) skyMat.emissive.setHex(0x884400);
+        // Sliding-window gap angle — increment by 90° per wall, with occasional 180° flip.
+        var gapAngle = 0;
+        var gapArc = Math.PI * 0.42; // ~75° opening
+        var arcLen = Math.PI * 2 - gapArc;
+        for (var k = 0; k < wallCount; k++) {
+            var wz = seedZ - (k * wallSpacing);
+            // Sliding pattern: alternate +90°, +90°, +180° to create Skyhawk's signature staggered windows.
+            var phase = k % 4;
+            if (phase === 0)      gapAngle += Math.PI * 0.5;
+            else if (phase === 1) gapAngle += Math.PI * 0.5;
+            else if (phase === 2) gapAngle += Math.PI;
+            else                  gapAngle -= Math.PI * 0.5;
+            var wallMesh = new THREE.Mesh(buildBarrierGeo(arcLen), skyMat);
+            wallMesh.position.set(0, 0, wz);
+            wallMesh.rotation.z = gapAngle;
+            wallMesh.userData = { type: 'laser_wall', hitRadius: tubeRadius, arcLength: arcLen, _hp: 8, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0 };
+            scene.add(wallMesh); items.push(wallMesh);
+            // Gold ring in the gap, halfway between this wall and the next — bonus reward for threading.
+            if (k < wallCount - 1) {
+                var rZ = wz - wallSpacing * 0.5;
+                var rAng = gapAngle; // place at the same gap angle so it's reachable through the window
+                var gMesh = new THREE.Mesh(goldRingGeo, goldRingMat);
+                gMesh.position.set(Math.cos(rAng) * hover, Math.sin(rAng) * hover, rZ);
+                gMesh.rotation.z = rAng;
+                gMesh.userData = { type: 'gold_ring', hitRadius: 7.0, rotSpeedX: 0, rotSpeedY: 0, rotSpeedZ: 0.4 };
+                scene.add(gMesh); items.push(gMesh);
+            }
+        }
+    }
+
     // ── S3B POWER LOOP spawner ──
-    // Builds 8 deterministic loops over the level: [3 force-field stars in a half-ring with gaps]
+    // Builds 12 deterministic loops over the level: [3 force-field stars in a half-ring with gaps]
     // → [full barrier ring] → [4 gold rings spread across the tube]. The shield from any star
     // makes the next barrier safe; without shield, the barrier counts as one of 2 forfeit hits.
     function _spawnS3BPowerLoops() {
@@ -8652,6 +8759,9 @@ window.onload = function() {
                     var _ssft = document.getElementById('start-screen');
                     if (_ssft) _ssft.style.display = 'none';
                     runFinalCinematic();
+                } else if (window._skyhawkMode) {
+                    try { AudioEngine.init(); } catch(_) {}
+                    try { _startSkyhawk(); } catch(_) { initializeFlight(true); }
                 } else {
                     initializeFlight(true);
                 }
@@ -8664,6 +8774,7 @@ window.onload = function() {
         document.addEventListener('mousedown', anyKeyStart);
     }
     if (location.search.indexOf('final=1') !== -1) { window._finalTestMode = true; }
+    if (location.search.indexOf('skyhawk=1') !== -1) { window._skyhawkMode = true; }
     initTitleScreen();
 
     const bindTap = (id, fn) => {
