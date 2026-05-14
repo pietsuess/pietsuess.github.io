@@ -203,15 +203,17 @@
   const ball = new THREE.Mesh(new THREE.SphereGeometry(SHIP_R, 24, 18), ballMat);
   scene.add(ball);
 
-  // Ship state.
+  // Ship state. Velocity is a free 2D world vector so gravity can pull
+  // the ball downhill independent of where the camera (yaw) is pointing.
   let shipX = 0, shipZ = 0;
   let yaw = 0; // 0 = facing -Z (north)
-  let speed = 0;
-  const MAX_SPEED = 160;
-  const ACCEL = 220;
-  const REVERSE_SPEED = -60;
-  const TURN_RATE = 1.8; // rad/s at full input
-  const DRAG = 0.85;
+  let velX = 0, velZ = 0;
+  const MAX_SPEED = 200;
+  const ACCEL = 260;            // throttle force along heading
+  const REVERSE_ACCEL = 180;    // weaker reverse force
+  const TURN_RATE = 1.8;        // rad/s at full input
+  const FRICTION = 0.985;       // rolling drag per frame (~60fps reference)
+  const GRAVITY = 380;          // pulls ball downhill — tuned so craters suck you in
 
   // Reusable scratch objects for the per-frame rolling rotation.
   const ROLL_AXIS = new THREE.Vector3();
@@ -300,46 +302,65 @@
 
     const inp = readInput();
 
-    // Throttle integrates into forward speed; reverse capped.
-    if (inp.throttle > 0) {
-      speed += inp.throttle * ACCEL * dt;
-    } else if (inp.throttle < 0) {
-      speed += inp.throttle * ACCEL * 0.7 * dt;
-    } else {
-      // Coast: ease toward zero.
-      speed *= Math.pow(DRAG, dt * 4);
-    }
-    speed = Math.max(REVERSE_SPEED, Math.min(MAX_SPEED, speed));
-
-    // Steering — more responsive while moving; minimal when nearly stopped.
-    const steerScale = 0.4 + 0.6 * Math.min(1, Math.abs(speed) / MAX_SPEED);
-    // Reverse flips steering so it feels natural.
-    const steerSign = speed >= 0 ? 1 : -1;
-    yaw -= inp.steer * TURN_RATE * steerScale * steerSign * dt;
+    // Yaw (camera heading) responds to steer input directly. Steering doesn't
+    // depend on speed — you can pivot the view even when sitting still in a hole.
+    yaw -= inp.steer * TURN_RATE * dt;
 
     // World-forward vector. yaw=0 → (0,0,-1). Positive yaw rotates toward -X.
     const fwdX = -Math.sin(yaw);
     const fwdZ = -Math.cos(yaw);
 
-    shipX += fwdX * speed * dt;
-    shipZ += fwdZ * speed * dt;
+    // Throttle: accel along the heading.
+    if (inp.throttle > 0) {
+      velX += fwdX * inp.throttle * ACCEL * dt;
+      velZ += fwdZ * inp.throttle * ACCEL * dt;
+    } else if (inp.throttle < 0) {
+      velX += fwdX * inp.throttle * REVERSE_ACCEL * dt;
+      velZ += fwdZ * inp.throttle * REVERSE_ACCEL * dt;
+    }
 
-    // Clamp to zone with soft stop.
+    // Gravity from terrain slope. Sample gradient with central differences;
+    // downhill direction is the negative gradient.
+    const eps = 6;
+    const dhdx = (terrainHeight(shipX + eps, shipZ) - terrainHeight(shipX - eps, shipZ)) / (2 * eps);
+    const dhdz = (terrainHeight(shipX, shipZ + eps) - terrainHeight(shipX, shipZ - eps)) / (2 * eps);
+    velX -= dhdx * GRAVITY * dt;
+    velZ -= dhdz * GRAVITY * dt;
+
+    // Rolling friction.
+    const fk = Math.pow(FRICTION, dt * 60);
+    velX *= fk;
+    velZ *= fk;
+
+    // Cap speed magnitude.
+    let speedMag = Math.sqrt(velX * velX + velZ * velZ);
+    if (speedMag > MAX_SPEED) {
+      const s = MAX_SPEED / speedMag;
+      velX *= s; velZ *= s; speedMag = MAX_SPEED;
+    }
+
+    shipX += velX * dt;
+    shipZ += velZ * dt;
+
+    // Clamp to zone — kill velocity into the wall so we don't grind.
     const EDGE = HALF - 60;
-    if (shipX > EDGE)  { shipX = EDGE;  speed *= 0.5; }
-    if (shipX < -EDGE) { shipX = -EDGE; speed *= 0.5; }
-    if (shipZ > EDGE)  { shipZ = EDGE;  speed *= 0.5; }
-    if (shipZ < -EDGE) { shipZ = -EDGE; speed *= 0.5; }
+    if (shipX > EDGE)  { shipX = EDGE;  if (velX > 0) velX = 0; }
+    if (shipX < -EDGE) { shipX = -EDGE; if (velX < 0) velX = 0; }
+    if (shipZ > EDGE)  { shipZ = EDGE;  if (velZ > 0) velZ = 0; }
+    if (shipZ < -EDGE) { shipZ = -EDGE; if (velZ < 0) velZ = 0; }
 
     // Ride the terrain — sphere centre sits one radius above the ground.
     const groundY = terrainHeight(shipX, shipZ);
     ball.position.set(shipX, groundY + SHIP_R, shipZ);
 
-    // Roll the sphere in world frame: axis is the right-vector, angle = distance / R.
-    const ds = speed * dt;
-    if (Math.abs(ds) > 0.0001) {
-      const axis = ROLL_AXIS.set(-fwdZ, 0, fwdX).normalize();
-      ROLL_Q.setFromAxisAngle(axis, -ds / SHIP_R);
+    // Roll the sphere in world frame based on actual motion direction
+    // (not heading) so gravity-driven slides also spin the ball correctly.
+    const ds = speedMag * dt;
+    if (ds > 0.0001) {
+      const mx = velX / speedMag, mz = velZ / speedMag;
+      // Right-of-motion vector is the rolling axis.
+      ROLL_AXIS.set(-mz, 0, mx);
+      ROLL_Q.setFromAxisAngle(ROLL_AXIS, -ds / SHIP_R);
       ball.quaternion.premultiply(ROLL_Q);
     }
 
@@ -392,7 +413,7 @@
     hdgEl.textContent = compassLetter(yaw);
     pxEl.textContent = Math.round(shipX);
     pzEl.textContent = Math.round(shipZ);
-    spdEl.textContent = Math.round(Math.abs(speed));
+    spdEl.textContent = Math.round(speedMag);
 
     renderer.render(scene, camera);
     requestAnimationFrame(frame);
