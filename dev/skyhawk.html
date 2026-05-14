@@ -1,0 +1,200 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>SKYHAWK</title>
+<style>
+  html, body { margin: 0; padding: 0; width: 100%; height: 100%; background: #000; overflow: hidden; touch-action: none; }
+  canvas { display: block; width: 100%; height: 100%; }
+  #hud {
+    position: fixed; top: 12px; left: 12px; z-index: 10;
+    font-family: 'Courier New', monospace; font-size: 14px;
+    color: #ffe000; text-shadow: 0 0 6px rgba(255,224,0,0.8);
+    letter-spacing: 2px; pointer-events: none;
+  }
+  #title {
+    position: fixed; top: 12px; left: 50%; transform: translateX(-50%); z-index: 10;
+    font-family: 'Courier New', monospace; font-size: 18px;
+    color: #ff8800; text-shadow: 0 0 8px rgba(255,136,0,0.8);
+    letter-spacing: 4px; pointer-events: none;
+  }
+</style>
+</head>
+<body>
+<div id="title">SKYHAWK</div>
+<div id="hud">SPEED: <span id="spd">0</span> | ALT: <span id="alt">100</span></div>
+<script src="https://cdn.jsdelivr.net/npm/three@0.128.0/build/three.min.js"></script>
+<script>
+(function(){
+  const scene = new THREE.Scene();
+  // Vivid Skyhawk-cyan sky.
+  scene.background = new THREE.Color(0x33ccff);
+  // No fog — Skyhawk has a sharp hard horizon, not a fade.
+  // (Can add a tiny fog later if depth banding is too harsh.)
+
+  const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.5, 5000);
+  // Camera elevated above the ship and tilted DOWN to put the horizon at upper third.
+  // Ship at origin; camera 14 units up, 22 behind, looking down ~25° toward a point ahead.
+  camera.position.set(0, 14, 22);
+  camera.lookAt(0, 4, -50);
+
+  const renderer = new THREE.WebGLRenderer({ antialias: true });
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  document.body.appendChild(renderer.domElement);
+
+  // ── Lighting ──────────────────────────────────────────────────────────
+  scene.add(new THREE.AmbientLight(0xffffff, 0.7));
+  const sun = new THREE.DirectionalLight(0xffffcc, 0.9);
+  sun.position.set(-200, 300, -100);
+  scene.add(sun);
+
+  // ── HORIZON: sharp split between sky and a strip of distant haze ──
+  // A vertical plane far ahead acts as the "wall" of the horizon — bright cyan/blue
+  // band visible above the rolling green ground.
+  const horizonGeo = new THREE.PlaneGeometry(8000, 600);
+  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x66ddff, side: THREE.DoubleSide });
+  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
+  horizon.position.set(0, 100, -2400);
+  scene.add(horizon);
+
+  // ── GROUND: bright Skyhawk-green hilly terrain ──
+  // Plane subdivided so we can displace vertices for rolling hills (Mode 7-ish feel).
+  const GROUND_W = 4000;   // wide
+  const GROUND_L = 8000;   // long (extends well ahead of camera)
+  const SEG_W = 60;        // grid resolution
+  const SEG_L = 120;
+  const groundGeo = new THREE.PlaneGeometry(GROUND_W, GROUND_L, SEG_W, SEG_L);
+  // Displace Z (which becomes Y after the rotation) with a sum of sines for hilly terrain.
+  const pos = groundGeo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const x = pos.getX(i);
+    const y = pos.getY(i); // pre-rotation Y is what becomes ground Z
+    const h = Math.sin(x * 0.005) * 4 + Math.cos(y * 0.004) * 5 + Math.sin((x + y) * 0.008) * 2;
+    pos.setZ(i, h);
+  }
+  groundGeo.computeVertexNormals();
+  // Two-tone green: brighter shaded squares from a generated checker texture.
+  const cnv = document.createElement('canvas');
+  cnv.width = 256; cnv.height = 256;
+  const cctx = cnv.getContext('2d');
+  cctx.fillStyle = '#00aa44'; cctx.fillRect(0, 0, 256, 256);
+  cctx.fillStyle = '#00ee66';
+  for (let gy = 0; gy < 8; gy++) {
+    for (let gx = 0; gx < 8; gx++) {
+      if ((gx + gy) % 2 === 0) cctx.fillRect(gx * 32, gy * 32, 32, 32);
+    }
+  }
+  const groundTex = new THREE.CanvasTexture(cnv);
+  groundTex.wrapS = groundTex.wrapT = THREE.RepeatWrapping;
+  groundTex.repeat.set(80, 160);
+  const groundMat = new THREE.MeshLambertMaterial({ map: groundTex });
+  const ground = new THREE.Mesh(groundGeo, groundMat);
+  ground.rotation.x = -Math.PI / 2;
+  ground.position.set(0, -2, -GROUND_L / 2 + 800); // most of the plane is ahead of camera
+  scene.add(ground);
+
+  // ── MOUNTAINS: connected ridge along the horizon ──
+  // Built as a single triangle-strip-style polygon with varying peak heights.
+  const mtVerts = [];
+  const PEAKS = 80;
+  const SPACING = 90;
+  for (let i = 0; i < PEAKS; i++) {
+    const x = (i - PEAKS / 2) * SPACING;
+    const xn = (i + 1 - PEAKS / 2) * SPACING;
+    const h1 = 50 + Math.sin(i * 0.6) * 30 + Math.cos(i * 1.3) * 25;
+    const h2 = 50 + Math.sin((i + 1) * 0.6) * 30 + Math.cos((i + 1) * 1.3) * 25;
+    // First triangle: base-left, base-right, peak1
+    mtVerts.push(x, 0, 0,  xn, 0, 0,  (x + xn) / 2, Math.max(h1, h2) * 0.85, 0);
+  }
+  const mtGeo = new THREE.BufferGeometry();
+  mtGeo.setAttribute('position', new THREE.Float32BufferAttribute(mtVerts, 3));
+  const mtMat = new THREE.MeshBasicMaterial({ color: 0x224488, side: THREE.DoubleSide });
+  const mountains = new THREE.Mesh(mtGeo, mtMat);
+  mountains.position.set(0, 0, -2200);
+  scene.add(mountains);
+
+  // ── SHIP: placeholder triangle for now (DeltaWing OBJ swap-in later) ──
+  // Flat dart shape, dark grey with cyan accent, mounted at world-origin Y level.
+  const shipShape = new THREE.Shape();
+  shipShape.moveTo(0, 4);
+  shipShape.lineTo(-3, -3);
+  shipShape.lineTo(0, -1.5);
+  shipShape.lineTo(3, -3);
+  shipShape.closePath();
+  const shipGeo = new THREE.ExtrudeGeometry(shipShape, { depth: 1, bevelEnabled: false });
+  shipGeo.center();
+  shipGeo.rotateX(-Math.PI / 2);
+  const shipMat = new THREE.MeshLambertMaterial({ color: 0x444466 });
+  const ship = new THREE.Mesh(shipGeo, shipMat);
+  ship.scale.setScalar(1.3);
+  ship.position.set(0, 4, 0);
+  scene.add(ship);
+
+  // ── INPUT: drag horizontally to steer left/right ──
+  let touchX = null, baseX = 0;
+  let shipX = 0;
+  const SHIP_X_MAX = 120;
+  function onStart(e) {
+    const t = e.touches ? e.touches[0] : e;
+    touchX = t.clientX;
+    baseX = shipX;
+    e.preventDefault();
+  }
+  function onMove(e) {
+    if (touchX === null) return;
+    const t = e.touches ? e.touches[0] : e;
+    const dx = t.clientX - touchX;
+    shipX = Math.max(-SHIP_X_MAX, Math.min(SHIP_X_MAX, baseX + dx * 0.6));
+    e.preventDefault();
+  }
+  function onEnd() { touchX = null; }
+  renderer.domElement.addEventListener('touchstart', onStart, { passive: false });
+  renderer.domElement.addEventListener('touchmove', onMove, { passive: false });
+  renderer.domElement.addEventListener('touchend', onEnd);
+  renderer.domElement.addEventListener('mousedown', onStart);
+  renderer.domElement.addEventListener('mousemove', onMove);
+  renderer.domElement.addEventListener('mouseup', onEnd);
+
+  // ── FRAME LOOP ──
+  let lastT = performance.now();
+  let groundScrollT = 0;
+  const SPEED = 220; // forward units per second
+  const spdEl = document.getElementById('spd');
+  const altEl = document.getElementById('alt');
+
+  function frame() {
+    const now = performance.now();
+    const dt = Math.min(0.05, (now - lastT) / 1000);
+    lastT = now;
+
+    // Move ship laterally toward target shipX with a gentle ease + slight roll.
+    ship.position.x += (shipX - ship.position.x) * 0.15;
+    const roll = (shipX - ship.position.x) * -0.01 + (ship.position.x - shipX) * 0.005;
+    ship.rotation.z = ship.position.x * -0.012;
+    // Camera follows ship X with a slight lag for a "chase" feel.
+    camera.position.x += (ship.position.x * 0.5 - camera.position.x) * 0.08;
+    camera.lookAt(ship.position.x * 0.7, 4, -50);
+
+    // Scroll the ground texture toward the camera to fake forward motion (cheaper than moving plane).
+    groundScrollT += dt * SPEED * 0.001;
+    groundTex.offset.y = -groundScrollT;
+
+    spdEl.textContent = Math.round(SPEED);
+    altEl.textContent = '100';
+
+    renderer.render(scene, camera);
+    requestAnimationFrame(frame);
+  }
+  frame();
+
+  window.addEventListener('resize', function() {
+    camera.aspect = window.innerWidth / window.innerHeight;
+    camera.updateProjectionMatrix();
+    renderer.setSize(window.innerWidth, window.innerHeight);
+  });
+})();
+</script>
+</body>
+</html>
