@@ -172,26 +172,24 @@
   scene.add(buildRidge(0x1a3066, 2400, 4, 80, 220, 80, 7));
   scene.add(buildRidge(0x3060a0, 2200, 3, 40, 120, 100, 13));
 
-  // ── SHIP: half-sphere dome riding the ground ──
+  // ── SHIP: rolling sphere with painted bands so the spin reads visually ──
   const SHIP_R = 14;
-  const shipGroup = new THREE.Group();
-  const domeGeo = new THREE.SphereGeometry(SHIP_R, 20, 10, 0, Math.PI * 2, 0, Math.PI / 2);
-  const domeMat = new THREE.MeshLambertMaterial({ color: 0xff5533 });
-  const dome = new THREE.Mesh(domeGeo, domeMat);
-  shipGroup.add(dome);
-  // Flat underside cap so it reads as solid from low angles.
-  const baseGeo = new THREE.CircleGeometry(SHIP_R, 20);
-  const baseMat = new THREE.MeshLambertMaterial({ color: 0x882211 });
-  const base = new THREE.Mesh(baseGeo, baseMat);
-  base.rotation.x = Math.PI / 2;
-  shipGroup.add(base);
-  // Forward marker — a darker patch on the front of the dome so heading is readable.
-  const noseGeo = new THREE.SphereGeometry(SHIP_R * 0.35, 12, 8, 0, Math.PI * 2, 0, Math.PI / 2);
-  const noseMat = new THREE.MeshLambertMaterial({ color: 0xffee66 });
-  const nose = new THREE.Mesh(noseGeo, noseMat);
-  nose.position.set(0, SHIP_R * 0.55, -SHIP_R * 0.65);
-  shipGroup.add(nose);
-  scene.add(shipGroup);
+  const sCnv = document.createElement('canvas');
+  sCnv.width = 256; sCnv.height = 128;
+  const sctx = sCnv.getContext('2d');
+  sctx.fillStyle = '#ff5533'; sctx.fillRect(0, 0, 256, 128);
+  sctx.fillStyle = '#882211';
+  // Equator stripe.
+  sctx.fillRect(0, 56, 256, 16);
+  // Two perpendicular meridian stripes (converge at poles, give a globe feel).
+  sctx.fillRect(56, 0, 16, 128);
+  sctx.fillRect(184, 0, 16, 128);
+  const ballTex = new THREE.CanvasTexture(sCnv);
+  ballTex.magFilter = THREE.NearestFilter;
+  ballTex.minFilter = THREE.NearestFilter;
+  const ballMat = new THREE.MeshLambertMaterial({ map: ballTex });
+  const ball = new THREE.Mesh(new THREE.SphereGeometry(SHIP_R, 24, 18), ballMat);
+  scene.add(ball);
 
   // Ship state.
   let shipX = 0, shipZ = 0;
@@ -202,6 +200,10 @@
   const REVERSE_SPEED = -60;
   const TURN_RATE = 1.8; // rad/s at full input
   const DRAG = 0.85;
+
+  // Reusable scratch objects for the per-frame rolling rotation.
+  const ROLL_AXIS = new THREE.Vector3();
+  const ROLL_Q = new THREE.Quaternion();
 
   // ── INPUT ──
   const keys = {};
@@ -317,22 +319,17 @@
     if (shipZ > EDGE)  { shipZ = EDGE;  speed *= 0.5; }
     if (shipZ < -EDGE) { shipZ = -EDGE; speed *= 0.5; }
 
-    // Ride the terrain — ship base sits at ground height.
+    // Ride the terrain — sphere centre sits one radius above the ground.
     const groundY = terrainHeight(shipX, shipZ);
-    shipGroup.position.set(shipX, groundY, shipZ);
-    shipGroup.rotation.y = yaw;
-    // Pitch/roll tilt by sampling neighboring heights, for that "rides the contour" feel.
-    const sx = 12;
-    const hFwd  = terrainHeight(shipX + fwdX * sx, shipZ + fwdZ * sx);
-    const hBack = terrainHeight(shipX - fwdX * sx, shipZ - fwdZ * sx);
-    const rightX = -fwdZ, rightZ = fwdX;
-    const hRight = terrainHeight(shipX + rightX * sx, shipZ + rightZ * sx);
-    const hLeft  = terrainHeight(shipX - rightX * sx, shipZ - rightZ * sx);
-    const pitch = Math.atan2(hFwd - hBack, sx * 2);
-    const roll  = Math.atan2(hRight - hLeft, sx * 2);
-    shipGroup.rotation.set(0, yaw, 0);
-    shipGroup.rotateX(-pitch);
-    shipGroup.rotateZ(-roll);
+    ball.position.set(shipX, groundY + SHIP_R, shipZ);
+
+    // Roll the sphere in world frame: axis is the right-vector, angle = distance / R.
+    const ds = speed * dt;
+    if (Math.abs(ds) > 0.0001) {
+      const axis = ROLL_AXIS.set(-fwdZ, 0, fwdX).normalize();
+      ROLL_Q.setFromAxisAngle(axis, -ds / SHIP_R);
+      ball.quaternion.premultiply(ROLL_Q);
+    }
 
     // ── CHASE CAMERA: sits behind & above the ship, looking just past it ──
     const CAM_BACK = 70;
