@@ -189,7 +189,15 @@
   .offer-pizza-name{
     font-size:13px;letter-spacing:0.08em;color:var(--nes-red);
     text-shadow:0 0 6px rgba(216,48,24,0.5);
-    margin-bottom:10px;
+    margin-bottom:8px;
+  }
+  .offer-box-canvas{
+    display:block;
+    width:160px;height:112px;
+    margin:0 auto 10px;
+    image-rendering:pixelated;
+    image-rendering:crisp-edges;
+    filter: drop-shadow(0 0 6px rgba(255,184,48,0.35));
   }
   .offer-breakdown{
     width:100%;
@@ -338,6 +346,9 @@
     <div class="offer-title">PIZZA READY</div>
     <div class="offer-pizza-name" id="offer-pizza-name">PEPPERONI</div>
 
+    <!-- Open pizza box preview — pixel art rendered via JS -->
+    <canvas id="offer-box-canvas" class="offer-box-canvas" width="80" height="56"></canvas>
+
     <!-- Per-topping breakdown: icon · name · "X / N" · % bar -->
     <div class="offer-breakdown" id="offer-breakdown"></div>
 
@@ -349,6 +360,10 @@
       <div class="offer-stat-row">
         <span class="readout-label">QUALITY</span>
         <span class="readout-value" id="offer-quality">0%</span>
+      </div>
+      <div class="offer-stat-row">
+        <span class="readout-label">BAKE</span>
+        <span class="readout-value" id="offer-bake">PERFECT</span>
       </div>
       <div class="offer-stat-row">
         <span class="readout-label">WAGE EARNED</span>
@@ -667,7 +682,7 @@
   const BAKE_WOOD_BOOST   = 100;     // °F added per log
   const BAKE_TEMP_BURN    = 600;     // above this, doneness accumulates BURN_RATE extra
   const BAKE_TEMP_COLD    = 300;     // below this, doneness doesn't advance at all
-  const BAKE_COOK_K       = 0.0010;  // doneness per sec per (temp - COLD)
+  const BAKE_COOK_K       = 0.0005;  // doneness per sec per (temp - COLD); at 550°F → 0.125/s, ~8s to PERFECT
   const BAKE_BURN_K       = 0.0008;  // extra burn rate when temp > BURN threshold
   const BAKE_WOOD_START   = 6;       // logs available
 
@@ -2836,8 +2851,13 @@
     state.bakeLabel   = bakeLabelFromDoneness(state.bakeDoneness);
     beep(780, .1, 'square');
     setTimeout(function(){ beep(980, .12, 'square'); }, 110);
-    // Smooth transition straight to delivery — no intermediate overlay.
-    startDelivery();
+    // Park the stage so render() doesn't keep drawing the bake mini-game,
+    // then surface the OFFER screen so the player can inspect the open box
+    // (pizza + bake quality) and decide DELIVER or REMAKE.
+    state.stage   = 'kitchen';
+    state.running = false;
+    renderOffer();
+    showOverlay('offer-screen');
   }
 
   function tickBake(dt){
@@ -2909,10 +2929,75 @@
     drawStringCenter('BAKE', 6, P.ink);
     // Time on the left
     drawString('TIME ' + _bakeFmtTime(state.bakeTime), 6, 18, P.redDeep);
-    // Temp on the right (right-aligned)
-    var tempTxt = 'TEMP ' + Math.round(state.bakeTemp) + 'F';
+    // Horizontal thermometer with COLD / IDEAL / BURN zones on the right.
+    drawBakeThermometer();
+  }
+
+  // Compact horizontal thermometer with colored bands the player can read at
+  // a glance. Layout is anchored in the HUD strip (y 8..26) on the right half.
+  // Range modeled: 70°F (cold start) → 800°F (full burn).
+  // Zones: COLD (<300), IDEAL (300..600, with 500..600 highlighted brighter),
+  // BURN (>=600). Live needle plus a numeric temp label below.
+  function drawBakeThermometer(){
+    // Bar geometry — fits in the HUD strip beside the BAKE title.
+    var bx = Math.floor(W / 2) + 4;   // start after centered title
+    var bw = W - bx - 6;
+    var by = 10;
+    var bh = 6;
+    // Range mapping
+    var T_MIN = 70, T_MAX = 800;
+    function tx(t){
+      var f = Math.max(0, Math.min(1, (t - T_MIN) / (T_MAX - T_MIN)));
+      return bx + Math.round(f * bw);
+    }
+    // Background: ink frame + cream fill
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(bx - 1, by - 1, bw + 2, bh + 2);
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(bx, by, bw, bh);
+    // COLD band (T_MIN..300) — cool blue
+    ctx.fillStyle = P.window;          // #9CD8FC
+    ctx.fillRect(tx(T_MIN), by, tx(BAKE_TEMP_COLD) - tx(T_MIN), bh);
+    // IDEAL band (300..600) — base green
+    ctx.fillStyle = P.pepperDk;        // outer ideal (warm-up shoulder)
+    ctx.fillRect(tx(BAKE_TEMP_COLD), by, tx(BAKE_TEMP_BURN) - tx(BAKE_TEMP_COLD), bh);
+    // Bright IDEAL sub-band (500..600) — peak cooking
+    ctx.fillStyle = P.health;          // #58C838
+    ctx.fillRect(tx(500), by, tx(BAKE_TEMP_BURN) - tx(500), bh);
+    // BURN band (>=600) — red danger
+    ctx.fillStyle = P.healthLow;       // #D83018
+    ctx.fillRect(tx(BAKE_TEMP_BURN), by, tx(T_MAX) - tx(BAKE_TEMP_BURN), bh);
+    // Tick marks at COLD / 500 / BURN thresholds (ink, full height)
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(tx(BAKE_TEMP_COLD), by - 1, 1, bh + 2);
+    ctx.fillRect(tx(500),            by - 1, 1, bh + 2);
+    ctx.fillRect(tx(BAKE_TEMP_BURN), by - 1, 1, bh + 2);
+    // Live needle (triangle marker pointing down at current temp).
+    var nx = tx(state.bakeTemp);
+    var ny = by + bh + 1;
+    // White outline for visibility
+    ctx.fillStyle = P.white;
+    ctx.fillRect(nx - 2, ny,     5, 1);
+    ctx.fillRect(nx - 1, ny + 1, 3, 1);
+    ctx.fillRect(nx,     ny + 2, 1, 1);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(nx - 1, ny,     3, 1);
+    ctx.fillRect(nx,     ny + 1, 1, 1);
+    // Tiny zone labels above the bar if width permits (HUD strip is tight).
+    // We try 1-char labels: C / I / B sit roughly above their band centers.
+    var labelY = by - 7;
+    if(labelY >= 0){
+      var cMid = Math.floor((tx(T_MIN) + tx(BAKE_TEMP_COLD)) / 2) - 1;
+      var iMid = Math.floor((tx(500)   + tx(BAKE_TEMP_BURN)) / 2) - 1;
+      var rMid = Math.floor((tx(BAKE_TEMP_BURN) + tx(T_MAX)) / 2) - 1;
+      drawString('C', cMid, labelY, P.ink);
+      drawString('I', iMid, labelY, P.ink);
+      drawString('B', rMid, labelY, P.ink);
+    }
+    // Numeric temp readout under the bar (right-aligned to the bar's right edge).
+    var tempTxt = Math.round(state.bakeTemp) + 'F';
     var tw = tempTxt.length * 4;
-    drawString(tempTxt, W - tw - 6, 18, P.redDeep);
+    drawString(tempTxt, bx + bw - tw, by + bh + 5, P.redDeep);
   }
 
   function drawBakeOven(){
@@ -3096,15 +3181,23 @@
       ctx.fillStyle = col;
       ctx.fillRect(a, by, b - a, bh);
     }
-    zone(0,   0.5, P.red);       // raw
-    zone(0.5, 1.2, P.pepper);    // green sweet zone (using pepper green)
-    zone(1.2, 2.0, P.red);       // burnt
+    zone(0,   0.5, P.red);          // raw
+    zone(0.5, 1.2, P.pepperDk);     // surrounding warm-up / well-done green
+    zone(0.7, 1.1, P.health);       // BRIGHT PERFECT sub-zone (take out here!)
+    zone(1.2, 2.0, P.red);          // burnt
     // Frame
     ctx.fillStyle = P.ink;
     ctx.fillRect(bx, by - 1, bw, 1);
     ctx.fillRect(bx, by + bh, bw, 1);
     ctx.fillRect(bx - 1, by, 1, bh);
     ctx.fillRect(bx + bw, by, 1, bh);
+
+    // PERFECT-zone tick marks (vertical hashes at 0.7 and 1.1 boundaries)
+    var pStart = bx + Math.round((0.7 / 2) * bw);
+    var pEnd   = bx + Math.round((1.1 / 2) * bw);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(pStart, by - 1, 1, bh + 2);
+    ctx.fillRect(pEnd,   by - 1, 1, bh + 2);
 
     // Needle (triangle marker) at current doneness.
     var d = Math.max(0, Math.min(2, state.bakeDoneness));
@@ -3116,6 +3209,23 @@
     ctx.fillRect(nx,     by - 2, 1, 2);
     ctx.fillStyle = P.white;
     ctx.fillRect(nx - 1, by - 3, 3, 1);
+
+    // "TAKE OUT" blinking caret above the PERFECT zone when in band.
+    var inPerfect = (state.bakeDoneness >= 0.7 && state.bakeDoneness <= 1.1);
+    var blinkOn = (Math.floor(performance.now() / 250) % 2 === 0);
+    if(inPerfect && blinkOn){
+      var ax = Math.floor((pStart + pEnd) / 2);
+      // tiny downward-pointing arrow
+      ctx.fillStyle = P.flame;           // bright yellow (#FFE070)
+      ctx.fillRect(ax - 3, by - 9, 7, 1);
+      ctx.fillRect(ax - 2, by - 8, 5, 1);
+      ctx.fillRect(ax - 1, by - 7, 3, 1);
+      ctx.fillRect(ax,     by - 6, 1, 1);
+      // outline for legibility
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(ax - 4, by - 9, 1, 1);
+      ctx.fillRect(ax + 4, by - 9, 1, 1);
+    }
   }
 
   function drawBakeToolsRow(){
@@ -3234,18 +3344,45 @@
     ctx.fillRect(bx - 2, by + 4, 2, 2);
     ctx.fillStyle = P.white;
     ctx.fillRect(bx - 1, by + 4, 1, 2);
-    // Hint text — different message based on state
-    var msg;
-    if(state.bakeDoneness < 0.5){
-      msg = 'DRAG WOOD INTO FIRE!';
-    } else if(state.bakeDoneness < 1.15){
-      msg = 'SWIPE UP TO TAKE OUT!';
-    } else {
+    // Hint text — state-driven so the player always knows what to do.
+    // Some states blink (red/urgent) by hiding the text on alternate frames.
+    var d = state.bakeDoneness;
+    var tt = state.bakeTemp;
+    var msg, color, blink = false;
+    if(tt > BAKE_TEMP_BURN){
+      msg = 'TOO HOT! BACK OFF!';
+      color = P.healthLow;
+      blink = true;
+    } else if(d < 0.3 && tt < 350){
+      msg = 'TOO COLD! ADD WOOD!';
+      color = P.healthLow;
+    } else if(d < 0.3){
+      msg = 'WARMING UP...';
+      color = P.ink;
+    } else if(d < 0.65){
+      msg = 'COOKING...';
+      color = P.ink;
+    } else if(d < 0.8){
+      msg = 'ALMOST READY!';
+      color = P.redDeep;
+    } else if(d <= 1.1){
       msg = 'TAKE IT OUT NOW!';
+      color = P.health;
+      blink = true;
+    } else if(d <= 1.25){
+      msg = 'GETTING WELL DONE!';
+      color = P.redDeep;
+    } else {
+      msg = 'BURNING! TAKE IT OUT!';
+      color = P.healthLow;
+      blink = true;
     }
-    drawString(msg, bx + 5, by + 6, P.ink);
-    // Second line: status
-    var line2 = state.bakeWoodLeft + ' LOGS LEFT';
+    var blinkOn = (Math.floor(performance.now() / 250) % 2 === 0);
+    if(!blink || blinkOn){
+      drawString(msg, bx + 5, by + 6, color);
+    }
+    // Second line: logs left + cook tip (550°F is the sweet spot).
+    var line2 = state.bakeWoodLeft + ' LOGS  -  AIM 550F';
     drawString(line2, bx + 5, by + 16, P.redDeep);
   }
 
@@ -3271,9 +3408,10 @@
       state.playerY = state.finishStartY + (targetY - state.finishStartY) * ease;
       state.playerScale = 1;
       if(t >= 1){
-        state.running = false;
-        renderOffer();
-        showOverlay('offer-screen');
+        // Slice has settled in the fire — transition straight into BAKE.
+        // The OFFER screen will be shown AFTER the bake completes so the
+        // player can inspect the pizza + bake outcome before deciding.
+        startBake();
       }
       return;
     }
@@ -3471,16 +3609,40 @@
     prev = now;
     if(state.running) tick(dt);
     render();
+    // Keep the open-pizza-box preview animating (steam puff) while the
+    // OFFER screen is visible. Cheap: just redraws an 80×56 canvas.
+    var offerEl = document.getElementById('offer-screen');
+    if(offerEl && offerEl.classList.contains('show')){
+      var boxCanvas = document.getElementById('offer-box-canvas');
+      if(boxCanvas){
+        var bcc = boxCanvas.getContext('2d');
+        bcc.imageSmoothingEnabled = false;
+        bcc.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+        drawOpenBox(bcc, boxCanvas.width, boxCanvas.height);
+      }
+    }
   }
   requestAnimationFrame(loop);
 
-  // Build the OFFER screen — per-topping breakdown + wage + tip preview.
+  // Build the OFFER screen — per-topping breakdown + bake outcome + wage.
   function renderOffer(){
     var q = computeQuality();
     document.getElementById('offer-pizza-name').textContent = state.order.name;
     document.getElementById('offer-wrong').textContent      = String(q.wrongCount);
     document.getElementById('offer-quality').textContent    = fmtPct(q.overall);
     document.getElementById('offer-wage').textContent       = fmtMoney(state.attemptWage);
+    var bakeEl = document.getElementById('offer-bake');
+    if(bakeEl){
+      bakeEl.textContent = (typeof state.bakeLabel === 'string' && state.bakeLabel) ? state.bakeLabel : '—';
+    }
+    // Draw the open pizza box preview using the actual bake doneness.
+    var boxCanvas = document.getElementById('offer-box-canvas');
+    if(boxCanvas){
+      var bcc = boxCanvas.getContext('2d');
+      bcc.imageSmoothingEnabled = false;
+      bcc.clearRect(0, 0, boxCanvas.width, boxCanvas.height);
+      drawOpenBox(bcc, boxCanvas.width, boxCanvas.height);
+    }
     // Tip is NOT previewed here — it's earned based on the delivery (Phase 3).
     var box = document.getElementById('offer-breakdown');
     box.innerHTML = '';
@@ -3500,6 +3662,138 @@
       el.appendChild(lbl); el.appendChild(cnt); el.appendChild(bar); el.appendChild(val);
       box.appendChild(el);
     });
+  }
+
+  // Return {base, crust} disc colors based on bake doneness.
+  // Shared by the bake-stage in-oven pizza and the offer-screen open-box pizza
+  // so the player sees the same color readout in both stages.
+  function bakeDiscColors(d){
+    if(d < 0.5)  return { base: '#F2D9A8', crust: '#D2B074' };  // raw dough cream
+    if(d < 1.0)  return { base: P.dough,   crust: P.doughDk };  // golden
+    if(d < 1.2)  return { base: '#C68B1F', crust: '#8C5A12' };  // golden → brown
+    if(d < 1.5)  return { base: '#6E4517', crust: '#3A2410' };  // brown
+    return       { base: '#1A1A1A', crust: '#000000' };          // burnt black
+  }
+
+  // Pixel-art open pizza box with the just-baked pizza inside.
+  // The disc tints with bake doneness; topping flecks come from the active
+  // order. A small open lid trapezoid sits behind to suggest "the box is open".
+  // Single-frame steam puff appears when bake landed in the PERFECT band.
+  function drawOpenBox(c, w, h){
+    // --- Open lid (trapezoid drawn behind, cardboard interior facing camera)
+    var lidLY = 2;                               // lid top edge y
+    var lidLH = 10;                              // lid visible height
+    var lidLX0 = 10, lidLX1 = w - 10;            // lid bottom edges
+    var lidLTopX0 = 16, lidLTopX1 = w - 16;      // lid top edges (narrower)
+    // Lid outline (ink) + cream interior
+    for(var ly = lidLY; ly < lidLY + lidLH; ly++){
+      var f = (ly - lidLY) / (lidLH - 1);
+      var x0 = Math.round(lidLTopX0 + (lidLX0 - lidLTopX0) * f);
+      var x1 = Math.round(lidLTopX1 + (lidLX1 - lidLTopX1) * f);
+      // outline edges
+      c.fillStyle = P.ink;
+      c.fillRect(x0, ly, 1, 1);
+      c.fillRect(x1 - 1, ly, 1, 1);
+      // interior fill (cream)
+      c.fillStyle = (ly === lidLY || ly === lidLY + lidLH - 1) ? P.crustDk : P.cream;
+      c.fillRect(x0 + 1, ly, Math.max(0, x1 - x0 - 2), 1);
+    }
+    // Lid top edge (cardboard band)
+    c.fillStyle = P.ink;
+    c.fillRect(lidLTopX0, lidLY, lidLTopX1 - lidLTopX0, 1);
+
+    // --- Box body (the bottom half of the box, opened toward the camera)
+    var bx0 = 4, bx1 = w - 4;
+    var by0 = lidLY + lidLH;                     // box starts where lid bottoms
+    var by1 = h - 3;
+    // Outline
+    c.fillStyle = P.ink;
+    c.fillRect(bx0, by0, bx1 - bx0, by1 - by0);
+    // Cardboard exterior (warm brown)
+    c.fillStyle = P.crustDk;
+    c.fillRect(bx0 + 1, by0 + 1, (bx1 - bx0) - 2, (by1 - by0) - 2);
+    // Cream interior (paper liner)
+    var ix0 = bx0 + 3, ix1 = bx1 - 3;
+    var iy0 = by0 + 3, iy1 = by1 - 2;
+    c.fillStyle = P.cream;
+    c.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
+    // Subtle inner shadow on top edge of liner (suggests box depth)
+    c.fillStyle = P.creamMid;
+    c.fillRect(ix0, iy0, ix1 - ix0, 1);
+
+    // --- Pizza disc, centered in the liner
+    var d = (typeof state.bakeDoneness === 'number') ? state.bakeDoneness : 1.0;
+    var cols = bakeDiscColors(d);
+    var pcx = Math.floor((ix0 + ix1) / 2);
+    var pcy = Math.floor((iy0 + iy1) / 2);
+    var R = Math.max(6, Math.floor(Math.min(ix1 - ix0, iy1 - iy0) / 3));
+    // Disc — chunky horizontal slabs (crust ring + inner fill).
+    for(var dy = -R; dy <= R; dy++){
+      var half = Math.round(Math.sqrt(Math.max(0, R * R - dy * dy)));
+      c.fillStyle = cols.crust;
+      c.fillRect(pcx - half, pcy + dy, half * 2, 1);
+    }
+    var Ri = Math.max(2, R - 2);
+    for(var dy2 = -Ri; dy2 <= Ri; dy2++){
+      var half2 = Math.round(Math.sqrt(Math.max(0, Ri * Ri - dy2 * dy2)));
+      c.fillStyle = cols.base;
+      c.fillRect(pcx - half2, pcy + dy2, half2 * 2, 1);
+    }
+    // Burnt embers — a couple of red specks if very burnt
+    if(d >= 1.5){
+      c.fillStyle = P.redDeep;
+      c.fillRect(pcx - 2, pcy - 1, 1, 1);
+      c.fillRect(pcx + 3, pcy + 2, 1, 1);
+      c.fillStyle = P.glowDeep;
+      c.fillRect(pcx + 1, pcy - 3, 1, 1);
+    }
+
+    // --- Topping flecks at fixed angular offsets so they don't dance.
+    var toppings = (state.order && state.order.toppings) || [];
+    if(toppings.length){
+      var ICON = 6;                              // icon size in source space (6x6 of an 8x8)
+      var n = toppings.length;
+      // Place at radii alternating between 0.45R and 0.75R for variety.
+      for(var i = 0; i < n; i++){
+        var ang = (i / n) * Math.PI * 2 + 0.4;
+        var rad = (i % 2 === 0) ? R * 0.45 : R * 0.7;
+        var tx = pcx + Math.round(Math.cos(ang) * rad) - 3;
+        var ty = pcy + Math.round(Math.sin(ang) * rad) - 3;
+        // Skip if it would land outside the disc.
+        var dist = Math.hypot(tx + 3 - pcx, ty + 3 - pcy);
+        if(dist > R - 1) continue;
+        drawToppingToCtx(c, toppings[i], tx, ty);
+        // If burnt, blacken the fleck with a 1px overlay
+        if(d >= 1.5){
+          c.fillStyle = '#111';
+          c.fillRect(tx + 1, ty + 1, 4, 4);
+        } else if(d >= 1.2){
+          c.fillStyle = 'rgba(60,30,10,0.45)';
+          c.fillRect(tx, ty, ICON + 2, ICON + 2);
+        }
+        // suppress potential anti-aliased smudges around tiny icon
+        if(ICON < 8){
+          // mask out the last (right) pixel column / bottom row of the 8x8 icon
+          c.clearRect(tx + ICON + 1, ty, 1, ICON + 2);
+          c.clearRect(tx, ty + ICON + 1, ICON + 2, 1);
+        }
+      }
+    }
+
+    // --- Steam puffs above the pizza when bake landed in the PERFECT band.
+    // Simple 2-frame loop driven by performance.now.
+    if(state.bakeLabel === 'PERFECT'){
+      var frame = (Math.floor(performance.now() / 220) % 2);
+      c.fillStyle = P.white;
+      var sy = pcy - R - 4 + (frame ? -1 : 0);
+      // small puff cluster
+      [[-3,0],[-2,-1],[-1,0],[0,-1],[1,0],[2,-1],[3,0]].forEach(function(p){
+        c.fillRect(pcx + p[0], sy + p[1], 1, 1);
+      });
+      // a couple of higher wisps
+      c.fillRect(pcx - 1, sy - 3 + (frame ? 0 : -1), 1, 1);
+      c.fillRect(pcx + 2, sy - 4 + (frame ? -1 : 0), 1, 1);
+    }
   }
 
   // Render the DELIVERED / MISSED result screen — runs after delivery stage ends.
@@ -3666,15 +3960,16 @@
     beep(660, .08, 'square');
   }
 
-  // OFFER → DELIVER: snapshot kitchen quality + bank kitchen wage, then drop
-  // into the BAKE mini-game (which transitions into delivery on take-out).
+  // OFFER → DELIVER: snapshot kitchen quality + bank kitchen wage, then go
+  // straight into the delivery stage. BAKE has already happened by this point
+  // (the OFFER screen is shown post-bake so the player can inspect first).
   // Tip is computed when delivery ends, using bakeQuality as a multiplier.
   function deliverPizza(){
     var q = computeQuality();
     state.kitchenQuality = q.overall;
     state.kitchenWage    = Math.round(state.attemptWage * 100) / 100;
     state.money         += state.kitchenWage;
-    startBake();
+    startDelivery();
   }
 
   // OFFER → REMAKE: do NOT forfeit wage. Wage is hourly — the only "cost" of
