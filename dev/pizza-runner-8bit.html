@@ -1609,11 +1609,14 @@
       e.preventDefault();
       return;
     }
-    // Delivery: top half = throttle (head up), bottom half = brake/reverse
-    // (head down). Held while finger is down. D-pad coexists for explicit
-    // 4-direction control on mobile.
+    // Delivery: on touch devices the D-pad is the only input — ignore stray
+    // canvas taps so rapid facing flips don't happen from drags across the
+    // midline. On mouse (desktop dev), keep the top/bottom half behavior.
     if(state.stage === 'delivery' && state.running){
-      if(e.type === 'touchstart') state.delLastTouchT = performance.now();
+      if(document.body.classList.contains('touch-device')){
+        e.preventDefault();
+        return;
+      }
       state.delTouchActive = true;
       _applyDeliveryTouchY(t.clientY);
       e.preventDefault();
@@ -1663,28 +1666,90 @@
     document.body.classList.add('touch-device');
   }
   var dpadDirs = { up:false, down:false, left:false, right:false };
-  Array.prototype.forEach.call(document.querySelectorAll('.dpad-btn'), function(btn){
-    var dir = btn.getAttribute('data-dir');
-    function press(e){
-      dpadDirs[dir] = true;
-      btn.classList.add('pressed');
+  var activeDpadTouches = {};   // touchIdentifier → direction string
+
+  // Map a viewport (x,y) to a D-pad direction, or null if outside any button.
+  function _dpadDirAt(clientX, clientY){
+    var dpadEl = document.getElementById('dpad');
+    if(!dpadEl) return null;
+    if(getComputedStyle(dpadEl).display === 'none') return null;
+    var rect = dpadEl.getBoundingClientRect();
+    var rx = (clientX - rect.left) / rect.width;
+    var ry = (clientY - rect.top) / rect.height;
+    if(rx < 0 || rx > 1 || ry < 0 || ry > 1) return null;
+    // Cross layout: top third = up, bottom third = down, left/right thirds = left/right.
+    // Corners (where both row and column are off-center) snap to whichever is more extreme.
+    var inCol = rx >= 0.30 && rx <= 0.70;
+    var inRow = ry >= 0.30 && ry <= 0.70;
+    if(inCol && ry < 0.30) return 'up';
+    if(inCol && ry > 0.70) return 'down';
+    if(inRow && rx < 0.30) return 'left';
+    if(inRow && rx > 0.70) return 'right';
+    // Off-center corners: pick whichever axis is more extreme from center.
+    var dx = rx - 0.5, dy = ry - 0.5;
+    if(Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
+    return dy < 0 ? 'up' : 'down';
+  }
+  function _setDpadDir(dir, on){
+    if(!dir) return;
+    dpadDirs[dir] = on;
+    var btn = document.querySelector('.dpad-' + dir);
+    if(btn) btn.classList.toggle('pressed', on);
+  }
+  // Capture-phase touch handlers so D-pad taps are claimed before the
+  // canvas's bubble-phase touchstart handler runs.
+  addEventListener('touchstart', function(e){
+    var claimed = false;
+    for(var i = 0; i < e.changedTouches.length; i++){
+      var t = e.changedTouches[i];
+      var dir = _dpadDirAt(t.clientX, t.clientY);
+      if(dir){
+        activeDpadTouches[t.identifier] = dir;
+        _setDpadDir(dir, true);
+        claimed = true;
+      }
+    }
+    if(claimed){ e.preventDefault(); e.stopPropagation(); }
+  }, {passive:false, capture:true});
+
+  addEventListener('touchmove', function(e){
+    for(var i = 0; i < e.changedTouches.length; i++){
+      var t = e.changedTouches[i];
+      if(!(t.identifier in activeDpadTouches)) continue;
+      var oldDir = activeDpadTouches[t.identifier];
+      var newDir = _dpadDirAt(t.clientX, t.clientY);
+      if(oldDir !== newDir){
+        _setDpadDir(oldDir, false);
+        if(newDir){
+          _setDpadDir(newDir, true);
+          activeDpadTouches[t.identifier] = newDir;
+        } else {
+          delete activeDpadTouches[t.identifier];
+        }
+      }
       e.preventDefault();
       e.stopPropagation();
     }
-    function release(e){
-      dpadDirs[dir] = false;
-      btn.classList.remove('pressed');
-      if(e){ e.preventDefault(); e.stopPropagation(); }
+  }, {passive:false, capture:true});
+
+  function _endDpadTouch(e){
+    for(var i = 0; i < e.changedTouches.length; i++){
+      var t = e.changedTouches[i];
+      if(t.identifier in activeDpadTouches){
+        _setDpadDir(activeDpadTouches[t.identifier], false);
+        delete activeDpadTouches[t.identifier];
+      }
     }
-    btn.addEventListener('touchstart',  press,   {passive:false});
-    btn.addEventListener('pointerdown', press);
-    btn.addEventListener('mousedown',   press);
-    btn.addEventListener('touchend',    release, {passive:false});
-    btn.addEventListener('touchcancel', release, {passive:false});
-    btn.addEventListener('pointerup',   release);
-    btn.addEventListener('pointercancel', release);
-    btn.addEventListener('mouseup',     release);
-    btn.addEventListener('mouseleave',  release);
+  }
+  addEventListener('touchend',    _endDpadTouch, {passive:false, capture:true});
+  addEventListener('touchcancel', _endDpadTouch, {passive:false, capture:true});
+
+  // Mouse fallback for desktop dev testing.
+  Array.prototype.forEach.call(document.querySelectorAll('.dpad-btn'), function(btn){
+    var dir = btn.getAttribute('data-dir');
+    btn.addEventListener('mousedown', function(e){ _setDpadDir(dir, true);  e.preventDefault(); });
+    btn.addEventListener('mouseup',   function(e){ _setDpadDir(dir, false); e.preventDefault(); });
+    btn.addEventListener('mouseleave',function(e){ _setDpadDir(dir, false); });
   });
 
   // --- Spawning ---
