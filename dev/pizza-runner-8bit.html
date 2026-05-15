@@ -616,12 +616,12 @@
   const STEER_SPEED    = 130;     // player px/sec via keys (both axes)
   const FINALE_DUR     = 0.9;     // seconds the slice spends flying into the oven
 
-  // --- Wood-fired pizza-oven dome (kitchen finale) ---
-  const DOME_W      = 132;                          // dome total width
-  const DOME_H      = 56;                           // dome total height (hearth + arch)
-  const DOME_HEARTH = 8;                            // stone hearth thickness at the bottom
-  const MOUTH_W     = 36;                           // mouth opening width
-  const MOUTH_H     = 28;                           // mouth opening height
+  // --- Oven entrance (kitchen finale) — flat slab with a flaming mouth ---
+  const DOME_W      = 132;                          // total width
+  const DOME_H      = 24;                           // total height (mouth + hearth)
+  const DOME_HEARTH = 6;                            // stone hearth thickness at the bottom
+  const MOUTH_W     = 40;                           // mouth opening width
+  const MOUTH_H     = 18;                           // mouth opening height (fills slab above hearth)
 
   // --- Delivery stage layout (160 wide x 256 tall, PORTRAIT, single-road) ---
   // Same canvas dims as kitchen. World scrolls DOWN: bike feels like heading UP.
@@ -1068,132 +1068,100 @@
   // arch (with a rounded top), dark stone interior, flickering fire on the
   // inner mouth edges, glowing embers along the hearth floor, smoke puff above.
   function drawOvenDome(it){
-    var cx        = it.x + Math.floor(it.w / 2);
     var hearthY   = it.y + it.h - DOME_HEARTH;          // top of hearth band
-    var archCY    = hearthY;                            // arch base / center y for circle math
-    var archR     = Math.floor(it.w / 2);               // arch radius
     var mouthL    = it.mouthLeft;
     var mouthR    = it.mouthRight;
     var mouthTop  = it.mouthTopY;
     var mouthBot  = it.mouthBottomY;
     var mouthCx   = it.mouthCx;
     var mouthHalf = Math.floor((mouthR - mouthL) / 2);
-
-    // --- 1. Stone arch (semicircle), drawn as horizontal scanlines.
-    // For each y from archCY-archR..archCY, compute halfWidth = sqrt(r² - dy²).
-    // Punch a rectangular hole for the mouth (with a rounded top).
-    for(var dy = 0; dy <= archR; dy++){
-      var yy = archCY - dy;
-      if(yy < it.y) continue;
-      var halfW = Math.floor(Math.sqrt(archR * archR - dy * dy));
-      if(halfW <= 0) continue;
-      var xL = cx - halfW;
-      var xR = cx + halfW;
-      // Body fill (stone) — split into LEFT and RIGHT segments around the mouth.
-      // First decide if this scanline is within the mouth vertical band:
-      var inMouthBand = (yy >= mouthTop && yy <= mouthBot);
-      // For the rounded mouth top, treat the arch above the rectangle as a
-      // mini-dome: half-circle centered at (mouthCx, mouthTop) with radius mouthHalf.
-      // A scanline above mouthTop is still inside the mouth opening if
-      // dy_m² + dx² < mouthHalf², i.e. it falls inside that mini-dome.
-      var mouthSegHalf = -1;
-      if(inMouthBand){
-        mouthSegHalf = mouthHalf;
-      } else if(yy < mouthTop && yy >= mouthTop - mouthHalf){
-        var dym = mouthTop - yy;
-        var inner = mouthHalf * mouthHalf - dym * dym;
-        if(inner > 0) mouthSegHalf = Math.floor(Math.sqrt(inner));
-      }
-
-      // Outline (1px ring) — draw the curve outline first, then we'll fill inside.
-      // We approximate the outline by comparing this row's halfW to the previous row.
-      // Simpler approach: paint full row stone, then overpaint the mouth, then
-      // outline pixels at each row's extreme x.
-      // Stone fill:
+    // Flat slab spans the entity width from its top down to the hearth.
+    // Mouth (with rounded top) is carved out at the center.
+    var slabTop = it.y;
+    var slabBot = hearthY;          // slab ends where hearth starts
+    // --- 1. Flat stone slab, with the rectangular mouth + rounded top carved out
+    ctx.fillStyle = P.crust;
+    // Left segment of slab (full height of slab)
+    if(mouthL > it.x)             ctx.fillRect(it.x,    slabTop, mouthL - it.x,        slabBot - slabTop);
+    // Right segment of slab
+    if(mouthR < it.x + it.w)      ctx.fillRect(mouthR,  slabTop, (it.x + it.w) - mouthR, slabBot - slabTop);
+    // Above-mouth strip: the area above the rounded mouth top, full slab width minus the bulge
+    // We'll paint a full bar across the slab top, then re-paint stone above the rounded mouth as carve-out
+    // Easier: fill the whole strip above the mouth with stone, then carve the mini-dome with cream
+    if(mouthTop > slabTop){
       ctx.fillStyle = P.crust;
-      if(mouthSegHalf < 0){
-        ctx.fillRect(xL, yy, halfW * 2 + 1, 1);
-      } else {
-        // Left stone segment
-        var stoneL_end = mouthCx - mouthSegHalf;     // exclusive right
-        if(stoneL_end > xL){
-          ctx.fillRect(xL, yy, stoneL_end - xL, 1);
-        }
-        // Right stone segment
-        var stoneR_start = mouthCx + mouthSegHalf;   // inclusive
-        if(xR + 1 > stoneR_start){
-          ctx.fillRect(stoneR_start, yy, (xR + 1) - stoneR_start, 1);
-        }
+      ctx.fillRect(mouthL, slabTop, mouthR - mouthL, mouthTop - slabTop);
+      // Carve the rounded mouth top with the cream background color so it reads as opening
+      ctx.fillStyle = P.cream;
+      for(var my = 0; my < mouthHalf; my++){
+        var yyM = mouthTop - my - 1;
+        if(yyM < slabTop) break;
+        var innerM = mouthHalf * mouthHalf - (my + 1) * (my + 1);
+        if(innerM <= 0) break;
+        var halfM = Math.floor(Math.sqrt(innerM));
+        if(halfM <= 0) break;
+        ctx.fillRect(mouthCx - halfM, yyM, halfM * 2, 1);
       }
-      // Inner stone shading band — lower half of the arch a bit darker
-      if(dy < archR / 2){
-        // upper half, leave as crust
-      } else {
-        // lower half: add darker tone along the inner stone surface
-        ctx.fillStyle = P.crustDk;
-        if(mouthSegHalf < 0){
-          // a 1px shadow line near the bottom of the row for visual texture
-          if(dy % 4 === 0){
-            ctx.fillRect(xL + 1, yy, halfW * 2 - 1, 1);
-          }
-        }
-      }
-
-      // Outline pixels at the curve edge (left + right extreme)
-      ctx.fillStyle = P.ink;
-      ctx.fillRect(xL - 1, yy, 1, 1);
-      ctx.fillRect(xR + 1, yy, 1, 1);
     }
+    // Slab top/bottom shadow lines
+    ctx.fillStyle = P.crustDk;
+    // top edge
+    if(mouthL > it.x)         ctx.fillRect(it.x,   slabTop, mouthL - it.x, 1);
+    if(mouthR < it.x + it.w)  ctx.fillRect(mouthR, slabTop, (it.x + it.w) - mouthR, 1);
+    // Slab vertical seam at midline of each slab segment (subtle texture)
+    var slabH = slabBot - slabTop;
+    if(slabH > 8){
+      var seamY = slabTop + Math.floor(slabH / 2);
+      if(mouthL > it.x)         ctx.fillRect(it.x,   seamY, mouthL - it.x, 1);
+      if(mouthR < it.x + it.w)  ctx.fillRect(mouthR, seamY, (it.x + it.w) - mouthR, 1);
+    }
+    // Slab outline (ink)
+    ctx.fillStyle = P.ink;
+    if(mouthL > it.x)         ctx.fillRect(it.x,   slabTop - 1, mouthL - it.x, 1);
+    if(mouthR < it.x + it.w)  ctx.fillRect(mouthR, slabTop - 1, (it.x + it.w) - mouthR, 1);
+    ctx.fillRect(it.x - 1, slabTop, 1, slabBot - slabTop);
+    ctx.fillRect(it.x + it.w, slabTop, 1, slabBot - slabTop);
 
-    // --- 2. Hearth band (stone strip at the bottom of the dome footprint).
+    // --- 2. Hearth band (stone strip at the bottom of the entity footprint).
     ctx.fillStyle = P.crust;
     ctx.fillRect(it.x, hearthY, it.w, DOME_HEARTH);
-    // top/bottom edges darker
     ctx.fillStyle = P.crustDk;
     ctx.fillRect(it.x, hearthY, it.w, 1);
     ctx.fillRect(it.x, hearthY + DOME_HEARTH - 1, it.w, 1);
-    // hearth side outlines
     ctx.fillStyle = P.ink;
     ctx.fillRect(it.x - 1, hearthY, 1, DOME_HEARTH);
     ctx.fillRect(it.x + it.w, hearthY, 1, DOME_HEARTH);
     ctx.fillRect(it.x, hearthY + DOME_HEARTH, it.w, 1);
 
-    // --- 3. Mouth interior (dark stone, NOT black). Punched out of the arch.
-    // Rectangular body:
+    // --- 3. Mouth interior (dark stone, NOT black).
     ctx.fillStyle = P.crustDk;
     ctx.fillRect(mouthL, mouthTop, mouthR - mouthL, mouthBot - mouthTop);
-    // Rounded top mini-dome: paint each row of the mini-dome with crustDk too.
-    for(var my = 0; my < mouthHalf; my++){
-      var yyM = mouthTop - my - 1;
-      if(yyM < it.y) break;
-      var innerM = mouthHalf * mouthHalf - (my + 1) * (my + 1);
-      if(innerM <= 0) break;
-      var halfM = Math.floor(Math.sqrt(innerM));
-      if(halfM <= 0) break;
-      ctx.fillStyle = P.crustDk;
-      ctx.fillRect(mouthCx - halfM, yyM, halfM * 2, 1);
+    // Rounded top mini-dome interior
+    for(var my2 = 0; my2 < mouthHalf; my2++){
+      var yyM2 = mouthTop - my2 - 1;
+      if(yyM2 < it.y) break;
+      var innerM2 = mouthHalf * mouthHalf - (my2 + 1) * (my2 + 1);
+      if(innerM2 <= 0) break;
+      var halfM2 = Math.floor(Math.sqrt(innerM2));
+      if(halfM2 <= 0) break;
+      ctx.fillRect(mouthCx - halfM2, yyM2, halfM2 * 2, 1);
     }
-    // Mouth interior outline (separates mouth from arch stone)
+    // Mouth side outlines
     ctx.fillStyle = P.ink;
-    // sides
     ctx.fillRect(mouthL - 1, mouthTop, 1, mouthBot - mouthTop);
     ctx.fillRect(mouthR,     mouthTop, 1, mouthBot - mouthTop);
-    // bottom (above hearth top)
-    // (no bottom line — mouth sits flush on hearth)
 
     // --- 4. Flickering fire on the inner left & right edges of the mouth.
     var tFrame = (performance.now() / 80) | 0;
     var flameHL = 6 + ((tFrame + (it.y | 0)) % 5);
     var flameHR = 6 + ((tFrame + 3 + (it.y | 0)) % 5);
     var fireBaseY = mouthBot - 1;
-    // Left flame
     ctx.fillStyle = P.glow;
     ctx.fillRect(mouthL + 1, fireBaseY - flameHL, 4, flameHL);
     ctx.fillStyle = P.flame;
     ctx.fillRect(mouthL + 2, fireBaseY - flameHL + 1, 2, flameHL - 2);
     ctx.fillStyle = P.glowDeep;
     ctx.fillRect(mouthL + 1, fireBaseY - 1, 4, 2);
-    // Right flame
     ctx.fillStyle = P.glow;
     ctx.fillRect(mouthR - 5, fireBaseY - flameHR, 4, flameHR);
     ctx.fillStyle = P.flame;
@@ -1206,22 +1174,7 @@
     ctx.fillRect(mouthL + 5, mouthBot - 2, (mouthR - mouthL) - 10, 2);
     ctx.fillStyle = P.flame;
     for(var ex = mouthL + 6; ex < mouthR - 6; ex += 4){
-      var jitter = (tFrame + ex) % 3;
-      if(jitter === 0) ctx.fillRect(ex, mouthBot - 2, 1, 1);
-    }
-
-    // --- 6. Chimney smoke puff above the dome (cream pixels, drifting).
-    var puffPhase = (performance.now() / 220) | 0;
-    var puffOff   = (puffPhase % 5) - 2;
-    var puffCx    = cx + puffOff;
-    var puffY     = (archCY - archR) - 4;
-    if(puffY >= 0){
-      ctx.fillStyle = P.cream;
-      ctx.fillRect(puffCx - 2, puffY,     4, 1);
-      ctx.fillRect(puffCx - 3, puffY + 1, 6, 1);
-      ctx.fillRect(puffCx - 2, puffY + 2, 4, 1);
-      ctx.fillStyle = P.creamMid;
-      ctx.fillRect(puffCx - 1, puffY + 1, 2, 1);
+      if(((tFrame + ex) % 3) === 0) ctx.fillRect(ex, mouthBot - 2, 1, 1);
     }
   }
   function drawBrick(x, y){
