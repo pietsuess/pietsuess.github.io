@@ -1056,6 +1056,53 @@
   }
 
 
+  // Brick oven-entrance wall spanning the playfield with a narrow gap.
+  // Drawn in two passes for correct slice layering:
+  //   phase='gap'   → dark mouth interior + flames + top lip   (BEFORE the slice)
+  //   phase='bricks'→ left and right red-brick bodies          (AFTER the slice)
+  // The slice flies into the gap visibly, but never visually clips the brick.
+  function drawOvenWall(it, phase){
+    var leftEnd    = it.gapX - it.gapHalf;
+    var rightStart = it.gapX + it.gapHalf;
+    if(phase === 'gap'){
+      // Gap mouth — dark oven interior
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(leftEnd, it.y + 1, it.gapHalf * 2, it.h - 2);
+      // Flames flickering at the gap edges
+      var t = (performance.now() / 80) | 0;
+      var flameH = 4 + ((t + (it.y|0)) % 3);
+      ctx.fillStyle = P.glow;
+      ctx.fillRect(leftEnd,          it.y + it.h - flameH - 1, 4, flameH);
+      ctx.fillRect(rightStart - 4,   it.y + it.h - flameH - 1, 4, flameH);
+      ctx.fillStyle = P.flame;
+      ctx.fillRect(leftEnd + 1,      it.y + it.h - flameH,     2, flameH - 1);
+      ctx.fillRect(rightStart - 3,   it.y + it.h - flameH,     2, flameH - 1);
+      // Top lip of gap
+      ctx.fillStyle = P.redDeep;
+      ctx.fillRect(leftEnd, it.y - 1, it.gapHalf * 2, 1);
+      return;
+    }
+    // phase === 'bricks' — solid wall bodies left and right of the gap
+    function brickBody(x0, x1){
+      var w = x1 - x0;
+      if(w <= 0) return;
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0, it.y, w, it.h);
+      ctx.fillStyle = P.red;
+      ctx.fillRect(x0, it.y + 1, w, it.h - 2);
+      ctx.fillStyle = P.redDeep;
+      ctx.fillRect(x0, it.y + Math.floor(it.h*0.5), w, Math.floor(it.h*0.5) - 1);
+      ctx.fillStyle = P.cream;
+      ctx.fillRect(x0, it.y + Math.floor(it.h/2), w, 1);
+      for(var bx = x0 + 6; bx < x1; bx += 8){
+        ctx.fillRect(bx,     it.y + 1,                       1, Math.floor(it.h/2) - 1);
+        ctx.fillRect(bx + 4, it.y + Math.floor(it.h/2) + 1,  1, Math.floor(it.h/2) - 2);
+      }
+    }
+    brickBody(it.x, leftEnd);
+    brickBody(rightStart, it.x + it.w);
+  }
+
   // 16x10 brick obstacle
   function drawBrick(x, y){
     ctx.fillStyle = P.ink;
@@ -1344,6 +1391,7 @@
     pile: [],
     spawnAccumulator: 0,
     scrollPx: 0,
+    ovenWallSpawned: false,
 
     // ── Delivery stage state ──
     kitchenQuality: 0,      // 0..1, snapshot of quality when DELIVER pressed
@@ -1405,6 +1453,7 @@
     state.wrongFlashT = 0;
     state.attemptTime = 0;
     state.attemptWage = 0;
+    state.ovenWallSpawned = false;
     state.chefMsg = '';
     state.chefMsgT = 0;
     state.chefCooldown = 0;
@@ -1435,8 +1484,11 @@
     var avg = rows.length
       ? rows.reduce(function(s,r){ return s + r.pct; }, 0) / rows.length
       : 0;
-    // Each wrong topping cuts WRONG_PENALTY off the score, floor at 0.
-    var overall = Math.max(0, Math.min(1, avg - state.wrongCount * WRONG_PENALTY));
+    // Quality curve: 50% pickup already counts as full quality (catching every
+    // single topping is unrealistic at the spawn rate). Below 50% it scales
+    // down linearly. Each wrong topping shaves a small flat amount.
+    var pickQuality = Math.min(1, avg / 0.5);
+    var overall = Math.max(0, pickQuality - state.wrongCount * WRONG_PENALTY);
     var tip = Math.round(overall * MAX_TIP * 100) / 100; // dollars w/ cents
     return { perTopping: rows, overall: overall, wrongCount: state.wrongCount, tip: tip };
   }
@@ -2578,7 +2630,15 @@
       state.finishT += dt;
       const t = Math.min(1, state.finishT / FINALE_DUR);
       const ease = 1 - Math.pow(1 - t, 3);
-      const targetY = FY - PLAYER_TRI_H - 4;       // just above the playfield top
+      // Steer toward the oven gap if a wall is present; otherwise just up.
+      var wall = null;
+      for(var wi = 0; wi < state.items.length; wi++){
+        if(state.items[wi].type === 'ovenwall'){ wall = state.items[wi]; break; }
+      }
+      const targetX = wall ? wall.gapX : state.playerX;
+      const targetY = wall ? (wall.y + wall.h * 0.5)
+                           : (FY - PLAYER_TRI_H - 4);
+      state.playerX += (targetX - state.playerX) * Math.min(1, dt * 8);
       state.playerY = state.finishStartY + (targetY - state.finishStartY) * ease;
       // Scale: 1.0 → 0 across the last 40% of the animation.
       state.playerScale = (t < 0.6) ? 1 : Math.max(0, 1 - (t - 0.6) / 0.4);
@@ -2636,11 +2696,28 @@
       state.spawnAccumulator -= gap;
       spawnRow();
     }
+    // Drop the brick oven-entrance once the topping spawn window closes.
+    // Random gap position so the player has to steer to it.
+    if(!state.ovenWallSpawned && (LEVEL_DISTANCE - state.distance) < 220){
+      const gapHalf = Math.round(PLAYER_HALF_W * 1.5);
+      const minGx = FX + gapHalf + 8;
+      const maxGx = FX + FW - gapHalf - 8;
+      const gapX = minGx + Math.floor(Math.random() * (maxGx - minGx));
+      state.items.push({
+        type: 'ovenwall',
+        x: FX, y: FY - 16,
+        w: FW, h: 14,
+        gapX: gapX, gapHalf: gapHalf
+      });
+      state.ovenWallSpawned = true;
+    }
     // Move items downward and handle collisions
     if(state.invuln > 0) state.invuln -= dt;
     for(let i = state.items.length - 1; i >= 0; i--){
       const it = state.items[i];
       it.y += dy;
+      // Oven wall is decorative + finale trigger only; skip collision math.
+      if(it.type === 'ovenwall') continue;
 
       // Player bounding rect: slice runs from tip (top) to crust (bottom)
       const px1 = state.playerX - PLAYER_HALF_W;
@@ -2725,16 +2802,28 @@
     // Side brick walls
     drawWalls(state.scrollPx);
 
-    // Items (toppings + bricks)
+    // Items: toppings + bricks (not the oven wall — that draws around the slice)
     for(const it of state.items){
+      if(it.type === 'ovenwall') continue;
       if(it.type === 'topping') drawTopping(it.sub, it.x, it.y);
       else drawBrick(it.x, it.y);
+    }
+    // Oven-wall GAP pass — dark mouth + flames + lip — drawn BEFORE the slice
+    // so the slice visibly enters the dark interior.
+    for(const ovi of state.items){
+      if(ovi.type === 'ovenwall') drawOvenWall(ovi, 'gap');
     }
 
     // Player slice (skip drawing some frames during invuln for a flicker)
     const flicker = state.invuln > 0 && (Math.floor(performance.now()/80) % 2 === 0);
     if(!flicker){
       drawPlayer(Math.round(state.playerX), Math.round(state.playerY), state.pile, state.playerScale);
+    }
+
+    // Oven-wall BRICK pass — solid wall bodies AFTER the slice, so any pixels
+    // of the slice that strayed into the brick zone are properly occluded.
+    for(const ovi2 of state.items){
+      if(ovi2.type === 'ovenwall') drawOvenWall(ovi2, 'bricks');
     }
 
     // HUD on top + chef bar at bottom
