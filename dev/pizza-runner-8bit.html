@@ -1432,8 +1432,10 @@
     delInvuln: 0,           // seconds remaining of invulnerability
     damageFlashT: 0,        // brief red overlay after hit
     pizzaHeat: 1,           // 1=piping hot, 0=cold (tip multiplier)
-    touchThrottle: 0,       // seconds of touch throttle remaining
-    touchBrake: 0,          // seconds of touch brake remaining
+    touchThrottle: 0,       // 1 while finger held on top half, 0 otherwise
+    touchBrake: 0,          // 1 while finger held on bottom half, 0 otherwise
+    delTouchActive: false,  // any finger currently down on the canvas in delivery
+    delLastTouchT: 0,       // performance.now() of last touchstart (suppresses synthesized mousedown)
     houses: [],             // {worldY, side:'L'|'R', number, color, isTarget}
     cars: [],               // {worldY, x, speed, color, dir:1|-1}
     peds: [],               // {worldY, x, color, walkT, speed}
@@ -1533,19 +1535,39 @@
   });
 
   let dragging = false, dragRefX = 0, dragRefY = 0, dragRefPlayerX = 0, dragRefPlayerY = 0;
+  // Map a viewport Y to delivery canvas Y, then set throttle/brake flags by half.
+  function _applyDeliveryTouchY(clientY){
+    var rect = canvas.getBoundingClientRect();
+    var ratioY = DH / rect.height;
+    var cy = (clientY - rect.top) * ratioY;
+    if(cy < DH / 2){
+      state.touchThrottle = 1;
+      state.touchBrake = 0;
+    } else {
+      state.touchThrottle = 0;
+      state.touchBrake = 1;
+    }
+  }
+  function _clearDeliveryTouch(){
+    state.touchThrottle = 0;
+    state.touchBrake = 0;
+    state.delTouchActive = false;
+  }
   function pointerDown(e){
     const t = e.touches ? e.touches[0] : e;
-    // Delivery: top half = throttle, bottom half = brake. (Desktop is primary;
-    // lane changes are keyboard Left/Right.) Auto-deliver triggers in target zone.
+    // Suppress the synthesized mousedown that iOS fires ~300ms after touchstart.
+    if(state.stage === 'delivery' && state.running
+       && e.type === 'mousedown'
+       && performance.now() - state.delLastTouchT < 600){
+      e.preventDefault();
+      return;
+    }
+    // Delivery: top half = throttle (head up), bottom half = brake/reverse (head down).
+    // Held while finger is down — acts exactly like holding an arrow key.
     if(state.stage === 'delivery' && state.running){
-      var rect = canvas.getBoundingClientRect();
-      var ratioY = DH / rect.height;
-      var cy = (t.clientY - rect.top) * ratioY;
-      if(cy < DH / 2){
-        state.touchThrottle = 0.25;
-      } else {
-        state.touchBrake = 0.25;
-      }
+      if(e.type === 'touchstart') state.delLastTouchT = performance.now();
+      state.delTouchActive = true;
+      _applyDeliveryTouchY(t.clientY);
       e.preventDefault();
       return;
     }
@@ -1557,6 +1579,14 @@
     e.preventDefault();
   }
   function pointerMove(e){
+    // Delivery: re-evaluate which half the finger is over so a drag across the
+    // midline switches between throttle and brake without lifting.
+    if(state.stage === 'delivery' && state.running && state.delTouchActive){
+      const t = e.touches ? e.touches[0] : e;
+      _applyDeliveryTouchY(t.clientY);
+      e.preventDefault();
+      return;
+    }
     if(!dragging) return;
     const t = e.touches ? e.touches[0] : e;
     const rect = canvas.getBoundingClientRect();
@@ -1566,7 +1596,13 @@
     state.targetY = dragRefPlayerY + (t.clientY - dragRefY) * ratioY;
     e.preventDefault();
   }
-  function pointerUp(){ dragging = false; }
+  function pointerUp(e){
+    if(state.stage === 'delivery'){
+      _clearDeliveryTouch();
+      return;
+    }
+    dragging = false;
+  }
   canvas.addEventListener('mousedown', pointerDown);
   addEventListener('mousemove', pointerMove);
   addEventListener('mouseup',   pointerUp);
@@ -2055,8 +2091,8 @@
     state.pedalT += state.bikeSpeed * dt * 0.04;
     if(state.damageFlashT > 0) state.damageFlashT -= dt;
     if(state.delInvuln > 0) state.delInvuln -= dt;
-    if(state.touchThrottle > 0) state.touchThrottle -= dt;
-    if(state.touchBrake > 0) state.touchBrake -= dt;
+    // touchThrottle / touchBrake are now finger-held flags (1 while touching the
+    // matching half, 0 otherwise) — pointerUp clears them. No timer decay.
 
     // Tier from health (governs speed cap and visual)
     state.bikeTier = state.bikeHealth >= 60 ? 'bike'
@@ -2567,6 +2603,7 @@
     state.pizzaHeat = 1;
     state.touchThrottle = 0;
     state.touchBrake = 0;
+    state.delTouchActive = false;
     state.houses.length = 0;
     state.cars.length = 0;
     state.peds.length = 0;
