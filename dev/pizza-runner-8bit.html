@@ -616,6 +616,13 @@
   const STEER_SPEED    = 130;     // player px/sec via keys (both axes)
   const FINALE_DUR     = 0.9;     // seconds the slice spends flying into the oven
 
+  // --- Wood-fired pizza-oven dome (kitchen finale) ---
+  const DOME_W      = 132;                          // dome total width
+  const DOME_H      = 56;                           // dome total height (hearth + arch)
+  const DOME_HEARTH = 8;                            // stone hearth thickness at the bottom
+  const MOUTH_W     = 36;                           // mouth opening width
+  const MOUTH_H     = 28;                           // mouth opening height
+
   // --- Delivery stage layout (160 wide x 256 tall, PORTRAIT, single-road) ---
   // Same canvas dims as kitchen. World scrolls DOWN: bike feels like heading UP.
   // Vertical slice (left to right within 160w), symmetric:
@@ -1056,56 +1063,167 @@
   }
 
 
-  // Stone oven-entrance wall spanning the playfield with a narrow mouth.
-  // Drawn in two passes so the slice layers correctly:
-  //   phase='gap'   → dark stone mouth + flames + embers   (BEFORE the slice)
-  //   phase='walls' → stone slab bodies on either side     (AFTER the slice)
-  // The slice flies into the mouth visibly; stone walls always occlude.
-  function drawOvenWall(it, phase){
-    var leftEnd    = it.gapX - it.gapHalf;
-    var rightStart = it.gapX + it.gapHalf;
-    if(phase === 'gap'){
-      var t = (performance.now() / 90) | 0;
-      var mw = it.gapHalf * 2;
-      // Base: deep red-orange fire
-      ctx.fillStyle = P.glowDeep;
-      ctx.fillRect(leftEnd, it.y, mw, it.h);
-      // Orange band across the middle
-      ctx.fillStyle = P.glow;
-      ctx.fillRect(leftEnd, it.y + 1, mw, it.h - 2);
-      // Bright yellow flicker patches scattered through the mouth
-      ctx.fillStyle = P.flame;
-      for(var fy = it.y + 1; fy < it.y + it.h - 1; fy++){
-        for(var fx = leftEnd + 1; fx < rightStart - 1; fx += 3){
-          var r = (t + fy * 7 + fx * 3) % 7;
-          if(r === 0) ctx.fillRect(fx, fy, 2, 1);
+  // Wood-fired pizza-oven dome: flat hearth band at the bottom, semicircular
+  // stone arch above, rectangular mouth opening centered at the bottom of the
+  // arch (with a rounded top), dark stone interior, flickering fire on the
+  // inner mouth edges, glowing embers along the hearth floor, smoke puff above.
+  function drawOvenDome(it){
+    var cx        = it.x + Math.floor(it.w / 2);
+    var hearthY   = it.y + it.h - DOME_HEARTH;          // top of hearth band
+    var archCY    = hearthY;                            // arch base / center y for circle math
+    var archR     = Math.floor(it.w / 2);               // arch radius
+    var mouthL    = it.mouthLeft;
+    var mouthR    = it.mouthRight;
+    var mouthTop  = it.mouthTopY;
+    var mouthBot  = it.mouthBottomY;
+    var mouthCx   = it.mouthCx;
+    var mouthHalf = Math.floor((mouthR - mouthL) / 2);
+
+    // --- 1. Stone arch (semicircle), drawn as horizontal scanlines.
+    // For each y from archCY-archR..archCY, compute halfWidth = sqrt(r² - dy²).
+    // Punch a rectangular hole for the mouth (with a rounded top).
+    for(var dy = 0; dy <= archR; dy++){
+      var yy = archCY - dy;
+      if(yy < it.y) continue;
+      var halfW = Math.floor(Math.sqrt(archR * archR - dy * dy));
+      if(halfW <= 0) continue;
+      var xL = cx - halfW;
+      var xR = cx + halfW;
+      // Body fill (stone) — split into LEFT and RIGHT segments around the mouth.
+      // First decide if this scanline is within the mouth vertical band:
+      var inMouthBand = (yy >= mouthTop && yy <= mouthBot);
+      // For the rounded mouth top, treat the arch above the rectangle as a
+      // mini-dome: half-circle centered at (mouthCx, mouthTop) with radius mouthHalf.
+      // A scanline above mouthTop is still inside the mouth opening if
+      // dy_m² + dx² < mouthHalf², i.e. it falls inside that mini-dome.
+      var mouthSegHalf = -1;
+      if(inMouthBand){
+        mouthSegHalf = mouthHalf;
+      } else if(yy < mouthTop && yy >= mouthTop - mouthHalf){
+        var dym = mouthTop - yy;
+        var inner = mouthHalf * mouthHalf - dym * dym;
+        if(inner > 0) mouthSegHalf = Math.floor(Math.sqrt(inner));
+      }
+
+      // Outline (1px ring) — draw the curve outline first, then we'll fill inside.
+      // We approximate the outline by comparing this row's halfW to the previous row.
+      // Simpler approach: paint full row stone, then overpaint the mouth, then
+      // outline pixels at each row's extreme x.
+      // Stone fill:
+      ctx.fillStyle = P.crust;
+      if(mouthSegHalf < 0){
+        ctx.fillRect(xL, yy, halfW * 2 + 1, 1);
+      } else {
+        // Left stone segment
+        var stoneL_end = mouthCx - mouthSegHalf;     // exclusive right
+        if(stoneL_end > xL){
+          ctx.fillRect(xL, yy, stoneL_end - xL, 1);
+        }
+        // Right stone segment
+        var stoneR_start = mouthCx + mouthSegHalf;   // inclusive
+        if(xR + 1 > stoneR_start){
+          ctx.fillRect(stoneR_start, yy, (xR + 1) - stoneR_start, 1);
         }
       }
-      // Inner side outlines (where fire meets stone)
-      ctx.fillStyle = P.ink;
-      ctx.fillRect(leftEnd - 1, it.y, 1, it.h);
-      ctx.fillRect(rightStart,  it.y, 1, it.h);
-      return;
-    }
-    // phase === 'walls' — solid stone slabs left and right of the mouth
-    function stoneBody(x0, x1){
-      var w = x1 - x0;
-      if(w <= 0) return;
-      ctx.fillStyle = P.crust;
-      ctx.fillRect(x0, it.y, w, it.h);
-      ctx.fillStyle = P.crustDk;
-      ctx.fillRect(x0, it.y, w, 1);                          // top shadow
-      ctx.fillRect(x0, it.y + it.h - 1, w, 1);               // bottom shadow
-      ctx.fillRect(x0, it.y + Math.floor(it.h / 2), w, 1);   // mid seam
-      ctx.fillStyle = P.ink;
-      ctx.fillRect(x0, it.y - 1, w, 1);                      // top outline
-      ctx.fillRect(x0, it.y + it.h, w, 1);                   // bottom outline
-    }
-    stoneBody(it.x, leftEnd);
-    stoneBody(rightStart, it.x + it.w);
-  }
+      // Inner stone shading band — lower half of the arch a bit darker
+      if(dy < archR / 2){
+        // upper half, leave as crust
+      } else {
+        // lower half: add darker tone along the inner stone surface
+        ctx.fillStyle = P.crustDk;
+        if(mouthSegHalf < 0){
+          // a 1px shadow line near the bottom of the row for visual texture
+          if(dy % 4 === 0){
+            ctx.fillRect(xL + 1, yy, halfW * 2 - 1, 1);
+          }
+        }
+      }
 
-  // 16x10 brick obstacle
+      // Outline pixels at the curve edge (left + right extreme)
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(xL - 1, yy, 1, 1);
+      ctx.fillRect(xR + 1, yy, 1, 1);
+    }
+
+    // --- 2. Hearth band (stone strip at the bottom of the dome footprint).
+    ctx.fillStyle = P.crust;
+    ctx.fillRect(it.x, hearthY, it.w, DOME_HEARTH);
+    // top/bottom edges darker
+    ctx.fillStyle = P.crustDk;
+    ctx.fillRect(it.x, hearthY, it.w, 1);
+    ctx.fillRect(it.x, hearthY + DOME_HEARTH - 1, it.w, 1);
+    // hearth side outlines
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(it.x - 1, hearthY, 1, DOME_HEARTH);
+    ctx.fillRect(it.x + it.w, hearthY, 1, DOME_HEARTH);
+    ctx.fillRect(it.x, hearthY + DOME_HEARTH, it.w, 1);
+
+    // --- 3. Mouth interior (dark stone, NOT black). Punched out of the arch.
+    // Rectangular body:
+    ctx.fillStyle = P.crustDk;
+    ctx.fillRect(mouthL, mouthTop, mouthR - mouthL, mouthBot - mouthTop);
+    // Rounded top mini-dome: paint each row of the mini-dome with crustDk too.
+    for(var my = 0; my < mouthHalf; my++){
+      var yyM = mouthTop - my - 1;
+      if(yyM < it.y) break;
+      var innerM = mouthHalf * mouthHalf - (my + 1) * (my + 1);
+      if(innerM <= 0) break;
+      var halfM = Math.floor(Math.sqrt(innerM));
+      if(halfM <= 0) break;
+      ctx.fillStyle = P.crustDk;
+      ctx.fillRect(mouthCx - halfM, yyM, halfM * 2, 1);
+    }
+    // Mouth interior outline (separates mouth from arch stone)
+    ctx.fillStyle = P.ink;
+    // sides
+    ctx.fillRect(mouthL - 1, mouthTop, 1, mouthBot - mouthTop);
+    ctx.fillRect(mouthR,     mouthTop, 1, mouthBot - mouthTop);
+    // bottom (above hearth top)
+    // (no bottom line — mouth sits flush on hearth)
+
+    // --- 4. Flickering fire on the inner left & right edges of the mouth.
+    var tFrame = (performance.now() / 80) | 0;
+    var flameHL = 6 + ((tFrame + (it.y | 0)) % 5);
+    var flameHR = 6 + ((tFrame + 3 + (it.y | 0)) % 5);
+    var fireBaseY = mouthBot - 1;
+    // Left flame
+    ctx.fillStyle = P.glow;
+    ctx.fillRect(mouthL + 1, fireBaseY - flameHL, 4, flameHL);
+    ctx.fillStyle = P.flame;
+    ctx.fillRect(mouthL + 2, fireBaseY - flameHL + 1, 2, flameHL - 2);
+    ctx.fillStyle = P.glowDeep;
+    ctx.fillRect(mouthL + 1, fireBaseY - 1, 4, 2);
+    // Right flame
+    ctx.fillStyle = P.glow;
+    ctx.fillRect(mouthR - 5, fireBaseY - flameHR, 4, flameHR);
+    ctx.fillStyle = P.flame;
+    ctx.fillRect(mouthR - 4, fireBaseY - flameHR + 1, 2, flameHR - 2);
+    ctx.fillStyle = P.glowDeep;
+    ctx.fillRect(mouthR - 5, fireBaseY - 1, 4, 2);
+
+    // --- 5. Glowing embers along the hearth floor inside the mouth.
+    ctx.fillStyle = P.glow;
+    ctx.fillRect(mouthL + 5, mouthBot - 2, (mouthR - mouthL) - 10, 2);
+    ctx.fillStyle = P.flame;
+    for(var ex = mouthL + 6; ex < mouthR - 6; ex += 4){
+      var jitter = (tFrame + ex) % 3;
+      if(jitter === 0) ctx.fillRect(ex, mouthBot - 2, 1, 1);
+    }
+
+    // --- 6. Chimney smoke puff above the dome (cream pixels, drifting).
+    var puffPhase = (performance.now() / 220) | 0;
+    var puffOff   = (puffPhase % 5) - 2;
+    var puffCx    = cx + puffOff;
+    var puffY     = (archCY - archR) - 4;
+    if(puffY >= 0){
+      ctx.fillStyle = P.cream;
+      ctx.fillRect(puffCx - 2, puffY,     4, 1);
+      ctx.fillRect(puffCx - 3, puffY + 1, 6, 1);
+      ctx.fillRect(puffCx - 2, puffY + 2, 4, 1);
+      ctx.fillStyle = P.creamMid;
+      ctx.fillRect(puffCx - 1, puffY + 1, 2, 1);
+    }
+  }
   function drawBrick(x, y){
     ctx.fillStyle = P.ink;
     ctx.fillRect(x, y, 16, 10);
@@ -2637,8 +2755,8 @@
       for(var wi = 0; wi < state.items.length; wi++){
         if(state.items[wi].type === 'ovenwall'){ wall = state.items[wi]; break; }
       }
-      const targetX = wall ? wall.gapX : state.playerX;
-      const targetY = wall ? (wall.y + wall.h * 0.5)
+      const targetX = wall ? wall.mouthCx : state.playerX;
+      const targetY = wall ? Math.floor((wall.mouthTopY + wall.mouthBottomY) / 2)
                            : (FY - PLAYER_TRI_H - 4);
       state.playerX += (targetX - state.playerX) * Math.min(1, dt * 8);
       state.playerY = state.finishStartY + (targetY - state.finishStartY) * ease;
@@ -2698,18 +2816,24 @@
       state.spawnAccumulator -= gap;
       spawnRow();
     }
-    // Drop the brick oven-entrance once the topping spawn window closes.
-    // Random gap position so the player has to steer to it.
+    // Drop the wood-fired pizza-oven dome once the topping spawn window closes.
+    // Dome is centered horizontally — finale is cinematic, not a steering challenge.
     if(!state.ovenWallSpawned && (LEVEL_DISTANCE - state.distance) < 220){
-      const gapHalf = Math.round(PLAYER_HALF_W * 1.5);
-      const minGx = FX + gapHalf + 8;
-      const maxGx = FX + FW - gapHalf - 8;
-      const gapX = minGx + Math.floor(Math.random() * (maxGx - minGx));
+      const domeX0       = FX + Math.floor((FW - DOME_W) / 2);
+      const mouthCx      = domeX0 + Math.floor(DOME_W / 2);
+      const mouthLeft    = mouthCx - Math.floor(MOUTH_W / 2);
+      const mouthRight   = mouthLeft + MOUTH_W;
+      const mouthBottomY = (FY - 16) + DOME_H - DOME_HEARTH;  // hearth top
+      const mouthTopY    = mouthBottomY - MOUTH_H;
       state.items.push({
         type: 'ovenwall',
-        x: FX, y: FY - 16,
-        w: FW, h: 14,
-        gapX: gapX, gapHalf: gapHalf
+        x: domeX0, y: FY - 16,
+        w: DOME_W, h: DOME_H,
+        mouthLeft: mouthLeft,
+        mouthRight: mouthRight,
+        mouthTopY: mouthTopY,
+        mouthBottomY: mouthBottomY,
+        mouthCx: mouthCx
       });
       state.ovenWallSpawned = true;
     }
@@ -2804,28 +2928,21 @@
     // Side brick walls
     drawWalls(state.scrollPx);
 
-    // Items: toppings + bricks (not the oven wall — that draws around the slice)
+    // Items (toppings + bricks first; dome rendered BEFORE the player so the
+    // slice visibly enters the dark mouth interior).
     for(const it of state.items){
       if(it.type === 'ovenwall') continue;
       if(it.type === 'topping') drawTopping(it.sub, it.x, it.y);
       else drawBrick(it.x, it.y);
     }
-    // Oven-wall GAP pass — dark mouth + flames + lip — drawn BEFORE the slice
-    // so the slice visibly enters the dark interior.
     for(const ovi of state.items){
-      if(ovi.type === 'ovenwall') drawOvenWall(ovi, 'gap');
+      if(ovi.type === 'ovenwall') drawOvenDome(ovi);
     }
 
     // Player slice (skip drawing some frames during invuln for a flicker)
     const flicker = state.invuln > 0 && (Math.floor(performance.now()/80) % 2 === 0);
     if(!flicker){
       drawPlayer(Math.round(state.playerX), Math.round(state.playerY), state.pile, state.playerScale);
-    }
-
-    // Oven-wall STONE pass — solid stone slabs AFTER the slice, so any pixels
-    // of the slice that strayed into the wall zone are properly occluded.
-    for(const ovi2 of state.items){
-      if(ovi2.type === 'ovenwall') drawOvenWall(ovi2, 'walls');
     }
 
     // HUD on top + chef bar at bottom
