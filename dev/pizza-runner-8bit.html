@@ -1651,7 +1651,8 @@
       const count = 1 + Math.floor(Math.random() * 3);
       const orderSet = state.order.toppings;
       const distractors = TOPPING_TYPES.filter(function(t){ return orderSet.indexOf(t) < 0; });
-      const correctChance = Math.max(0.35, 0.75 - state.level * 0.06);
+      // Correct-vs-distractor ratio. L1=0.92, L3=0.82, L5=0.72, L10=0.47 (floor 0.4).
+      const correctChance = Math.max(0.4, 0.97 - state.level * 0.05);
       for(let i=0;i<count;i++){
         const useCorrect = (Math.random() < correctChance) && orderSet.length > 0;
         const sub = useCorrect
@@ -2761,17 +2762,22 @@
     state.playerX += (state.targetX - state.playerX) * Math.min(1, dt * 14);
     state.playerY += (state.targetY - state.playerY) * Math.min(1, dt * 14);
 
-    // Scroll world
-    const dy = SCROLL_SPEED * dt;
+    // Scroll world. Scroll speed ramps with level: gentle at level 1.
+    // L1=42, L3=54, L5=66, L10=96 px/sec (capped at SCROLL_SPEED).
+    const scrollLvl = Math.min(SCROLL_SPEED, 42 + (state.level - 1) * 6);
+    const dy = scrollLvl * dt;
     state.distance += dy;
     state.scrollPx += dy;
 
     // Spawn rows on a scroll-distance budget; pause near the oven for a clean approach.
+    // Spawn gap also widens at low levels so the slice has breathing room.
+    const gapMin = SPAWN_GAP_MIN + Math.max(0, (6 - state.level)) * 3;
+    const gapMax = SPAWN_GAP_MAX + Math.max(0, (6 - state.level)) * 4;
     state.spawnAccumulator += dy;
     while(state.spawnAccumulator >= 0){
       const distLeft = LEVEL_DISTANCE - state.distance;
       if(distLeft < 220) break; // leave clear runway before the oven wall
-      const gap = SPAWN_GAP_MIN + Math.random() * (SPAWN_GAP_MAX - SPAWN_GAP_MIN);
+      const gap = gapMin + Math.random() * (gapMax - gapMin);
       state.spawnAccumulator -= gap;
       spawnRow();
     }
