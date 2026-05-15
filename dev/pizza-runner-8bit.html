@@ -1056,51 +1056,63 @@
   }
 
 
-  // Brick oven-entrance wall spanning the playfield with a narrow gap.
-  // Drawn in two passes for correct slice layering:
-  //   phase='gap'   → dark mouth interior + flames + top lip   (BEFORE the slice)
-  //   phase='bricks'→ left and right red-brick bodies          (AFTER the slice)
-  // The slice flies into the gap visibly, but never visually clips the brick.
+  // Stone oven-entrance wall spanning the playfield with a narrow mouth.
+  // Drawn in two passes so the slice layers correctly:
+  //   phase='gap'   → dark stone mouth + flames + embers   (BEFORE the slice)
+  //   phase='walls' → stone slab bodies on either side     (AFTER the slice)
+  // The slice flies into the mouth visibly; stone walls always occlude.
   function drawOvenWall(it, phase){
     var leftEnd    = it.gapX - it.gapHalf;
     var rightStart = it.gapX + it.gapHalf;
     if(phase === 'gap'){
-      // Gap mouth — dark oven interior
+      // Dark stone interior
+      ctx.fillStyle = P.crustDk;
+      ctx.fillRect(leftEnd, it.y, it.gapHalf * 2, it.h);
+      // Inner side outlines (where mouth meets stone)
       ctx.fillStyle = P.ink;
-      ctx.fillRect(leftEnd, it.y + 1, it.gapHalf * 2, it.h - 2);
-      // Flames flickering at the gap edges
+      ctx.fillRect(leftEnd - 1, it.y, 1, it.h);
+      ctx.fillRect(rightStart,  it.y, 1, it.h);
+      // Flickering fire on the inner left & right edges
       var t = (performance.now() / 80) | 0;
-      var flameH = 4 + ((t + (it.y|0)) % 3);
+      var flameHL = 5 + ((t + (it.y|0)) % 4);
+      var flameHR = 5 + ((t + 3 + (it.y|0)) % 4);
+      var fireBaseY = it.y + it.h - 1;
       ctx.fillStyle = P.glow;
-      ctx.fillRect(leftEnd,          it.y + it.h - flameH - 1, 4, flameH);
-      ctx.fillRect(rightStart - 4,   it.y + it.h - flameH - 1, 4, flameH);
+      ctx.fillRect(leftEnd + 1,    fireBaseY - flameHL, 4, flameHL);
+      ctx.fillRect(rightStart - 5, fireBaseY - flameHR, 4, flameHR);
       ctx.fillStyle = P.flame;
-      ctx.fillRect(leftEnd + 1,      it.y + it.h - flameH,     2, flameH - 1);
-      ctx.fillRect(rightStart - 3,   it.y + it.h - flameH,     2, flameH - 1);
-      // Top lip of gap
-      ctx.fillStyle = P.redDeep;
-      ctx.fillRect(leftEnd, it.y - 1, it.gapHalf * 2, 1);
+      ctx.fillRect(leftEnd + 2,    fireBaseY - flameHL + 1, 2, flameHL - 2);
+      ctx.fillRect(rightStart - 4, fireBaseY - flameHR + 1, 2, flameHR - 2);
+      ctx.fillStyle = P.glowDeep;
+      ctx.fillRect(leftEnd + 1,    fireBaseY - 1, 4, 2);
+      ctx.fillRect(rightStart - 5, fireBaseY - 1, 4, 2);
+      // Glowing embers along the floor of the mouth between the flames
+      ctx.fillStyle = P.glow;
+      var emberX0 = leftEnd + 5;
+      var emberW  = (rightStart - 5) - emberX0;
+      if(emberW > 0) ctx.fillRect(emberX0, fireBaseY - 1, emberW, 2);
+      ctx.fillStyle = P.flame;
+      for(var ex = leftEnd + 6; ex < rightStart - 6; ex += 4){
+        if(((t + ex) % 3) === 0) ctx.fillRect(ex, fireBaseY - 1, 1, 1);
+      }
       return;
     }
-    // phase === 'bricks' — solid wall bodies left and right of the gap
-    function brickBody(x0, x1){
+    // phase === 'walls' — solid stone slabs left and right of the mouth
+    function stoneBody(x0, x1){
       var w = x1 - x0;
       if(w <= 0) return;
-      ctx.fillStyle = P.ink;
+      ctx.fillStyle = P.crust;
       ctx.fillRect(x0, it.y, w, it.h);
-      ctx.fillStyle = P.red;
-      ctx.fillRect(x0, it.y + 1, w, it.h - 2);
-      ctx.fillStyle = P.redDeep;
-      ctx.fillRect(x0, it.y + Math.floor(it.h*0.5), w, Math.floor(it.h*0.5) - 1);
-      ctx.fillStyle = P.cream;
-      ctx.fillRect(x0, it.y + Math.floor(it.h/2), w, 1);
-      for(var bx = x0 + 6; bx < x1; bx += 8){
-        ctx.fillRect(bx,     it.y + 1,                       1, Math.floor(it.h/2) - 1);
-        ctx.fillRect(bx + 4, it.y + Math.floor(it.h/2) + 1,  1, Math.floor(it.h/2) - 2);
-      }
+      ctx.fillStyle = P.crustDk;
+      ctx.fillRect(x0, it.y, w, 1);                          // top shadow
+      ctx.fillRect(x0, it.y + it.h - 1, w, 1);               // bottom shadow
+      ctx.fillRect(x0, it.y + Math.floor(it.h / 2), w, 1);   // mid seam
+      ctx.fillStyle = P.ink;
+      ctx.fillRect(x0, it.y - 1, w, 1);                      // top outline
+      ctx.fillRect(x0, it.y + it.h, w, 1);                   // bottom outline
     }
-    brickBody(it.x, leftEnd);
-    brickBody(rightStart, it.x + it.w);
+    stoneBody(it.x, leftEnd);
+    stoneBody(rightStart, it.x + it.w);
   }
 
   // 16x10 brick obstacle
@@ -2820,10 +2832,10 @@
       drawPlayer(Math.round(state.playerX), Math.round(state.playerY), state.pile, state.playerScale);
     }
 
-    // Oven-wall BRICK pass — solid wall bodies AFTER the slice, so any pixels
-    // of the slice that strayed into the brick zone are properly occluded.
+    // Oven-wall STONE pass — solid stone slabs AFTER the slice, so any pixels
+    // of the slice that strayed into the wall zone are properly occluded.
     for(const ovi2 of state.items){
-      if(ovi2.type === 'ovenwall') drawOvenWall(ovi2, 'bricks');
+      if(ovi2.type === 'ovenwall') drawOvenWall(ovi2, 'walls');
     }
 
     // HUD on top + chef bar at bottom
