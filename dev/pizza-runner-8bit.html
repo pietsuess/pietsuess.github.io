@@ -151,45 +151,6 @@
     font-size:7px;letter-spacing:0.15em;color:var(--nes-yellow);
   }
 
-  /* ── Virtual D-pad (touch devices only, only during delivery stage) ── */
-  #dpad{
-    position:fixed;
-    left:4vw;
-    bottom:4vw;
-    width:36vmin;
-    height:36vmin;
-    display:none;
-    z-index:20;
-    pointer-events:none;
-    user-select:none;-webkit-user-select:none;
-    touch-action:none;
-  }
-  body.touch-device.delivery-stage #dpad{ display:block; }
-  .dpad-btn{
-    position:absolute;
-    width:33.33%;height:33.33%;
-    margin:0;padding:0;
-    background:rgba(0,0,0,0.55);
-    border:2px solid rgba(252,252,252,0.6);
-    color:#fcfcfc;
-    font-family:'Press Start 2P',monospace;
-    font-size:5vmin;line-height:1;
-    pointer-events:auto;
-    touch-action:none;
-    user-select:none;-webkit-user-select:none;
-    -webkit-tap-highlight-color:transparent;
-    cursor:pointer;
-  }
-  .dpad-up   { top:0;        left:33.33%; border-radius:8px 8px 0 0; }
-  .dpad-left { top:33.33%;   left:0;      border-radius:8px 0 0 8px; }
-  .dpad-right{ top:33.33%;   left:66.66%; border-radius:0 8px 8px 0; }
-  .dpad-down { top:66.66%;   left:33.33%; border-radius:0 0 8px 8px; }
-  .dpad-btn.pressed,
-  .dpad-btn:active{
-    background:rgba(216,48,24,0.8);
-    color:#fcc830;
-  }
-
   /* ── Win/Lose chef face — chef portion of Chef_Boy.png (100×86 of 160×86) ─ */
   .chef-face{
     width:70px;height:60px;
@@ -316,14 +277,6 @@
 
 <div id="game-wrap">
   <canvas id="game" width="160" height="256"></canvas>
-
-  <!-- ── Virtual D-pad for mobile delivery controls ─── -->
-  <div id="dpad" aria-hidden="true">
-    <button class="dpad-btn dpad-up"    data-dir="up">▲</button>
-    <button class="dpad-btn dpad-left"  data-dir="left">◀</button>
-    <button class="dpad-btn dpad-right" data-dir="right">▶</button>
-    <button class="dpad-btn dpad-down"  data-dir="down">▼</button>
-  </div>
 
   <!-- ── TITLE: PIZZA SHOP ─────────────────────────── -->
   <div id="start-screen" class="overlay show">
@@ -1479,8 +1432,8 @@
     delInvuln: 0,           // seconds remaining of invulnerability
     damageFlashT: 0,        // brief red overlay after hit
     pizzaHeat: 1,           // 1=piping hot, 0=cold (tip multiplier)
-    touchThrottle: 0,       // 1 while finger held on top half, 0 otherwise
-    touchBrake: 0,          // 1 while finger held on bottom half, 0 otherwise
+    touchTargetFacing: 0,   // +1=forward, -1=reverse, 0=stopped, set by finger Y
+    touchTargetSpeed: 0,    // 0..SPEED_MAX, target bikeSpeed based on finger Y
     delTouchActive: false,  // any finger currently down on the canvas in delivery
     delLastTouchT: 0,       // performance.now() of last touchstart (suppresses synthesized mousedown)
     houses: [],             // {worldY, side:'L'|'R', number, color, isTarget}
@@ -1582,23 +1535,36 @@
   });
 
   let dragging = false, dragRefX = 0, dragRefY = 0, dragRefPlayerX = 0, dragRefPlayerY = 0;
-  // Map a viewport Y to delivery canvas Y, then set throttle/brake flags by half.
-  function _applyDeliveryTouchY(clientY){
+
+  // Map a viewport (x,y) to delivery canvas coords, then set the lateral X target
+  // (bike follows finger horizontally) and a Y-position-based throttle. Top of
+  // canvas = max forward, ~65% down = stopped, bottom = reverse.
+  function _applyDeliveryTouchPos(clientX, clientY){
     var rect = canvas.getBoundingClientRect();
-    var ratioY = DH / rect.height;
-    var cy = (clientY - rect.top) * ratioY;
-    if(cy < DH / 2){
-      state.touchThrottle = 1;
-      state.touchBrake = 0;
+    var cx = (clientX - rect.left) / rect.width  * DW;
+    var cy = (clientY - rect.top)  / rect.height * DH;
+    // Lateral steering: target the bike's X to the finger X (clamped).
+    state.targetBikeX = Math.max(BIKE_X_MIN, Math.min(BIKE_X_MAX, cx));
+    // Throttle from Y:
+    //   y/DH in [0, 0.65]   → forward, max at top, 0 at 65% down
+    //   y/DH in [0.65, 0.75]→ deadzone (stopped)
+    //   y/DH in [0.75, 1]   → reverse, 0 at 75%, max reverse at bottom
+    var yN = cy / DH;
+    if(yN < 0.65){
+      state.touchTargetFacing = +1;
+      state.touchTargetSpeed  = SPEED_MAX * (1 - yN / 0.65);
+    } else if(yN < 0.75){
+      state.touchTargetFacing = 0;
+      state.touchTargetSpeed  = 0;
     } else {
-      state.touchThrottle = 0;
-      state.touchBrake = 1;
+      state.touchTargetFacing = -1;
+      state.touchTargetSpeed  = 50 * Math.min(1, (yN - 0.75) / 0.25);
     }
   }
   function _clearDeliveryTouch(){
-    state.touchThrottle = 0;
-    state.touchBrake = 0;
-    state.delTouchActive = false;
+    state.delTouchActive    = false;
+    state.touchTargetFacing = 0;
+    state.touchTargetSpeed  = 0;
   }
   function pointerDown(e){
     const t = e.touches ? e.touches[0] : e;
@@ -1609,16 +1575,12 @@
       e.preventDefault();
       return;
     }
-    // Delivery: on touch devices the D-pad is the only input — ignore stray
-    // canvas taps so rapid facing flips don't happen from drags across the
-    // midline. On mouse (desktop dev), keep the top/bottom half behavior.
+    // Delivery: drag-positional control. Finger Y controls throttle/direction,
+    // finger X steers the bike. Works on both touch and mouse.
     if(state.stage === 'delivery' && state.running){
-      if(document.body.classList.contains('touch-device')){
-        e.preventDefault();
-        return;
-      }
+      if(e.type === 'touchstart') state.delLastTouchT = performance.now();
       state.delTouchActive = true;
-      _applyDeliveryTouchY(t.clientY);
+      _applyDeliveryTouchPos(t.clientX, t.clientY);
       e.preventDefault();
       return;
     }
@@ -1630,11 +1592,11 @@
     e.preventDefault();
   }
   function pointerMove(e){
-    // Delivery: re-evaluate which half the finger is over so a drag across the
-    // midline switches between throttle and brake without lifting.
+    // Delivery: continuously re-read finger position so the throttle and
+    // steering follow the finger as it moves.
     if(state.stage === 'delivery' && state.running && state.delTouchActive){
       const t = e.touches ? e.touches[0] : e;
-      _applyDeliveryTouchY(t.clientY);
+      _applyDeliveryTouchPos(t.clientX, t.clientY);
       e.preventDefault();
       return;
     }
@@ -1661,96 +1623,8 @@
   addEventListener('touchmove',  pointerMove, {passive:false});
   addEventListener('touchend',   pointerUp);
 
-  // --- Virtual D-pad (touch devices only) ---
-  if(('ontouchstart' in window) || (navigator.maxTouchPoints | 0) > 0){
-    document.body.classList.add('touch-device');
-  }
-  var dpadDirs = { up:false, down:false, left:false, right:false };
-  var activeDpadTouches = {};   // touchIdentifier → direction string
-
-  // Map a viewport (x,y) to a D-pad direction, or null if outside any button.
-  function _dpadDirAt(clientX, clientY){
-    var dpadEl = document.getElementById('dpad');
-    if(!dpadEl) return null;
-    if(getComputedStyle(dpadEl).display === 'none') return null;
-    var rect = dpadEl.getBoundingClientRect();
-    var rx = (clientX - rect.left) / rect.width;
-    var ry = (clientY - rect.top) / rect.height;
-    if(rx < 0 || rx > 1 || ry < 0 || ry > 1) return null;
-    // Cross layout: top third = up, bottom third = down, left/right thirds = left/right.
-    // Corners (where both row and column are off-center) snap to whichever is more extreme.
-    var inCol = rx >= 0.30 && rx <= 0.70;
-    var inRow = ry >= 0.30 && ry <= 0.70;
-    if(inCol && ry < 0.30) return 'up';
-    if(inCol && ry > 0.70) return 'down';
-    if(inRow && rx < 0.30) return 'left';
-    if(inRow && rx > 0.70) return 'right';
-    // Off-center corners: pick whichever axis is more extreme from center.
-    var dx = rx - 0.5, dy = ry - 0.5;
-    if(Math.abs(dx) > Math.abs(dy)) return dx < 0 ? 'left' : 'right';
-    return dy < 0 ? 'up' : 'down';
-  }
-  function _setDpadDir(dir, on){
-    if(!dir) return;
-    dpadDirs[dir] = on;
-    var btn = document.querySelector('.dpad-' + dir);
-    if(btn) btn.classList.toggle('pressed', on);
-  }
-  // Capture-phase touch handlers so D-pad taps are claimed before the
-  // canvas's bubble-phase touchstart handler runs.
-  addEventListener('touchstart', function(e){
-    var claimed = false;
-    for(var i = 0; i < e.changedTouches.length; i++){
-      var t = e.changedTouches[i];
-      var dir = _dpadDirAt(t.clientX, t.clientY);
-      if(dir){
-        activeDpadTouches[t.identifier] = dir;
-        _setDpadDir(dir, true);
-        claimed = true;
-      }
-    }
-    if(claimed){ e.preventDefault(); e.stopPropagation(); }
-  }, {passive:false, capture:true});
-
-  addEventListener('touchmove', function(e){
-    for(var i = 0; i < e.changedTouches.length; i++){
-      var t = e.changedTouches[i];
-      if(!(t.identifier in activeDpadTouches)) continue;
-      var oldDir = activeDpadTouches[t.identifier];
-      var newDir = _dpadDirAt(t.clientX, t.clientY);
-      if(oldDir !== newDir){
-        _setDpadDir(oldDir, false);
-        if(newDir){
-          _setDpadDir(newDir, true);
-          activeDpadTouches[t.identifier] = newDir;
-        } else {
-          delete activeDpadTouches[t.identifier];
-        }
-      }
-      e.preventDefault();
-      e.stopPropagation();
-    }
-  }, {passive:false, capture:true});
-
-  function _endDpadTouch(e){
-    for(var i = 0; i < e.changedTouches.length; i++){
-      var t = e.changedTouches[i];
-      if(t.identifier in activeDpadTouches){
-        _setDpadDir(activeDpadTouches[t.identifier], false);
-        delete activeDpadTouches[t.identifier];
-      }
-    }
-  }
-  addEventListener('touchend',    _endDpadTouch, {passive:false, capture:true});
-  addEventListener('touchcancel', _endDpadTouch, {passive:false, capture:true});
-
-  // Mouse fallback for desktop dev testing.
-  Array.prototype.forEach.call(document.querySelectorAll('.dpad-btn'), function(btn){
-    var dir = btn.getAttribute('data-dir');
-    btn.addEventListener('mousedown', function(e){ _setDpadDir(dir, true);  e.preventDefault(); });
-    btn.addEventListener('mouseup',   function(e){ _setDpadDir(dir, false); e.preventDefault(); });
-    btn.addEventListener('mouseleave',function(e){ _setDpadDir(dir, false); });
-  });
+  // Delivery touch is positional (see _applyDeliveryTouchPos): finger Y =
+  // throttle/reverse, finger X = lateral steer. Keyboard arrows still work too.
 
   // --- Spawning ---
   const TOPPING_TYPES = ['pep','pepper','mush','olive','basil'];
@@ -2233,30 +2107,39 @@
     state.pedalT += state.bikeSpeed * dt * 0.04;
     if(state.damageFlashT > 0) state.damageFlashT -= dt;
     if(state.delInvuln > 0) state.delInvuln -= dt;
-    // touchThrottle / touchBrake are now finger-held flags (1 while touching the
-    // matching half, 0 otherwise) — pointerUp clears them. No timer decay.
-
     // Tier from health (governs speed cap and visual)
     state.bikeTier = state.bikeHealth >= 60 ? 'bike'
                    : state.bikeHealth >= 20 ? 'damaged'
                    : 'broken';
 
-    // Continuous lateral steering (kitchen-style): poll Left/Right held.
-    var leftIn  = (keys['ArrowLeft']  || keys['a'] || keys['A'] || dpadDirs.left);
-    var rightIn = (keys['ArrowRight'] || keys['d'] || keys['D'] || dpadDirs.right);
+    // Lateral steering: keyboard Left/Right (touch X already set targetBikeX
+    // directly via _applyDeliveryTouchPos).
+    var leftIn  = (keys['ArrowLeft']  || keys['a'] || keys['A']);
+    var rightIn = (keys['ArrowRight'] || keys['d'] || keys['D']);
     if(leftIn)  state.targetBikeX -= STEER_SPEED_DEL * dt;
     if(rightIn) state.targetBikeX += STEER_SPEED_DEL * dt;
     if(state.targetBikeX < BIKE_X_MIN) state.targetBikeX = BIKE_X_MIN;
     if(state.targetBikeX > BIKE_X_MAX) state.targetBikeX = BIKE_X_MAX;
     state.bikeX += (state.targetBikeX - state.bikeX) * Math.min(1, dt * 14);
 
-    // --- Paired direction keys: Up/W = +1 facing, Down/S = -1 facing ---
-    // Up & Down are no longer throttle/brake; they're the two travel directions.
-    // Pressing the opposite direction key while moving acts as a brake; once the
-    // bike is effectively stopped, the next frame flips facing instantly.
+    // --- Input: touch-position (preferred) or keyboard (Up/Down or W/S).
+    // Touch is positional: finger Y in upper canvas = forward (top = max
+    // speed), lower band = reverse. Keyboard is binary direction at full
+    // accelerate-to-max behavior, same as before.
     var wantedDir = 0;
-    if(keys['ArrowUp']   || keys['w'] || keys['W'] || state.touchThrottle > 0 || dpadDirs.up) wantedDir = +1;
-    else if(keys['ArrowDown'] || keys['s'] || keys['S'] || state.touchBrake > 0 || dpadDirs.down) wantedDir = -1;
+    var wantedSpeed = 0;   // target bikeSpeed magnitude
+    // Health-based speed cap (always applies)
+    var maxFwd = state.bikeTier === 'broken'  ? BIKE_SPEED_BROKEN_CAP
+               : state.bikeTier === 'damaged' ? BIKE_SPEED_DAMAGED_CAP
+               : SPEED_MAX;
+    if(state.delTouchActive){
+      wantedDir   = state.touchTargetFacing;
+      wantedSpeed = Math.min(maxFwd, state.touchTargetSpeed);
+    } else {
+      if(keys['ArrowUp']   || keys['w'] || keys['W']) wantedDir = +1;
+      else if(keys['ArrowDown'] || keys['s'] || keys['S']) wantedDir = -1;
+      wantedSpeed = wantedDir !== 0 ? maxFwd : 0;
+    }
 
     var prevFacing = state.facing;
     if(wantedDir !== 0 && wantedDir !== state.facing && state.bikeSpeed <= 4){
@@ -2264,21 +2147,20 @@
       state.facing = wantedDir;
     }
 
-    // Health-based speed cap
-    var maxFwd = state.bikeTier === 'broken'  ? BIKE_SPEED_BROKEN_CAP
-               : state.bikeTier === 'damaged' ? BIKE_SPEED_DAMAGED_CAP
-               : SPEED_MAX;
-
-    if(wantedDir === state.facing){
-      // Accelerate forward in current facing.
-      state.bikeSpeed = Math.min(maxFwd, state.bikeSpeed + ACCEL * dt);
-    } else if(wantedDir === -state.facing && state.bikeSpeed > 0){
-      // Player pressed opposite direction while still moving → hard brake.
-      state.bikeSpeed = Math.max(0, state.bikeSpeed - BRAKE * dt);
-      // Next frame, once bikeSpeed ≤ 4, the flip clause above runs.
-    } else {
-      // No directional input → coast.
+    if(wantedDir === 0){
+      // No input → coast to 0.
       state.bikeSpeed = Math.max(0, state.bikeSpeed - COAST * dt);
+    } else if(wantedDir === state.facing){
+      // Move bikeSpeed toward wantedSpeed.
+      if(state.bikeSpeed < wantedSpeed){
+        state.bikeSpeed = Math.min(wantedSpeed, state.bikeSpeed + ACCEL * dt);
+      } else if(state.bikeSpeed > wantedSpeed){
+        // Target lowered (e.g., finger moved down a bit) → ease down.
+        state.bikeSpeed = Math.max(wantedSpeed, state.bikeSpeed - BRAKE * 0.6 * dt);
+      }
+    } else {
+      // Wrong facing — brake hard. Next frame the flip clause runs.
+      state.bikeSpeed = Math.max(0, state.bikeSpeed - BRAKE * dt);
     }
     state.bikeSpeed = Math.max(SPEED_MIN, Math.min(maxFwd, state.bikeSpeed));
 
@@ -2745,8 +2627,8 @@
     state.facing = 1;
     state.pedalT = 0;
     state.pizzaHeat = 1;
-    state.touchThrottle = 0;
-    state.touchBrake = 0;
+    state.touchTargetFacing = 0;
+    state.touchTargetSpeed = 0;
     state.delTouchActive = false;
     state.houses.length = 0;
     state.cars.length = 0;
