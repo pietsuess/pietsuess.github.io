@@ -373,6 +373,10 @@
         <span class="readout-value" id="result-quality">0%</span>
       </div>
       <div class="readout-row">
+        <span class="readout-label">BAKE</span>
+        <span class="readout-value" id="result-bake">PERFECT</span>
+      </div>
+      <div class="readout-row">
         <span class="readout-label">BIKE</span>
         <span class="readout-value" id="result-bike">BIKE</span>
       </div>
@@ -638,6 +642,34 @@
   const FINALE_WALL_H   = 14;                       // wall thickness
   const FINALE_GAP_HALF = 22;                       // half-width of the wall's gap
   const FINALE_GAP_CX   = Math.floor(160 / 2);      // centered horizontally
+
+  // --- BAKE mini-game (between OFFER and DELIVERY) ---
+  // Layout (top-to-bottom, 160×256): HUD strip · oven mouth (fire + pizza) ·
+  // doneness meter · wood pile / pizza wand row · chef bar.
+  const BAKE_HUD_TOP    = 0;
+  const BAKE_HUD_BOT    = 30;
+  const BAKE_OVEN_TOP   = 30;
+  const BAKE_OVEN_BOT   = 145;
+  const BAKE_METER_TOP  = 145;
+  const BAKE_METER_BOT  = 160;
+  const BAKE_TOOLS_TOP  = 160;
+  const BAKE_TOOLS_BOT  = 200;
+  const BAKE_CHEF_TOP   = 200;
+  const BAKE_CHEF_BOT   = 256;
+  // Horizontal split for tools row: wood pile (left), pizza wand (right)
+  const BAKE_WOOD_X0    = 4;
+  const BAKE_WOOD_X1    = 76;
+  const BAKE_WAND_X0    = 84;
+  const BAKE_WAND_X1    = 156;
+
+  const BAKE_TEMP_START   = 400;
+  const BAKE_TEMP_DECAY   = 8;       // °F per sec (heat loss)
+  const BAKE_WOOD_BOOST   = 100;     // °F added per log
+  const BAKE_TEMP_BURN    = 600;     // above this, doneness accumulates BURN_RATE extra
+  const BAKE_TEMP_COLD    = 300;     // below this, doneness doesn't advance at all
+  const BAKE_COOK_K       = 0.0010;  // doneness per sec per (temp - COLD)
+  const BAKE_BURN_K       = 0.0008;  // extra burn rate when temp > BURN threshold
+  const BAKE_WOOD_START   = 6;       // logs available
 
   // --- Delivery stage layout (160 wide x 256 tall, PORTRAIT, single-road) ---
   // Same canvas dims as kitchen. World scrolls DOWN: bike feels like heading UP.
@@ -1451,6 +1483,22 @@
     targetSpawned: false,
     inTargetZone: false,
     zoneLingerT: 0,         // accumulator for "must dwell in zone briefly to deliver"
+
+    // ── BAKE stage state ──
+    bakeTime: 0,
+    bakeTemp: BAKE_TEMP_START,
+    bakeDoneness: 0,
+    bakeWoodLeft: BAKE_WOOD_START,
+    bakeFlareT: 0,          // brief fire flare timer when a log goes in
+    bakeQuality: 1.0,       // 0..1, computed at finishBake; 1.0 default for skipToDelivery
+    bakeLabel: 'PERFECT',
+    bakeDrag: {
+      active: false,
+      zone: null,           // 'wood' | 'wand' | null
+      startX: 0, startY: 0,
+      curX: 0, curY: 0,
+      pizzaTakenOut: false
+    },
   };
 
   // Reset the in-progress attempt only — money, level, and order persist.
@@ -1575,6 +1623,16 @@
       e.preventDefault();
       return;
     }
+    // BAKE: identify the zone the drag started in (wood pile / pizza wand).
+    if(state.stage === 'bake' && state.running){
+      var b = _bakeCanvasXY(t.clientX, t.clientY);
+      state.bakeDrag.active = true;
+      state.bakeDrag.startX = b.x; state.bakeDrag.startY = b.y;
+      state.bakeDrag.curX   = b.x; state.bakeDrag.curY   = b.y;
+      state.bakeDrag.zone   = _bakeZoneAt(b.x, b.y);
+      e.preventDefault();
+      return;
+    }
     // Delivery: drag-positional control. Finger Y controls throttle/direction,
     // finger X steers the bike. Works on both touch and mouse.
     if(state.stage === 'delivery' && state.running){
@@ -1600,6 +1658,32 @@
       e.preventDefault();
       return;
     }
+    // BAKE: process drag deltas. From wood zone into oven mouth = stoke fire;
+    // from wand zone with sufficient upward delta = take pizza out.
+    if(state.stage === 'bake' && state.running && state.bakeDrag.active){
+      var tt = e.touches ? e.touches[0] : e;
+      var b = _bakeCanvasXY(tt.clientX, tt.clientY);
+      state.bakeDrag.curX = b.x;
+      state.bakeDrag.curY = b.y;
+      if(state.bakeDrag.zone === 'wood'){
+        // Crossing into the oven mouth area consumes a log.
+        if(b.y < BAKE_OVEN_BOT){
+          _consumeLog();
+          // Clear zone so the same finger drag doesn't fire repeatedly —
+          // user must lift and start a new drag from the wood pile.
+          state.bakeDrag.zone = null;
+        }
+      } else if(state.bakeDrag.zone === 'wand'){
+        var upDelta = state.bakeDrag.startY - b.y;
+        // Upward swipe past threshold OR finger crossed into the oven mouth.
+        if(upDelta > 30 || b.y < BAKE_OVEN_BOT){
+          state.bakeDrag.zone = null;
+          finishBake();
+        }
+      }
+      e.preventDefault();
+      return;
+    }
     if(!dragging) return;
     const t = e.touches ? e.touches[0] : e;
     const rect = canvas.getBoundingClientRect();
@@ -1610,6 +1694,11 @@
     e.preventDefault();
   }
   function pointerUp(e){
+    if(state.stage === 'bake'){
+      state.bakeDrag.active = false;
+      state.bakeDrag.zone   = null;
+      return;
+    }
     if(state.stage === 'delivery'){
       _clearDeliveryTouch();
       return;
@@ -2677,10 +2766,11 @@
     var dQuality = state.bikeTier === 'bike'    ? 1.0
                  : state.bikeTier === 'damaged' ? 0.75
                  : 0.45;
-    // Tip = kitchen_quality * bike_condition * pizza_heat * max_tip
+    // Tip = kitchen_quality * bake_quality * bike_condition * pizza_heat * max_tip
     var tMul = state.pizzaHeat;   // already 0..1
+    var bQuality = (typeof state.bakeQuality === 'number') ? state.bakeQuality : 1.0;
     var tip = success
-      ? Math.round(state.kitchenQuality * dQuality * tMul * MAX_TIP * 100) / 100
+      ? Math.round(state.kitchenQuality * bQuality * dQuality * tMul * MAX_TIP * 100) / 100
       : 0;
     state.money += deliveryWage + tip;
     state.stage = 'kitchen';
@@ -2705,8 +2795,466 @@
     }
   }
 
+  // --- BAKE stage ---
+  // Lenient doneness → quality curve. Sweet zone 0.7..1.1 returns 1.0.
+  function bakeQualityFromDoneness(d){
+    if(d <= 0.5)   return 0.3;
+    if(d <  0.7)   return 0.3 + (d - 0.5) / 0.2 * 0.7;   // 0.5→0.3, 0.7→1.0
+    if(d <= 1.1)   return 1.0;                           // sweet zone
+    if(d <  1.3)   return 1.0 - (d - 1.1) / 0.2 * 0.8;   // 1.1→1.0, 1.3→0.2
+    return 0.2;
+  }
+  function bakeLabelFromDoneness(d){
+    if(d <  0.45) return 'RAW';
+    if(d <  0.7)  return 'UNDERCOOKED';
+    if(d <= 1.1)  return 'PERFECT';
+    if(d <= 1.3)  return 'WELL DONE';
+    return 'BURNT';
+  }
+
+  function startBake(){
+    state.stage = 'bake';
+    state.bakeTime     = 0;
+    state.bakeTemp     = BAKE_TEMP_START;
+    state.bakeDoneness = 0;
+    state.bakeWoodLeft = BAKE_WOOD_START;
+    state.bakeFlareT   = 0;
+    state.bakeQuality  = 1.0;
+    state.bakeLabel    = 'PERFECT';
+    state.bakeDrag.active = false;
+    state.bakeDrag.zone   = null;
+    state.bakeDrag.pizzaTakenOut = false;
+    hideOverlays();
+    state.running = true;
+    beep(520, .08, 'square');
+  }
+
+  function finishBake(){
+    if(state.bakeDrag.pizzaTakenOut) return; // already triggered
+    state.bakeDrag.pizzaTakenOut = true;
+    state.bakeQuality = bakeQualityFromDoneness(state.bakeDoneness);
+    state.bakeLabel   = bakeLabelFromDoneness(state.bakeDoneness);
+    beep(780, .1, 'square');
+    setTimeout(function(){ beep(980, .12, 'square'); }, 110);
+    // Smooth transition straight to delivery — no intermediate overlay.
+    startDelivery();
+  }
+
+  function tickBake(dt){
+    state.bakeTime += dt;
+    state.bakeTemp = Math.max(70, state.bakeTemp - BAKE_TEMP_DECAY * dt);
+    if(state.bakeTemp > BAKE_TEMP_COLD){
+      state.bakeDoneness += (state.bakeTemp - BAKE_TEMP_COLD) * BAKE_COOK_K * dt;
+    }
+    if(state.bakeTemp > BAKE_TEMP_BURN){
+      state.bakeDoneness += (state.bakeTemp - BAKE_TEMP_BURN) * BAKE_BURN_K * dt;
+    }
+    if(state.bakeFlareT > 0) state.bakeFlareT -= dt;
+  }
+
+  // Map a viewport (x,y) to canvas coords for the bake stage.
+  function _bakeCanvasXY(clientX, clientY){
+    var rect = canvas.getBoundingClientRect();
+    var cx = (clientX - rect.left) / rect.width  * W;
+    var cy = (clientY - rect.top)  / rect.height * H;
+    return {x: cx, y: cy};
+  }
+  function _bakeZoneAt(cx, cy){
+    if(cy >= BAKE_TOOLS_TOP && cy <= BAKE_TOOLS_BOT){
+      if(cx >= BAKE_WOOD_X0 && cx <= BAKE_WOOD_X1) return 'wood';
+      if(cx >= BAKE_WAND_X0 && cx <= BAKE_WAND_X1) return 'wand';
+    }
+    return null;
+  }
+  function _consumeLog(){
+    if(state.bakeWoodLeft <= 0) return;
+    state.bakeWoodLeft -= 1;
+    state.bakeTemp     += BAKE_WOOD_BOOST;
+    state.bakeFlareT    = 0.45;
+    beep(320, .07, 'sawtooth');
+  }
+
+  // --- BAKE rendering ---
+  function _bakeFmtTime(t){
+    var s = Math.floor(t);
+    var m = Math.floor(s / 60);
+    var ss = s % 60;
+    return m + ':' + (ss < 10 ? '0' + ss : ss);
+  }
+
+  function renderBake(){
+    // Background
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, 0, W, H);
+
+    drawBakeHud();
+    drawBakeOven();
+    drawBakeDonenessMeter();
+    drawBakeToolsRow();
+    drawBakeChefBar();
+  }
+
+  function drawBakeHud(){
+    // Cream panel matching kitchen HUD aesthetic
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(0, 0, W, BAKE_HUD_BOT);
+    ctx.fillStyle = P.red;
+    ctx.fillRect(0, 0, W, 3);
+    ctx.fillStyle = P.redDeep;
+    ctx.fillRect(0, 3, W, 1);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, BAKE_HUD_BOT - 1, W, 1);
+
+    // Title centered
+    drawStringCenter('BAKE', 6, P.ink);
+    // Time on the left
+    drawString('TIME ' + _bakeFmtTime(state.bakeTime), 6, 18, P.redDeep);
+    // Temp on the right (right-aligned)
+    var tempTxt = 'TEMP ' + Math.round(state.bakeTemp) + 'F';
+    var tw = tempTxt.length * 4;
+    drawString(tempTxt, W - tw - 6, 18, P.redDeep);
+  }
+
+  function drawBakeOven(){
+    var x0 = 0, x1 = W;
+    var y0 = BAKE_OVEN_TOP, y1 = BAKE_OVEN_BOT;
+    var t = (performance.now() / 90) | 0;
+
+    // Brick frame: left, right, top, bottom (top hugs HUD; bottom hugs meter)
+    var FRAME = 12;
+    // Top brick band
+    _bakeBricks(x0, y0, x1 - x0, FRAME, t);
+    // Bottom brick band
+    _bakeBricks(x0, y1 - FRAME, x1 - x0, FRAME, t + 4);
+    // Left brick column
+    _bakeBricks(x0, y0 + FRAME, FRAME, (y1 - y0) - FRAME * 2, t + 7);
+    // Right brick column
+    _bakeBricks(x1 - FRAME, y0 + FRAME, FRAME, (y1 - y0) - FRAME * 2, t + 11);
+
+    // Inner mouth (where the fire and pizza live)
+    var mx = x0 + FRAME, my = y0 + FRAME;
+    var mw = (x1 - x0) - FRAME * 2, mh = (y1 - y0) - FRAME * 2;
+
+    // Black void backdrop
+    ctx.fillStyle = '#000';
+    ctx.fillRect(mx, my, mw, mh);
+
+    // Fire intensity scales with current temp (and flares briefly on stoke).
+    var intensity = Math.max(0, Math.min(1, (state.bakeTemp - 200) / 500));
+    if(state.bakeFlareT > 0) intensity = Math.min(1, intensity + 0.4);
+
+    // Deep red base wash (fills lower 2/3 of mouth)
+    ctx.fillStyle = P.glowDeep;
+    var baseTop = my + Math.floor(mh * 0.25);
+    ctx.fillRect(mx, baseTop, mw, my + mh - baseTop);
+
+    // Orange flicker columns
+    ctx.fillStyle = P.glow;
+    for(var fy = baseTop; fy < my + mh - 1; fy++){
+      var offset = ((t + fy * 3) % 5);
+      ctx.fillRect(mx + offset, fy, mw - offset, 1);
+    }
+    // Yellow flame tongues (more when hotter)
+    ctx.fillStyle = P.flame;
+    for(var fy2 = my + Math.floor(mh * 0.35); fy2 < my + mh - 1; fy2++){
+      for(var fx = mx + 2; fx < mx + mw - 2; fx += 4){
+        var r = (t + fy2 * 7 + fx * 3) % Math.max(2, Math.round(10 - intensity * 8));
+        if(r === 0) ctx.fillRect(fx, fy2, 2, 1);
+      }
+    }
+    // Ember floor — a hot band at the very bottom of the mouth
+    ctx.fillStyle = P.glowDeep;
+    ctx.fillRect(mx, my + mh - 6, mw, 6);
+    ctx.fillStyle = P.glow;
+    for(var ex = mx; ex < mx + mw; ex += 3){
+      if(((t + ex) % 4) === 0) ctx.fillRect(ex, my + mh - 5, 2, 2);
+    }
+    ctx.fillStyle = P.flame;
+    for(var ex2 = mx + 1; ex2 < mx + mw; ex2 += 4){
+      if(((t * 2 + ex2) % 6) === 0) ctx.fillRect(ex2, my + mh - 3, 1, 1);
+    }
+
+    // The pizza disc, floating just above the ember floor.
+    var pcx = mx + Math.floor(mw / 2);
+    var pcy = my + mh - 18;
+    drawBakePizza(pcx, pcy, state.bakeDoneness);
+  }
+
+  // Rectangle of brick texture — fills (w,h) with NES-style red brick.
+  function _bakeBricks(x, y, w, h, seed){
+    if(w <= 0 || h <= 0) return;
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x, y, w, h);
+    ctx.fillStyle = P.red;
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    ctx.fillStyle = P.redDeep;
+    // alternating darker bands
+    for(var by = y + 5; by < y + h - 1; by += 5){
+      ctx.fillRect(x + 1, by, w - 2, 1);
+    }
+    // mortar verticals (offset rows for masonry feel)
+    ctx.fillStyle = P.cream;
+    for(var row = 0, ry = y + 1; ry < y + h - 1; row++, ry += 5){
+      var off = (row & 1) ? 4 : 0;
+      for(var vx = x + 4 + off; vx < x + w - 1; vx += 8){
+        ctx.fillRect(vx, ry, 1, 4);
+      }
+    }
+  }
+
+  // Disc + topping flecks. Color shifts with doneness:
+  // raw → dough cream, ~1.0 → golden, 1.2 → brown, burnt → black.
+  function drawBakePizza(cx, cy, d){
+    var R = 14;
+    // Pick a base color tween based on doneness.
+    var baseCol, crustCol;
+    if(d < 0.5){
+      baseCol = '#F2D9A8';   // raw dough cream
+      crustCol = '#D2B074';
+    } else if(d < 1.0){
+      // raw → golden
+      baseCol = P.dough;     // F4C24E
+      crustCol = P.doughDk;  // C68B1F
+    } else if(d < 1.2){
+      baseCol = '#C68B1F';   // golden → brown
+      crustCol = '#8C5A12';
+    } else if(d < 1.5){
+      baseCol = '#6E4517';   // brown
+      crustCol = '#3A2410';
+    } else {
+      baseCol = '#1A1A1A';   // burnt black
+      crustCol = '#000000';
+    }
+    // Disc — drawn as a stack of horizontal slabs forming a chunky circle.
+    for(var dy = -R; dy <= R; dy++){
+      var half = Math.round(Math.sqrt(Math.max(0, R*R - dy*dy)));
+      ctx.fillStyle = crustCol;
+      ctx.fillRect(cx - half, cy + dy, half * 2, 1);
+    }
+    // Inner sauce/cheese (slightly smaller)
+    for(var dy2 = -R + 2; dy2 <= R - 2; dy2++){
+      var half2 = Math.round(Math.sqrt(Math.max(0, (R-2)*(R-2) - dy2*dy2)));
+      ctx.fillStyle = baseCol;
+      ctx.fillRect(cx - half2, cy + dy2, half2 * 2, 1);
+    }
+
+    // Toppings — scatter based on the order's topping list.
+    var toppings = (state.order && state.order.toppings) || [];
+    if(toppings.length){
+      // Deterministic positions seeded by ordering so they don't dance.
+      var slots = [
+        [-7,-4],[5,-5],[-3,3],[7,4],[0,-7],[-6,2],[3,6],[-8,0],[6,-1],[0,5]
+      ];
+      var n = Math.min(slots.length, 6 + Math.floor(toppings.length * 1.5));
+      for(var i = 0; i < n; i++){
+        var t = toppings[i % toppings.length];
+        var s = slots[i];
+        var tx = cx + s[0], ty = cy + s[1];
+        // Color darkens with doneness too (especially burnt).
+        var dotCol = _bakeToppingColor(t, d);
+        ctx.fillStyle = dotCol;
+        ctx.fillRect(tx - 1, ty - 1, 3, 3);
+        if(d >= 1.5){
+          ctx.fillStyle = '#000';
+          ctx.fillRect(tx, ty, 1, 1);
+        }
+      }
+    }
+  }
+  function _bakeToppingColor(type, d){
+    if(d >= 1.5) return '#222';
+    if(d >= 1.2){
+      // brown out
+      if(type === 'pep')    return '#7A1208';
+      if(type === 'pepper') return P.pepperDk;
+      if(type === 'mush')   return P.mushDk;
+      if(type === 'olive')  return P.olive;
+      if(type === 'basil')  return P.pepperDk;
+      return '#6E4517';
+    }
+    if(type === 'pep')    return P.pep;
+    if(type === 'pepper') return P.pepper;
+    if(type === 'mush')   return P.mush;
+    if(type === 'olive')  return P.olive;
+    if(type === 'basil')  return P.pepperDk;
+    return P.pep;
+  }
+
+  function drawBakeDonenessMeter(){
+    var y0 = BAKE_METER_TOP, y1 = BAKE_METER_BOT;
+    // Backdrop
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, y0, W, y1 - y0);
+    ctx.fillStyle = P.cream;
+    ctx.fillRect(2, y0 + 2, W - 4, (y1 - y0) - 4);
+
+    // Color zones across 0..2 doneness.
+    var bx = 6, by = y0 + 5, bw = W - 12, bh = 5;
+    function zone(d0, d1, col){
+      var a = bx + Math.round((d0 / 2) * bw);
+      var b = bx + Math.round((d1 / 2) * bw);
+      ctx.fillStyle = col;
+      ctx.fillRect(a, by, b - a, bh);
+    }
+    zone(0,   0.5, P.red);       // raw
+    zone(0.5, 1.2, P.pepper);    // green sweet zone (using pepper green)
+    zone(1.2, 2.0, P.red);       // burnt
+    // Frame
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(bx, by - 1, bw, 1);
+    ctx.fillRect(bx, by + bh, bw, 1);
+    ctx.fillRect(bx - 1, by, 1, bh);
+    ctx.fillRect(bx + bw, by, 1, bh);
+
+    // Needle (triangle marker) at current doneness.
+    var d = Math.max(0, Math.min(2, state.bakeDoneness));
+    var nx = bx + Math.round((d / 2) * bw);
+    ctx.fillStyle = P.ink;
+    // Triangle: 3 wide at the top, 1 wide at the tip pointing into the bar.
+    ctx.fillRect(nx - 2, by - 4, 5, 1);
+    ctx.fillRect(nx - 1, by - 3, 3, 1);
+    ctx.fillRect(nx,     by - 2, 1, 2);
+    ctx.fillStyle = P.white;
+    ctx.fillRect(nx - 1, by - 3, 3, 1);
+  }
+
+  function drawBakeToolsRow(){
+    var y0 = BAKE_TOOLS_TOP, y1 = BAKE_TOOLS_BOT;
+    // Floor backdrop — warm wood tone
+    ctx.fillStyle = '#6E4517';
+    ctx.fillRect(0, y0, W, y1 - y0);
+    ctx.fillStyle = '#9C6325';
+    ctx.fillRect(0, y0, W, 4);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, y0, W, 1);
+    ctx.fillRect(0, y1 - 1, W, 1);
+
+    // Vertical divider between wood pile and pizza wand
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(80, y0 + 2, 1, (y1 - y0) - 4);
+
+    drawBakeWoodPile(BAKE_WOOD_X0, y0, BAKE_WOOD_X1 - BAKE_WOOD_X0, y1 - y0);
+    drawBakePizzaWand(BAKE_WAND_X0, y0, BAKE_WAND_X1 - BAKE_WAND_X0, y1 - y0);
+  }
+
+  function drawBakeWoodPile(x, y, w, h){
+    // Pixel-art log stack — up to BAKE_WOOD_START logs, stacked pyramid-ish.
+    // Each log is 18×6, stacked from bottom up.
+    var logW = 18, logH = 6;
+    var rowsXOff = [0, 10, 20]; // staggered nudge per row
+    var baseX = x + 6;
+    var baseY = y + h - 4 - logH;
+    var n = state.bakeWoodLeft;
+    // Bottom row: up to 3 logs
+    var rows = [
+      { count: 3, y: baseY,            offX: 0  },
+      { count: 2, y: baseY - logH + 1, offX: 10 },
+      { count: 1, y: baseY - logH*2 + 2, offX: 20 }
+    ];
+    var drawn = 0;
+    for(var r = 0; r < rows.length && drawn < n; r++){
+      for(var i = 0; i < rows[r].count && drawn < n; i++){
+        var lx = baseX + rows[r].offX + i * (logW + 2);
+        _drawLog(lx, rows[r].y, logW, logH);
+        drawn++;
+      }
+    }
+    // Hint when empty
+    if(state.bakeWoodLeft <= 0){
+      drawString('NO WOOD', x + 8, y + 8, P.cream);
+    }
+  }
+
+  function _drawLog(x, y, w, h){
+    // Outline
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x, y, w, h);
+    // Bark
+    ctx.fillStyle = '#9C6325';
+    ctx.fillRect(x + 1, y + 1, w - 2, h - 2);
+    // Grain dark band
+    ctx.fillStyle = '#6E4517';
+    ctx.fillRect(x + 1, y + 3, w - 2, 1);
+    // End caps (cross-section circle, tan)
+    ctx.fillStyle = '#E6C089';
+    ctx.fillRect(x + 1, y + 1, 3, h - 2);
+    ctx.fillRect(x + w - 4, y + 1, 3, h - 2);
+    // Rings
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(x + 2, y + 2, 1, h - 4);
+    ctx.fillRect(x + w - 3, y + 2, 1, h - 4);
+  }
+
+  function drawBakePizzaWand(x, y, w, h){
+    // Wooden peel (paddle) sticking up. Subtle wiggle (1px sway) idle.
+    var sway = Math.round(Math.sin(performance.now() / 380) * 1);
+    var handleX = x + Math.floor(w / 2) - 1 + sway;
+    var handleTop = y + 4;
+    var handleBot = y + h - 14;
+    // Handle
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(handleX - 1, handleTop - 1, 4, handleBot - handleTop + 2);
+    ctx.fillStyle = '#9C6325';
+    ctx.fillRect(handleX, handleTop, 2, handleBot - handleTop);
+    ctx.fillStyle = '#6E4517';
+    ctx.fillRect(handleX + 1, handleTop, 1, handleBot - handleTop);
+
+    // Paddle blade at the bottom (wide trapezoid)
+    var bladeY = handleBot;
+    var bladeW = 22;
+    var bladeX = handleX + 1 - Math.floor(bladeW / 2);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(bladeX - 1, bladeY, bladeW + 2, 10);
+    ctx.fillStyle = '#C68B1F';
+    ctx.fillRect(bladeX, bladeY + 1, bladeW, 8);
+    ctx.fillStyle = '#9C6325';
+    ctx.fillRect(bladeX, bladeY + 5, bladeW, 4);
+    // Hint label
+    drawString('WAND', x + Math.floor(w/2) - 8, y + 2, P.cream);
+  }
+
+  function drawBakeChefBar(){
+    var y0 = BAKE_CHEF_TOP;
+    var h  = BAKE_CHEF_BOT - BAKE_CHEF_TOP;
+    ctx.fillStyle = '#4a4452';
+    ctx.fillRect(0, y0, W, h);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(0, y0, W, 1);
+    // Chef portrait on the left
+    drawChefMini(4, y0 + 4);
+    // Speech bubble
+    var bx = 38, by = y0 + 10, bw = W - bx - 6, bh = h - 20;
+    ctx.fillStyle = P.white;
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.fillStyle = P.ink;
+    ctx.fillRect(bx, by, bw, 1);
+    ctx.fillRect(bx, by + bh - 1, bw, 1);
+    ctx.fillRect(bx, by, 1, bh);
+    ctx.fillRect(bx + bw - 1, by, 1, bh);
+    ctx.fillRect(bx - 2, by + 4, 2, 2);
+    ctx.fillStyle = P.white;
+    ctx.fillRect(bx - 1, by + 4, 1, 2);
+    // Hint text — different message based on state
+    var msg;
+    if(state.bakeDoneness < 0.5){
+      msg = 'DRAG WOOD INTO FIRE!';
+    } else if(state.bakeDoneness < 1.15){
+      msg = 'SWIPE UP TO TAKE OUT!';
+    } else {
+      msg = 'TAKE IT OUT NOW!';
+    }
+    drawString(msg, bx + 5, by + 6, P.ink);
+    // Second line: status
+    var line2 = state.bakeWoodLeft + ' LOGS LEFT';
+    drawString(line2, bx + 5, by + 16, P.redDeep);
+  }
+
   // --- Game tick ---
   function tick(dt){
+    if(state.stage === 'bake'){
+      tickBake(dt);
+      return;
+    }
     if(state.stage === 'delivery'){
       tickDelivery(dt);
       return;
@@ -2859,6 +3407,10 @@
   // --- Render ---
   let flashScreen = 0;
   function render(){
+    if(state.stage === 'bake'){
+      renderBake();
+      return;
+    }
     if(state.stage === 'delivery'){
       renderDelivery();
       return;
@@ -2964,6 +3516,7 @@
       if(el) el.textContent = val;
     };
     setText('result-quality',  fmtPct(data.quality));
+    setText('result-bake',     (state.bakeLabel || 'PERFECT'));
     setText('result-bike',     data.bikeTier.toUpperCase());
     setText('result-heat',     fmtPct(data.timeMul));
     setText('result-wage',     fmtMoney(data.kitchenWage));
@@ -3090,6 +3643,9 @@
     state.money         += state.kitchenWage;
     state.attemptTime    = 15;
     state.attemptWage    = 1.50;
+    // Bypass the bake stage entirely — assume a perfect bake.
+    state.bakeQuality    = 1.0;
+    state.bakeLabel      = 'PERFECT';
     try { if(audio && audio.state === 'suspended') audio.resume(); } catch(e){}
     startDelivery();
   }
@@ -3111,13 +3667,14 @@
   }
 
   // OFFER → DELIVER: snapshot kitchen quality + bank kitchen wage, then drop
-  // into the bike delivery side-scroller. Tip is computed when delivery ends.
+  // into the BAKE mini-game (which transitions into delivery on take-out).
+  // Tip is computed when delivery ends, using bakeQuality as a multiplier.
   function deliverPizza(){
     var q = computeQuality();
     state.kitchenQuality = q.overall;
     state.kitchenWage    = Math.round(state.attemptWage * 100) / 100;
     state.money         += state.kitchenWage;
-    startDelivery();
+    startBake();
   }
 
   // OFFER → REMAKE: do NOT forfeit wage. Wage is hourly — the only "cost" of
