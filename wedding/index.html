@@ -122,6 +122,19 @@
     object-fit:contain;
     box-shadow:0 30px 80px rgba(0,0,0,.6);
     user-select:none;
+    cursor:zoom-in;
+    transform-origin:center center;
+    transition:transform .18s ease;
+    will-change:transform;
+    touch-action:none;
+  }
+  #lb.zoomed img{cursor:grab;}
+  #lb.panning img{cursor:grabbing;transition:none;}
+  #lb.zoomed .nav{opacity:0;pointer-events:none;}
+  #lb .hint{
+    position:absolute;top:1.4rem;left:1.8rem;
+    color:var(--cream-dim);letter-spacing:.18em;font-size:.7rem;
+    text-transform:uppercase;opacity:.6;pointer-events:none;
   }
   #lb .nav{
     position:absolute;top:0;bottom:0;width:22%;
@@ -174,6 +187,7 @@
   <img id="lbImg" alt="">
   <button class="nav next" aria-label="Next">&#8250;</button>
   <div class="counter" id="lbCount"></div>
+  <div class="hint">Scroll to zoom &middot; drag to pan</div>
 </div>
 
 <script>
@@ -210,6 +224,37 @@ const lb = document.getElementById('lb');
 const lbImg = document.getElementById('lbImg');
 const lbCount = document.getElementById('lbCount');
 
+// zoom state
+let scale = 1, tx = 0, ty = 0;
+const MIN = 1, MAX = 5;
+const clamp = (v,a,b)=> Math.max(a, Math.min(b, v));
+
+function applyTransform(){
+  lbImg.style.transform = `translate(${tx}px, ${ty}px) scale(${scale})`;
+  lb.classList.toggle('zoomed', scale > 1.001);
+}
+function clampPan(){
+  const bw = lbImg.clientWidth * scale, bh = lbImg.clientHeight * scale;
+  const mx = Math.max(0, (bw - window.innerWidth) / 2 + 24);
+  const my = Math.max(0, (bh - window.innerHeight) / 2 + 24);
+  tx = clamp(tx, -mx, mx);
+  ty = clamp(ty, -my, my);
+}
+function resetZoom(){ scale = 1; tx = 0; ty = 0; applyTransform(); }
+
+function zoomTo(newScale, cx, cy){
+  const C0x = window.innerWidth / 2, C0y = window.innerHeight / 2;
+  const ax = cx - C0x, ay = cy - C0y;
+  const ns = clamp(newScale, MIN, MAX);
+  const r = ns / scale;
+  tx = ax * (1 - r) + tx * r;
+  ty = ay * (1 - r) + ty * r;
+  scale = ns;
+  if (scale === 1){ tx = 0; ty = 0; }
+  clampPan();
+  applyTransform();
+}
+
 function openLightbox(i){
   current = i;
   showCurrent();
@@ -220,11 +265,13 @@ function openLightbox(i){
 function showCurrent(){
   lbImg.src = PHOTOS_DIR + photos[current];
   lbCount.textContent = (current+1) + ' / ' + photos.length;
+  resetZoom();
 }
 function closeLightbox(){
   lb.classList.remove('open');
   lb.setAttribute('aria-hidden','true');
   document.body.style.overflow = '';
+  resetZoom();
 }
 function step(dir){
   current = (current + dir + photos.length) % photos.length;
@@ -234,12 +281,56 @@ function step(dir){
 document.querySelector('#lb .close').addEventListener('click', closeLightbox);
 document.querySelector('#lb .prev').addEventListener('click', e=>{e.stopPropagation();step(-1);});
 document.querySelector('#lb .next').addEventListener('click', e=>{e.stopPropagation();step(1);});
-lb.addEventListener('click', e=>{ if(e.target === lb || e.target === lbImg) closeLightbox(); });
+
+// backdrop click closes (but not when clicking the image)
+lb.addEventListener('click', e=>{ if(e.target === lb) closeLightbox(); });
+
+// wheel / trackpad pinch to zoom toward cursor
+lb.addEventListener('wheel', e=>{
+  if(!lb.classList.contains('open')) return;
+  e.preventDefault();
+  const factor = Math.exp(-e.deltaY * 0.0018);
+  zoomTo(scale * factor, e.clientX, e.clientY);
+}, {passive:false});
+
+// drag to pan when zoomed; click (no drag) toggles 2x zoom
+let dragging = false, moved = false, sx = 0, sy = 0, stx = 0, sty = 0;
+lbImg.addEventListener('mousedown', e=>{
+  e.preventDefault();
+  dragging = true; moved = false;
+  sx = e.clientX; sy = e.clientY; stx = tx; sty = ty;
+  if(scale > 1) lb.classList.add('panning');
+});
+window.addEventListener('mousemove', e=>{
+  if(!dragging) return;
+  if(Math.abs(e.clientX - sx) > 3 || Math.abs(e.clientY - sy) > 3) moved = true;
+  if(scale > 1){
+    tx = stx + (e.clientX - sx);
+    ty = sty + (e.clientY - sy);
+    clampPan();
+    applyTransform();
+  }
+});
+window.addEventListener('mouseup', e=>{
+  if(!dragging) return;
+  dragging = false;
+  lb.classList.remove('panning');
+  if(!moved){
+    if(scale === 1) zoomTo(2.2, e.clientX, e.clientY);
+    else resetZoom();
+  }
+});
+lbImg.addEventListener('dblclick', e=>{
+  e.preventDefault();
+  if(scale === 1) zoomTo(2.6, e.clientX, e.clientY); else resetZoom();
+});
+
 document.addEventListener('keydown', e=>{
   if(!lb.classList.contains('open')) return;
-  if(e.key === 'Escape') closeLightbox();
+  if(e.key === 'Escape'){ if(scale>1) resetZoom(); else closeLightbox(); }
   if(e.key === 'ArrowLeft') step(-1);
   if(e.key === 'ArrowRight') step(1);
+  if(e.key === '0') resetZoom();
 });
 
 // Starfield
