@@ -69,7 +69,7 @@ window.PHOTOS = [
   "MayaMadsen_Wedding_DSC08202.jpg",
   "MayaMadsen_Wedding_DSC08207.jpg",
   "MayaMadsen_Wedding_DSC08228.jpg",
-  "MayaMadsen_Wedding_DSC08234.jpg",
+  "MayaMadsen_Wedding_DSC08237.jpg",
   "MayaMadsen_Wedding_DSC08254.jpg",
   "MayaMadsen_Wedding_DSC08263.jpg",
   "MayaMadsen_Wedding_DSC08265.jpg",
