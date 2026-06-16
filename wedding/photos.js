@@ -77,5 +77,14 @@ window.PHOTOS = [
   "MayaMadsen_Wedding_DSC08289.jpg",
   "MayaMadsen_Wedding_DSC08301.jpg",
   "MayaMadsen_Wedding_DSC08311.jpg",
-  "MayaMadsen_Wedding_DSC08342.jpg"
+  "MayaMadsen_Wedding_DSC08328.jpg",
+  "MayaMadsen_Wedding_DSC08335.jpg",
+  "MayaMadsen_Wedding_DSC08342.jpg",
+  "MayaMadsen_Wedding_DSC08350.jpg",
+  "MayaMadsen_Wedding_DSC08356.jpg",
+  "MayaMadsen_Wedding_DSC08358.jpg",
+  "MayaMadsen_Wedding_DSC08360.jpg",
+  "MayaMadsen_Wedding_DSC08361.jpg",
+  "MayaMadsen_Wedding_DSC08364.jpg",
+  "MayaMadsen_Wedding.gif"
 ];
