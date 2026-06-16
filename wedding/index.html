@@ -99,6 +99,20 @@
     opacity:0;transition:opacity .4s ease;pointer-events:none;
   }
   .tile:hover::after{opacity:1;}
+  .tile .play{
+    position:absolute;z-index:2;top:50%;left:50%;
+    width:54px;height:54px;transform:translate(-50%,-50%);
+    border-radius:50%;background:rgba(1,18,27,.5);
+    border:1px solid rgba(243,236,221,.55);
+    display:flex;align-items:center;justify-content:center;
+    pointer-events:none;transition:background .3s ease;
+  }
+  .tile .play::after{
+    content:"";margin-left:4px;
+    border-style:solid;border-width:9px 0 9px 15px;
+    border-color:transparent transparent transparent var(--cream);
+  }
+  .tile:hover .play{background:rgba(10,74,96,.7);}
 
   .empty{grid-column:1/-1;text-align:center;padding:4rem 0;color:var(--cream-dim);font-style:italic;}
 
@@ -129,6 +143,11 @@
   }
   #lb.zoomed img{cursor:grab;}
   #lb.panning img{cursor:grabbing;transition:none;}
+  #lb video{
+    max-width:92vw;max-height:88vh;
+    object-fit:contain;background:#000;
+    box-shadow:0 30px 80px rgba(0,0,0,.6);
+  }
   #lb.zoomed .nav{opacity:0;pointer-events:none;}
   #lb .hint{
     position:absolute;top:1.4rem;left:1.8rem;
@@ -194,6 +213,7 @@
   <button class="close" aria-label="Close">&times;</button>
   <button class="nav prev" aria-label="Previous">&#8249;</button>
   <img id="lbImg" alt="">
+  <video id="lbVid" controls playsinline preload="metadata" style="display:none"></video>
   <button class="nav next" aria-label="Next">&#8250;</button>
   <div class="counter" id="lbCount"></div>
   <div class="hint">Scroll to zoom &middot; drag to pan</div>
@@ -204,6 +224,7 @@ const PHOTOS_DIR = 'Jpgs/';
 const THUMBS_DIR = 'thumbs/';
 let photos = [];
 let current = 0;
+const isVideo = n => /\.(mp4|mov|webm)$/i.test(n);
 
 // Load the photo list fresh every visit (cache-busted) so newly added
 // photos always show without the browser holding a stale copy.
@@ -229,10 +250,16 @@ function load(){
     tile.className = 'tile';
     const img = document.createElement('img');
     img.loading = 'lazy';
-    img.src = THUMBS_DIR + name;
-    img.alt = 'Maya & Madsen wedding photo ' + (i+1);
+    img.src = THUMBS_DIR + (isVideo(name) ? name + '.jpg' : name);
+    img.alt = 'Maya & Madsen wedding ' + (isVideo(name) ? 'video' : 'photo') + ' ' + (i+1);
     img.addEventListener('load', ()=> img.classList.add('loaded'));
     tile.appendChild(img);
+    if(isVideo(name)){
+      tile.classList.add('video');
+      const play = document.createElement('div');
+      play.className = 'play';
+      tile.appendChild(play);
+    }
     tile.addEventListener('click', ()=> openLightbox(i));
     grid.appendChild(tile);
   });
@@ -241,6 +268,7 @@ function load(){
 // Lightbox
 const lb = document.getElementById('lb');
 const lbImg = document.getElementById('lbImg');
+const lbVid = document.getElementById('lbVid');
 const lbCount = document.getElementById('lbCount');
 
 // zoom state
@@ -286,7 +314,21 @@ function openLightbox(i){
   if(!lbHistoryPushed){ history.pushState({lb:true}, ''); lbHistoryPushed = true; }
 }
 function showCurrent(){
-  lbImg.src = PHOTOS_DIR + photos[current];
+  const name = photos[current];
+  if(isVideo(name)){
+    lbImg.style.display = 'none';
+    lbImg.removeAttribute('src');
+    lbVid.style.display = 'block';
+    lbVid.src = PHOTOS_DIR + name;
+    lbVid.play().catch(()=>{});
+  } else {
+    lbVid.pause();
+    lbVid.removeAttribute('src');
+    lbVid.load();
+    lbVid.style.display = 'none';
+    lbImg.style.display = '';
+    lbImg.src = PHOTOS_DIR + name;
+  }
   lbCount.textContent = (current+1) + ' / ' + photos.length;
   resetZoom();
 }
@@ -294,6 +336,7 @@ function doClose(){
   lb.classList.remove('open');
   lb.setAttribute('aria-hidden','true');
   document.body.style.overflow = '';
+  lbVid.pause();
   resetZoom();
 }
 function closeLightbox(){

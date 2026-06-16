@@ -86,5 +86,6 @@ window.PHOTOS = [
   "MayaMadsen_Wedding_DSC08360.jpg",
   "MayaMadsen_Wedding_DSC08361.jpg",
   "MayaMadsen_Wedding_DSC08364.jpg",
-  "MayaMadsen_Wedding.gif"
+  "MayaMadsen_Wedding.gif",
+  "MayaMadsen_Wedding_C0001-compressed.mp4"
 ];
