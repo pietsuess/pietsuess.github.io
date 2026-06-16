@@ -136,20 +136,26 @@
     text-transform:uppercase;opacity:.6;pointer-events:none;
   }
   #lb .nav{
-    position:absolute;top:0;bottom:0;width:22%;
-    display:flex;align-items:center;cursor:pointer;
-    color:var(--cream);font-size:2.4rem;border:0;background:none;
-    opacity:.55;transition:opacity .2s ease;
+    position:absolute;top:50%;transform:translateY(-50%);z-index:52;
+    width:3.4rem;height:3.4rem;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;cursor:pointer;
+    color:var(--cream);font-size:1.7rem;line-height:1;padding-bottom:.15em;
+    border:1px solid var(--line);background:rgba(1,18,27,.45);
+    backdrop-filter:blur(4px);
+    opacity:.7;transition:opacity .2s ease, background .2s ease;
   }
-  #lb .nav:hover{opacity:1;}
-  #lb .prev{left:0;justify-content:flex-start;padding-left:2rem;}
-  #lb .next{right:0;justify-content:flex-end;padding-right:2rem;}
+  #lb .nav:hover{opacity:1;background:rgba(10,74,96,.6);}
+  #lb .prev{left:1.4rem;}
+  #lb .next{right:1.4rem;}
   #lb .close{
-    position:absolute;top:1.4rem;right:1.8rem;
-    background:none;border:0;color:var(--cream);
-    font-size:2rem;cursor:pointer;opacity:.7;line-height:1;
+    position:absolute;top:1.2rem;right:1.4rem;z-index:60;
+    width:2.8rem;height:2.8rem;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;
+    background:rgba(1,18,27,.45);backdrop-filter:blur(4px);
+    border:1px solid var(--line);color:var(--cream);
+    font-size:1.6rem;cursor:pointer;opacity:.85;line-height:1;
   }
-  #lb .close:hover{opacity:1;}
+  #lb .close:hover{opacity:1;background:rgba(10,74,96,.6);}
   #lb .counter{
     position:absolute;bottom:1.6rem;left:0;right:0;text-align:center;
     color:var(--cream-dim);letter-spacing:.3em;font-size:.8rem;
@@ -157,7 +163,11 @@
 
   @media (max-width:600px){
     .grid{grid-template-columns:repeat(2,1fr);}
-    #lb .nav{font-size:1.6rem;width:28%;}
+    #lb .nav{width:3rem;height:3rem;font-size:1.6rem;}
+    #lb .prev{left:.8rem;}
+    #lb .next{right:.8rem;}
+    #lb .close{top:.9rem;right:1rem;}
+    #lb .hint{display:none;}
   }
 </style>
 </head>
@@ -264,24 +274,37 @@ function zoomTo(newScale, cx, cy){
   applyTransform();
 }
 
+let lbHistoryPushed = false;
 function openLightbox(i){
   current = i;
   showCurrent();
   lb.classList.add('open');
   lb.setAttribute('aria-hidden','false');
   document.body.style.overflow = 'hidden';
+  // Push a history entry so the phone's Back button closes the photo
+  // instead of leaving the gallery.
+  if(!lbHistoryPushed){ history.pushState({lb:true}, ''); lbHistoryPushed = true; }
 }
 function showCurrent(){
   lbImg.src = PHOTOS_DIR + photos[current];
   lbCount.textContent = (current+1) + ' / ' + photos.length;
   resetZoom();
 }
-function closeLightbox(){
+function doClose(){
   lb.classList.remove('open');
   lb.setAttribute('aria-hidden','true');
   document.body.style.overflow = '';
   resetZoom();
 }
+function closeLightbox(){
+  // If we pushed a history entry, go back so the URL stays clean and
+  // a later Back press doesn't re-trigger; popstate does the real close.
+  if(lbHistoryPushed){ history.back(); }
+  else { doClose(); }
+}
+window.addEventListener('popstate', ()=>{
+  if(lb.classList.contains('open')){ lbHistoryPushed = false; doClose(); }
+});
 function step(dir){
   current = (current + dir + photos.length) % photos.length;
   showCurrent();
@@ -333,6 +356,30 @@ lbImg.addEventListener('dblclick', e=>{
   e.preventDefault();
   if(scale === 1) zoomTo(2.6, e.clientX, e.clientY); else resetZoom();
 });
+
+// Touch: swipe left/right to step photos (when not zoomed); drag to pan when zoomed
+let tStartX=0, tStartY=0, tPanning=false, tsx=0, tsy=0, tstx=0, tsty=0;
+lbImg.addEventListener('touchstart', e=>{
+  if(e.touches.length !== 1) return;
+  tStartX = e.touches[0].clientX; tStartY = e.touches[0].clientY;
+  if(scale > 1){ tPanning = true; tsx = tStartX; tsy = tStartY; tstx = tx; tsty = ty; }
+}, {passive:true});
+lbImg.addEventListener('touchmove', e=>{
+  if(e.touches.length !== 1) return;
+  if(tPanning && scale > 1){
+    tx = tstx + (e.touches[0].clientX - tsx);
+    ty = tsty + (e.touches[0].clientY - tsy);
+    clampPan(); applyTransform();
+    e.preventDefault();
+  }
+}, {passive:false});
+lbImg.addEventListener('touchend', e=>{
+  if(tPanning){ tPanning = false; return; }
+  if(scale > 1) return;
+  const dx = e.changedTouches[0].clientX - tStartX;
+  const dy = e.changedTouches[0].clientY - tStartY;
+  if(Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy)) step(dx < 0 ? 1 : -1);
+}, {passive:true});
 
 document.addEventListener('keydown', e=>{
   if(!lb.classList.contains('open')) return;
