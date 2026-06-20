@@ -1,4 +1,7 @@
 // VEIT push service worker
+self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", event => event.waitUntil(self.clients.claim()));
+
 self.addEventListener("push", event => {
   let data = { title: "VEIT", body: "New nudge" };
   try { if (event.data) data = event.data.json(); } catch (e) {
