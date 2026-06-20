@@ -21,5 +21,5 @@ self.addEventListener("push", event => {
 
 self.addEventListener("notificationclick", event => {
   event.notification.close();
-  event.waitUntil(clients.openWindow("https://arcade.pietsuess.com/veit-notify/"));
+  event.waitUntil(clients.openWindow("https://arcade.pietsuess.com/veit-status/"));
 });
