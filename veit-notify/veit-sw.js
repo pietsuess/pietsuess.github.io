@@ -10,8 +10,8 @@ self.addEventListener("push", event => {
   event.waitUntil(
     self.registration.showNotification(data.title || "VEIT", {
       body: data.body || "",
-      tag: "veit-nudge",
-      renotify: true,
+      // unique tag per push so each is a distinct, re-alerting notification
+      tag: "veit-" + Date.now(),
       requireInteraction: true,
       icon: "icon.png",
       badge: "icon.png"
