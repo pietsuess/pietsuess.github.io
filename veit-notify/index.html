@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>VEIT Notifications</title>
+<link rel="manifest" href="manifest.json">
+<meta name="theme-color" content="#1a0e2e">
+<style>
+  *,*::before,*::after{box-sizing:border-box}
+  body{margin:0;min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;
+    font-family:-apple-system,system-ui,sans-serif;background:#15101f;color:#f4efe6;padding:24px;text-align:center}
+  h1{font-size:2rem;margin:0 0 4px;letter-spacing:.02em}
+  p{opacity:.7;margin:6px 0;max-width:30rem;line-height:1.5}
+  button{margin-top:24px;padding:16px 28px;font-size:1.1rem;font-weight:600;border:0;border-radius:14px;
+    background:#e8735a;color:#fff;cursor:pointer}
+  button:disabled{opacity:.5}
+  #status{margin-top:20px;font-weight:600;min-height:1.4em}
+  .ok{color:#58c838}.err{color:#ff7a7a}
+  textarea{margin-top:20px;width:100%;max-width:34rem;height:120px;border-radius:10px;border:1px solid #4a3f5a;
+    background:#1f1830;color:#cdbfe0;padding:10px;font-size:.7rem;display:none}
+  #copyBtn{display:none;background:#3858d8}
+  small{opacity:.5;margin-top:18px;font-size:.8rem}
+</style>
+</head>
+<body>
+  <h1>VEIT</h1>
+  <p>Turn on push so your Daily Coach and Weekly Partner buzz this phone.</p>
+  <button id="enable">Enable notifications</button>
+  <div id="status"></div>
+  <textarea id="sub" readonly></textarea>
+  <button id="copyBtn">Copy code &amp; send to Claude</button>
+  <small>One-time setup. After you copy the code once, you are done.</small>
+<script>
+const VAPID_PUBLIC = "BMA3y4n3W16OVtUj8OpNRqImwdkhB9CAJquW6ETB-f7cfdCdm2Tc6X0euSY3w1BrHExFQ2uozfOjRsjEHk0CDLM";
+const $ = id => document.getElementById(id);
+function setStatus(msg, cls){ const s=$("status"); s.textContent=msg; s.className=cls||""; }
+function urlB64ToUint8(b64){
+  const pad="=".repeat((4-b64.length%4)%4);
+  const base=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");
+  const raw=atob(base); return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
+}
+$("enable").addEventListener("click", async () => {
+  try{
+    if(!("serviceWorker" in navigator) || !("PushManager" in window)){
+      setStatus("This browser does not support push. Open in Chrome.","err"); return;
+    }
+    $("enable").disabled=true; setStatus("Setting up...");
+    const reg = await navigator.serviceWorker.register("sw.js");
+    await navigator.serviceWorker.ready;
+    const perm = await Notification.requestPermission();
+    if(perm!=="granted"){ setStatus("Permission denied. Allow notifications and retry.","err"); $("enable").disabled=false; return; }
+    const sub = await reg.pushManager.subscribe({
+      userVisibleOnly:true,
+      applicationServerKey: urlB64ToUint8(VAPID_PUBLIC)
+    });
+    const json = JSON.stringify(sub);
+    $("sub").value = json; $("sub").style.display="block"; $("copyBtn").style.display="inline-block";
+    setStatus("Subscribed. Now copy the code below and send it to Claude.","ok");
+    reg.showNotification("VEIT push is live",{body:"This is what your morning nudge will look like."});
+  }catch(e){ setStatus("Error: "+e.message,"err"); $("enable").disabled=false; }
+});
+$("copyBtn").addEventListener("click", async () => {
+  try{ await navigator.clipboard.writeText($("sub").value); setStatus("Copied. Paste it to Claude.","ok"); }
+  catch{ $("sub").select(); setStatus("Select all in the box and copy manually.","err"); }
+});
+</script>
+</body>
+</html>
