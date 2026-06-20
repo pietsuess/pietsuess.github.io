@@ -9,6 +9,7 @@ self.addEventListener("push", event => {
       body: data.body || "",
       tag: "veit-nudge",
       renotify: true,
+      requireInteraction: true,
       icon: "icon.png",
       badge: "icon.png"
     })
@@ -17,5 +18,5 @@ self.addEventListener("push", event => {
 
 self.addEventListener("notificationclick", event => {
   event.notification.close();
-  event.waitUntil(clients.openWindow("https://github.com/pietsuess/veit/blob/main/latest-message.md"));
+  event.waitUntil(clients.openWindow("https://arcade.pietsuess.com/veit-notify/"));
 });
