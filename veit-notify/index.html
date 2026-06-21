@@ -40,13 +40,23 @@ function urlB64ToUint8(b64){
   const base=(b64+pad).replace(/-/g,"+").replace(/_/g,"/");
   const raw=atob(base); return Uint8Array.from([...raw].map(c=>c.charCodeAt(0)));
 }
+// Auto-update the service worker on every page load: drop any old one, install the current.
+(async () => {
+  if(!("serviceWorker" in navigator)) return;
+  try{
+    const regs = await navigator.serviceWorker.getRegistrations();
+    for(const r of regs){ if(!r.active || !/veit-push\.js/.test(r.active.scriptURL||"")) await r.unregister(); }
+    await navigator.serviceWorker.register("veit-push.js");
+    setStatus("Notifications up to date.","ok");
+  }catch(e){}
+})();
 $("enable").addEventListener("click", async () => {
   try{
     if(!("serviceWorker" in navigator) || !("PushManager" in window)){
       setStatus("This browser does not support push. Open in Chrome.","err"); return;
     }
     $("enable").disabled=true; setStatus("Setting up...");
-    const reg = await navigator.serviceWorker.register("veit-sw.js?v=5");
+    const reg = await navigator.serviceWorker.register("veit-push.js");
     await navigator.serviceWorker.ready;
     const perm = await Notification.requestPermission();
     if(perm!=="granted"){ setStatus("Permission denied. Allow notifications and retry.","err"); $("enable").disabled=false; return; }
