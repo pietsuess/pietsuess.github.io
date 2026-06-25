@@ -550,6 +550,53 @@
       letter-spacing: 0.04em;
     }
 
+    /* ---------- Assembly (scroll-driven sequence) ---------- */
+    .assembly {
+      padding: 0;
+      border-bottom: 1px solid var(--line);
+    }
+    .assembly-track {
+      height: 340vh;
+      position: relative;
+    }
+    .assembly-pin {
+      position: sticky;
+      top: 0;
+      height: 100vh;
+      display: flex;
+      align-items: center;
+    }
+    .assembly-grid {
+      width: 100%;
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: clamp(32px, 5vw, 96px);
+      align-items: center;
+      padding: 0 clamp(20px, 3vw, 56px);
+    }
+    .assembly-copy h2 { margin: 14px 0 22px; }
+    .assembly-visual {
+      position: relative;
+      aspect-ratio: 1 / 1;
+      width: 100%;
+      max-width: 560px;
+      margin-left: auto;
+      border: 1px solid var(--line);
+      border-radius: 10px;
+      overflow: hidden;
+      background:
+        radial-gradient(circle at 50% 36%, rgba(247,242,233,0.16), rgba(247,242,233,0.03) 46%, transparent 66%),
+        linear-gradient(160deg, rgba(26,14,46,0.55), rgba(7,8,13,0.85));
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .assembly-visual img {
+      width: 88%;
+      height: 88%;
+      object-fit: contain;
+    }
+
     /* ---------- Lightbox ---------- */
     .lightbox {
       position: fixed;
@@ -845,6 +892,24 @@
       </article>
     </div>
     <p class="system-note">Mount it. Stack it. Seat the glass. <span class="hl">Lock it. Shoot it. Take it apart.</span></p>
+  </section>
+
+  <!-- 3b. ASSEMBLY (scroll-driven) -->
+  <section id="assembly" class="assembly">
+    <div class="assembly-track">
+      <div class="assembly-pin">
+        <div class="assembly-grid">
+          <div class="assembly-copy">
+            <p class="eyebrow">Watch it build</p>
+            <h2>Parts into a lens</h2>
+            <p class="body">Every VEIT lens is a stack: a mount, threaded turrets, spacers and washers, your glass, a cap. Scroll, and it comes together piece by piece. The same stack comes apart just as fast, so you can re-space the glass, swap an element, or rebuild it as a different lens entirely.</p>
+          </div>
+          <div class="assembly-visual">
+            <img id="assemblyFrame" src="assets/assembly/frame001.png" alt="A VEIT lens assembling from its parts">
+          </div>
+        </div>
+      </div>
+    </div>
   </section>
 
   <!-- 4. THE FIRST DROP -->
@@ -1158,6 +1223,53 @@ document.getElementById("reserveEmail").addEventListener("click", function (e) {
   e.preventDefault();
   mailtoFallback(buildReservation(), null);
 });
+</script>
+
+<!-- Scroll-driven lens assembly sequence -->
+<script>
+(function () {
+  var FRAMES = 250;
+  var pad = function (n) { return ("000" + n).slice(-3); };
+  var base = "assets/assembly/frame";
+  var ext = ".png";
+  var track = document.querySelector(".assembly-track");
+  var img = document.getElementById("assemblyFrame");
+  if (!track || !img) return;
+
+  // Preload all frames (kicked off after load so it never blocks first paint).
+  var cache = {};
+  function preload() {
+    for (var i = 1; i <= FRAMES; i++) {
+      var im = new Image();
+      im.src = base + pad(i) + ext;
+      cache[i] = im;
+    }
+  }
+  if (document.readyState === "complete") preload();
+  else window.addEventListener("load", preload);
+
+  var current = 1;
+  function update() {
+    var rect = track.getBoundingClientRect();
+    var total = track.offsetHeight - window.innerHeight;
+    var p = total > 0 ? (-rect.top) / total : 0;
+    p = Math.min(1, Math.max(0, p));
+    var frame = Math.round(p * (FRAMES - 1)) + 1;
+    if (frame !== current) {
+      current = frame;
+      img.src = base + pad(frame) + ext;
+    }
+  }
+  var ticking = false;
+  window.addEventListener("scroll", function () {
+    if (!ticking) {
+      ticking = true;
+      requestAnimationFrame(function () { update(); ticking = false; });
+    }
+  }, { passive: true });
+  window.addEventListener("resize", update, { passive: true });
+  update();
+})();
 </script>
 
 <!-- Nav appears only after you scroll past the hero -->
