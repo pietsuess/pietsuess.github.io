@@ -1195,9 +1195,8 @@
         </div>
         <div class="reserve-actions">
           <button type="submit" class="btn" id="reserveBtn">Reserve your unit</button>
-          <a href="mailto:psuess@gmail.com?subject=VEIT%20reservation" class="btn ghost" id="reserveEmail">Reserve by email</a>
         </div>
-        <p class="reserve-note">Clicking Reserve asks your browser for notification permission so VEIT can ping you when the run opens. Prefer email? Decline the prompt and your reservation is sent that way instead. Either way it reaches Piet.</p>
+        <p class="reserve-note">Clicking Reserve puts you on the list right away. It also asks your browser for notification permission so VEIT can push you the moment the run opens. Decline the prompt and you stay on the list, notified by email instead.</p>
         <div class="reserve-status" id="reserveStatus" role="status" aria-live="polite">
           <h4>You're on the list.</h4>
           <p>You'll be notified when the limited run opens.</p>
@@ -1232,15 +1231,75 @@
 
 <script>
 /* ============================================================
- * VEIT reserve mechanism - web push, mailto fallback
- * ------------------------------------------------------------
- * RESERVE_ENDPOINT should point at a Cloudflare Worker that appends
- * each subscription (plus name / email / interest) to storage. The
- * SAME VAPID keypair's PRIVATE key, held in the private veit repo's
- * send-push.js, is what notifies these reservers later. Leave empty
- * for now: every reservation still reaches Piet via the mailto fallback.
+ * VEIT visit tracking - stripped-down beacon to the same Google
+ * Sheet as the rest of pietsuess.com (game = "VEIT"). Captures a
+ * pageview with geo + user agent, max scroll depth, time on page,
+ * and a leave event. No per-element click tracking.
  * ============================================================ */
-var RESERVE_ENDPOINT = ""; // e.g. "https://veit-reserve.<account>.workers.dev/reserve"
+(function () {
+  var URL_ = "https://script.google.com/macros/s/AKfycbxQcS_M7eZe3ob69qbxaH3QDUUqDQGvec6BKDN94wildC5p3LGTSwytm_2ZyutpznB4/exec";
+  // Persist the session across page navigation within a tab.
+  var session;
+  try {
+    session = sessionStorage.getItem("ps_analytics_session");
+    if (!session) {
+      session = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+      sessionStorage.setItem("ps_analytics_session", session);
+    }
+  } catch (e) {
+    session = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  }
+  window._veitSession = session;
+
+  var loadTime = Date.now();
+  var maxScroll = 0;
+  var geo = { ip: "", city: "", region: "", country: "" };
+  try {
+    fetch("https://api.db-ip.com/v2/free/self").then(function (r) { return r.json(); }).then(function (d) {
+      geo.ip = d.ipAddress || ""; geo.city = d.city || "";
+      geo.region = d.stateProv || ""; geo.country = d.countryName || "";
+    }).catch(function () {});
+  } catch (e) {}
+
+  function payload(event) {
+    return {
+      game: "VEIT", session: session, event: event, zone: "veit/index.html",
+      timePlayed: Math.round((Date.now() - loadTime) / 1000),
+      score: maxScroll, userAgent: navigator.userAgent.slice(0, 120),
+      ip: geo.ip, city: geo.city, region: geo.region, country: geo.country
+    };
+  }
+  function send(event) {
+    try { navigator.sendBeacon(URL_, JSON.stringify(payload(event))); } catch (e) {}
+  }
+
+  send("pageview");
+  window.addEventListener("scroll", function () {
+    var docH = document.documentElement.scrollHeight - window.innerHeight;
+    if (docH > 0) maxScroll = Math.max(maxScroll, Math.round((window.scrollY / docH) * 100));
+  }, { passive: true });
+  window.addEventListener("beforeunload", function () { send("leave"); });
+  // Light heartbeat so mobile visits (which often skip beforeunload) still register.
+  var lastKey = "";
+  setInterval(function () {
+    var key = maxScroll + "";
+    if (key === lastKey) return;
+    lastKey = key;
+    send("heartbeat");
+  }, 30000);
+})();
+
+/* ============================================================
+ * VEIT reserve mechanism - web push + Web3Forms email
+ * ------------------------------------------------------------
+ * Each reservation is emailed to Piet through Web3Forms, the same
+ * service every other pietsuess.com form uses (name / email /
+ * interest + any push subscription JSON). The SAME VAPID keypair's
+ * PRIVATE key, held in the private veit repo's send-push.js, is what
+ * notifies these reservers later.
+ * ============================================================ */
+var RESERVE_URL = "https://api.web3forms.com/submit";
+var RESERVE_ACCESS_KEY = "0f45da86-7dcf-4c66-8881-d7597d02d720";
 
 // Public half of the VAPID keypair (applicationServerKey).
 var VAPID_PUBLIC_KEY = "BMA3y4n3W16OVtUj8OpNRqImwdkhB9CAJquW6ETB-f7cfdCdm2Tc6X0euSY3w1BrHExFQ2uozfOjRsjEHk0CDLM";
@@ -1268,38 +1327,37 @@ function showSuccess() {
   document.getElementById("reserveStatus").classList.add("show");
 }
 
-// Fallback: open a pre-filled mail to Piet so a reservation always lands,
-// with zero backend. Includes the subscription JSON when we have one.
-function mailtoFallback(reservation, subscription) {
-  var lines = [
-    "I'd like to reserve a unit from the VEIT first drop.",
-    "",
-    "Name: " + (reservation.name || "(not given)"),
-    "Email: " + (reservation.email || "(not given)"),
-    "Interest: " + reservation.interest,
-    "When: " + reservation.ts,
-    ""
-  ];
-  if (subscription) {
-    lines.push("Push subscription (so VEIT can notify me):");
-    lines.push(JSON.stringify(subscription));
-  } else {
-    lines.push("(No push subscription - notify me by email when the run opens.)");
-  }
-  var url = "mailto:psuess@gmail.com"
-    + "?subject=" + encodeURIComponent("VEIT reservation")
-    + "&body=" + encodeURIComponent(lines.join("\n"));
-  window.location.href = url;
-}
-
-// POST to the configured endpoint. Returns true on success, false otherwise.
-function postReservation(payload) {
-  if (!RESERVE_ENDPOINT) return Promise.resolve(false);
-  return fetch(RESERVE_ENDPOINT, {
+// Email the reservation to Piet via Web3Forms, the same service every
+// other pietsuess.com form uses. The push subscription JSON (if any) is
+// folded into the message so it is never lost.
+function postReservation(reservation, subscription) {
+  var body = {
+    access_key: RESERVE_ACCESS_KEY,
+    subject: "New VEIT reservation - " + (reservation.name || reservation.email || "unnamed"),
+    from_name: "VEIT reservations",
+    name: reservation.name || "(not given)",
+    email: reservation.email || "(not given)",
+    interest: reservation.interest,
+    notify: subscription ? "push subscribed" : "email only",
+    reserved_at: reservation.ts,
+    message:
+      "VEIT first-drop reservation\n\n" +
+      "Name: " + (reservation.name || "(not given)") + "\n" +
+      "Email: " + (reservation.email || "(not given)") + "\n" +
+      "Interested in: " + reservation.interest + "\n" +
+      "Notify by: " + (subscription ? "web push (subscribed)" : "email") + "\n" +
+      "When: " + reservation.ts + "\n\n" +
+      (subscription
+        ? "Push subscription JSON (for send-push.js):\n" + JSON.stringify(subscription)
+        : "(No push subscription - notify by email when the run opens.)")
+  };
+  return fetch(RESERVE_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload)
-  }).then(function (res) { return res.ok; }).catch(function () { return false; });
+    body: JSON.stringify(body)
+  }).then(function (res) { return res.json(); })
+    .then(function (data) { return !!(data && data.success); })
+    .catch(function () { return false; });
 }
 
 function pushSupported() {
@@ -1334,35 +1392,19 @@ document.getElementById("reserveForm").addEventListener("submit", function (e) {
   var reservation = buildReservation();
 
   trySubscribe().then(function (subscription) {
-    var payload = {
-      reservation: reservation,
-      subscription: subscription ? subscription.toJSON() : null
-    };
-    return postReservation(payload).then(function (ok) {
-      // Success path: endpoint accepted it. Otherwise fall back to mailto so
-      // the reservation always reaches Piet (empty endpoint, POST failure, or
-      // unsupported push all land here).
-      if (ok) {
-        showSuccess();
-      } else {
-        showSuccess(); // confirm to the user first...
-        mailtoFallback(reservation, payload.subscription); // ...then open their mail client
-      }
+    var sub = subscription ? subscription.toJSON() : null;
+    return postReservation(reservation, sub).then(function () {
+      showSuccess();
       btn.disabled = false;
       btn.textContent = "Reserved";
     });
   }).catch(function () {
+    // Push subscribe failed; still capture the reservation to the sheet.
+    postReservation(reservation, null);
     showSuccess();
-    mailtoFallback(reservation, null);
     btn.disabled = false;
     btn.textContent = "Reserved";
   });
-});
-
-// Keep the plain "Reserve by email" link pre-filled with whatever is typed.
-document.getElementById("reserveEmail").addEventListener("click", function (e) {
-  e.preventDefault();
-  mailtoFallback(buildReservation(), null);
 });
 </script>
 
