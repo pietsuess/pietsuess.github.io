@@ -162,11 +162,12 @@ html, body {
   background: #000;
   overflow: hidden;
 }
-.screen-img {
-  position: absolute; inset: 0;
-  width: 100%; height: 100%;
-  object-fit: cover;
+.preview iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
   display: none;
+  pointer-events: none; /* clicks pass through; row click launches */
 }
 .screen-title {
   position: absolute;
@@ -179,6 +180,7 @@ html, body {
   letter-spacing: 0.1em;
   line-height: 1.3;
   background: linear-gradient(to top, rgba(0,0,0,0.8) 30%, transparent);
+  display: none;
 }
 .preview .preview-placeholder {
   position: absolute; inset: 0;
@@ -404,7 +406,7 @@ html, body {
 
     <div class="preview" id="preview">
       <div class="preview-placeholder" id="preview-placeholder">NO SIGNAL</div>
-      <img class="screen-img" id="screen-img" alt="">
+      <iframe id="preview-frame" src="about:blank" title="Game preview" loading="lazy" sandbox="allow-scripts allow-same-origin" tabindex="-1" aria-hidden="true"></iframe>
       <div class="screen-title" id="screen-title"></div>
     </div>
 
@@ -416,7 +418,7 @@ html, body {
     <div class="list" id="list">
 
       <!-- screen: ship + title only, over the starfield. no press-start, no leaderboard -->
-      <div class="row" data-href-desktop="/navigator.html" data-href-mobile="/navigator.html" data-title-class="t-navigator" data-screen="/dev/screens/navigator.png">
+      <div class="row" data-href-desktop="/navigator.html" data-href-mobile="/navigator.html" data-title-class="t-navigator" data-preview="navigator">
         <div class="cursor">▶</div>
         <div class="num">01</div>
         <div class="body">
@@ -430,7 +432,7 @@ html, body {
       </div>
 
       <!-- screen: live gameplay loop, title over it (cinematic-style) -->
-      <div class="row" data-href-desktop="/tunnel.html" data-href-mobile="/tunnel.html" data-title-class="t-tunnel" data-screen="/dev/screens/tunnel.png">
+      <div class="row" data-href-desktop="/tunnel.html" data-href-mobile="/tunnel.html" data-title-class="t-tunnel" data-preview="tunnel">
         <div class="cursor">▶</div>
         <div class="num">02</div>
         <div class="body">
@@ -444,7 +446,7 @@ html, body {
       </div>
 
       <!-- screen: CUBE TOSS title over the in-game background -->
-      <div class="row" data-href-desktop="/cube-toss.html" data-href-mobile="/cube-toss-mobile.html" data-title-class="t-cubetoss" data-screen="/dev/screens/cube-toss.png">
+      <div class="row" data-href-desktop="/cube-toss.html" data-href-mobile="/cube-toss-mobile.html" data-title-class="t-cubetoss" data-preview="cubetoss">
         <div class="cursor">▶</div>
         <div class="num">03</div>
         <div class="body">
@@ -459,7 +461,7 @@ html, body {
       </div>
 
       <!-- screen: in-game title screen, Chef + delivery boy -->
-      <div class="row" data-href-desktop="/pizzapayday.html" data-href-mobile="/pizzapayday.html" data-title-class="t-pizza" data-screen="/dev/screens/pizzapayday.png">
+      <div class="row" data-href-desktop="/pizzapayday.html" data-href-mobile="/pizzapayday.html" data-title-class="t-pizza" data-preview="pizza">
         <div class="cursor">▶</div>
         <div class="num">04</div>
         <div class="body">
@@ -474,7 +476,7 @@ html, body {
       </div>
 
       <!-- screen: vibe-coding gradient theme, "SFX Designer" title over it -->
-      <div class="row" data-href-desktop="https://pietsuess.com/sfx-designer.html" data-href-mobile="https://pietsuess.com/sfx-designer-mobile.html" data-title-class="t-sfx" data-screen="/dev/screens/sfx-designer.png">
+      <div class="row" data-href-desktop="https://pietsuess.com/sfx-designer.html" data-href-mobile="https://pietsuess.com/sfx-designer-mobile.html" data-title-class="t-sfx" data-preview="sfx">
         <div class="cursor">▶</div>
         <div class="num">05</div>
         <div class="body">
@@ -503,10 +505,69 @@ html, body {
   var isMobile = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   var rows = Array.prototype.slice.call(document.querySelectorAll('.row'));
   var sel = 0;
-  var screenImg = document.getElementById('screen-img');
+  var frame = document.getElementById('preview-frame');
   var screenTitle = document.getElementById('screen-title');
   var placeholder = document.getElementById('preview-placeholder');
   var previewTimer = null;
+
+  function injectCSS(doc, css) {
+    var s = doc.createElement('style');
+    s.textContent = css;
+    doc.head.appendChild(s);
+  }
+
+  // Each recipe loads the REAL game/page in a same-origin iframe and crops
+  // it down to just the piece Piet wants, via CSS injected after load —
+  // no game files are touched, this is picker-side only.
+  var PREVIEW = {
+    navigator: {
+      src: '/navigator.html',
+      overlay: false,
+      prep: function (doc) {
+        // ship + title over the starfield only — hide press-start/leaderboard, pin to top
+        injectCSS(doc,
+          '#intro-sub,#fullscreen-hint,#leaderboard,#nav-saved-panel,#boring-mode-link{display:none!important}' +
+          '#intro{justify-content:flex-start!important;padding-top:24px!important}');
+      }
+    },
+    tunnel: {
+      src: '/tunnel.html',
+      overlay: false,
+      prep: function (doc, win) {
+        // fire the game's own first-launch tap handler so its real cinematic
+        // (tunnel flythrough + title overlay) plays exactly as it would for a player
+        setTimeout(function () {
+          try { doc.dispatchEvent(new win.MouseEvent('mousedown', { bubbles: true })); } catch (e) {}
+        }, 300);
+      }
+    },
+    cubetoss: {
+      src: '/cube-toss.html',
+      overlay: true, // game has no "CUBE TOSS" title text of its own
+      prep: function (doc) {
+        injectCSS(doc, '#fs-btn{display:none!important}');
+      }
+    },
+    pizza: {
+      src: '/pizzapayday.html',
+      overlay: false,
+      // the game's title screen is a tall (160:256) aspect-ratio box that sizes
+      // itself from *width* — if we cap the iframe height to our short preview
+      // box, it sizes from that tiny height instead and comes out miniature.
+      // Give it real vertical room and let the box crop the excess below.
+      tallHeight: 900,
+      prep: function (doc) {
+        injectCSS(doc, '.instr,.phase-jumpbar,.test-menu{display:none!important}');
+      }
+    },
+    sfx: {
+      src: '/dev/vibe-coding.html',
+      overlay: true, // borrowing the vibe-coding background theme, not a game screen
+      prep: function (doc) {
+        injectCSS(doc, '.content,#lightbox{display:none!important}');
+      }
+    }
+  };
 
   function paint() {
     rows.forEach(function(r, i){ r.classList.toggle('selected', i === sel); });
@@ -520,19 +581,40 @@ html, body {
   function updatePreview() {
     var r = rows[sel];
     if (!r) return;
-    var titleEl = r.querySelector('.title');
-    screenTitle.textContent = titleEl ? titleEl.textContent : '';
-    screenTitle.className = 'screen-title ' + (r.dataset.titleClass || '');
-    var src = r.dataset.screen;
-    screenImg.onload = function () { screenImg.style.display = 'block'; placeholder.style.display = 'none'; };
-    screenImg.onerror = function () { screenImg.style.display = 'none'; placeholder.style.display = 'flex'; };
-    if (src) {
-      screenImg.src = src;
-    } else {
-      screenImg.removeAttribute('src');
-      screenImg.style.display = 'none';
+    var recipe = PREVIEW[r.dataset.preview];
+    if (!recipe) {
+      frame.style.display = 'none';
+      screenTitle.style.display = 'none';
       placeholder.style.display = 'flex';
+      return;
     }
+    placeholder.style.display = 'none';
+    if (recipe.tallHeight) {
+      frame.style.height = recipe.tallHeight + 'px';
+    } else {
+      frame.style.height = '';
+    }
+    if (recipe.overlay) {
+      var titleEl = r.querySelector('.title');
+      screenTitle.textContent = titleEl ? titleEl.textContent : '';
+      screenTitle.className = 'screen-title ' + (r.dataset.titleClass || '');
+      screenTitle.style.display = 'block';
+    } else {
+      screenTitle.style.display = 'none';
+    }
+    // force a real reload (fresh JS state — replays Tunnel's cinematic, resets
+    // Navigator's starfield, etc.) rather than relying on src-reassignment quirks.
+    // Kept visible/sized throughout the swap — hiding it mid-reload lets some
+    // pages' width-based media queries evaluate against a zero-width box.
+    frame.style.display = 'block';
+    frame.onload = null;
+    frame.src = 'about:blank';
+    setTimeout(function () {
+      frame.onload = function () {
+        try { recipe.prep(frame.contentDocument, frame.contentWindow); } catch (e) {}
+      };
+      frame.src = recipe.src;
+    }, 0);
   }
   function launch(r) {
     var href = isMobile ? (r.dataset.hrefMobile || r.dataset.hrefDesktop) : (r.dataset.hrefDesktop || r.dataset.hrefMobile);
