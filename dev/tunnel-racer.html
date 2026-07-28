@@ -786,6 +786,55 @@ function buildTextures(){
     TEX.hull=mkTex(c);
   })();
 
+  // ── DELTA WING skin: magenta plan-view panelling from the schematic ──
+  (function(){
+    var w=128,h=128,c=cv(w,h),g=c.getContext('2d');
+    // bright pink down the centreline, deep magenta out at the tips
+    var lg=g.createLinearGradient(0,0,w,0);
+    lg.addColorStop(0.00,'#5e1246'); lg.addColorStop(0.16,'#8e1a5e');
+    lg.addColorStop(0.38,'#d1197f'); lg.addColorStop(0.50,'#ff2a9d');
+    lg.addColorStop(0.62,'#d1197f'); lg.addColorStop(0.84,'#8e1a5e');
+    lg.addColorStop(1.00,'#5e1246');
+    g.fillStyle=lg; g.fillRect(0,0,w,h);
+    // chordwise panel seams
+    g.fillStyle='rgba(30,0,20,.55)';
+    [10,26,44,66,86,104,118].forEach(function(y){ g.fillRect(0,y,w,2); });
+    // spanwise structural spars
+    g.fillStyle='rgba(30,0,20,.4)';
+    [18,40,62,88,110].forEach(function(x){ g.fillRect(x,0,1,h); });
+    // highlight along the spine
+    g.fillStyle='rgba(255,150,215,.30)'; g.fillRect(60,0,8,h);
+    g.fillStyle='rgba(255,220,245,.22)'; g.fillRect(63,0,2,h);
+    // hatches + greebles
+    g.fillStyle='rgba(20,0,14,.5)';
+    [[22,30,12,8],[92,30,12,8],[30,72,10,6],[88,72,10,6],[54,92,20,10]].forEach(function(r){
+      g.fillRect(r[0],r[1],r[2],r[3]);
+    });
+    g.fillStyle='rgba(255,170,225,.35)';
+    [[22,30,12,1],[92,30,12,1],[54,92,20,1]].forEach(function(r){ g.fillRect(r[0],r[1],r[2],r[3]); });
+    // dark outline along the wing edges
+    g.fillStyle='rgba(24,0,18,.8)'; g.fillRect(0,0,3,h); g.fillRect(125,0,3,h);
+    grain(g,w,h,520,0.12); ps1ify(g,w,h,26);
+    TEX.delta=mkTex(c);
+  })();
+
+  // ── thruster complex: machined silver, ribbed ──
+  (function(){
+    var w=64,h=64,c=cv(w,h),g=c.getContext('2d');
+    var lg=g.createLinearGradient(0,0,0,h);
+    lg.addColorStop(0,'#3a3f48'); lg.addColorStop(.22,'#c6ccd6');
+    lg.addColorStop(.42,'#f2f5fa'); lg.addColorStop(.62,'#9aa3b0');
+    lg.addColorStop(.85,'#4d545e'); lg.addColorStop(1,'#2a2e35');
+    g.fillStyle=lg; g.fillRect(0,0,w,h);
+    for(var x=0;x<w;x+=4){ g.fillStyle='rgba(0,0,0,.30)'; g.fillRect(x,0,2,h); }
+    for(var x2=0;x2<w;x2+=16){ g.fillStyle='rgba(255,255,255,.22)'; g.fillRect(x2,0,1,h); }
+    g.fillStyle='#1d2128'; g.fillRect(0,26,w,4); g.fillRect(0,40,w,3);
+    g.fillStyle='#ff2f6d';
+    for(var x3=6;x3<w;x3+=13) g.fillRect(x3,27,4,2);
+    ps1ify(g,w,h,22);
+    TEX.metal=mkTex(c);
+  })();
+
   // ── cockpit glass ──
   (function(){
     var w=64,h=64,c=cv(w,h),g=c.getContext('2d');
@@ -1148,32 +1197,85 @@ function buildShip(id){
     flames.push(cyl(1.0,1.2,2.2,6, 0,-0.9,5.8,glow));
     g.scale.setScalar(1.06);
   } else {
-    // PINK DELTAWING
-    cone(1.9,9.0,6,0,0,-4.8);                       // long pink nose
-    box(3.2,1.9,8.6,0,0,0.9);                       // fuselage
-    delta(6.4,8.4,0.45,-0.25,2.0);                  // main delta
-    box(2.4,0.35,3.0,-3.9,0.35,3.6,dark,0,0,-0.34); // canted tip fins
-    box(2.4,0.35,3.0, 3.9,0.35,3.6,dark,0,0, 0.34);
-    box(1.9,1.25,2.8,0,1.35,-0.9,glass);            // canopy
-    box(7.6,0.4,0.9,0,-0.75,0.4,trim);              // magenta chine stripe
-    box(0.7,2.9,2.6,0,2.0,4.3,dark);                // tail
-    box(2.6,0.35,1.2,0,2.9,4.6,trim);
-    // one big central thruster — nozzle, core plume, outer plume, shock rings
-    var nozzle=cyl(2.35,2.05,2.4,8,0,0,5.4,dark);
-    thruster.nozzle=nozzle;
-    var core=new THREE.Mesh(new THREE.ConeBufferGeometry(1.55,7.0,8),glow);
-    core.rotation.x=Math.PI/2; core.position.z=6.6; g.add(core);
-    var outer=new THREE.Mesh(new THREE.ConeBufferGeometry(2.30,11.0,8),glowSoft);
-    outer.rotation.x=Math.PI/2; outer.position.z=7.6; g.add(outer);
+    // ── DELTA WING EXPLORER ──────────────────────────────────────
+    // Pure isoceles delta: needle apex, straight trailing edge, raised
+    // spine, single thruster complex proud of the aft deck. Built from
+    // four cross-sections lofted together so the plan view is exact.
+    var ST=[
+      { z:-15.0, w:0.00, tc:0.00, te:0.00, bc: 0.00 },
+      { z: -7.0, w:3.20, tc:0.78, te:0.07, bc:-0.34 },
+      { z: -1.5, w:6.00, tc:1.58, te:0.10, bc:-0.80 },
+      { z:  3.5, w:7.50, tc:1.52, te:0.10, bc:-0.74 }
+    ];
+    var vp=[], vu=[], vi=[];
+    function pushRing(st){
+      var b=vp.length/3;
+      // 0 top-centre, 1 right tip, 2 bottom-centre, 3 left tip
+      vp.push(0,st.tc,st.z);      vu.push(0.5,(st.z+15)/19);
+      vp.push(st.w,st.te,st.z);   vu.push(1.0,(st.z+15)/19);
+      vp.push(0,st.bc,st.z);      vu.push(0.5,(st.z+15)/19);
+      vp.push(-st.w,st.te,st.z);  vu.push(0.0,(st.z+15)/19);
+      return b;
+    }
+    var rings=[];
+    for(var q=0;q<ST.length;q++) rings.push(pushRing(ST[q]));
+    for(var q2=0;q2<ST.length-1;q2++){
+      var A=rings[q2], B=rings[q2+1];
+      for(var e=0;e<4;e++){
+        var e2=(e+1)%4;
+        vi.push(A+e, B+e, A+e2);
+        vi.push(A+e2, B+e, B+e2);
+      }
+    }
+    // trailing-edge cap
+    var L=rings[ST.length-1];
+    vi.push(L+0,L+1,L+3); vi.push(L+1,L+2,L+3);
+    var hullGeo=new THREE.BufferGeometry();
+    hullGeo.setAttribute('position',new THREE.Float32BufferAttribute(vp,3));
+    hullGeo.setAttribute('uv',new THREE.Float32BufferAttribute(vu,2));
+    hullGeo.setIndex(vi);
+    hullGeo.computeVertexNormals();
+    var skin=ps1Mat(TEX.delta,{ambient:0x5e3a55,light:0xffd6f0,fogNear:900,fogFar:3400,side:THREE.DoubleSide});
+    g.add(new THREE.Mesh(hullGeo,skin));
+
+    // raised aft deck — the machinery bay behind the canopy
+    var metal=ps1Mat(TEX.metal,{ambient:0x4d525c,light:0xf4f8ff,fogNear:900,fogFar:3400});
+    box(3.0,0.9,3.4,0,1.85,1.4,metal);
+    box(3.6,0.35,0.5,0,2.30,0.1,metal);
+    box(1.1,0.5,2.6,-1.9,1.55,1.6,metal);
+    box(1.1,0.5,2.6, 1.9,1.55,1.6,metal);
+    // canopy — small dark teardrop well forward
+    box(1.25,0.62,2.9,0,1.02,-5.4,glass);
+    box(1.5,0.30,1.0,0,0.86,-3.7,metal);
+    // magenta chine strip along each leading edge
+    box(0.35,0.16,10.0,-3.4,0.16,-3.4,trim,0,0.30,0);
+    box(0.35,0.16,10.0, 3.4,0.16,-3.4,trim,0,-0.30,0);
+
+    // ── thruster complex (schematic Fig. 16) ───────────────────
+    cyl(1.15,1.30,2.4,10,0,1.05,4.7,metal);        // high-voltage convertor
+    cyl(1.52,1.52,1.3,10,0,1.05,6.3,dark);         // plasma ion chamber
+    cyl(1.78,1.72,1.5,10,0,1.05,7.4,metal);        // nozzle shroud
+    cyl(2.05,2.30,1.3,10,0,1.05,8.6,dark);         // magnetic nozzle
+    for(var vn=0;vn<6;vn++){                        // graphene thruster vanes
+      var av=vn/6*Math.PI*2;
+      var vane=new THREE.Mesh(new THREE.BoxBufferGeometry(0.22,1.5,1.9),metal);
+      vane.position.set(Math.cos(av)*1.62,1.05+Math.sin(av)*1.62,6.9);
+      vane.rotation.z=-av; g.add(vane);
+    }
+    var Z0=9.3, YC=1.05;
+    var core=new THREE.Mesh(new THREE.ConeBufferGeometry(1.45,7.0,8),glow);
+    core.rotation.x=Math.PI/2; core.position.set(0,YC,Z0); g.add(core);
+    var outer=new THREE.Mesh(new THREE.ConeBufferGeometry(2.15,11.0,8),glowSoft);
+    outer.rotation.x=Math.PI/2; outer.position.set(0,YC,Z0); g.add(outer);
     var rings=[];
     for(var r=0;r<3;r++){
-      var sd=new THREE.Mesh(new THREE.ConeBufferGeometry(0.9,1.8,6),glowHot);
-      sd.rotation.x=Math.PI/2; sd.position.z=7.2+r*2.2; sd.visible=false; g.add(sd);
+      var sd=new THREE.Mesh(new THREE.ConeBufferGeometry(0.85,1.7,6),glowHot);
+      sd.rotation.x=Math.PI/2; sd.position.set(0,YC,Z0+1+r*2.2); sd.visible=false; g.add(sd);
       rings.push(sd);
     }
-    thruster.core=core; thruster.outer=outer; thruster.rings=rings;
-    thruster.mats=[glow,glowSoft,glowHot];
+    thruster.core=core; thruster.outer=outer; thruster.rings=rings; thruster.z0=Z0; thruster.y=YC;
   }
+  if(id==='deltawing') g.scale.setScalar(0.78);
   g.userData.flames=flames;
   g.userData.thruster=thruster;
   return g;
@@ -1585,14 +1687,15 @@ function burn(sg,thr,hyper,time){
     for(var f=0;f<fl.length;f++){ fl[f].scale.set(1,fs,1); fl[f].position.z=5.6+fs*0.5; }
   }
   if(!T||!T.core) return;
+  var Z0=T.z0!==undefined?T.z0:5.6;
   var lenC=(0.42+thr*1.55+hyper*1.3)*flick;
   var wid =(0.62+thr*0.55+hyper*0.5);
   T.core.scale.set(wid,lenC,wid);
-  T.core.position.z=5.6+lenC*3.5;
+  T.core.position.z=Z0+lenC*3.5;
   var lenO=(0.30+thr*1.85+hyper*2.4)*(0.90+Math.sin(time*31)*0.10);
   var widO=(0.48+thr*0.62+hyper*0.75);
   T.outer.scale.set(widO,lenO,widO);
-  T.outer.position.z=5.6+lenO*5.5;
+  T.outer.position.z=Z0+lenO*5.5;
   T.outer.material.uniforms.uOpacity.value=0.18+thr*0.34+hyper*0.3;
   // plume runs pink at idle, white-hot into hyper
   _burnCol.setHex(0xff69b4).lerp(new THREE.Color(0xffffff),Math.min(1,thr*0.45+hyper*0.85));
@@ -1603,7 +1706,7 @@ function burn(sg,thr,hyper,time){
     if(on){
       var k=0.7+Math.sin(time*26+r*1.7)*0.25;
       T.rings[r].scale.set(k*(1-r*0.14),k*1.3,k*(1-r*0.14));
-      T.rings[r].position.z=6.4+lenC*2.2+r*2.6;
+      T.rings[r].position.z=Z0+0.8+lenC*2.2+r*2.6;
     }
   }
 }
@@ -1778,8 +1881,8 @@ function armInit(){
   armR.setClearColor(0x000000,0);
   armScene=new THREE.Scene();
   armCam=new THREE.PerspectiveCamera(34,1.6,1,600);
-  armCam.position.set(13,9.5,25);
-  armCam.lookAt(0,0.5,0);
+  armCam.position.set(15,8.5,27);
+  armCam.lookAt(0,0.4,-1.2);
   armPed=new THREE.Mesh(new THREE.TorusBufferGeometry(11,0.5,4,20),
     ps1Mat(TEX.hazard,{emissive:0.6,fogNear:4000,fogFar:9000,tint:0x3fd8ff}));
   armPed.rotation.x=Math.PI/2; armPed.position.y=-4.6;
@@ -1793,7 +1896,8 @@ function armSetShip(id){
   armInit(); if(!armR) return;
   if(armShip){ armScene.remove(armShip); }
   armShip=buildShip(id);
-  armShip.scale.multiplyScalar(1.25);
+  armShip.scale.multiplyScalar(1.15);
+  armShip.position.z=2.4;
   armScene.add(armShip);
 }
 function armResize(){
