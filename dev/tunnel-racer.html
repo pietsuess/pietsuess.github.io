@@ -229,7 +229,7 @@ body.playing #touch{display:block}
 .mrow.warn .mb i{background:linear-gradient(90deg,#8e0033,#ff6f9e)}
 
 #arm-tabs{display:flex;gap:4px}
-#arm-tabs button{flex:1;font-family:inherit;font-size:8px;letter-spacing:1px;padding:11px 3px;
+#arm-tabs button{flex:1;font-family:inherit;font-size:7px;letter-spacing:1px;padding:11px 2px;
   color:#7f97b3;background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(6,10,18,.7));
   border:1px solid rgba(255,255,255,.16)}
 #arm-tabs button.active{color:#08111d;background:linear-gradient(180deg,#ffe6a6,#ffb000 46%,#c47c00);
@@ -324,8 +324,6 @@ body.needs-rotate #rotate{display:flex}
     <div class="hud-block">
       <div class="lab">HULL</div>
       <div class="bar" id="hp-bar"><i></i></div>
-      <div class="lab">SHIELD</div>
-      <div class="bar" id="sh-bar"><i style="transform:scaleX(0)"></i></div>
       <div class="lab">THROTTLE</div>
       <div class="bar" id="bo-bar"><i></i></div>
     </div>
@@ -393,16 +391,18 @@ body.needs-rotate #rotate{display:flex}
     <div class="mrow" id="mr-hull"><span class="mk">HULL</span><span class="mv"></span><span class="mb"><i></i></span></div>
     <div class="mrow" id="mr-mass"><span class="mk">MASS</span><span class="mv"></span><span class="mb"><i></i></span></div>
     <div class="mrow" id="mr-spd"><span class="mk">SPEED</span><span class="mv"></span><span class="mb"><i></i></span></div>
-    <div class="mrow" id="mr-sh"><span class="mk">SHIELD</span><span class="mv"></span><span class="mb"><i></i></span></div>
+    <div class="mrow" id="mr-drv"><span class="mk">DRIVE</span><span class="mv"></span><span class="mb"><i></i></span></div>
     <div class="mrow" id="mr-dmg"><span class="mk">ABSORB</span><span class="mv"></span><span class="mb"><i></i></span></div>
   </div>
   <div class="wide" id="arm-tabs">
     <button data-p="0" class="active">HULL</button>
-    <button data-p="1">WEAPON</button>
-    <button data-p="2">SHIELD</button>
+    <button data-p="1">DRIVE</button>
+    <button data-p="2">WEAPON</button>
+    <button data-p="3">SHIELD</button>
   </div>
   <div class="wide" id="arm-pages">
     <div class="arm-page"><div class="arm-list" id="arm-ships"></div></div>
+    <div class="arm-page"><div class="arm-list" id="arm-drives"></div></div>
     <div class="arm-page"><div class="arm-list" id="arm-weapons"></div></div>
     <div class="arm-page"><div class="arm-list" id="arm-shields"></div></div>
   </div>
@@ -6444,30 +6444,45 @@ var WEAPONS = [
   { name:'LANCE',    kg:280, price:2000, rate:0.30, dmg:3, desc:'HEAVY BOLT. WIDE BLAST.' },
   { name:'SCATTER',  kg:850, price:3200, rate:0.34, dmg:2, desc:'THREE-WAY SPREAD. HEAVY.' }
 ];
+// ported SHIELD_DAMAGE_RED = [0, .10, .20, .40, .50] — shields cut the
+// damage you take, they are not a second health pool.
 var SHIELDS = [
-  { name:'NONE',    kg:0,    price:0,    cap:0,   regen:0,   desc:'RAW HULL ONLY.' },
-  { name:'FOIL',    kg:200,  price:500,  cap:30,  regen:2.0, desc:'THIN SKIN. FAST REGEN.' },
-  { name:'BULWARK', kg:800,  price:1400, cap:70,  regen:1.2, desc:'SOLID. SLOWER RECHARGE.' },
-  { name:'AEGIS',   kg:2400, price:2600, cap:150, regen:0.8, desc:'HEAVY PLATE. TANKS A LOT.' },
-  { name:'PHASE',   kg:240,  price:3400, cap:60,  regen:3.4, desc:'LIGHT. ALWAYS COMING BACK.' }
+  { name:'NONE',    kg:0,    price:0,    red:0.00, desc:'RAW HULL. EVERY HIT LANDS FULL.' },
+  { name:'CERAMIC', kg:200,  price:500,  red:0.10, desc:'THIN PLATE. TAKES THE EDGE OFF.' },
+  { name:'STEEL',   kg:800,  price:1400, red:0.20, desc:'SOLID PLATE. HONEST PROTECTION.' },
+  { name:'TUNGSTEN',kg:2400, price:2600, red:0.40, desc:'HEAVY PLATE. HALVES MOST HITS.' },
+  { name:'GRAPHENE',kg:240,  price:3400, red:0.50, desc:'LIGHT AND NEARLY UNBREAKABLE.' }
+];
+// ported SPEED_MULTIPLIERS — the drive tier, which is also what swaps
+// the 0_NONE / 1_THRUSTERS / 2_AFTERBURN / 3_ION / 4_WARP meshes.
+var DRIVES = [
+  { name:'NONE',      kg:0,    price:0,    mult:0.85, desc:'STOCK MANOEUVRING THRUSTERS.' },
+  { name:'THRUSTERS', kg:180,  price:600,  mult:1.00, desc:'PROPER MAIN DRIVE.' },
+  { name:'AFTERBURN', kg:420,  price:1300, mult:1.15, desc:'REHEAT. LOUD AND QUICK.' },
+  { name:'ION',       kg:760,  price:2200, mult:1.30, desc:'ION STACK. LONG LEGS.' },
+  { name:'WARP',      kg:1200, price:3400, mult:1.50, desc:'WARP CORE. ABSURD.' }
 ];
 
 // ── persistent state ──────────────────────────────────────────────
 var SAVE_KEY='tunnelRacer_s1_v1';
 var S = { ringBank:0, best:0, bestTime:0, cleared:false, runs:0,
           activeShip:'deltawing', owned:{deltawing:true},
-          weapon:0, shield:0, ownedWeapons:{0:true}, ownedShields:{0:true}, seen:{} };
+          weapon:0, shield:0, drive:1, ownedWeapons:{0:true}, ownedShields:{0:true}, ownedDrives:{0:true,1:true}, seen:{} };
 (function(){ try{ var raw=localStorage.getItem(SAVE_KEY); if(!raw) return;
   var d=JSON.parse(raw); for(var k in d) if(k in S) S[k]=d[k];
   S.owned=S.owned||{}; S.owned.deltawing=true;
   S.ownedWeapons=S.ownedWeapons||{}; S.ownedWeapons[0]=true;
   S.ownedShields=S.ownedShields||{}; S.ownedShields[0]=true;
+  S.ownedDrives=S.ownedDrives||{}; S.ownedDrives[0]=true;
+  if(typeof S.drive!=='number') S.drive=1;
   S.seen=S.seen||{};
 }catch(e){} })();
 function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
 function shipMeta(){ return SHIP_BY_ID[S.activeShip]||SHIP_BY_ID.deltawing; }
+function totalKg(){ return shipMeta().hullKg+WEAPONS[S.weapon].kg+SHIELDS[S.shield].kg+DRIVES[S.drive].kg; }
+// ported: ship speedMult x drive multiplier x (hull / loaded mass)
 function speedFactor(){ var m=shipMeta();
-  return m.speedMult * (m.hullKg/(m.hullKg+WEAPONS[S.weapon].kg+SHIELDS[S.shield].kg)); }
+  return m.speedMult * DRIVES[S.drive].mult * (m.hullKg/totalKg()); }
 
 // ── audio: fully procedural ───────────────────────────────────────
 var AC=null, master=null, engGain=null, engOsc=[];
@@ -6954,7 +6969,7 @@ function ps1Mat(tex,opts){
 // ═══════════════════════════════════════════════════════════════════
 var TRACK_LEN=ZONE.length;                // 15000, ported
 var TUBE_R=46;                            // tube radius
-var WALL_R=TUBE_R-6;                      // ship orbit — you ride the wall, not the void
+var WALL_R=Math.round(TUBE_R*0.829);      // ship orbit — ported ratio (29 of 35)
 var path=null, pathPts=[];
 function seeded(seed){ var s=seed; return function(){ s=(s*1664525+1013904223)|0; return ((s>>>8)&0xffffff)/0xffffff; }; }
 function buildPath(){
@@ -7196,7 +7211,7 @@ function applyLoadout(sg){
   for(var i=0;i<P.length;i++){
     var p=P[i];
     if(p.cls==='armour')      p.mesh.visible=(p.tier===S.shield);
-    else if(p.cls==='drive')  p.mesh.visible=(p.tier===S.weapon);
+    else if(p.cls==='drive')  p.mesh.visible=(p.tier===S.drive);
     else if(p.cls==='cannon') p.mesh.visible=(S.weapon>=3);
   }
 }
@@ -7332,14 +7347,13 @@ function buildSpawns(){
   }
   // guarantee every roster entry appears once so the archive is completable
   var placed={}; spawnList.forEach(function(s){ if(s.type==='content') placed[s.content.title]=1; });
-  var free=TRACK_LEN*0.55;
-  roster.forEach(function(title){
-    if(placed[title]) return;
+  var missing=roster.filter(function(t){ return !placed[t]; });
+  missing.forEach(function(title,mi){
     var item=null;
     for(var q=0;q<CONTENT_EDIT.length;q++) if(CONTENT_EDIT[q].title===title) item=CONTENT_EDIT[q];
     if(!item) return;
-    free+=520; if(free>TRACK_LEN*0.93) return;
-    spawnList.push({d:free,a:Math.random()*Math.PI*2,rad:WALL_R,type:'content',content:item});
+    var at=TRACK_LEN*(0.22+0.62*((mi+0.5)/missing.length));
+    spawnList.push({d:at,a:rnd()*Math.PI*2,rad:WALL_R,type:'content',content:item});
   });
   spawnList.sort(function(a,b){ return a.d-b.d; });
   spawnList.forEach(function(s,i){
@@ -7416,7 +7430,7 @@ function resetRun(){
   var m=shipMeta();
   G.mode='play'; G.dist=0; G.prevDist=0;
   G.hpMax=m.maxHealth; G.hp=m.maxHealth;
-  G.shMax=SHIELDS[S.shield].cap; G.sh=G.shMax;
+  G.sh=0; G.shMax=0;
   G.speed=ZONE.speed*0.45*speedFactor(); G.boost=1; G.boosting=false;
   G.shipAngle=0; G.camAngle=0; G.throttleSmooth=0; G.hyperFrac=0; G.fov=75;
   isTouching=false; turnRate=0; turnTarget=0; throttle=0;
@@ -7554,7 +7568,7 @@ function readKeys(dt){
 // ═══════════════════════════════════════════════════════════════════
 var $=function(id){ return document.getElementById(id); };
 var elScore=$('hud-score'), elRings=$('hud-rings'), elSpeed=$('hud-speed'),
-    elHp=$('hp-bar'), elSh=$('sh-bar'), elBo=$('bo-bar'),
+    elHp=$('hp-bar'), elBo=$('bo-bar'),
     elProg=$('prog').firstElementChild, elCombo=$('combo'), elPops=$('pops'),
     elFlash=$('flash'), elProgLab=$('prog-lab');
 function bar(el,v){ el.firstElementChild.style.transform='scaleX('+Math.max(0,Math.min(1,v))+')';
@@ -7578,7 +7592,6 @@ function updateHUD(){
   elRings.textContent=G.rings;
   elSpeed.textContent=Math.round(G.speed);
   bar(elHp,G.hp/G.hpMax);
-  bar(elSh,G.shMax?G.sh/G.shMax:0);
   bar(elBo,G.throttleSmooth/1.5);
   elBo.style.filter = G.hyperFrac>0.02 ? 'hue-rotate(-38deg) saturate(1.5)' : 'none';
   elProg.style.width=(Math.min(1,G.dist/TRACK_LEN)*100)+'%';
@@ -7599,16 +7612,18 @@ function itemLocal(it,out){
 }
 var _il={x:0,y:0};
 
-function damage(amount,reason){
+// ported takeDamage(): flat 20, capped to 15 in sector 1, cut by the
+// shield tier (BlockWing has no shield mechanic), then by hull dmgMult.
+function damage(){
   if(G.inv>0) return;
-  amount*=shipMeta().dmgMult;
-  if(G.sh>0){
-    G.sh-=amount;
-    if(G.sh<0){ G.hp+=G.sh; G.sh=0; }
-  } else G.hp-=amount;
+  var dmg=Math.min(20,15);
+  if(S.activeShip!=='blockwing') dmg*=(1-SHIELDS[S.shield].red);
+  dmg*=shipMeta().dmgMult;
+  G.hp-=dmg;
   G.inv=0.85; G.shake=Math.min(1.2,G.shake+0.7);
-  G.combo=0; G.hits++;
-  SFX.hit(); flash('hit');
+  G.combo=0; G.comboT=0; G.hits++;
+  G.speed=Math.max(ZONE.speed*K*speedFactor(), G.speed-80*K);
+  SFX.hit(); flash('hit'); pop('-'+Math.round(dmg)+' HULL','#ff2f6d');
   if(navigator.vibrate) try{ navigator.vibrate(38); }catch(e){}
   if(G.hp<=0){ G.hp=0; endRun(false); }
 }
@@ -7616,24 +7631,26 @@ function damage(amount,reason){
 function collect(it){
   it.taken=true;
   if(it.type==='ring'){
-    G.combo++; G.comboT=2.6;
-    var val=100*Math.min(10,1+Math.floor(G.combo/5));
-    G.score+=val; G.rings++;
+    // ported: combo caps the multiplier at 4, 210 points a ring,
+    // and the ring bank earns the multiplier, not a flat one.
+    G.combo++; G.comboT=COMBO_WINDOW;
+    var mult=Math.min(G.combo,4), pts=210*mult;
+    G.score+=pts; G.rings+=mult;
     SFX.ring(G.combo);
-    if(G.combo%10===0){ showCombo(G.combo); }
+    pop('+'+pts, mult>1?'#ff44ff':'#00ff88');
+    if(mult>1) showCombo(mult);
   } else if(it.type==='shield'){
-    if(G.shMax>0){ G.sh=Math.min(G.shMax,G.sh+G.shMax*0.5); }
-    else G.hp=Math.min(G.hpMax,G.hp+18);
-    G.score+=250; SFX.shield(); flash('heal'); pop('+SHIELD','#3fd8ff');
+    G.hp=Math.min(G.hpMax,G.hp+20);
+    G.score+=85; SFX.shield(); flash('heal'); pop('+20 HULL','#44aaff');
   } else if(it.type==='boost'){
-    G.score+=400; G.inv=Math.max(G.inv,0.6); SFX.boost(); pop('+400 GATE','#ffe000');
+    G.score+=500; G.rings+=5; SFX.boost(); flash('heal'); pop('+5 RINGS','#ffe000');
   } else if(it.type==='content'){
     G.score+=1500; SFX.content();
     G.collected[it.content.title]=1; S.seen[it.content.title]=1; persist();
     G.inv=Math.max(G.inv,0.4);
     pop('ARCHIVE REEL +1500','#ffe800'); flash('heal');
   } else if(it.type==='mine'){
-    damage(26,'mine');
+    damage();
     return;
   }
 }
@@ -7705,6 +7722,7 @@ function burn(sg,thr,hyper,time){
 }
 
 var BASE_FOV=75, HYPER_FOV=120;
+var COMBO_WINDOW=3.0;   // ported
 
 function update(dt){
   G.time+=dt;
@@ -7731,7 +7749,6 @@ function update(dt){
   G.dist += G.speed*dt;
 
   // ── shield regen / timers ──────────────────────────────────────
-  if(G.shMax>0 && G.sh<G.shMax) G.sh=Math.min(G.shMax,G.sh+SHIELDS[S.shield].regen*dt);
   if(G.inv>0) G.inv-=dt;
   if(G.comboT>0){ G.comboT-=dt; if(G.comboT<=0 && G.combo>0) G.combo=0; }
   G.score += G.speed*dt*0.12;
@@ -7783,7 +7800,7 @@ function update(dt){
   var counts={ring:0,mine:0,shield:0,boost:0,content:0};
   Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
   while(windowLo<spawnList.length && spawnList[windowLo].d < G.dist-80) windowLo++;
-  var spin=G.time*1.7;
+  var spin=G.time*0.18;   // ported rotSpeedZ 0.3 x rotMult 0.6
   var reach=1400+G.speed*0.9;
   for(var i=windowLo;i<spawnList.length;i++){
     var it=spawnList[i];
@@ -7793,7 +7810,7 @@ function update(dt){
     var pad=Math.max(6,G.speed*dt*0.6);
     if(it.d<=G.dist+pad && it.d>G.prevDist-pad){
       var arc=Math.abs(angWrap(it.a-G.shipAngle))*WALL_R;
-      var hitR=(it.type==='mine'?7.6:(it.type==='boost'?13.5:(it.type==='content'?11.5:(it.type==='shield'?7.0:9.0))));
+      var hitR=(it.type==='mine'?7.6:(it.type==='boost'?9.7:(it.type==='content'?13.8:9.0)));
       if(arc<hitR){ collect(it); continue; }
       else if(it.type==='ring') G.ringsMissed++;
     }
@@ -7806,9 +7823,8 @@ function update(dt){
     mesh.up.copy(_radP).multiplyScalar(-1);
     _look.copy(mesh.position).addScaledVector(frP.t,25);
     mesh.lookAt(_look);
-    if(it.type==='mine'){ mesh.rotateZ(spin*1.4+it.id); mesh.rotateX(spin*0.6); }
-    else if(it.type==='content'){ mesh.rotateZ(Math.sin(spin*0.7+it.id)*0.5); }
-    else { mesh.rotateZ(spin*0.5+it.id*0.4); }
+    if(it.type==='content'){ mesh.rotateY(G.time*0.02); mesh.rotateZ(G.time*0.01); }
+    else { mesh.rotateZ(spin+it.id*0.7); }
     mesh.visible=true;
   }
 
@@ -7934,15 +7950,16 @@ function setMeter(id,val,frac,tone){
   el.className='mrow'+(tone?' '+tone:'');
 }
 function armHero(){
-  var m=shipMeta(), W=WEAPONS[S.weapon], H=SHIELDS[S.shield];
-  var total=m.hullKg+W.kg+H.kg, sf=speedFactor();
+  var m=shipMeta(), W=WEAPONS[S.weapon], H=SHIELDS[S.shield], D=DRIVES[S.drive];
+  var total=totalKg(), sf=speedFactor();
   $('arm-name').textContent=m.name;
-  $('arm-tag').textContent=W.name+'  /  '+H.name;
+  $('arm-tag').textContent=D.name+'  /  '+W.name+'  /  '+H.name;
   setMeter('mr-hull', m.maxHealth,       m.maxHealth/325,  m.maxHealth>=200?'good':'');
   setMeter('mr-mass', (total/1000).toFixed(1)+'T', total/9000, total>6500?'warn':'');
   setMeter('mr-spd',  '\u00D7'+sf.toFixed(2),      sf/1.2,     sf>=1.0?'good':(sf<0.8?'warn':''));
-  setMeter('mr-sh',   H.cap,             H.cap/150,        H.cap>=70?'good':'');
-  setMeter('mr-dmg',  Math.round((1-m.dmgMult)*100)+'%', (1-m.dmgMult)/0.4, m.dmgMult<=0.7?'good':'');
+  setMeter('mr-drv',  '\u00D7'+D.mult.toFixed(2), D.mult/1.5, D.mult>=1.15?'good':(D.mult<1?'warn':''));
+  var absorb=1-(1-(S.activeShip==='blockwing'?0:H.red))*m.dmgMult;
+  setMeter('mr-dmg',  Math.round(absorb*100)+'%', absorb/0.65, absorb>=0.4?'good':'');
   armSetShip(S.activeShip);
 }
 
@@ -8002,23 +8019,34 @@ function renderArmoury(){
         else if(buy(sp.price)){ S.owned[sp.id]=true; S.activeShip=sp.id; persist(); ensureShip(); renderArmoury(); }
       }));
   });
+  var cd=$('arm-drives'); cd.innerHTML='';
+  DRIVES.forEach(function(dr,i){
+    var owned=!!S.ownedDrives[i];
+    cd.appendChild(optRow(dr.name, dr.desc,
+      dr.kg+' KG  \u00B7  TOP SPEED \u00D7'+dr.mult.toFixed(2),
+      dr.price, owned, S.drive===i, function(){
+        if(owned){ S.drive=i; persist(); ensureShip(); SFX.ui(); renderArmoury(); }
+        else if(buy(dr.price)){ S.ownedDrives[i]=true; S.drive=i; persist(); ensureShip(); renderArmoury(); }
+      }));
+  });
   var cw=$('arm-weapons'); cw.innerHTML='';
   WEAPONS.forEach(function(w,i){
     var owned=!!S.ownedWeapons[i];
     cw.appendChild(optRow(w.name, w.desc,
       w.kg+' KG'+(w.rate?'  \u00B7  '+w.rate.toFixed(2)+'S CYCLE  \u00B7  DMG '+w.dmg:''),
       w.price, owned, S.weapon===i, function(){
-        if(owned){ S.weapon=i; persist(); SFX.ui(); renderArmoury(); }
+        if(owned){ S.weapon=i; persist(); ensureShip(); SFX.ui(); renderArmoury(); }
         else if(buy(w.price)){ S.ownedWeapons[i]=true; S.weapon=i; persist(); renderArmoury(); }
       }));
   });
   var ch=$('arm-shields'); ch.innerHTML='';
+  var noShield=(S.activeShip==='blockwing');
   SHIELDS.forEach(function(h,i){
     var owned=!!S.ownedShields[i];
-    ch.appendChild(optRow(h.name, h.desc,
-      h.kg+' KG'+(h.cap?'  \u00B7  CAP '+h.cap+'  \u00B7  REGEN '+h.regen.toFixed(1)+'/S':''),
+    ch.appendChild(optRow(h.name, noShield?'N/A \u2014 BLOCKWING USES HULL ARMOUR':h.desc,
+      h.kg+' KG'+(h.red?'  \u00B7  ABSORBS '+Math.round(h.red*100)+'%':''),
       h.price, owned, S.shield===i, function(){
-        if(owned){ S.shield=i; persist(); SFX.ui(); renderArmoury(); }
+        if(owned){ S.shield=i; persist(); ensureShip(); SFX.ui(); renderArmoury(); }
         else if(buy(h.price)){ S.ownedShields[i]=true; S.shield=i; persist(); renderArmoury(); }
       }));
   });
