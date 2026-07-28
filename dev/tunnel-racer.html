@@ -10711,6 +10711,26 @@ function applyLoadout(sg,ld){
   }
 }
 
+// Loadout part colours, restored from docs/ship-loadout.mtl so a swap in the
+// armoury actually reads. Kd straight off the MTL, plus the two overrides the
+// original made in code (STEEL to a lighter blue, GRAPHENE to shiny slate).
+// amb/lit lift the near-black exports, which relied on a specular highlight we
+// do not have; em is the glow the hot drives and the energy guns carry.
+var PART_MAT={
+  armour1:{ t:0xffc973 },                          // CERAMIC   warm sand
+  armour2:{ t:0x6e8aae },                          // STEEL     blue-grey
+  armour3:{ t:0xff2404, em:0.10 },                 // TUNGSTEN  red-orange
+  armour4:{ t:0x5b6573, lit:0xffffff, amb:0x6d7686 }, // GRAPHENE slate, hard shine
+  cannon1:{ t:0x4e4e4e },                          // SINGLE GUN gunmetal
+  cannon2:{ t:0x4e4e4e },                          // TWIN GUNS  gunmetal
+  cannon3:{ t:0x8b00ff, em:0.18 },                 // LASERS     violet
+  cannon4:{ t:0x8b00ff, em:0.22 },                 // WAVE CANNON violet, hotter
+  drive0:{ t:0x525064 },                           // NONE       grey-violet
+  drive1:{ t:0x1d1c23, amb:0x8a90a4, lit:0xffffff },// THRUSTER  near-black, lifted
+  drive2:{ t:0xff2404, em:0.22 },                  // AFTERBURN  red-orange
+  drive3:{ t:0xff7600, em:0.28 },                  // ION        orange
+  drive4:{ t:0xffc973, em:0.22 }                   // WARP       warm sand
+};
 // Original hull colours, carried over: DeltaWing pink-purple,
 // StealthWing dark purple with a hard shine, BlockWing raw gunmetal.
 var SHIP_SKIN={
@@ -10741,7 +10761,17 @@ function buildShip(id){
   var skin =ps1Mat(TEX.delta,{tint:SK.tint,ambient:SK.ambient,light:SK.light,fogNear:900,fogFar:3400,twoSide:true,side:THREE.DoubleSide});
   var metal=ps1Mat(TEX.metal,{ambient:0x4d525c,light:0xf4f8ff,fogNear:900,fogFar:3400,twoSide:true,side:THREE.DoubleSide});
   var win  =ps1Mat(TEX.glass,{ambient:0x22394d,light:0xbfeaff,fogNear:900,fogFar:3400,emissive:0.30,twoSide:true,side:THREE.DoubleSide});
-  var plate=ps1Mat(TEX.metal,{ambient:0x585f6c,light:0xffffff,fogNear:900,fogFar:3400,tint:SK.trim,twoSide:true,side:THREE.DoubleSide});
+  // one material per loadout tier, so shields / guns / drives read apart
+  var TIERMAT={};
+  function tierMat(cls,tier){
+    var k=cls+tier;
+    if(TIERMAT[k]) return TIERMAT[k];
+    var c=PART_MAT[k]||{};
+    return TIERMAT[k]=ps1Mat(TEX.metal,{
+      ambient:c.amb||0x585f6c, light:c.lit||0xffffff,
+      fogNear:900, fogFar:3400, tint:c.t||SK.trim,
+      emissive:c.em||0, twoSide:true, side:THREE.DoubleSide});
+  }
   var glow =ps1Mat(TEX.ring,{emissive:1,fogNear:1400,fogFar:4200,tint:SK.glow,
                              transparent:true,additive:true,depthWrite:false});
   var glowSoft=ps1Mat(TEX.ring,{emissive:1,fogNear:1400,fogFar:4200,tint:SK.glow,opacity:0.5,
@@ -10760,8 +10790,8 @@ function buildShip(id){
   Object.keys(GEO).forEach(function(k){
     var pc=partClass(k), m;
     if(pc.cls==='glass') m=win;
-    else if(pc.cls==='metal'||pc.cls==='drive') m=metal;
-    else if(pc.cls==='armour'||pc.cls==='cannon') m=plate;
+    else if(pc.cls==='metal') m=metal;
+    else if(pc.cls==='drive'||pc.cls==='armour'||pc.cls==='cannon') m=tierMat(pc.cls,pc.tier);
     else m=skin;
     var mesh=new THREE.Mesh(GEO[k],m);
     body.add(mesh);
