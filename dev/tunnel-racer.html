@@ -6651,10 +6651,12 @@ function buildTextures(){
       g.fillStyle='rgb('+(v+26)+','+v+','+v+')';
       g.fillRect((Math.random()*w)|0,(Math.random()*h)|0,1+((Math.random()*3)|0),1+((Math.random()*3)|0));
     }
-    g.strokeStyle='#ff2f6d'; g.lineWidth=2;
+    g.strokeStyle='#5a0d10'; g.lineWidth=3;
     g.beginPath(); g.moveTo(0,20); g.lineTo(w,20); g.moveTo(0,44); g.lineTo(w,44); g.stroke();
-    g.fillStyle='#ff8c00';
-    for(var x=4;x<w;x+=14) g.fillRect(x,28,6,8);
+    g.fillStyle='#2a0508';
+    for(var x=4;x<w;x+=14) g.fillRect(x,26,7,12);
+    g.fillStyle='#ffb4b4';
+    for(var x2=4;x2<w;x2+=14) g.fillRect(x2,26,7,2);
     ps1ify(g,w,h,16);
     TEX.mine=mkTex(c);
   })();
@@ -6689,14 +6691,14 @@ function buildTextures(){
   (function(){
     var w=64,h=64,c=cv(w,h),g=c.getContext('2d');
     g.fillStyle='#0b0d12'; g.fillRect(0,0,w,h);
-    g.fillStyle='#ff2f6d'; g.fillRect(0,0,w,3); g.fillRect(0,61,w,3);
+    g.fillStyle='#ffe800'; g.fillRect(0,0,w,3); g.fillRect(0,61,w,3);
     for(var x=2;x<w;x+=8){ g.fillStyle='#1b1f28'; g.fillRect(x,4,5,5); g.fillRect(x,55,5,5); }
     for(var y=12;y<52;y+=6){
       var v=60+((Math.random()*160)|0);
-      g.fillStyle='rgb('+v+','+((v*0.42)|0)+','+((v*0.72)|0)+')';
+      g.fillStyle='rgb('+v+','+((v*0.94)|0)+','+((v*0.24)|0)+')';
       g.fillRect(6,y,52,4);
     }
-    g.strokeStyle='#ffd0e4'; g.lineWidth=1; g.strokeRect(5.5,11.5,53,41);
+    g.strokeStyle='#fff6b0'; g.lineWidth=1; g.strokeRect(5.5,11.5,53,41);
     grain(g,w,h,420,0.3); ps1ify(g,w,h,20);
     TEX.content=mkTex(c);
   })();
@@ -6779,6 +6781,23 @@ function buildTextures(){
     for(var x3=6;x3<w;x3+=13) g.fillRect(x3,27,4,2);
     ps1ify(g,w,h,22);
     TEX.metal=mkTex(c);
+  })();
+
+  // ── gem facet skin (shield core) ──
+  (function(){
+    var w=64,h=64,c=cv(w,h),g=c.getContext('2d');
+    var rg=g.createRadialGradient(w*0.38,h*0.32,2,w*0.5,h*0.5,42);
+    rg.addColorStop(0,'#ffffff'); rg.addColorStop(.34,'#dff0ff');
+    rg.addColorStop(.68,'#9fc8e8'); rg.addColorStop(1,'#5b86a8');
+    g.fillStyle=rg; g.fillRect(0,0,w,h);
+    g.strokeStyle='rgba(255,255,255,.55)'; g.lineWidth=2;
+    for(var i=0;i<5;i++){
+      g.beginPath(); g.moveTo(0,i*15); g.lineTo(w,i*15+9); g.stroke();
+    }
+    g.strokeStyle='rgba(20,50,80,.5)'; g.lineWidth=1;
+    for(var j=0;j<5;j++){ g.beginPath(); g.moveTo(j*15,0); g.lineTo(j*15+9,h); g.stroke(); }
+    ps1ify(g,w,h,18);
+    TEX.gem=mkTex(c);
   })();
 
   // ── cockpit glass ──
@@ -6980,6 +6999,7 @@ function distToU(d){ return Math.max(0,Math.min(1, d/PATH_TOTAL)); }
 var SEG=14;                 // faces around — deliberately chunky
 var RING_STEP=26;           // metres between rings
 var tunnelMesh=null, matFloor=null, matWall=null, matCeil=null;
+var pylonList=[];
 
 function buildTunnel(){
   var rings=Math.floor(PATH_TOTAL/RING_STEP);
@@ -7043,22 +7063,52 @@ function buildStructure(){
     m.lookAt(fr.p.clone().add(fr.t));
     scene.add(m);
   }
-  // pylons — ported spacing/spiralStep/startAngle from TUNE.pylons
-  var P=TUNE.pylons, pg=new THREE.BoxBufferGeometry(4.2,4.2,1.8);
+  // pylons — ported cadence AND the ported window: startPct 0.02 to
+  // endPct 0.06. It is a short slalom near the gate, not the whole run.
+  var P=TUNE.pylons;
+  var coneMat=ps1Mat(TEX.hazard,{ambient:0x6b3a12,light:0xffd08a,fogNear:260,fogFar:1500,tint:0xff5500});
+  var bandL=ps1Mat(TEX.ring,{emissive:0.95,fogNear:300,fogFar:1700,tint:0x00ffcc});
+  var bandR=ps1Mat(TEX.ring,{emissive:0.95,fogNear:300,fogFar:1700,tint:0xff44ff});
+  var baseMat=ps1Mat(TEX.metal,{ambient:0x1a1a1a,light:0x555555,fogNear:260,fogFar:1500,tint:0x333333});
+  var coneGeo=new THREE.ConeBufferGeometry(4.8,16.5,10);
+  var bandUp =new THREE.TorusBufferGeometry(3.2,0.62,4,12);
+  var bandLo =new THREE.TorusBufferGeometry(4.1,0.62,4,12);
+  var baseGeo=new THREE.BoxBufferGeometry(9.6,1.1,9.6);
+  var arrowGeo=new THREE.ConeBufferGeometry(2.2,6.2,4);
+  pylonList=[];
   var ang=P.startAngle, n=0;
-  for(var d2=PATH_TOTAL*P.startPct; d2<PATH_TOTAL*0.96; d2+=P.spacing, n++){
+  for(var d2=TRACK_LEN*P.startPct; d2<TRACK_LEN*P.endPct; d2+=P.spacing, n++){
     frameAt(distToU(d2),fr);
     ang+=P.spiralStep;
-    var side=(n%2===0)?1:-1, a=ang*side+P.offset;
+    var isLeft=(n%2===0);
+    var a=ang*(isLeft?1:-1)+P.offset;
     var sa=Math.sin(a), ca=Math.cos(a);
     var rad=new THREE.Vector3(fr.r.x*sa-fr.u.x*ca, fr.r.y*sa-fr.u.y*ca, fr.r.z*sa-fr.u.z*ca);
-    var m2=new THREE.Mesh(pg,pylonMat);
-    m2.position.copy(fr.p).addScaledVector(rad,TUBE_R-0.9);
-    m2.lookAt(fr.p.clone().addScaledVector(rad,TUBE_R*2));
-    m2.scale.set(1,1,0.55+Math.random()*0.9);
-    scene.add(m2);
+    var accent=isLeft?bandL:bandR;
+    // group +Y ends up pointing inward, so everything is stacked off the
+    // wall from y=0 up: base flush, cone standing, arrow above the tip.
+    var grp=new THREE.Group();
+    var cn=new THREE.Mesh(coneGeo,coneMat); cn.position.y=8.25; grp.add(cn);
+    var up=new THREE.Mesh(bandUp,accent); up.position.y=11.4; up.rotation.x=Math.PI/2; grp.add(up);
+    var lo=new THREE.Mesh(bandLo,accent); lo.position.y=6.1;  lo.rotation.x=Math.PI/2; grp.add(lo);
+    var bs=new THREE.Mesh(baseGeo,baseMat); bs.position.y=0.4; grp.add(bs);
+    var ar=new THREE.Mesh(arrowGeo,accent);
+    ar.position.y=19.2; ar.rotation.z=isLeft?-Math.PI/2:Math.PI/2; grp.add(ar);
+    grp.position.copy(fr.p).addScaledVector(rad,TUBE_R-0.6);
+    grp.up.copy(rad).multiplyScalar(-1);
+    grp.lookAt(grp.position.clone().addScaledVector(fr.t,-40));
+    scene.add(grp);
+    pylonList.push({ d:d2, a:a });
   }
-  // exit aperture — stars at the end of the shaft, the thing you aim at
+
+  // finish ring — ported: a full-bore torus across the mouth
+  frameAt(distToU(TRACK_LEN),fr);
+  var fin=new THREE.Mesh(new THREE.TorusBufferGeometry(TUBE_R-1.5,1.7,4,SEG),
+    ps1Mat(TEX.boostTex,{emissive:1,fogNear:600,fogFar:3000,tint:0xffd700}));
+  fin.position.copy(fr.p); fin.lookAt(fr.p.clone().add(fr.t));
+  scene.add(fin);
+
+  // exit aperture  // exit aperture — stars at the end of the shaft, the thing you aim at
   frameAt(1,fr);
   var skyDisc=new THREE.Mesh(new THREE.CircleBufferGeometry(TUBE_R*0.94,SEG),
     ps1Mat(TEX.sky,{emissive:1,fogNear:5000,fogFar:9000}));
@@ -7292,7 +7342,12 @@ function buildSpawns(){
     spawnList.push({d:free,a:Math.random()*Math.PI*2,rad:WALL_R,type:'content',content:item});
   });
   spawnList.sort(function(a,b){ return a.d-b.d; });
-  spawnList.forEach(function(s,i){ s.id=i; s.taken=false; });
+  spawnList.forEach(function(s,i){
+    s.id=i; s.taken=false;
+    // the archive slab and the boost gate are large — seat them off the
+    // wall so they never punch through the tube skin
+    s.rad = (s.type==='content') ? WALL_R-7 : (s.type==='boost' ? WALL_R-2 : WALL_R);
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -7301,17 +7356,19 @@ function buildSpawns(){
 var pools={}, POOL_N={ring:44, mine:30, shield:10, boost:8, content:5};
 var propMats={};
 function buildPools(){
-  propMats.ring   =ps1Mat(TEX.ring,      {emissive:0.85,fogNear:300,fogFar:1700});
-  propMats.shield =ps1Mat(TEX.shieldTex, {emissive:0.85,fogNear:300,fogFar:1700});
-  propMats.boost  =ps1Mat(TEX.boostTex,  {emissive:0.95,fogNear:300,fogFar:1700});
-  propMats.mine   =ps1Mat(TEX.mine,      {ambient:0x5a3038,light:0xffb0a0,fogNear:280,fogFar:1600});
-  propMats.content=ps1Mat(TEX.content,   {emissive:0.7,fogNear:320,fogFar:1900});
+  // Ported shapes and colours: green ring torus, red tetrahedron mine,
+  // pale-blue octahedron shield core, gold boost gate, yellow EDIT slab.
+  propMats.ring   =ps1Mat(TEX.ring,      {emissive:0.90,fogNear:320,fogFar:1800,tint:0xaaffaa});
+  propMats.shield =ps1Mat(TEX.gem,       {emissive:0.85,fogNear:320,fogFar:1800,tint:0x88ccff});
+  propMats.boost  =ps1Mat(TEX.boostTex,  {emissive:0.95,fogNear:320,fogFar:1900,tint:0xffd700});
+  propMats.mine   =ps1Mat(TEX.mine,      {ambient:0x6e2020,light:0xff9a9a,fogNear:300,fogFar:1700,tint:0xff4444});
+  propMats.content=ps1Mat(TEX.content,   {emissive:0.80,fogNear:340,fogFar:2000,tint:0xffe800});
   var geo={
-    ring:   new THREE.TorusBufferGeometry(7.0,1.5,4,12),
-    shield: new THREE.TorusBufferGeometry(6.2,1.7,4,10),
-    boost:  new THREE.TorusBufferGeometry(11.0,2.0,4,14),
-    mine:   new THREE.IcosahedronBufferGeometry(4.4,0),
-    content:new THREE.BoxBufferGeometry(8,8,2.4)
+    ring:   new THREE.TorusBufferGeometry(6.2,1.0,4,14),
+    shield: new THREE.OctahedronBufferGeometry(3.5,0),
+    boost:  new THREE.TorusBufferGeometry(7.6,1.4,4,16),
+    mine:   new THREE.TetrahedronBufferGeometry(6.2,0),
+    content:new THREE.BoxBufferGeometry(16.5,16.5,5.5)
   };
   Object.keys(POOL_N).forEach(function(k){
     pools[k]=[];
@@ -7319,12 +7376,6 @@ function buildPools(){
       var m=new THREE.Mesh(geo[k],propMats[k]);
       m.visible=false; m.frustumCulled=false; scene.add(m); pools[k].push(m);
     }
-  });
-  // mine spikes for silhouette
-  pools.mine.forEach(function(m){
-    var s=new THREE.Mesh(new THREE.ConeBufferGeometry(1.5,4.2,4),propMats.mine);
-    s.rotation.x=Math.PI/2; s.position.z=-4.0; m.add(s);
-    var s2=s.clone(); s2.rotation.x=-Math.PI/2; s2.position.z=4.0; m.add(s2);
   });
 }
 
@@ -7373,6 +7424,7 @@ function resetRun(){
   G.fireCd=0; G.shake=0; G.roll=0; G.finished=false; G.hits=0; G.ringsMissed=0;
   G.collected={}; G.contentQueue=null;
   spawnList.forEach(function(s){ s.taken=false; });
+  pylonList.forEach(function(p){ p.hitOnce=false; });
   if(shipGroup) applyLoadout(shipGroup);
   Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
   bolts.forEach(function(b){ b.alive=false; b.mesh.visible=false; });
@@ -7579,7 +7631,7 @@ function collect(it){
     G.score+=1500; SFX.content();
     G.collected[it.content.title]=1; S.seen[it.content.title]=1; persist();
     G.inv=Math.max(G.inv,0.4);
-    pop('ARCHIVE REEL +1500','#ff8ad0'); flash('heal');
+    pop('ARCHIVE REEL +1500','#ffe800'); flash('heal');
   } else if(it.type==='mine'){
     damage(26,'mine');
     return;
@@ -7741,7 +7793,7 @@ function update(dt){
     var pad=Math.max(6,G.speed*dt*0.6);
     if(it.d<=G.dist+pad && it.d>G.prevDist-pad){
       var arc=Math.abs(angWrap(it.a-G.shipAngle))*WALL_R;
-      var hitR=(it.type==='mine'?7.0:(it.type==='boost'?13:(it.type==='content'?8.5:9.5)));
+      var hitR=(it.type==='mine'?7.6:(it.type==='boost'?13.5:(it.type==='content'?11.5:(it.type==='shield'?7.0:9.0))));
       if(arc<hitR){ collect(it); continue; }
       else if(it.type==='ring') G.ringsMissed++;
     }
@@ -7758,6 +7810,22 @@ function update(dt){
     else if(it.type==='content'){ mesh.rotateZ(Math.sin(spin*0.7+it.id)*0.5); }
     else { mesh.rotateZ(spin*0.5+it.id*0.4); }
     mesh.visible=true;
+  }
+
+  // ── pylon contact: bump, bleed speed, no hull damage ───────────
+  for(var py=0;py<pylonList.length;py++){
+    var pl=pylonList[py];
+    if(pl.d>G.dist+40||pl.d<G.prevDist-40) continue;
+    if(pl.d<=G.dist+4 && pl.d>G.prevDist-4 && !pl.hitOnce){
+      if(Math.abs(angWrap(pl.a-G.shipAngle))*WALL_R<9.5){
+        pl.hitOnce=true;
+        G.score=Math.max(0,G.score-100);
+        G.speed*=0.55; throttle*=0.4; G.throttleSmooth*=0.4;
+        G.shake=Math.min(1.1,G.shake+0.6); G.combo=0;
+        turnRate=-turnRate*0.6;
+        SFX.graze(); noiseBurst(0.22,300,0.45); pop('-100','#ff5500');
+      }
+    }
   }
 
   // ── bolts ──────────────────────────────────────────────────────
@@ -7800,8 +7868,8 @@ function show(id){
 function hideAll(){ show(null); }
 
 $('howto-body').innerHTML = isTouch
-  ? 'HOLD ANYWHERE ON SCREEN<br><br>LEFT / RIGHT OF CENTRE<br>ROLLS YOU AROUND THE TUBE<br>CENTRE STRIP IS NEUTRAL<br><br>DRAG UP FOR SPEED<br>TOP OF SCREEN IS HYPER<br>LET GO TO COAST<br><br>FIRE — LEFT THUMB<br><br>RINGS BUILD COMBO<br>MINES BREAK IT<br>PINK FILM STRIPS ARE<br>ARCHIVE REELS'
-  : 'LEFT / RIGHT — ROLL AROUND TUBE<br>UP — THROTTLE UP<br>SHIFT + UP — HYPER<br>DOWN — BRAKE<br>SPACE — FIRE<br>ESC — PAUSE<br><br>OR HOLD THE MOUSE BUTTON<br>AND STEER BY POSITION<br><br>RINGS BUILD COMBO<br>MINES BREAK IT<br>PINK FILM STRIPS ARE<br>ARCHIVE REELS';
+  ? 'HOLD ANYWHERE ON SCREEN<br><br>LEFT / RIGHT OF CENTRE<br>ROLLS YOU AROUND THE TUBE<br>CENTRE STRIP IS NEUTRAL<br><br>DRAG UP FOR SPEED<br>TOP OF SCREEN IS HYPER<br>LET GO TO COAST<br><br>FIRE — LEFT THUMB<br><br>RINGS BUILD COMBO<br>MINES BREAK IT<br>YELLOW SLABS ARE<br>ARCHIVE REELS'
+  : 'LEFT / RIGHT — ROLL AROUND TUBE<br>UP — THROTTLE UP<br>SHIFT + UP — HYPER<br>DOWN — BRAKE<br>SPACE — FIRE<br>ESC — PAUSE<br><br>OR HOLD THE MOUSE BUTTON<br>AND STEER BY POSITION<br><br>RINGS BUILD COMBO<br>MINES BREAK IT<br>YELLOW SLABS ARE<br>ARCHIVE REELS';
 
 function refreshBank(){
   var t='BANK '+S.ringBank.toLocaleString()+' RINGS';
@@ -7998,7 +8066,7 @@ function galRender(){
     });
   } else {
     $('gal-title').textContent='REEL NOT RECOVERED';
-    $('gal-text').textContent='FLY THE SECTOR AND COLLECT\nTHE PINK FILM STRIPS.';
+    $('gal-text').textContent='FLY THE SECTOR AND COLLECT\nTHE YELLOW ARCHIVE SLABS.';
     $('gal-play').style.display='none';
   }
 }
