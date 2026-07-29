@@ -52,6 +52,10 @@ body.playing #hud{opacity:1}
 #combo-display{font-size:10px;letter-spacing:1px;color:#ff69b4;margin-top:6px;
   text-shadow:0 0 8px rgba(255,105,180,.7);opacity:0;transition:opacity .2s}
 #combo-display.active{opacity:1}
+/* speed-tier score multiplier — dim at x1, lit at boost, hot at hyper */
+#mult-display{font-size:9px;letter-spacing:2px;color:#3d4f63;margin-top:4px;transition:color .2s}
+#mult-display.m2{color:var(--amber);text-shadow:0 0 8px rgba(255,176,0,.6)}
+#mult-display.m3{color:#ff69b4;text-shadow:0 0 10px rgba(255,105,180,.8)}
 
 /* vertical flank columns — ported sizing: 12px x 32vh, segmented */
 #thrust-wrapper,#hull-wrapper{position:fixed;top:50%;transform:translateY(-50%);z-index:10;
@@ -150,6 +154,8 @@ body.playing #touch{display:block}
   display:flex;align-items:center;justify-content:center;
   box-shadow:0 0 18px rgba(255,102,204,.28),inset 0 0 12px rgba(255,102,204,.2)}
 #btn-fire:active,#btn-fire.on{background:rgba(255,102,204,.45);transform:scale(.93)}
+#btn-fire.hot{border-color:#ff5500;color:#ff5500;background:rgba(255,85,0,.28);
+  box-shadow:0 0 14px rgba(255,85,0,.5)}
 #btn-pause{position:absolute;right:calc(env(safe-area-inset-right,0px) + 12px);
   top:calc(env(safe-area-inset-top,0px) + 8px);width:42px;height:42px;
   border:1px solid rgba(63,216,255,.5);background:rgba(0,0,0,.85);color:#3fd8ff;
@@ -367,6 +373,11 @@ body.needs-rotate #rotate{display:flex}
   box-shadow:0 3px 0 rgba(0,0,0,.55),0 0 20px rgba(255,176,0,.28)}
 .lvl.sel b{color:rgba(8,17,29,.7)}
 .lvl.locked{opacity:.45}
+/* clear-rank badge on the level tile */
+.lvl .rk{position:absolute;top:3px;right:4px;font-style:normal;font-size:6px;letter-spacing:0}
+.lvl .rk.gold{color:#ffd700;text-shadow:0 0 6px rgba(255,215,0,.8)}
+.lvl .rk.silver{color:#c8d4e0;text-shadow:0 0 6px rgba(200,212,224,.7)}
+.lvl .rk.bronze{color:#c08840;text-shadow:0 0 6px rgba(192,136,64,.7)}
 .lvl:active{transform:translateY(2px);box-shadow:0 1px 0 rgba(0,0,0,.5)}
 
 @media (pointer:coarse){
@@ -390,6 +401,7 @@ body.needs-rotate #rotate{display:flex}
   <div id="hud-row">
     <div>
       <div id="score-display">000000</div>
+      <div id="mult-display">x1</div>
       <div id="sector-display">SECTOR 1 // EDITING</div>
       <div id="combo-display"></div>
     </div>
@@ -9734,7 +9746,9 @@ f 1239/450 1241/451 1243/452 1245/453 1247/454 1249/455 1251/456 1253/457 1255/4
 var ZONE = { name:'EDITING', speed:160, length:15000, wire:0x00ff88, fog:0x040b14 };
 // world-scale factor: original tubeRadius was 35, ours is 46.
 var K = 46/35;
-var BOOST_ABS = 550*K, HYPER_ABS = 2750*K;
+// hyper pulled from the ported 2750 — at 17x base it was a blind gamble.
+// ~1.8x boost with the fuel tank makes it a spendable burst instead.
+var BOOST_ABS = 550*K, HYPER_ABS = 1000*K;
 
 // ── ported: SPAWN_TUNING S1L1 … S1L4 ──────────────────────────────
 // getLevelScaledZone(): speed x 1.10^(lvl-1), length x 1.15^(lvl-1),
@@ -9909,12 +9923,12 @@ var DRIVES = [
 // ── persistent state ──────────────────────────────────────────────
 var SAVE_KEY='tunnelRacer_s1_v2';
 var S = { ringBank:0, best:0, bestTime:0, cleared:false, runs:0,
-          level:1, unlocked:1, bestByLevel:{}, timeByLevel:{},
+          level:1, unlocked:1, bestByLevel:{}, timeByLevel:{}, rankByLevel:{},
           activeShip:'deltawing', owned:{deltawing:true},
           weapon:0, shield:0, drive:1, ownedWeapons:{0:true}, ownedShields:{0:true}, ownedDrives:{0:true,1:true}, seen:{} };
 (function(){ try{ var raw=localStorage.getItem(SAVE_KEY); if(!raw) return;
   var d=JSON.parse(raw); for(var k in d) if(k in S) S[k]=d[k];
-  S.bestByLevel=S.bestByLevel||{}; S.timeByLevel=S.timeByLevel||{};
+  S.bestByLevel=S.bestByLevel||{}; S.timeByLevel=S.timeByLevel||{}; S.rankByLevel=S.rankByLevel||{};
   S.unlocked=Math.max(1,Math.min(LEVELS.length,S.unlocked||1));
   S.level=Math.max(1,Math.min(S.unlocked,S.level||1));
   S.owned=S.owned||{}; S.owned.deltawing=true;
@@ -10857,8 +10871,12 @@ function buildSpawns(){
   spawnList=[];
   var rnd=seeded(20260728+LEVEL.n*7919);
   var d=TUNE.startOffset, end=TRACK_LEN*TUNE.maxSpawnPct;
-  var runAngle=0, stepIdx=0, contentIdx=0, lastContentD=-9999;
+  var stepIdx=0, contentIdx=0, lastContentD=-9999;
   var roster=TUNE.contentRoster.slice();   // this level's four reels, as shipped
+  // phrase engine — spawns land in readable 4-8 item figures (ring
+  // sweeps, lanes, zigzags, hazard gauntlets with a safe gap) instead
+  // of per-step confetti, so there is always a line to carve.
+  var phrase=null, phLeft=0, phA=0, phDA=0, phWall=0;
 
   while(d<end){
     var pct=d/TRACK_LEN, seg=segAt(pct), w=seg.spawn||{};
@@ -10881,12 +10899,47 @@ function buildSpawns(){
         if(t) spawnList.push({d:d,a:a,rad:WALL_R,type:t});
       }
     } else {
-      runAngle+=(seg.step||0);
-      var t2=pickType(w,false,rnd);
-      if(t2){
-        var jitter=(seg.step>=5)?rnd()*Math.PI*2:runAngle+(rnd()-0.5)*0.5;
-        spawnList.push({d:d,a:jitter,rad:WALL_R,type:t2});
+      // star corridors keep their ported per-step density
+      if(TUNE.stars && w.starChance && rnd()<w.starChance){
+        spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'star'});
+        stepIdx++; d+=spacing; continue;
       }
+      if(phLeft<=0){
+        // phrase boundary: lone shield or boost gate sometimes sits here
+        if(TUNE.shields!==false && w.baseShields && rnd()<0.15){
+          spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'shield'});
+          stepIdx++; d+=spacing; continue;
+        }
+        if(w.boostChance && rnd()<w.boostChance*6){
+          spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'boost'});
+          stepIdx++; d+=spacing; continue;
+        }
+        var ringW=w.baseRing||0, hazW=(TUNE.mines||TUNE.blocks)?(w.baseHazard||0):0;
+        if(!ringW && !hazW){ stepIdx++; d+=spacing; continue; }
+        if(rnd()*(ringW+hazW)<hazW){
+          phrase='gauntlet'; phLeft=4+Math.floor(rnd()*4);
+          phWall=rnd()*Math.PI*2;    // hazards cluster on this angle, gap opposite
+        } else {
+          var pk=rnd();
+          phrase = pk<0.4?'sweep':(pk<0.7?'lane':'zigzag');
+          phLeft=5+Math.floor(rnd()*4);
+          phA=rnd()*Math.PI*2;
+          phDA=(rnd()<0.5?-1:1)*(0.22+rnd()*0.26);
+        }
+        d+=spacing;   // a breath between phrases
+      }
+      if(phrase==='gauntlet'){
+        var ht='mine';
+        if(TUNE.blocks && (!TUNE.mines || rnd()<0.5)) ht='block';
+        spawnList.push({d:d,a:phWall+(rnd()-0.5)*2.4,rad:WALL_R,type:ht});
+      } else if(phrase==='sweep'){
+        spawnList.push({d:d,a:phA,rad:WALL_R,type:'ring'}); phA+=phDA;
+      } else if(phrase==='zigzag'){
+        spawnList.push({d:d,a:phA+(phLeft%2?0.6:-0.6),rad:WALL_R,type:'ring'});
+      } else {
+        spawnList.push({d:d,a:phA+(rnd()-0.5)*0.15,rad:WALL_R,type:'ring'});
+      }
+      phLeft--;
     }
     stepIdx++; d+=spacing;
   }
@@ -10965,6 +11018,7 @@ var G={
   score:0, rings:0, combo:0, comboT:0, best:0,
   time:0, inv:0, fireCd:0, shake:0, roll:0, pitchLag:0,
   gates:0, gatesOk:0, penalty:0,
+  spdMult:1, heat:0, hotLock:false, ringsGot:0,
   collected:{}, contentQueue:null, finished:false, hits:0, ringsMissed:0
 };
 var shipGroup=null, shipRoot=null, shipShellId=null;
@@ -10989,8 +11043,9 @@ function resetRun(){
   G.score=0; G.rings=0; G.combo=0; G.comboT=0; G.time=0; G.inv=0; G.ff=0;
   G.fireCd=0; G.shake=0; G.roll=0; G.finished=false; G.hits=0; G.ringsMissed=0;
   G.gates=0; G.gatesOk=0; G.penalty=0;
+  G.spdMult=1; G.heat=0; G.hotLock=false; G.ringsGot=0;
   G.collected={}; G.contentQueue=null;
-  spawnList.forEach(function(s){ s.taken=false; s.hp=(s.type==='block')?3:1; });
+  spawnList.forEach(function(s){ s.taken=false; s.grazed=false; s.hp=(s.type==='block')?3:1; });
   pylonList.forEach(function(p){ p.hitOnce=false; p.done=false; });
   if(shipGroup) applyLoadout(shipGroup);
   Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
@@ -11124,7 +11179,8 @@ var elScore=$('score-display'), elRings=$('rings-display'), elTimer=$('timer-dis
     elHull=$('hull-container'), elThrust=$('thrust-container'),
     elProg=$('progress-bar'), elCombo=$('combo'), elComboLab=$('combo-display'),
     elPops=$('pops'), elFlash=$('flash'), elProgLab=$('sector-display'),
-    elClock=$('srclock'), elMission=$('mission');
+    elClock=$('srclock'), elMission=$('mission'),
+    elMult=$('mult-display'), elFire=$('btn-fire');
 // vertical flank bars fill from the bottom
 function vbar(el,v){ el.firstElementChild.style.transform='scaleY('+Math.max(0,Math.min(1,v))+')';
   el.classList.toggle('low', v<0.26); }
@@ -11158,10 +11214,13 @@ function pad6(n){ n=Math.max(0,Math.floor(n)).toString(); while(n.length<6) n='0
 function updateHUD(){
   elScore.textContent=pad6(G.score);
   elRings.textContent='◯ '+G.rings;
+  elMult.textContent='x'+G.spdMult;
+  elMult.className = G.spdMult>2?'m3':(G.spdMult>1?'m2':'');
   vbar(elHull,G.hp/G.hpMax);
-  vbar(elThrust,G.throttleSmooth/1.5);
+  vbar(elThrust,G.boost);   // thrust column is the hyper tank now
   elHull.classList.toggle('ff',G.ff>0);
   elThrust.style.filter = G.hyperFrac>0.02 ? 'hue-rotate(-38deg) saturate(1.5)' : 'none';
+  elFire.classList.toggle('hot',G.hotLock);
   elProg.style.width=(Math.min(1,G.dist/TRACK_LEN)*100)+'%';
   // clock: counts up normally, counts down on a speed-run level
   var t=G.time+G.penalty;
@@ -11177,7 +11236,7 @@ function updateHUD(){
     elClock.style.display='none';
     elTimer.textContent=fmtClock(t); elTimer.style.color=''; elTimer.style.opacity='1';
   }
-  if(G.combo>1){ elComboLab.textContent='COMBO x'+Math.min(G.combo,4); elComboLab.classList.add('active'); }
+  if(G.combo>1){ elComboLab.textContent='COMBO x'+Math.min(G.combo,8); elComboLab.classList.add('active'); }
   else elComboLab.classList.remove('active');
 }
 
@@ -11218,22 +11277,30 @@ function damage(){
   if(G.hp<=0){ G.hp=0; endRun(false); }
 }
 
+// every point source runs through the speed-tier multiplier:
+// base x1, boost x2, hyper x3. Fast is greedy, slow is safe.
+function award(pts){ return Math.round(pts*G.spdMult); }
+// combo window tightens as the multiplier climbs — 3.0s early, 1.6s at x8
+function comboWin(){ return Math.max(1.6,3.2-Math.min(G.combo,8)*0.2); }
+
 function collect(it){
   it.taken=true;
   if(it.type==='ring'){
-    // ported: combo caps the multiplier at 4, 210 points a ring,
-    // and the ring bank earns the multiplier, not a flat one.
-    G.combo++; G.comboT=COMBO_WINDOW;
-    var mult=Math.min(G.combo,4), pts=210*mult;
-    G.score+=pts; G.rings+=mult;
+    // combo now runs to x8 for score; the ring bank still earns the
+    // ported cap of 4 so the economy doesn't inflate.
+    G.combo++; G.comboT=comboWin(); G.ringsGot++;
+    G.boost=Math.min(1,G.boost+0.06);   // rings feed the hyper tank
+    var mult=Math.min(G.combo,8), pts=award(210*mult);
+    G.score+=pts; G.rings+=Math.min(mult,4);
     SFX.ring(G.combo);
     pop('+'+pts, mult>1?'#ff44ff':'#00ff88');
     if(mult>1) showCombo(mult);
   } else if(it.type==='shield'){
     G.hp=Math.min(G.hpMax,G.hp+20);
-    G.score+=85; SFX.shield(); flash('heal'); pop('+20 HULL','#44aaff');
+    G.score+=award(85); SFX.shield(); flash('heal'); pop('+20 HULL','#44aaff');
   } else if(it.type==='boost'){
-    G.score+=500; G.rings+=5; SFX.boost(); flash('heal'); pop('+5 RINGS','#ffe000');
+    G.score+=award(500); G.rings+=5; G.boost=1;
+    SFX.boost(); flash('heal'); pop('+5 RINGS','#ffe000');
   } else if(it.type==='content'){
     G.score+=1500; SFX.content();
     G.collected[it.content.title]=1; S.seen[it.content.title]=1; persist();
@@ -11241,7 +11308,7 @@ function collect(it){
     pop('ARCHIVE REEL +1500','#ffe800'); flash('heal');
   } else if(it.type==='star'){
     // ported: 5s force field, +165. Not a repair — it just makes you immune.
-    G.ff=FF_TIME; G.score+=165; SFX.star(); flash('heal'); pop('FORCE FIELD!','#ff44ff');
+    G.ff=FF_TIME; G.score+=award(165); SFX.star(); flash('heal'); pop('FORCE FIELD!','#ff44ff');
   } else if(it.type==='mine'||it.type==='block'){
     damage();
     return;
@@ -11254,14 +11321,20 @@ function killMine(it,dmg){
   it.hp-=(dmg||1);
   if(it.hp>0){ SFX.graze(); return false; }
   it.taken=true;
-  G.score+=(it.type==='block'?260:150);
-  SFX.pop(); pop('+'+(it.type==='block'?260:150));
+  var kp=award(it.type==='block'?260:150);
+  G.score+=kp;
+  SFX.pop(); pop('+'+kp);
   return true;
 }
 
 function fireBolt(){
   var W=WEAPONS[S.weapon];
   if(!W.rate) return;
+  if(G.hotLock) return;
+  // heat per shot scales with the cycle so every gun overheats after
+  // ~2s of held fire — shooting is a spend, not a hold
+  G.heat=Math.min(1,G.heat+W.rate*0.5);
+  if(G.heat>=1){ G.hotLock=true; SFX.wrong(); pop('OVERHEAT','#ff5500'); }
   G.fireCd=W.rate;
   SFX.fire();
   var spread = (S.weapon===4)?[-0.20,0,0.20]:(S.weapon===2?[-0.05,0.05]:[0]);
@@ -11337,6 +11410,13 @@ function update(dt){
   // ── throttle → speed (ported curve: base → boost → hyper) ──────
   G.throttleSmooth += (throttle-G.throttleSmooth)*Math.min(1,dt*9);
   G.hyperFrac = Math.max(0,Math.min(1,(G.throttleSmooth-1.0)/0.5));
+  // hyper drinks from the thrust tank — rings refill it. Dry tank
+  // clamps you back to boost; a sliver regrows off-throttle.
+  if(G.boost<=0) G.hyperFrac=0;
+  if(G.hyperFrac>0.02) G.boost=Math.max(0,G.boost-dt*0.22*G.hyperFrac);
+  else if(G.throttleSmooth<0.35) G.boost=Math.min(1,G.boost+dt*0.02);
+  // speed-tier score multiplier: base x1, boost x2, hyper x3
+  G.spdMult = G.hyperFrac>0.6 ? 3 : (G.throttleSmooth>0.5 ? 2 : 1);
   var prog=G.dist/TRACK_LEN;
   var base=ZONE.speed*K*speedFactor()*(0.90+prog*0.30);
   var boostSpd=BOOST_ABS*speedFactor(), hyperSpd=HYPER_ABS*speedFactor();
@@ -11352,11 +11432,13 @@ function update(dt){
   if(G.inv>0) G.inv-=dt;
   if(G.ff>0){ G.ff-=dt; if(G.ff<0) G.ff=0; }
   if(G.comboT>0){ G.comboT-=dt; if(G.comboT<=0 && G.combo>0) G.combo=0; }
-  G.score += G.speed*dt*0.12;
+  G.score += G.speed*dt*0.12*G.spdMult;
   if(G.shake>0) G.shake=Math.max(0,G.shake-dt*2.6);
 
-  // ── weapons ────────────────────────────────────────────────────
+  // ── weapons: heat bleeds off when the trigger is up ────────────
   if(G.fireCd>0) G.fireCd-=dt;
+  if(!FIRE || G.hotLock) G.heat=Math.max(0,G.heat-dt*0.35);
+  if(G.hotLock && G.heat<=0.3) G.hotLock=false;
   if(FIRE && G.fireCd<=0) fireBolt();
 
   // ── ship: locked to the wall, banking into the turn ────────────
@@ -11416,6 +11498,13 @@ function update(dt){
       var hitR=(it.type==='mine'?7.6:(it.type==='block'?8.3:(it.type==='boost'?9.7:
                (it.type==='content'?13.8:(it.type==='star'?7.6:9.0)))));
       if(arc<hitR){ collect(it); continue; }
+      else if((it.type==='mine'||it.type==='block') && !it.grazed && arc<hitR+4.5){
+        // near miss — shaving past danger pays and feeds the combo
+        it.grazed=true;
+        G.combo++; G.comboT=comboWin();
+        var gz=award(50); G.score+=gz;
+        SFX.graze(); pop('GRAZE +'+gz,'#ffe000');
+      }
       else if(it.type==='ring') G.ringsMissed++;
     }
     var pool=pools[it.type];
@@ -11450,7 +11539,10 @@ function update(dt){
     if(!pl.done && pl.d<=G.dist){
       pl.done=true; G.gates++;
       if(Math.abs(angWrap(G.shipAngle-pl.anchor))<Math.PI/2){
-        G.gatesOk++; G.score+=400; SFX.gate(); pop('PYLON +400','#00ff88');
+        G.gatesOk++;
+        G.combo++; G.comboT=comboWin();   // gates chain into the combo
+        var gp=award(400); G.score+=gp;
+        SFX.gate(); pop('PYLON +'+gp,'#00ff88');
       } else {
         G.score=Math.max(0,G.score-200); SFX.wrong(); pop('WRONG SIDE -200','#ff2f6d');
         if(LEVEL.isSpeedRun){ G.penalty+=2; pop('+2s','#ff2f6d'); }
@@ -11499,8 +11591,8 @@ function show(id){
 function hideAll(){ show(null); }
 
 $('howto-body').innerHTML = isTouch
-  ? 'HOLD ANYWHERE ON SCREEN<br><br>LEFT / RIGHT OF CENTRE<br>ROLLS YOU AROUND THE TUBE<br>CENTRE STRIP IS NEUTRAL<br><br>DRAG UP FOR SPEED<br>TOP OF SCREEN IS HYPER<br>LET GO TO COAST<br><br>FIRE — LEFT THUMB<br><br>RINGS BUILD COMBO<br>MINES AND BLOCKS BREAK IT<br>MAGENTA STARS GIVE<br>A FORCE FIELD<br>YELLOW SLABS ARE<br>ARCHIVE REELS<br><br>PASS PYLONS ON THE SIDE<br>THEIR ARROW POINTS<br>+400 RIGHT, -200 WRONG'
-  : 'LEFT / RIGHT — ROLL AROUND TUBE<br>UP — THROTTLE UP<br>SHIFT + UP — HYPER<br>DOWN — BRAKE<br>SPACE — FIRE<br>ESC — PAUSE<br><br>OR HOLD THE MOUSE BUTTON<br>AND STEER BY POSITION<br><br>RINGS BUILD COMBO<br>MINES AND BLOCKS BREAK IT<br>MAGENTA STARS GIVE A FORCE FIELD<br>YELLOW SLABS ARE ARCHIVE REELS<br><br>PASS PYLONS ON THE SIDE THEIR ARROW POINTS<br>+400 RIGHT SIDE, -200 WRONG';
+  ? 'HOLD ANYWHERE ON SCREEN<br><br>LEFT / RIGHT OF CENTRE<br>ROLLS YOU AROUND THE TUBE<br>CENTRE STRIP IS NEUTRAL<br><br>DRAG UP FOR SPEED<br>TOP OF SCREEN IS HYPER<br>LET GO TO COAST<br><br>SPEED MULTIPLIES YOUR SCORE<br>x1 CRUISE · x2 BOOST · x3 HYPER<br>HYPER BURNS THE THRUST TANK<br>RINGS REFILL IT<br><br>FIRE — LEFT THUMB<br>HELD FIRE OVERHEATS THE GUN<br><br>RINGS BUILD COMBO<br>MINES AND BLOCKS BREAK IT<br>SHAVE PAST THEM FOR A GRAZE BONUS<br>MAGENTA STARS GIVE<br>A FORCE FIELD<br>YELLOW SLABS ARE<br>ARCHIVE REELS<br><br>PASS PYLONS ON THE SIDE<br>THEIR ARROW POINTS<br>+400 RIGHT, -200 WRONG<br><br>CLEAR CLEAN FOR<br>GOLD · SILVER · BRONZE'
+  : 'LEFT / RIGHT — ROLL AROUND TUBE<br>UP — THROTTLE UP<br>SHIFT + UP — HYPER<br>DOWN — BRAKE<br>SPACE — FIRE<br>ESC — PAUSE<br><br>OR HOLD THE MOUSE BUTTON<br>AND STEER BY POSITION<br><br>SPEED MULTIPLIES YOUR SCORE<br>x1 CRUISE · x2 BOOST · x3 HYPER<br>HYPER BURNS THE THRUST TANK — RINGS REFILL IT<br>HELD FIRE OVERHEATS THE GUN<br><br>RINGS BUILD COMBO<br>MINES AND BLOCKS BREAK IT<br>SHAVE PAST THEM FOR A GRAZE BONUS<br>MAGENTA STARS GIVE A FORCE FIELD<br>YELLOW SLABS ARE ARCHIVE REELS<br><br>PASS PYLONS ON THE SIDE THEIR ARROW POINTS<br>+400 RIGHT SIDE, -200 WRONG<br><br>CLEAR CLEAN FOR GOLD · SILVER · BRONZE';
 
 // every reel the sector can hand out, in level order
 function sectorRoster(){
@@ -11516,8 +11608,10 @@ function renderLevels(){
     var open=L.n<=S.unlocked;
     var b=document.createElement('button');
     b.className='lvl'+(S.level===L.n?' sel':'')+(open?'':' locked');
-    var best=S.bestByLevel['L'+L.n];
-    b.innerHTML='L'+L.n+'<b>'+(open?(best?best.toLocaleString():(L.isSpeedRun?'TIMED':'NEW')):'LOCKED')+'</b>';
+    var best=S.bestByLevel['L'+L.n], rk=S.rankByLevel['L'+L.n];
+    b.innerHTML='L'+L.n+
+      (rk?'<i class="rk '+rk.toLowerCase()+'">'+rk.charAt(0)+'</i>':'')+
+      '<b>'+(open?(best?best.toLocaleString():(L.isSpeedRun?'TIMED':'NEW')):'LOCKED')+'</b>';
     b.addEventListener('click',function(e){
       e.preventDefault();
       if(!open){ blip(140,0.16,'square',0.18); return; }
@@ -11825,13 +11919,24 @@ function endRun(won){
   var srPass = won && LEVEL.isSpeedRun && runTime<=LEVEL.speedRunTarget;
   // ported speed-run bonus: 2 rings a second under the baseline, capped
   var srBonus = srPass ? Math.min(200,Math.floor((LEVEL.speedRunTarget-runTime)*2)) : 0;
-  var bonus = won ? Math.round(G.rings*0.5)+400+srBonus : 0;
+  // clear rank — always clears, the rank is the reason to come back
+  var ringTot=G.ringsGot+G.ringsMissed, ringPct=ringTot?G.ringsGot/ringTot:1;
+  var gatePct=G.gates?G.gatesOk/G.gates:1;
+  var rank=null;
+  if(won){
+    rank = (ringPct>=0.85 && gatePct>=0.9 && G.hits<=1 && (!LEVEL.isSpeedRun||srPass)) ? 'GOLD'
+         : (ringPct>=0.60 && gatePct>=0.6 && G.hits<=3) ? 'SILVER' : 'BRONZE';
+  }
+  var rankBonus = rank==='GOLD'?150:(rank==='SILVER'?50:0);
+  var bonus = won ? Math.round(G.rings*0.5)+400+srBonus+rankBonus : 0;
   var earned=G.rings+bonus;
   S.ringBank+=earned;
   S.runs++;
   if(G.score>S.best) S.best=Math.floor(G.score);
   if(!S.bestByLevel[lk]||G.score>S.bestByLevel[lk]) S.bestByLevel[lk]=Math.floor(G.score);
   if(won){
+    var RO={BRONZE:1,SILVER:2,GOLD:3};
+    if(rank && RO[rank]>(RO[S.rankByLevel[lk]]||0)) S.rankByLevel[lk]=rank;
     if(!S.timeByLevel[lk]||runTime<S.timeByLevel[lk]) S.timeByLevel[lk]=runTime;
     if(!S.cleared||!S.bestTime||G.time<S.bestTime) S.bestTime=G.time;
     S.cleared=true;
@@ -11843,6 +11948,7 @@ function endRun(won){
   var rows=[
     ['LEVEL',LEVEL.n+' — '+LEVEL.name],
     ['SCORE',Math.floor(G.score).toLocaleString()],
+    ['RANK',rank||'—'],
     ['BEST',(S.bestByLevel[lk]||0).toLocaleString()],
     ['RINGS',G.rings],
     ['ARCHIVE',found+' REELS'],
