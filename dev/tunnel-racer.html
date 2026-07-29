@@ -448,6 +448,8 @@ body.needs-rotate #rotate{display:flex}
 <div class="screen on" id="title">
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
+  <!-- bump BUILD on every deploy -->
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 002</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -11059,7 +11061,9 @@ function resetRun(){
 // Y = throttle. Drag UP for speed; top 30% is HYPER.
 // ═══════════════════════════════════════════════════════════════════
 var isTouching=false, turnRate=0, turnTarget=0, throttle=0;
-var DEAD=0.22, TURN_MAX=3.8, TURN_CURVE=2.1;
+// tightened for feel: smaller deadzone, hotter max rate, flatter curve
+// so the mid-range answers immediately instead of winding up
+var DEAD=0.14, TURN_MAX=4.6, TURN_CURVE=1.6;
 var keys={};
 var isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(isTouch) document.body.classList.add('touch');
@@ -11403,9 +11407,20 @@ function update(dt){
 
   // ── steering: eased toward the target rate so it stops twitching ─
   if(!isTouching) turnTarget=0;
-  turnRate += (turnTarget-turnRate)*Math.min(1,dt*9);
+  turnRate += (turnTarget-turnRate)*Math.min(1,dt*22);   // near-direct, no wind-up
   if(Math.abs(turnRate)<0.015) turnRate=0;
   G.shipAngle += turnRate*dt;
+
+  // ring magnet — light pull toward the nearest ring just ahead, so a
+  // near-line reads generous instead of stingy
+  for(var mi=windowLo; mi<spawnList.length; mi++){
+    var mit=spawnList[mi];
+    if(mit.d>G.dist+150) break;
+    if(mit.taken || mit.type!=='ring' || mit.d<G.dist+15) continue;
+    var mda=angWrap(mit.a-G.shipAngle);
+    if(Math.abs(mda)*WALL_R<14) G.shipAngle+=mda*Math.min(1,dt*3);
+    break;
+  }
 
   // ── throttle → speed (ported curve: base → boost → hyper) ──────
   G.throttleSmooth += (throttle-G.throttleSmooth)*Math.min(1,dt*9);
@@ -11450,7 +11465,7 @@ function update(dt){
   _look.copy(_v).addScaledVector(fr0.t,-60);   // +Z aft, so the nose leads
   shipRoot.lookAt(_look);
 
-  G.roll += ((turnRate/TURN_MAX)*0.6 - G.roll)*Math.min(1,dt*6);
+  G.roll += ((turnRate/TURN_MAX)*0.6 - G.roll)*Math.min(1,dt*9);
   G.pitchLag += ((-G.throttleSmooth*0.10) - G.pitchLag)*Math.min(1,dt*5);
   shipGroup.rotation.z=G.roll;
   shipGroup.rotation.x=G.pitchLag;
@@ -11459,7 +11474,7 @@ function update(dt){
   shipGroup.visible = G.inv>0 ? (Math.floor(G.time*22)%2===0) : true;
 
   // ── camera: chase cam rolled to the wall ───────────────────────
-  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*11);
+  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*14);
   var back=30+G.speed*0.028;
   frameAt(distToU(Math.max(0,G.dist-back)),frC);
   radialAt(frC,G.camAngle,_radC);
