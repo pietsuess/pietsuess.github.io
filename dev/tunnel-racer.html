@@ -48,6 +48,8 @@ body.playing #hud{opacity:1}
 #timer-display{font-size:11px;letter-spacing:1px;color:var(--green);text-align:right;
   text-shadow:0 2px 0 rgba(0,0,0,.9),0 0 8px rgba(0,255,136,.5)}
 #sector-display{font-size:6px;letter-spacing:2px;color:#5d7590;margin-top:6px}
+#target-display{font-size:7px;letter-spacing:2px;color:#ffd700;margin-top:4px;
+  text-shadow:0 0 6px rgba(255,215,0,.4)}
 #rings-display{font-size:8px;letter-spacing:2px;color:var(--cyan);margin-top:6px;text-align:right}
 #combo-display{font-size:10px;letter-spacing:1px;color:#ff69b4;margin-top:6px;
   text-shadow:0 0 8px rgba(255,105,180,.7);opacity:0;transition:opacity .2s}
@@ -403,6 +405,7 @@ body.needs-rotate #rotate{display:flex}
       <div id="score-display">000000</div>
       <div id="mult-display">x1</div>
       <div id="sector-display">SECTOR 1 // EDITING</div>
+      <div id="target-display"></div>
       <div id="combo-display"></div>
     </div>
     <div>
@@ -449,7 +452,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 002</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 003</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -9758,29 +9761,62 @@ var BOOST_ABS = 550*K, HYPER_ABS = 1000*K;
 // the zone defaults (160 / 15000) when it does not. S1L1 and S1L2 only
 // carry baseSpeed/baseLength, which that function never reads — dead data.
 var LEVELS = [
+  // L1 rebuilt on the research pass: 2x length, four taught acts plus a
+  // timed race sector at 40-60%. Rings always draw the safe line; the
+  // only hazard-forward stretches sit at the peak (~75%) and the twist.
   { n:1, name:'FIRST LIGHT', obj:'FLY THE SHAFT\nBANK THE RINGS',
+    speed:160, length:30000,
     pathSeed:19770131, grade:1.00, turn:1.00,
+    scoreTargets:[22000,48000,85000],
+    race:{ startPct:0.40, endPct:0.60, time:20 },
+    sections:[
+      { pct:0.20, label:'THE SCHOOL' },
+      { pct:0.40, label:'THE RACE' },
+      { pct:0.62, label:'THE RIDE' },
+      { pct:0.80, label:'THE FINALE' } ],
     tune:{
       contentRoster:['THE LEGEND OF OTTO DESĆINSKI','BETWEEN THE MOUNTAIN AND THE SKY',
                      'PACIFIC WILD ALLIANCE — F*#K OFF FISH FARMS','BETTY BOOZE'],
       mines:true, shields:true, blocks:false, stars:false,
       baseHazard:0.1, baseRing:0.95, baseShields:0,
-      spacing:80, startOffset:400, maxSpawnPct:0.85, contentChance:0.063,
+      spacing:80, startOffset:400, maxSpawnPct:0.88, contentChance:0.063,
       spiralPattern:[
-        { until:0.15, lanes:[{step:0.3,offset:0.35}], spacing:200,
-          spawn:{contentCount:0,baseHazard:0,baseRing:10,baseShields:0,boostChance:0} },
-        { until:0.20, spacing:50, step:10,
-          spawn:{baseHazard:90,baseRing:0,contentCount:0,baseShields:0,boostChance:0} },
-        { until:0.35, spacing:80, step:0,
-          spawn:{baseRing:90,baseShields:10,contentCount:1,baseHazard:0} },
-        { until:0.60, lanes:[{step:-0.2,offset:0.61},{step:0.2,offset:1.57}], spacing:60,
-          spawn:{baseRing:100,baseHazard:1,contentCount:1,baseShields:2} },
-        { until:0.80, spacing:90, step:0.1,
-          spawn:{baseRing:0,baseHazard:0,contentCount:1,baseShields:2} },
-        { until:1.00, lanes:[{step:-0.1,offset:1.57},{step:0.1,offset:4.71}], spacing:90,
-          spawn:{baseRing:1,baseHazard:1,contentCount:1} }
+        // ACT 1 — OPEN: rings only, zero hazards, combo is a gift
+        { until:0.055, lanes:[{step:0.02,offset:0}], spacing:65,
+          spawn:{baseRing:100,contentCount:0} },
+        // the corkscrew — full barrel rolls, the level's postcard
+        { until:0.14, lanes:[{step:0.30,offset:0}], spacing:55,
+          spawn:{baseRing:100,contentCount:0} },
+        { until:0.20, spacing:80,
+          spawn:{baseRing:100,baseShields:2,contentCount:1} },
+        // ACT 2 — THE SCHOOL: first mines, sparse, golden line in every gap
+        { until:0.26, spacing:95,
+          spawn:{baseRing:75,baseHazard:25,contentCount:1,baseShields:2} },
+        { until:0.30, spacing:85,
+          spawn:{baseRing:100,baseShields:3,contentCount:1} },
+        { until:0.38, spacing:80,
+          spawn:{baseRing:60,baseHazard:40,contentCount:1,baseShields:2} },
+        // breath + tank fill before the race
+        { until:0.40, spacing:120,
+          spawn:{baseRing:40,boostChance:0.10,contentCount:0} },
+        // ACT 3 — THE RACE: one fast ring line through a pylon slalom
+        { until:0.60, lanes:[{step:0.12,offset:0}], spacing:130,
+          spawn:{baseRing:100,contentCount:0} },
+        // ACT 4 — THE RIDE: twin counter-rotating lanes, difficulty peak
+        { until:0.74, lanes:[{step:-0.2,offset:0.61},{step:0.2,offset:1.57}], spacing:60,
+          spawn:{baseRing:95,baseHazard:5,contentCount:1,baseShields:2} },
+        { until:0.80, spacing:75,
+          spawn:{baseRing:55,baseHazard:45,contentCount:1,baseShields:2} },
+        // FINALE twist: gates + mines together — cash-out corridor follows
+        { until:1.00, spacing:80,
+          spawn:{baseRing:40,baseHazard:60,contentCount:0,baseShields:3} }
       ],
-      pylons:{ spacing:180, offset:-0.75, spiralStep:0.55, startAngle:0.2, startPct:0.02, endPct:0.06 }
+      pylons:[
+        { spacing:180, offset:-0.75, spiralStep:0.55, startAngle:0.2, startPct:0.02, endPct:0.05 },
+        { spacing:200, offset:-0.75, spiralStep:0.45, startAngle:0.4, startPct:0.21, endPct:0.24 },
+        { spacing:300, offset:-0.75, spiralStep:0.55, startAngle:0.1, startPct:0.44, endPct:0.58 },
+        { spacing:190, offset:-0.75, spiralStep:0.60, startAngle:0.3, startPct:0.81, endPct:0.85 }
+      ]
     } },
 
   // S1L2 — blocks unlocked, shields off, star corridors. Ends in a wall
@@ -10567,7 +10603,6 @@ function buildStructure(){
   }
   // pylons — ported cadence AND the ported window: startPct 0.02 to
   // endPct 0.06. It is a short slalom near the gate, not the whole run.
-  var P=TUNE.pylons;
   var coneMat=ps1Mat(TEX.hazard,{ambient:0x6b3a12,light:0xffd08a,fogNear:260,fogFar:1500,tint:0xff5500});
   var bandL=ps1Mat(TEX.ring,{emissive:0.95,fogNear:300,fogFar:1700,tint:0x00ffcc});
   var bandR=ps1Mat(TEX.ring,{emissive:0.95,fogNear:300,fogFar:1700,tint:0xff44ff});
@@ -10578,6 +10613,8 @@ function buildStructure(){
   var baseGeo=new THREE.BoxBufferGeometry(9.6,1.1,9.6);
   var arrowGeo=new THREE.ConeBufferGeometry(2.2,6.2,4);
   pylonList=[];
+  // pylons may be one window or an array of windows spread down the level
+  (Array.isArray(TUNE.pylons)?TUNE.pylons:[TUNE.pylons]).forEach(function(P){
   var ang=P.startAngle, n=0;
   for(var d2=TRACK_LEN*P.startPct; d2<TRACK_LEN*P.endPct; d2+=P.spacing, n++){
     frameAt(distToU(d2),fr);
@@ -10604,6 +10641,7 @@ function buildStructure(){
     // of it, a RIGHT pylon a quarter-turn clockwise. +400 right side, -200 wrong.
     pylonList.push({ d:d2, a:a, left:isLeft, anchor:a+(isLeft?Math.PI/2:-Math.PI/2), done:false, hitOnce:false });
   }
+  });
 
   // finish ring — ported: a full-bore torus across the mouth
   frameAt(distToU(TRACK_LEN),fr);
@@ -10878,7 +10916,7 @@ function buildSpawns(){
   // phrase engine — spawns land in readable 4-8 item figures (ring
   // sweeps, lanes, zigzags, hazard gauntlets with a safe gap) instead
   // of per-step confetti, so there is always a line to carve.
-  var phrase=null, phLeft=0, phA=0, phDA=0, phWall=0;
+  var phrase=null, phLeft=0, phA=0, phDA=0, phWall=0, phN=0, phEcho=false;
 
   while(d<end){
     var pct=d/TRACK_LEN, seg=segAt(pct), w=seg.spawn||{};
@@ -10928,12 +10966,17 @@ function buildSpawns(){
           phA=rnd()*Math.PI*2;
           phDA=(rnd()<0.5?-1:1)*(0.22+rnd()*0.26);
         }
-        d+=spacing;   // a breath between phrases
+        phN=phLeft; phEcho=false;
+        // a breath between phrases — sometimes a real rest bar
+        d+=spacing*(rnd()<0.35?3:1);
       }
       if(phrase==='gauntlet'){
         var ht='mine';
         if(TUNE.blocks && (!TUNE.mines || rnd()<0.5)) ht='block';
         spawnList.push({d:d,a:phWall+(rnd()-0.5)*2.4,rad:WALL_R,type:ht});
+        // golden line — the safe gap is paved with rings, so the dodge
+        // line and the payline are the same read
+        spawnList.push({d:d,a:phWall+Math.PI+(rnd()-0.5)*0.3,rad:WALL_R,type:'ring'});
       } else if(phrase==='sweep'){
         spawnList.push({d:d,a:phA,rad:WALL_R,type:'ring'}); phA+=phDA;
       } else if(phrase==='zigzag'){
@@ -10942,8 +10985,20 @@ function buildSpawns(){
         spawnList.push({d:d,a:phA+(rnd()-0.5)*0.15,rad:WALL_R,type:'ring'});
       }
       phLeft--;
+      // call-and-response: a ring phrase usually repeats once before the
+      // generator moves on — recognition reads as design
+      if(phLeft<=0 && !phEcho && phrase!=='gauntlet' && rnd()<0.6){
+        phEcho=true; phLeft=phN; d+=spacing*2;
+      }
     }
     stepIdx++; d+=spacing;
+  }
+  // cash-out corridor — every level ends on a dense ring helix run to
+  // the gate, so the last ten seconds are a rush, not a shrug
+  var coA=rnd()*Math.PI*2;
+  for(var cd=Math.max(d,TRACK_LEN*0.88); cd<TRACK_LEN*0.97; cd+=55){
+    coA+=0.18;
+    spawnList.push({d:cd,a:coA,rad:WALL_R,type:'ring'});
   }
   // guarantee every roster entry appears once so the archive is completable
   var placed={}; spawnList.forEach(function(s){ if(s.type==='content') placed[s.content.title]=1; });
@@ -11021,6 +11076,7 @@ var G={
   time:0, inv:0, fireCd:0, shake:0, roll:0, pitchLag:0,
   gates:0, gatesOk:0, penalty:0,
   spdMult:1, heat:0, hotLock:false, ringsGot:0,
+  raceOn:false, raceT:0, raceDone:false, secIdx:0, tgtIdx:0,
   collected:{}, contentQueue:null, finished:false, hits:0, ringsMissed:0
 };
 var shipGroup=null, shipRoot=null, shipShellId=null;
@@ -11046,6 +11102,7 @@ function resetRun(){
   G.fireCd=0; G.shake=0; G.roll=0; G.finished=false; G.hits=0; G.ringsMissed=0;
   G.gates=0; G.gatesOk=0; G.penalty=0;
   G.spdMult=1; G.heat=0; G.hotLock=false; G.ringsGot=0;
+  G.raceOn=false; G.raceT=0; G.raceDone=false; G.secIdx=0; G.tgtIdx=0;
   G.collected={}; G.contentQueue=null;
   spawnList.forEach(function(s){ s.taken=false; s.grazed=false; s.hp=(s.type==='block')?3:1; });
   pylonList.forEach(function(p){ p.hitOnce=false; p.done=false; });
@@ -11184,7 +11241,7 @@ var elScore=$('score-display'), elRings=$('rings-display'), elTimer=$('timer-dis
     elProg=$('progress-bar'), elCombo=$('combo'), elComboLab=$('combo-display'),
     elPops=$('pops'), elFlash=$('flash'), elProgLab=$('sector-display'),
     elClock=$('srclock'), elMission=$('mission'),
-    elMult=$('mult-display'), elFire=$('btn-fire');
+    elMult=$('mult-display'), elFire=$('btn-fire'), elTarget=$('target-display');
 // vertical flank bars fill from the bottom
 function vbar(el,v){ el.firstElementChild.style.transform='scaleY('+Math.max(0,Math.min(1,v))+')';
   el.classList.toggle('low', v<0.26); }
@@ -11236,10 +11293,28 @@ function updateHUD(){
     elClock.style.color=col; elTimer.style.color=col;
     var blink = rem<=0 ? (Math.sin(G.time*10)>0?'1':'0.3') : '1';
     elClock.style.opacity=blink; elTimer.style.opacity=blink;
+  } else if(G.raceOn){
+    // race sector countdown rides the big speed-run clock
+    var rrem=Math.max(0,G.raceT), rstr=rrem.toFixed(1);
+    elClock.textContent=rstr; elClock.style.display='block';
+    elClock.style.color = rrem>LEVEL.race.time*0.4 ? '#00ff88' : (G.raceT>0 ? '#ffe000' : '#ff2f6d');
+    elClock.style.opacity = G.raceT<=0 ? (Math.sin(G.time*10)>0?'1':'0.3') : '1';
+    elTimer.textContent=fmtClock(t); elTimer.style.color=''; elTimer.style.opacity='1';
   } else {
     elClock.style.display='none';
     elTimer.textContent=fmtClock(t); elTimer.style.color=''; elTimer.style.opacity='1';
   }
+  // live score target — the number you are chasing right now
+  if(LEVEL.scoreTargets){
+    var tI=0; while(tI<3 && G.score>=LEVEL.scoreTargets[tI]) tI++;
+    if(tI>G.tgtIdx){
+      SFX.clear(); pop(['BRONZE','SILVER','GOLD'][tI-1]+' TARGET DOWN','#ffd700');
+      G.tgtIdx=tI;
+    }
+    elTarget.textContent = tI<3
+      ? ['BRONZE','SILVER','GOLD'][tI]+' '+LEVEL.scoreTargets[tI].toLocaleString()
+      : 'ALL TARGETS DOWN';
+  } else elTarget.textContent='';
   if(G.combo>1){ elComboLab.textContent='COMBO x'+Math.min(G.combo,8); elComboLab.classList.add('active'); }
   else elComboLab.classList.remove('active');
 }
@@ -11442,6 +11517,31 @@ function update(dt){
 
   G.prevDist=G.dist;
   G.dist += G.speed*dt;
+
+  // ── section banners + race sector ──────────────────────────────
+  var pnow=G.dist/TRACK_LEN;
+  if(LEVEL.sections){
+    while(G.secIdx<LEVEL.sections.length && pnow>=LEVEL.sections[G.secIdx].pct){
+      pop(LEVEL.sections[G.secIdx].label,'#ffe000'); SFX.gate();
+      G.secIdx++;
+    }
+  }
+  if(LEVEL.race && !G.raceDone){
+    if(!G.raceOn && pnow>=LEVEL.race.startPct){
+      G.raceOn=true; G.raceT=LEVEL.race.time;
+      pop('RACE — '+LEVEL.race.time+'S TO THE GATE','#ffe000'); SFX.boost();
+    }
+    if(G.raceOn){
+      G.raceT-=dt;
+      if(pnow>=LEVEL.race.endPct){
+        G.raceDone=true; G.raceOn=false;
+        if(G.raceT>0){
+          var rb=award(1500); G.score+=rb; G.rings+=20; G.boost=1;
+          SFX.clear(); flash('heal'); pop('RACE WON +'+rb,'#00ff88');
+        } else { SFX.wrong(); pop('TOO SLOW','#ff2f6d'); }
+      }
+    }
+  }
 
   // ── shield regen / timers ──────────────────────────────────────
   if(G.inv>0) G.inv-=dt;
@@ -11937,10 +12037,12 @@ function endRun(won){
   // clear rank — always clears, the rank is the reason to come back
   var ringTot=G.ringsGot+G.ringsMissed, ringPct=ringTot?G.ringsGot/ringTot:1;
   var gatePct=G.gates?G.gatesOk/G.gates:1;
-  var rank=null;
+  var rank=null, st=LEVEL.scoreTargets;
   if(won){
-    rank = (ringPct>=0.85 && gatePct>=0.9 && G.hits<=1 && (!LEVEL.isSpeedRun||srPass)) ? 'GOLD'
-         : (ringPct>=0.60 && gatePct>=0.6 && G.hits<=3) ? 'SILVER' : 'BRONZE';
+    rank = (ringPct>=0.85 && gatePct>=0.9 && G.hits<=1 && (!LEVEL.isSpeedRun||srPass)
+            && (!st||G.score>=st[2])) ? 'GOLD'
+         : (ringPct>=0.60 && gatePct>=0.6 && G.hits<=3 && (!st||G.score>=st[1])) ? 'SILVER'
+         : 'BRONZE';
   }
   var rankBonus = rank==='GOLD'?150:(rank==='SILVER'?50:0);
   var bonus = won ? Math.round(G.rings*0.5)+400+srBonus+rankBonus : 0;
@@ -11972,6 +12074,12 @@ function endRun(won){
     ['HITS',G.hits]
   ];
   if(G.gates) rows.push(['PYLON GATES',G.gatesOk+' / '+G.gates]);
+  // next-medal gap — give the retry a concrete number to chase
+  if(won && st && G.score<st[2]){
+    var nx0 = G.score<st[1] ? ['SILVER',st[1]] : ['GOLD',st[2]];
+    rows.push([nx0[0]+' NEEDS','+'+Math.ceil(nx0[1]-G.score).toLocaleString()]);
+  }
+  if(LEVEL.race && G.raceDone) rows.push(['RACE',G.raceT>0?'WON':'LOST']);
   if(LEVEL.isSpeedRun) rows.push(['SPEED RUN',srPass?'PASSED':'OVER TARGET']);
   if(won) rows.push(['CLEAR BONUS','+'+bonus+'R']);
   rows.push(['BANKED','+'+earned+'R']);
