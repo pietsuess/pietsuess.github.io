@@ -152,6 +152,17 @@ body.playing #touch{display:block}
 #guide .tag{position:absolute;font-size:6px;letter-spacing:3px;color:rgba(255,255,255,.3)}
 #guide .t1{left:50%;transform:translateX(-50%);top:4%}
 #guide .t2{left:50%;transform:translateX(-50%);bottom:19%}
+/* opening cinematic — nothing but the shaft and the ship */
+body.cine-on #touch,body.cine-on #hud{display:none}
+#cine-skip{position:fixed;right:16px;bottom:16px;z-index:620;padding:8px 14px;
+  font-family:inherit;font-size:8px;letter-spacing:3px;color:#8fa3b8;background:transparent;
+  border:1px solid #46586c;cursor:pointer;-webkit-tap-highlight-color:transparent}
+#cine-skip:active{color:#fff;border-color:#8fa3b8}
+#cine-cap{position:fixed;left:0;right:0;bottom:14%;z-index:610;text-align:center;
+  font-size:clamp(9px,2.4vw,13px);letter-spacing:6px;color:var(--amber);opacity:0;
+  text-shadow:0 2px 0 rgba(0,0,0,.9),0 0 14px rgba(255,176,0,.5);
+  transition:opacity .8s;pointer-events:none}
+#cine-cap.on{opacity:1}
 #finger{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
   border:1px solid rgba(63,216,255,.7);background:rgba(63,216,255,.14);opacity:0;
   transition:opacity .15s;pointer-events:none}
@@ -442,6 +453,7 @@ body.needs-rotate #rotate{display:flex}
 
 <div id="combo"></div>
 <div id="pops"></div>
+<div id="cine-cap"></div>
 
 <div id="touch">
   <div id="guide">
@@ -461,7 +473,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 007</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 008</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -12253,6 +12265,134 @@ function attract(dt){
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// OPENING CINEMATIC — ported beat-for-beat from TunnelRunner's
+// runCinematic(): hard launch, broadside beauty pass, peel-away, then
+// the camera runs on alone into the title. Rebuilt on this engine's
+// spline frames instead of the old flat-tube coordinates.
+// ═══════════════════════════════════════════════════════════════════
+var CINE={active:false,t:0,dist:0,ang:0,spd:0,camA:0,lead:0,frozen:null};
+var _cv=new THREE.Vector3(), _ct=new THREE.Vector3();
+var CINE_CAPS=[[0.4,'SECTOR ONE'],[3.9,'THE SHAFT IS OPEN'],[7.7,'TUNNEL RACER']];
+
+function runCine(){
+  CINE.active=true; CINE.t=0; CINE.dist=300; CINE.ang=0; CINE.spd=40;
+  CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1;
+  G.mode='cine';
+  document.body.classList.add('cine-on');
+  show(null);
+  ensureShip(); shipGroup.visible=true;
+  var sk=document.createElement('button');
+  sk.id='cine-skip'; sk.type='button'; sk.textContent='SKIP';
+  var go=function(e){ e.preventDefault(); e.stopPropagation(); endCine(); };
+  sk.addEventListener('touchend',go,{passive:false});
+  sk.addEventListener('click',go);
+  document.body.appendChild(sk);
+}
+
+function endCine(){
+  if(!CINE.active) return;
+  CINE.active=false;
+  document.body.classList.remove('cine-on');
+  var sk=$('cine-skip'); if(sk&&sk.parentNode) sk.parentNode.removeChild(sk);
+  var cap=$('cine-cap'); if(cap){ cap.classList.remove('on'); cap.textContent=''; }
+  engineOff(); hideStreaks();
+  G.time=0; G.dist=0; G.speed=0; G.shipAngle=0; G.camAngle=0; G.throttleSmooth=0;
+  shipGroup.rotation.set(0,0,0);
+  camera.fov=74; camera.updateProjectionMatrix();
+  G.mode='menu'; show('title');
+}
+
+function cineCap(T){
+  var want=-1;
+  for(var i=0;i<CINE_CAPS.length;i++) if(T>=CINE_CAPS[i][0]) want=i;
+  if(want===CINE.cap) return;
+  CINE.cap=want;
+  var el=$('cine-cap'); if(!el) return;
+  if(want<0){ el.classList.remove('on'); return; }
+  el.textContent=CINE_CAPS[want][1];
+  el.classList.remove('on'); void el.offsetWidth; el.classList.add('on');
+}
+
+function tickCine(dt){
+  var T=(CINE.t+=dt);
+  cineCap(T);
+
+  // ── speed: a hard launch that settles into a scream ──────────────
+  var tgt = T<2.2 ? 40+(1000-40)*(T/2.2) : 1000;
+  CINE.spd += (tgt-CINE.spd)*Math.min(1,dt*5);
+  CINE.dist += CINE.spd*dt;
+  var thr=Math.min(1.5,T/1.7*1.5), hyp=Math.max(0,Math.min(1,(T-1.1)/1.6));
+
+  // mirror into G so the shared FX (streaks, engine, wind) just work
+  G.dist=CINE.dist; G.speed=CINE.spd; G.throttleSmooth=thr; G.hyperFrac=hyp;
+
+  // ── ship: rides the wall, drifting slowly around it ──────────────
+  if(T<7.6) CINE.ang += (0.22+Math.sin(T*0.7)*0.14)*dt;
+  else      CINE.ang += 2.6*dt;            // the peel-away roll
+  if(T>=7.6) CINE.lead += 620*dt;          // and it pulls away hard
+
+  frameAt(distToU(CINE.dist+CINE.lead),fr0);
+  radialAt(fr0,CINE.ang,_rad);
+  _v.copy(fr0.p).addScaledVector(_rad,WALL_R);
+  shipRoot.position.copy(_v);
+  shipRoot.up.copy(_rad).multiplyScalar(-1);
+  _look.copy(_v).addScaledVector(fr0.t,-60);
+  shipRoot.lookAt(_look);
+  shipGroup.rotation.z = T<7.6 ? Math.sin(T*0.7)*0.35 : Math.min(1.0,(T-7.6)*1.8);
+  shipGroup.position.y = Math.sin(T*3.1)*0.16;
+  shipGroup.visible = T<9.0;
+  burn(shipGroup,thr,hyp,T);
+
+  // ── camera: chase → broadside → frozen → run on alone ────────────
+  // 0-3.6 chase · 3.6-5.2 swing out · 5.2-7.6 broadside · 7.6-8.7
+  // frozen on the departing ship · 8.7-9.7 forward again
+  var mix = T<3.6 ? 0 : (T<5.2 ? (T-3.6)/1.6 : 1);
+  mix = mix<=0?0:(mix>=1?1:(mix<0.5?2*mix*mix:1-Math.pow(-2*mix+2,2)/2));
+
+  CINE.camA += angWrap(CINE.ang-CINE.camA)*Math.min(1,dt*7);
+  frameAt(distToU(Math.max(0,CINE.dist-(30+CINE.spd*0.011))),frC);
+  radialAt(frC,CINE.camA,_radC);
+  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-11);
+  frameAt(distToU(CINE.dist+130),frP);
+  radialAt(frP,CINE.camA,_radP);
+  _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
+
+  if(mix>0){
+    // broadside: ahead of the ship and across the shaft, looking back at it
+    frameAt(distToU(CINE.dist+80),frP);
+    radialAt(frP,CINE.ang+2.4,_radP);
+    _cv.copy(frP.p).addScaledVector(_radP,WALL_R*0.52);
+    _ct.copy(shipRoot.position);
+    _v2.lerp(_cv,mix); _look.lerp(_ct,mix);
+  }
+  if(T>=7.6 && T<8.7){
+    if(!CINE.frozen) CINE.frozen=_v2.clone();
+    _v2.copy(CINE.frozen); _look.copy(shipRoot.position);
+  }
+  if(T>=8.7){
+    CINE.frozen=null;
+    frameAt(distToU(CINE.dist+40),frC);
+    radialAt(frC,CINE.camA,_radC);
+    _v2.copy(frC.p).addScaledVector(_radC,WALL_R*0.35);
+    frameAt(distToU(CINE.dist+400),frP);
+    _look.copy(frP.p);
+  }
+  camera.position.copy(_v2);
+  camera.up.copy(_radC).multiplyScalar(-1);
+  camera.lookAt(_look);
+  var wantFov = T<3.6 ? 82+18*hyp : (T<7.6 ? 58 : 96);
+  camera.fov += (wantFov-camera.fov)*Math.min(1,dt*3.2);
+  camera.updateProjectionMatrix();
+
+  engineSet(Math.min(1,thr/1.5),hyp>0.05);
+  windSet(0.25+hyp*0.5);
+  updateStreaks(dt);
+  Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
+
+  if(T>=9.7) endCine();
+}
+
+// ═══════════════════════════════════════════════════════════════════
 // BOOT
 // ═══════════════════════════════════════════════════════════════════
 // BOOT + MAIN LOOP
@@ -12274,7 +12414,7 @@ function boot(){
     if(i>=steps.length){
       bootStep(100,'READY');
       setTimeout(function(){ $('boot').style.display='none'; },240);
-      G.mode='menu'; show('title');
+      runCine();
       requestAnimationFrame(loop);
       return;
     }
@@ -12288,6 +12428,7 @@ function loop(now){
   requestAnimationFrame(loop);
   var dt=Math.min(0.05,(now-last)/1000); last=now;
   if(G.mode==='play') update(dt);
+  else if(G.mode==='cine') tickCine(dt);
   else if(G.mode==='menu'||G.mode==='howto') attract(dt);
   if($('armoury').classList.contains('on')) armTick(dt);
   compositeMat.uniforms.uTime.value=now*0.001;
