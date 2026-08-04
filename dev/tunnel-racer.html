@@ -163,6 +163,29 @@ body.cine-on #touch,body.cine-on #hud{display:none}
   text-shadow:0 2px 0 rgba(0,0,0,.9),0 0 14px rgba(255,176,0,.5);
   transition:opacity .8s;pointer-events:none}
 #cine-cap.on{opacity:1}
+/* launch gate — guarantees an AudioContext before the cinematic runs */
+#boot-go{display:none;margin-top:22px;padding:12px 22px;font-family:inherit;font-size:9px;
+  letter-spacing:4px;color:var(--amber);background:transparent;border:1px solid rgba(255,176,0,.5);
+  cursor:pointer;-webkit-tap-highlight-color:transparent;animation:gopulse 1.6s ease-in-out infinite}
+#boot-go.on{display:block}
+@keyframes gopulse{0%,100%{opacity:.55}50%{opacity:1}}
+/* the title page the cinematic lands on */
+#titlecard{position:fixed;inset:0;z-index:600;display:none;flex-direction:column;
+  align-items:center;justify-content:center;gap:14px;text-align:center;
+  background:radial-gradient(ellipse at 50% 50%,rgba(4,9,17,.35),rgba(2,5,10,.88));
+  -webkit-tap-highlight-color:transparent}
+#titlecard.on{display:flex}
+#tc-pre,#tc-sub,#tc-go{opacity:0}
+#tc-title{opacity:0;transform:scale(1.6) skewX(-4deg)}
+#titlecard.on #tc-title{animation:tcIn 1.1s cubic-bezier(.2,.9,.25,1) forwards}
+#titlecard.on #tc-pre{animation:tcFade .7s ease-out .15s forwards}
+#titlecard.on #tc-sub{animation:tcFade .7s ease-out 1.0s forwards}
+#titlecard.on #tc-go{animation:tcBlink 1.5s ease-in-out 1.7s infinite}
+@keyframes tcIn{0%{opacity:0;transform:scale(1.6) skewX(-4deg)}
+  60%{opacity:1;transform:scale(.96) skewX(-4deg)}
+  100%{opacity:1;transform:scale(1) skewX(-4deg)}}
+@keyframes tcFade{to{opacity:.85}}
+@keyframes tcBlink{0%,100%{opacity:.25}50%{opacity:.9}}
 #finger{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
   border:1px solid rgba(63,216,255,.7);background:rgba(63,216,255,.14);opacity:0;
   transition:opacity .15s;pointer-events:none}
@@ -473,7 +496,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 008</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 009</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -573,6 +596,15 @@ body.needs-rotate #rotate{display:flex}
   <div class="title" style="font-size:14px">TUNNEL RACER</div>
   <div class="bar2"><i id="boot-bar"></i></div>
   <div class="sub" id="boot-msg">BOOTING</div>
+  <button id="boot-go">PRESS TO LAUNCH</button>
+</div>
+
+<!-- cinematic end card: the title page the opening lands on -->
+<div id="titlecard">
+  <div class="sub" id="tc-pre">PIET SUESS PRESENTS</div>
+  <h1 class="title" id="tc-title">TUNNEL<br>RACER</h1>
+  <div class="sub hot" id="tc-sub">◈ SECTOR ONE ◈</div>
+  <div class="sub" id="tc-go">PRESS TO CONTINUE</div>
 </div>
 
 <!-- shared loadout library: every engine, shield and gun tier, one copy -->
@@ -10038,6 +10070,55 @@ function engineSet(v,boost){
     e.o.frequency.setTargetAtTime(e.base*(0.72+v*0.75+(boost?0.34:0)), AC.currentTime, 0.09); });
 }
 function windSet(v){ if(windGain) windGain.gain.setTargetAtTime(Math.min(0.6,v), AC.currentTime, 0.15); }
+
+// ── cinematic score: A minor, the ported TunnelRunner progression ──
+var cineBus=null;
+function cmNote(type,f,st,dur,gain,lp){
+  var o=AC.createOscillator(), g=AC.createGain();
+  o.type=type; o.frequency.setValueAtTime(f,st);
+  g.gain.setValueAtTime(0.0001,st);
+  g.gain.linearRampToValueAtTime(gain,st+0.04);
+  g.gain.setValueAtTime(gain,Math.max(st+0.06,st+dur-0.28));
+  g.gain.exponentialRampToValueAtTime(0.0001,st+dur);
+  if(lp){ var bf=AC.createBiquadFilter(); bf.type='lowpass'; bf.frequency.value=lp; bf.Q.value=0.7;
+          o.connect(bf); bf.connect(g); }
+  else o.connect(g);
+  g.connect(cineBus);
+  o.start(st); o.stop(st+dur+0.06);
+}
+function cineMusicStart(){
+  if(!AC) return;
+  cineMusicStop();
+  cineBus=AC.createGain(); cineBus.gain.value=0.5; cineBus.connect(master);
+  var t0=AC.currentTime+0.06, ROOT=110, BAR=1.6;
+  var PROG=[[0,3,7],[5,8,0],[0,4,7],[7,11,2]];   // ported chord cycle
+  var BASS=[0,-4,3,-2];
+  var semi=function(s){ return ROOT*Math.pow(2,s/12); };
+  for(var b=0;b<6;b++){
+    var st=t0+b*BAR, ch=PROG[b%4];
+    cmNote('sawtooth',semi(BASS[b%4])*0.5,st,BAR-0.04,0.34,320);   // bass
+    for(var c=0;c<3;c++){                                          // pad
+      cmNote('triangle',semi(ch[c])*2,st,BAR-0.05,0.09,1800);
+      cmNote('sawtooth',semi(ch[c])*2*1.005,st,BAR-0.05,0.045,1400);
+    }
+    if(b>=1) for(var a=0;a<8;a++){                                 // arp
+      var an=ch[a%3]+(a>=4?12:0);
+      cmNote('square',semi(an)*4,st+a*(BAR/8),0.17,0.055,3200);
+    }
+  }
+  // the stab the title card lands on
+  var ts=t0+9.35;
+  [0,3,7,12,19].forEach(function(s,i){
+    cmNote('sawtooth',semi(s)*(i>3?2:1),ts,2.6,0.13,2600);
+    cmNote('triangle',semi(s)*2,ts,2.6,0.07,4000);
+  });
+}
+function cineMusicStop(){
+  if(!cineBus) return;
+  try{ cineBus.gain.setTargetAtTime(0,AC.currentTime,0.25); }catch(e){}
+  var old=cineBus; cineBus=null;
+  setTimeout(function(){ try{ old.disconnect(); }catch(e){} },1400);
+}
 function engineOff(){ if(engGain) engGain.gain.setTargetAtTime(0, AC.currentTime, 0.2); windSet(0); }
 function blip(freq,dur,type,vol,sweep){
   if(!AC) return;
@@ -12272,15 +12353,17 @@ function attract(dt){
 // ═══════════════════════════════════════════════════════════════════
 var CINE={active:false,t:0,dist:0,ang:0,spd:0,camA:0,lead:0,frozen:null};
 var _cv=new THREE.Vector3(), _ct=new THREE.Vector3();
-var CINE_CAPS=[[0.4,'SECTOR ONE'],[3.9,'THE SHAFT IS OPEN'],[7.7,'TUNNEL RACER']];
+var CINE_CAPS=[[0.5,'SECTOR ONE'],[4.0,'THE SHAFT IS OPEN']];
 
 function runCine(){
   CINE.active=true; CINE.t=0; CINE.dist=300; CINE.ang=0; CINE.spd=40;
-  CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1;
+  CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1; CINE.sfx=0;
   G.mode='cine';
   document.body.classList.add('cine-on');
   show(null);
   ensureShip(); shipGroup.visible=true;
+  cineMusicStart();
+  noiseBurst(0.9,220,0.5);        // the launch
   var sk=document.createElement('button');
   sk.id='cine-skip'; sk.type='button'; sk.textContent='SKIP';
   var go=function(e){ e.preventDefault(); e.stopPropagation(); endCine(); };
@@ -12289,17 +12372,49 @@ function runCine(){
   document.body.appendChild(sk);
 }
 
+// the flight is over — hold on the title page until the player taps
+function cineTitleCard(){
+  G.mode='cinecard';
+  var sk=$('cine-skip'); if(sk&&sk.parentNode) sk.parentNode.removeChild(sk);
+  var cap=$('cine-cap'); if(cap){ cap.classList.remove('on'); cap.textContent=''; }
+  shipGroup.visible=false;
+  var tc=$('titlecard');
+  tc.classList.add('on');
+  var go=function(e){ e.preventDefault(); endCine(); };
+  tc.addEventListener('click',go,{once:true});
+  tc.addEventListener('touchend',go,{once:true,passive:false});
+  window.addEventListener('keydown',function once(){ window.removeEventListener('keydown',once); endCine(); });
+}
+
 function endCine(){
   if(!CINE.active) return;
   CINE.active=false;
   document.body.classList.remove('cine-on');
+  $('titlecard').classList.remove('on');
   var sk=$('cine-skip'); if(sk&&sk.parentNode) sk.parentNode.removeChild(sk);
   var cap=$('cine-cap'); if(cap){ cap.classList.remove('on'); cap.textContent=''; }
-  engineOff(); hideStreaks();
+  cineMusicStop(); engineOff(); hideStreaks();
   G.time=0; G.dist=0; G.speed=0; G.shipAngle=0; G.camAngle=0; G.throttleSmooth=0;
-  shipGroup.rotation.set(0,0,0);
+  shipGroup.rotation.set(0,0,0); shipGroup.visible=true;
   camera.fov=74; camera.updateProjectionMatrix();
   G.mode='menu'; show('title');
+}
+
+// slow drift behind the title card so the shaft stays alive under it
+function tickCineCard(dt){
+  CINE.dist += 260*dt;
+  CINE.camA += 0.06*dt;
+  G.dist=CINE.dist;
+  frameAt(distToU(CINE.dist),frC);
+  radialAt(frC,CINE.camA,_radC);
+  _v2.copy(frC.p).addScaledVector(_radC,WALL_R*0.3);
+  frameAt(distToU(CINE.dist+400),frP);
+  camera.position.copy(_v2);
+  camera.up.copy(_radC).multiplyScalar(-1);
+  camera.lookAt(frP.p);
+  camera.fov += (78-camera.fov)*Math.min(1,dt*2);
+  camera.updateProjectionMatrix();
+  Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
 }
 
 function cineCap(T){
@@ -12316,6 +12431,9 @@ function cineCap(T){
 function tickCine(dt){
   var T=(CINE.t+=dt);
   cineCap(T);
+  // beat-locked one-shots
+  if(CINE.sfx<1 && T>=3.6){ CINE.sfx=1; noiseBurst(0.5,900,0.32); SFX.gate(); }
+  if(CINE.sfx<2 && T>=7.6){ CINE.sfx=2; noiseBurst(0.7,520,0.42); SFX.boost(); }
 
   // ── speed: a hard launch that settles into a scream ──────────────
   var tgt = T<2.2 ? 40+(1000-40)*(T/2.2) : 1000;
@@ -12389,7 +12507,7 @@ function tickCine(dt){
   updateStreaks(dt);
   Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
 
-  if(T>=9.7) endCine();
+  if(T>=9.35) cineTitleCard();
 }
 
 // ═══════════════════════════════════════════════════════════════════
@@ -12413,8 +12531,15 @@ function boot(){
   (function next(){
     if(i>=steps.length){
       bootStep(100,'READY');
-      setTimeout(function(){ $('boot').style.display='none'; },240);
-      runCine();
+      // gate the cinematic behind one tap so the AudioContext exists and
+      // the opening actually has a score
+      bootMsg.textContent='SYSTEMS NOMINAL';
+      var go=$('boot-go'); go.classList.add('on');
+      go.addEventListener('click',function(){
+        audioInit(); if(AC&&AC.state==='suspended') AC.resume();
+        $('boot').style.display='none';
+        runCine();
+      },{once:true});
       requestAnimationFrame(loop);
       return;
     }
@@ -12429,6 +12554,7 @@ function loop(now){
   var dt=Math.min(0.05,(now-last)/1000); last=now;
   if(G.mode==='play') update(dt);
   else if(G.mode==='cine') tickCine(dt);
+  else if(G.mode==='cinecard') tickCineCard(dt);
   else if(G.mode==='menu'||G.mode==='howto') attract(dt);
   if($('armoury').classList.contains('on')) armTick(dt);
   compositeMat.uniforms.uTime.value=now*0.001;
