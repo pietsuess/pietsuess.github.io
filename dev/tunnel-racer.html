@@ -135,14 +135,14 @@ body.playing #touch{display:block}
 #guide .dead{position:absolute;left:39%;right:39%;top:0;bottom:0;
   border-left:1px solid rgba(255,255,255,.09);border-right:1px solid rgba(255,255,255,.09);
   background:rgba(255,255,255,.02)}
-#guide .thr{position:absolute;left:0;right:0;bottom:25%;height:45%;
+#guide .thr{position:absolute;left:0;right:0;bottom:18%;height:32%;
   border-top:1px solid rgba(255,224,0,.16);border-bottom:1px solid rgba(255,224,0,.16);
   background:linear-gradient(to top,rgba(255,224,0,0),rgba(255,224,0,.07))}
-#guide .hyp{position:absolute;left:0;right:0;top:0;height:30%;
+#guide .hyp{position:absolute;left:0;right:0;top:0;height:50%;
   background:linear-gradient(to top,rgba(255,47,109,0),rgba(255,47,109,.13))}
 #guide .tag{position:absolute;font-size:6px;letter-spacing:3px;color:rgba(255,255,255,.3)}
 #guide .t1{left:50%;transform:translateX(-50%);top:4%}
-#guide .t2{left:50%;transform:translateX(-50%);bottom:26%}
+#guide .t2{left:50%;transform:translateX(-50%);bottom:19%}
 #finger{position:absolute;width:26px;height:26px;margin:-13px 0 0 -13px;border-radius:50%;
   border:1px solid rgba(63,216,255,.7);background:rgba(63,216,255,.14);opacity:0;
   transition:opacity .15s;pointer-events:none}
@@ -452,7 +452,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 003</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 004</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -9984,7 +9984,7 @@ function speedFactor(){ var m=shipMeta();
   return m.speedMult * DRIVES[S.drive].mult * (m.hullKg/totalKg()); }
 
 // ── audio: fully procedural ───────────────────────────────────────
-var AC=null, master=null, engGain=null, engOsc=[];
+var AC=null, master=null, engGain=null, engOsc=[], windGain=null;
 function audioInit(){
   if(AC) return;
   try{ AC=new (window.AudioContext||window.webkitAudioContext)(); }catch(e){ return; }
@@ -10002,6 +10002,11 @@ function audioInit(){
   var nf=AC.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=170; nf.Q.value=0.7;
   var ng=AC.createGain(); ng.gain.value=0.45;
   n.connect(nf); nf.connect(ng); ng.connect(engGain); n.start();
+  // wind rush — high-passed noise that only opens up at speed
+  windGain=AC.createGain(); windGain.gain.value=0; windGain.connect(master);
+  var wn=AC.createBufferSource(); wn.buffer=buf; wn.loop=true;
+  var wf=AC.createBiquadFilter(); wf.type='highpass'; wf.frequency.value=1400;
+  wn.connect(wf); wf.connect(windGain); wn.start();
 }
 function engineSet(v,boost){
   if(!engGain) return;
@@ -10009,7 +10014,8 @@ function engineSet(v,boost){
   engOsc.forEach(function(e){
     e.o.frequency.setTargetAtTime(e.base*(0.72+v*0.75+(boost?0.34:0)), AC.currentTime, 0.09); });
 }
-function engineOff(){ if(engGain) engGain.gain.setTargetAtTime(0, AC.currentTime, 0.2); }
+function windSet(v){ if(windGain) windGain.gain.setTargetAtTime(Math.min(0.6,v), AC.currentTime, 0.15); }
+function engineOff(){ if(engGain) engGain.gain.setTargetAtTime(0, AC.currentTime, 0.2); windSet(0); }
 function blip(freq,dur,type,vol,sweep){
   if(!AC) return;
   var o=AC.createOscillator(), g=AC.createGain();
@@ -11135,10 +11141,11 @@ function updateZones(x,y){
     var outer=(Math.abs(xn)-DEAD)/(1-DEAD);
     turnTarget=-(xn<0?-1:1)*Math.pow(outer,TURN_CURVE)*TURN_MAX;
   }
+  // tightened ramp: full throttle by mid-screen, hyper is the top half
   var yn=1.0-(y/H);
-  if(yn<=0.25) throttle=0;
-  else if(yn<=0.70) throttle=(yn-0.25)/0.45;
-  else throttle=1.0+0.5*((yn-0.70)/0.30);
+  if(yn<=0.18) throttle=0;
+  else if(yn<=0.50) throttle=(yn-0.18)/0.32;
+  else throttle=1.0+0.5*Math.min(1,(yn-0.50)/0.30);
   if(fingerEl){ fingerEl.style.left=x+'px'; fingerEl.style.top=y+'px'; }
 }
 function inputStart(x,y){
@@ -11258,12 +11265,15 @@ function fmtClock(t){
   var m=Math.floor(t/60), s=Math.floor(t%60), x=Math.floor((t%1)*10);
   return m+':'+(s<10?'0':'')+s+'.'+x;
 }
-function showMission(){
-  $('mission-zone').textContent='SECTOR 1 // '+ZONE.name;
-  $('mission-obj').innerHTML='LEVEL '+LEVEL.n+' — '+LEVEL.name+'<br>'+
-    LEVEL.obj.split('\n').join('<br>');
+function showBanner(zone,obj){
+  $('mission-zone').textContent=zone;
+  $('mission-obj').innerHTML=obj.split('\n').join('<br>');
   elMission.classList.add('show');
   setTimeout(function(){ elMission.classList.remove('show'); },2600);
+}
+function showMission(){
+  showBanner('SECTOR 1 // '+ZONE.name,
+    'LEVEL '+LEVEL.n+' — '+LEVEL.name+'\n'+LEVEL.obj);
 }
 function flash(kind){
   elFlash.className=''; void elFlash.offsetWidth; elFlash.className=kind;
@@ -11450,11 +11460,11 @@ function burn(sg,thr,hyper,time){
   }
   if(!T||!T.core) return;
   var Z0=T.z0!==undefined?T.z0:5.6;
-  var lenC=(0.42+thr*1.55+hyper*1.3)*flick;
+  var lenC=(0.42+thr*1.55+hyper*2.1)*flick;
   var wid =(0.62+thr*0.55+hyper*0.5);
   T.core.scale.set(wid,lenC,wid);
   T.core.position.z=Z0+lenC*3.5;
-  var lenO=(0.30+thr*1.85+hyper*2.4)*(0.90+Math.sin(time*31)*0.10);
+  var lenO=(0.30+thr*1.85+hyper*3.4)*(0.90+Math.sin(time*31)*0.10);
   var widO=(0.48+thr*0.62+hyper*0.75);
   T.outer.scale.set(widO,lenO,widO);
   T.outer.position.z=Z0+lenO*5.5;
@@ -11472,6 +11482,41 @@ function burn(sg,thr,hyper,time){
     }
   }
 }
+
+// ── speed streaks: additive slivers that whip past at boost/hyper ──
+var streaks=null;
+function updateStreaks(dt){
+  if(!streaks){
+    streaks=[];
+    var sg=new THREE.BoxBufferGeometry(0.26,0.26,22);
+    for(var i=0;i<36;i++){
+      var sm=new THREE.Mesh(sg,new THREE.MeshBasicMaterial({color:0xffd0ea,transparent:true,
+        opacity:0,blending:THREE.AdditiveBlending,depthWrite:false}));
+      sm.visible=false; scene.add(sm);   // global FX — deliberately not worldGroup
+      streaks.push({mesh:sm,d:-1,a:0,r:0});
+    }
+  }
+  var on=Math.max(0,Math.min(1,(G.throttleSmooth-0.55)/0.8));
+  for(var i=0;i<streaks.length;i++){
+    var s=streaks[i];
+    if(on<=0.02){ s.mesh.visible=false; continue; }
+    if(s.d<G.dist+30 || s.d>G.dist+750){
+      s.d=G.dist+140+Math.random()*600;
+      s.a=Math.random()*Math.PI*2;
+      s.r=WALL_R-3-Math.random()*15;
+    }
+    s.d-=G.speed*dt*0.6;   // drifts against travel so it reads twice as fast
+    frameAt(distToU(Math.max(0,s.d)),frP);
+    radialAt(frP,s.a,_radP);
+    s.mesh.position.copy(frP.p).addScaledVector(_radP,s.r);
+    _look.copy(s.mesh.position).addScaledVector(frP.t,30);
+    s.mesh.lookAt(_look);
+    s.mesh.scale.set(1,1,1+G.hyperFrac*2.4);
+    s.mesh.material.opacity=0.08+0.34*on;
+    s.mesh.visible=true;
+  }
+}
+function hideStreaks(){ if(streaks) streaks.forEach(function(s){ s.mesh.visible=false; }); }
 
 var BASE_FOV=75, HYPER_FOV=120;
 var COMBO_WINDOW=3.0;   // ported
@@ -11507,6 +11552,8 @@ function update(dt){
   else if(G.throttleSmooth<0.35) G.boost=Math.min(1,G.boost+dt*0.02);
   // speed-tier score multiplier: base x1, boost x2, hyper x3
   G.spdMult = G.hyperFrac>0.6 ? 3 : (G.throttleSmooth>0.5 ? 2 : 1);
+  // speed rumble — constant low shake at boost, harder into hyper
+  if(G.throttleSmooth>0.85) G.shake=Math.max(G.shake,0.07+0.20*G.hyperFrac);
   var prog=G.dist/TRACK_LEN;
   var base=ZONE.speed*K*speedFactor()*(0.90+prog*0.30);
   var boostSpd=BOOST_ABS*speedFactor(), hyperSpd=HYPER_ABS*speedFactor();
@@ -11529,7 +11576,9 @@ function update(dt){
   if(LEVEL.race && !G.raceDone){
     if(!G.raceOn && pnow>=LEVEL.race.startPct){
       G.raceOn=true; G.raceT=LEVEL.race.time;
-      pop('RACE — '+LEVEL.race.time+'S TO THE GATE','#ffe000'); SFX.boost();
+      showBanner('PUSH IT!','FULL SPEED TO THE GATE — '+LEVEL.race.time+'S\n'+
+        (isTouch?'DRAG YOUR FINGER TO THE TOP':'SHIFT + UP — HYPER'));
+      SFX.boost();
     }
     if(G.raceOn){
       G.raceT-=dt;
@@ -11575,7 +11624,9 @@ function update(dt){
 
   // ── camera: chase cam rolled to the wall ───────────────────────
   G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*14);
-  var back=30+G.speed*0.028;
+  // speed reads through shake/streaks/sound now, not camera pull —
+  // the ship stays close instead of zooming away at hyper
+  var back=30+G.speed*0.011;
   frameAt(distToU(Math.max(0,G.dist-back)),frC);
   radialAt(frC,G.camAngle,_radC);
   _v2.copy(frC.p).addScaledVector(_radC,WALL_R-11);
@@ -11688,6 +11739,8 @@ function update(dt){
   }
 
   engineSet(Math.min(1,G.throttleSmooth/1.5),G.hyperFrac>0.05);
+  windSet(Math.max(0,G.throttleSmooth-0.5)*0.35+G.hyperFrac*0.45);
+  updateStreaks(dt);
   updateHUD();
 
   if(G.dist>=TRACK_LEN && !G.finished){ G.finished=true; endRun(true); }
@@ -12028,7 +12081,7 @@ function doPause(){ if(G.mode!=='play') return; G.mode='pause'; engineOff(); sho
 function doResume(){ if(G.mode!=='pause') return; G.mode='play'; hideAll(); }
 function endRun(won){
   G.mode= won?'win':'over';
-  engineOff();
+  engineOff(); hideStreaks();
   elClock.style.display='none';
   var lk='L'+LEVEL.n, runTime=G.time+G.penalty;
   var srPass = won && LEVEL.isSpeedRun && runTime<=LEVEL.speedRunTarget;
