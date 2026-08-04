@@ -452,7 +452,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 004</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 005</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -9767,7 +9767,7 @@ var LEVELS = [
   { n:1, name:'FIRST LIGHT', obj:'FLY THE SHAFT\nBANK THE RINGS',
     speed:160, length:30000,
     pathSeed:19770131, grade:1.00, turn:1.00,
-    scoreTargets:[22000,48000,85000],
+    scoreTargets:[18000,40000,72000],
     race:{ startPct:0.40, endPct:0.60, time:20 },
     sections:[
       { pct:0.20, label:'THE SCHOOL' },
@@ -9779,37 +9779,39 @@ var LEVELS = [
                      'PACIFIC WILD ALLIANCE — F*#K OFF FISH FARMS','BETTY BOOZE'],
       mines:true, shields:true, blocks:false, stars:false,
       baseHazard:0.1, baseRing:0.95, baseShields:0,
-      spacing:80, startOffset:400, maxSpawnPct:0.88, contentChance:0.063,
+      // spacious by design: at 210 u/s a 120m gap is ~0.6s between things,
+      // which is what "readable" costs. Hazards stay a minority everywhere.
+      spacing:120, startOffset:600, maxSpawnPct:0.88, contentChance:0.063,
       spiralPattern:[
         // ACT 1 — OPEN: rings only, zero hazards, combo is a gift
-        { until:0.055, lanes:[{step:0.02,offset:0}], spacing:65,
+        { until:0.055, lanes:[{step:0.015,offset:0}], spacing:110,
           spawn:{baseRing:100,contentCount:0} },
-        // the corkscrew — full barrel rolls, the level's postcard
-        { until:0.14, lanes:[{step:0.30,offset:0}], spacing:55,
+        // the corkscrew — one slow barrel roll, the level's postcard
+        { until:0.14, lanes:[{step:0.20,offset:0}], spacing:100,
           spawn:{baseRing:100,contentCount:0} },
-        { until:0.20, spacing:80,
+        { until:0.20, spacing:120,
           spawn:{baseRing:100,baseShields:2,contentCount:1} },
         // ACT 2 — THE SCHOOL: first mines, sparse, golden line in every gap
-        { until:0.26, spacing:95,
-          spawn:{baseRing:75,baseHazard:25,contentCount:1,baseShields:2} },
-        { until:0.30, spacing:85,
+        { until:0.26, spacing:130,
+          spawn:{baseRing:85,baseHazard:15,contentCount:1,baseShields:2} },
+        { until:0.30, spacing:120,
           spawn:{baseRing:100,baseShields:3,contentCount:1} },
-        { until:0.38, spacing:80,
-          spawn:{baseRing:60,baseHazard:40,contentCount:1,baseShields:2} },
+        { until:0.38, spacing:125,
+          spawn:{baseRing:75,baseHazard:25,contentCount:1,baseShields:2} },
         // breath + tank fill before the race
-        { until:0.40, spacing:120,
+        { until:0.40, spacing:200,
           spawn:{baseRing:40,boostChance:0.10,contentCount:0} },
-        // ACT 3 — THE RACE: one fast ring line through a pylon slalom
-        { until:0.60, lanes:[{step:0.12,offset:0}], spacing:130,
+        // ACT 3 — THE RACE: one long ring line through a pylon slalom
+        { until:0.60, lanes:[{step:0.09,offset:0}], spacing:150,
           spawn:{baseRing:100,contentCount:0} },
-        // ACT 4 — THE RIDE: twin counter-rotating lanes, difficulty peak
-        { until:0.74, lanes:[{step:-0.2,offset:0.61},{step:0.2,offset:1.57}], spacing:60,
-          spawn:{baseRing:95,baseHazard:5,contentCount:1,baseShields:2} },
-        { until:0.80, spacing:75,
-          spawn:{baseRing:55,baseHazard:45,contentCount:1,baseShields:2} },
+        // ACT 4 — THE RIDE: one drifting lane, difficulty peak
+        { until:0.74, lanes:[{step:0.14,offset:0}], spacing:110,
+          spawn:{baseRing:92,baseHazard:8,contentCount:1,baseShields:2} },
+        { until:0.80, spacing:125,
+          spawn:{baseRing:70,baseHazard:30,contentCount:1,baseShields:2} },
         // FINALE twist: gates + mines together — cash-out corridor follows
-        { until:1.00, spacing:80,
-          spawn:{baseRing:40,baseHazard:60,contentCount:0,baseShields:3} }
+        { until:1.00, spacing:120,
+          spawn:{baseRing:60,baseHazard:40,contentCount:0,baseShields:3} }
       ],
       pylons:[
         { spacing:180, offset:-0.75, spiralStep:0.55, startAngle:0.2, startPct:0.02, endPct:0.05 },
@@ -10923,6 +10925,10 @@ function buildSpawns(){
   // sweeps, lanes, zigzags, hazard gauntlets with a safe gap) instead
   // of per-step confetti, so there is always a line to carve.
   var phrase=null, phLeft=0, phA=0, phDA=0, phWall=0, phN=0, phEcho=false;
+  // phrase continuity: the next figure starts where the last one left you.
+  // Random per-phrase angles meant the line teleported across the tube and
+  // everything read as unreachable.
+  var lastA=0;
 
   while(d<end){
     var pct=d/TRACK_LEN, seg=segAt(pct), w=seg.spawn||{};
@@ -10933,7 +10939,7 @@ function buildSpawns(){
       var title=roster[contentIdx++];
       var item=contentByTitle(title);
       if(item){
-        spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'content',content:item});
+        spawnList.push({d:d,a:lastA,rad:WALL_R,type:'content',content:item});
         lastContentD=d; d+=spacing*2; stepIdx++; continue;
       }
     }
@@ -10942,35 +10948,37 @@ function buildSpawns(){
         var lane=seg.lanes[L];
         var a=lane.offset+lane.step*stepIdx;
         var t=pickType(w,false,rnd);
-        if(t) spawnList.push({d:d,a:a,rad:WALL_R,type:t});
+        if(t){ spawnList.push({d:d,a:a,rad:WALL_R,type:t}); lastA=a; }
       }
     } else {
       // star corridors keep their ported per-step density
       if(TUNE.stars && w.starChance && rnd()<w.starChance){
-        spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'star'});
+        spawnList.push({d:d,a:lastA,rad:WALL_R,type:'star'});
         stepIdx++; d+=spacing; continue;
       }
       if(phLeft<=0){
         // phrase boundary: lone shield or boost gate sometimes sits here
         if(TUNE.shields!==false && w.baseShields && rnd()<0.15){
-          spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'shield'});
+          spawnList.push({d:d,a:lastA,rad:WALL_R,type:'shield'});
           stepIdx++; d+=spacing; continue;
         }
         if(w.boostChance && rnd()<w.boostChance*6){
-          spawnList.push({d:d,a:rnd()*Math.PI*2,rad:WALL_R,type:'boost'});
+          spawnList.push({d:d,a:lastA,rad:WALL_R,type:'boost'});
           stepIdx++; d+=spacing; continue;
         }
         var ringW=w.baseRing||0, hazW=(TUNE.mines||TUNE.blocks)?(w.baseHazard||0):0;
         if(!ringW && !hazW){ stepIdx++; d+=spacing; continue; }
         if(rnd()*(ringW+hazW)<hazW){
-          phrase='gauntlet'; phLeft=4+Math.floor(rnd()*4);
-          phWall=rnd()*Math.PI*2;    // hazards cluster on this angle, gap opposite
+          phrase='gauntlet'; phLeft=3+Math.floor(rnd()*3);
+          // hazards cluster opposite you; the gap (and its ring line) opens
+          // exactly where the last phrase left you
+          phWall=lastA+Math.PI;
         } else {
           var pk=rnd();
           phrase = pk<0.4?'sweep':(pk<0.7?'lane':'zigzag');
-          phLeft=5+Math.floor(rnd()*4);
-          phA=rnd()*Math.PI*2;
-          phDA=(rnd()<0.5?-1:1)*(0.22+rnd()*0.26);
+          phLeft=4+Math.floor(rnd()*3);
+          phA=lastA+(rnd()-0.5)*0.5;
+          phDA=(rnd()<0.5?-1:1)*(0.13+rnd()*0.13);
         }
         phN=phLeft; phEcho=false;
         // a breath between phrases — sometimes a real rest bar
@@ -10979,16 +10987,23 @@ function buildSpawns(){
       if(phrase==='gauntlet'){
         var ht='mine';
         if(TUNE.blocks && (!TUNE.mines || rnd()<0.5)) ht='block';
-        spawnList.push({d:d,a:phWall+(rnd()-0.5)*2.4,rad:WALL_R,type:ht});
+        spawnList.push({d:d,a:phWall+(rnd()-0.5)*1.8,rad:WALL_R,type:ht});
         // golden line — the safe gap is paved with rings, so the dodge
         // line and the payline are the same read
-        spawnList.push({d:d,a:phWall+Math.PI+(rnd()-0.5)*0.3,rad:WALL_R,type:'ring'});
+        var gl=phWall+Math.PI+(rnd()-0.5)*0.2;
+        spawnList.push({d:d,a:gl,rad:WALL_R,type:'ring'});
+        lastA=gl;
       } else if(phrase==='sweep'){
-        spawnList.push({d:d,a:phA,rad:WALL_R,type:'ring'}); phA+=phDA;
+        spawnList.push({d:d,a:phA,rad:WALL_R,type:'ring'});
+        lastA=phA; phA+=phDA;
       } else if(phrase==='zigzag'){
-        spawnList.push({d:d,a:phA+(phLeft%2?0.6:-0.6),rad:WALL_R,type:'ring'});
+        var za=phA+(phLeft%2?0.35:-0.35);
+        spawnList.push({d:d,a:za,rad:WALL_R,type:'ring'});
+        lastA=za;
       } else {
-        spawnList.push({d:d,a:phA+(rnd()-0.5)*0.15,rad:WALL_R,type:'ring'});
+        var la=phA+(rnd()-0.5)*0.10;
+        spawnList.push({d:d,a:la,rad:WALL_R,type:'ring'});
+        lastA=la;
       }
       phLeft--;
       // call-and-response: a ring phrase usually repeats once before the
@@ -11001,9 +11016,9 @@ function buildSpawns(){
   }
   // cash-out corridor — every level ends on a dense ring helix run to
   // the gate, so the last ten seconds are a rush, not a shrug
-  var coA=rnd()*Math.PI*2;
+  var coA=lastA;
   for(var cd=Math.max(d,TRACK_LEN*0.88); cd<TRACK_LEN*0.97; cd+=55){
-    coA+=0.18;
+    coA+=0.12;
     spawnList.push({d:cd,a:coA,rad:WALL_R,type:'ring'});
   }
   // guarantee every roster entry appears once so the archive is completable
@@ -11535,10 +11550,10 @@ function update(dt){
   // near-line reads generous instead of stingy
   for(var mi=windowLo; mi<spawnList.length; mi++){
     var mit=spawnList[mi];
-    if(mit.d>G.dist+150) break;
+    if(mit.d>G.dist+220) break;
     if(mit.taken || mit.type!=='ring' || mit.d<G.dist+15) continue;
     var mda=angWrap(mit.a-G.shipAngle);
-    if(Math.abs(mda)*WALL_R<14) G.shipAngle+=mda*Math.min(1,dt*3);
+    if(Math.abs(mda)*WALL_R<26) G.shipAngle+=mda*Math.min(1,dt*5);
     break;
   }
 
@@ -11659,10 +11674,10 @@ function update(dt){
     var pad=Math.max(6,G.speed*dt*0.6);
     if(it.d<=G.dist+pad && it.d>G.prevDist-pad){
       var arc=Math.abs(angWrap(it.a-G.shipAngle))*WALL_R;
-      // ported hit radii x1.379 world scale — mine 5.5, block 6.0, star 5.5,
-      // ring 6.5, gold 7.0, content 10.0
-      var hitR=(it.type==='mine'?7.6:(it.type==='block'?8.3:(it.type==='boost'?9.7:
-               (it.type==='content'?13.8:(it.type==='star'?7.6:9.0)))));
+      // pickups are generous, hazards are not: the tube is 239 units around,
+      // so a 9-unit pickup was a 4% target and everything read as a miss.
+      var hitR=(it.type==='mine'?7.6:(it.type==='block'?8.3:(it.type==='boost'?15:
+               (it.type==='content'?18:(it.type==='star'?13:14)))));
       if(arc<hitR){ collect(it); continue; }
       else if((it.type==='mine'||it.type==='block') && !it.grazed && arc<hitR+4.5){
         // near miss — shaving past danger pays and feeds the combo
