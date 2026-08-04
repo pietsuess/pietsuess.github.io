@@ -109,14 +109,23 @@ body.playing #thrust-wrapper,body.playing #hull-wrapper{opacity:1}
 
 /* floaty score pops — ported size and travel */
 #pops{position:fixed;inset:0;z-index:25;pointer-events:none;overflow:hidden}
-.pop{position:absolute;font-size:14px;letter-spacing:2px;color:var(--amber);
+/* score chatter lives in a side lane, clear of the sight line down the
+   tube; only .big announcements are allowed centre screen */
+.pop{position:absolute;font-size:10px;letter-spacing:1px;color:var(--amber);
   text-shadow:0 2px 0 rgba(0,0,0,.9),0 0 10px rgba(0,0,0,.9);
-  animation:popUp 1.2s ease-out forwards;white-space:nowrap}
+  animation:popUp .95s ease-out forwards;white-space:nowrap;opacity:.85}
 @keyframes popUp{
-  0%{opacity:0;transform:translate(-50%,-50%) scale(.3)}
-  12%{opacity:1;transform:translate(-50%,-50%) scale(1.4)}
-  40%{opacity:1;transform:translate(-50%,calc(-50% - 60px)) scale(1.1)}
-  100%{opacity:0;transform:translate(-50%,calc(-50% - 160px)) scale(1)}}
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.7)}
+  14%{opacity:.9;transform:translate(-50%,-50%) scale(1)}
+  100%{opacity:0;transform:translate(-50%,calc(-50% - 76px)) scale(.95)}}
+.pop.big{font-size:18px;letter-spacing:3px;opacity:1;
+  animation:popBig 1.3s ease-out forwards}
+@keyframes popBig{
+  0%{opacity:0;transform:translate(-50%,-50%) scale(.4)}
+  12%{opacity:1;transform:translate(-50%,-50%) scale(1.35)}
+  40%{opacity:1;transform:translate(-50%,calc(-50% - 46px)) scale(1.05)}
+  100%{opacity:0;transform:translate(-50%,calc(-50% - 120px)) scale(1)}}
+@media (pointer:coarse){ .pop{font-size:9px} .pop.big{font-size:15px} }
 
 /* damage flash */
 #flash{position:fixed;inset:0;z-index:9;pointer-events:none;opacity:0;
@@ -452,7 +461,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 006</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 007</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -11276,13 +11285,20 @@ var elScore=$('score-display'), elRings=$('rings-display'), elTimer=$('timer-dis
 // vertical flank bars fill from the bottom
 function vbar(el,v){ el.firstElementChild.style.transform='scaleY('+Math.max(0,Math.min(1,v))+')';
   el.classList.toggle('low', v<0.26); }
-function pop(text,color){
+// score chatter stacks down the right flank; big==true is an announcement
+// and gets the centre of the screen
+var _popLane=0;
+function pop(text,color,big){
   var e=document.createElement('div');
-  e.className='pop'; e.textContent=text;
+  e.className=big?'pop big':'pop'; e.textContent=text;
   if(color) e.style.color=color;
-  e.style.left=(46+Math.random()*8)+'%'; e.style.top=(54+Math.random()*6)+'%';
+  if(big){ e.style.left='50%'; e.style.top='40%'; }
+  else {
+    _popLane=(_popLane+1)%4;
+    e.style.left='80%'; e.style.top=(62+_popLane*5)+'%';
+  }
   elPops.appendChild(e);
-  setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },1250);
+  setTimeout(function(){ if(e.parentNode) e.parentNode.removeChild(e); },1350);
 }
 function fmtClock(t){
   if(t<0) t=0;
@@ -11342,7 +11358,7 @@ function updateHUD(){
   if(LEVEL.scoreTargets){
     var tI=0; while(tI<3 && G.score>=LEVEL.scoreTargets[tI]) tI++;
     if(tI>G.tgtIdx){
-      SFX.clear(); pop(['BRONZE','SILVER','GOLD'][tI-1]+' TARGET DOWN','#ffd700');
+      SFX.clear(); pop(['BRONZE','SILVER','GOLD'][tI-1]+' TARGET DOWN','#ffd700',true);
       G.tgtIdx=tI;
     }
     elTarget.textContent = tI<3
@@ -11421,7 +11437,7 @@ function collect(it){
     pop('ARCHIVE REEL +1500','#ffffff'); flash('heal');
   } else if(it.type==='star'){
     // ported: 5s force field, +165. Not a repair — it just makes you immune.
-    G.ff=FF_TIME; G.score+=award(165); SFX.star(); flash('heal'); pop('FORCE FIELD!','#ff44ff');
+    G.ff=FF_TIME; G.score+=award(165); SFX.star(); flash('heal'); pop('FORCE FIELD!','#ff44ff',true);
   } else if(it.type==='mine'||it.type==='block'){
     damage();
     return;
@@ -11593,7 +11609,7 @@ function update(dt){
   var pnow=G.dist/TRACK_LEN;
   if(LEVEL.sections){
     while(G.secIdx<LEVEL.sections.length && pnow>=LEVEL.sections[G.secIdx].pct){
-      pop(LEVEL.sections[G.secIdx].label,'#ffe000'); SFX.gate();
+      pop(LEVEL.sections[G.secIdx].label,'#ffe000',true); SFX.gate();
       G.secIdx++;
     }
   }
@@ -11610,8 +11626,8 @@ function update(dt){
         G.raceDone=true; G.raceOn=false;
         if(G.raceT>0){
           var rb=award(1500); G.score+=rb; G.rings+=20; G.boost=1;
-          SFX.clear(); flash('heal'); pop('RACE WON +'+rb,'#00ff88');
-        } else { SFX.wrong(); pop('TOO SLOW','#ff2f6d'); }
+          SFX.clear(); flash('heal'); pop('RACE WON +'+rb,'#00ff88',true);
+        } else { SFX.wrong(); pop('TOO SLOW','#ff2f6d',true); }
       }
     }
   }
