@@ -434,6 +434,45 @@ body.needs-rotate #rotate{display:flex}
 @media (max-width:420px){
   .vbar{height:28vh}
 }
+/* ── TUNE — live control-feel panel. ` key or the corner pill. ────── */
+#tune-open{position:fixed;left:10px;bottom:10px;z-index:700;padding:5px 9px;
+  font-size:7px;letter-spacing:3px;color:rgba(255,255,255,.28);cursor:pointer;
+  border:1px solid rgba(255,255,255,.13);border-radius:3px;background:rgba(0,0,0,.45)}
+#tune-open:hover{color:#ffe000;border-color:rgba(255,224,0,.45)}
+#tune{position:fixed;left:10px;top:10px;bottom:10px;width:min(330px,92vw);z-index:701;
+  display:none;flex-direction:column;background:rgba(3,7,12,.95);
+  border:1px solid rgba(255,224,0,.3);border-radius:5px;color:#cfe3ff}
+#tune.on{display:flex}
+#tune-head{display:flex;justify-content:space-between;align-items:center;
+  padding:10px 12px;border-bottom:1px solid rgba(255,255,255,.12);
+  font-size:8px;letter-spacing:3px;color:#ffe000}
+#tune-close{cursor:pointer;color:rgba(255,255,255,.4);letter-spacing:2px}
+#tune-close:hover{color:#fff}
+#tune-body{flex:1;overflow-y:auto;padding:4px 12px 12px}
+#tune-body h4{margin:12px 0 6px;font-size:7px;letter-spacing:3px;font-weight:400;
+  color:rgba(255,255,255,.33);border-bottom:1px solid rgba(255,255,255,.07);padding-bottom:4px}
+.tune-row{margin:0 0 8px}
+.tune-row label{display:flex;justify-content:space-between;gap:8px;font-size:8px;
+  line-height:1.4;color:rgba(255,255,255,.66);margin-bottom:1px}
+.tune-row label b{color:#ffe000;font-weight:400;flex:none}
+.tune-row input{width:100%;height:16px;-webkit-appearance:none;appearance:none;
+  background:transparent;margin:0;cursor:pointer}
+.tune-row input::-webkit-slider-runnable-track{height:2px;background:rgba(255,255,255,.18)}
+.tune-row input::-webkit-slider-thumb{-webkit-appearance:none;width:12px;height:12px;
+  margin-top:-5px;border-radius:50%;background:#ffe000}
+.tune-row input::-moz-range-track{height:2px;background:rgba(255,255,255,.18)}
+.tune-row input::-moz-range-thumb{width:12px;height:12px;border:0;border-radius:50%;background:#ffe000}
+#tune-foot{border-top:1px solid rgba(255,255,255,.12);padding:9px 12px 11px}
+#tune-foot .tl{display:inline-block;font-size:7px;letter-spacing:3px;
+  color:rgba(255,255,255,.33);margin:0 6px 4px 0}
+#tune-foot button{font-family:inherit;font-size:7px;letter-spacing:2px;cursor:pointer;
+  padding:5px 8px;margin:0 4px 4px 0;color:#cfe3ff;background:rgba(255,255,255,.06);
+  border:1px solid rgba(255,255,255,.18);border-radius:3px}
+#tune-foot button:hover{border-color:#ffe000;color:#ffe000}
+#tune-foot .save{color:rgba(255,255,255,.42)}
+#tune-out{display:none;width:100%;height:78px;margin-top:6px;font-family:inherit;
+  font-size:8px;line-height:1.5;color:#8fe9c4;background:rgba(0,0,0,.55);
+  border:1px solid rgba(255,255,255,.18);border-radius:3px;padding:6px;resize:none}
 </style>
 </head>
 <body>
@@ -493,12 +532,32 @@ body.needs-rotate #rotate{display:flex}
   <button id="btn-pause">||</button>
 </div>
 
+<!-- ── TUNE — live control-feel panel, sliders built in JS ───────── -->
+<div id="tune-open">TUNE</div>
+<div id="tune">
+  <div id="tune-head"><span>CONTROL FEEL — LIVE</span><span id="tune-close">CLOSE</span></div>
+  <div id="tune-body"></div>
+  <div id="tune-foot">
+    <div>
+      <span class="tl">SETUPS</span>
+      <button class="tune-load" data-slot="A">LOAD A</button><button class="tune-save save" data-slot="A">save</button>
+      <button class="tune-load" data-slot="B">LOAD B</button><button class="tune-save save" data-slot="B">save</button>
+      <button class="tune-load" data-slot="C">LOAD C</button><button class="tune-save save" data-slot="C">save</button>
+    </div>
+    <div>
+      <button id="tune-reset">BACK TO DEFAULTS</button>
+      <button id="tune-copy">COPY VALUES</button>
+    </div>
+    <textarea id="tune-out" readonly></textarea>
+  </div>
+</div>
+
 <!-- ── SCREENS ──────────────────────────────────────────────────── -->
 <div class="screen on" id="title">
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 013</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 014</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -9806,9 +9865,27 @@ f 1239/450 1241/451 1243/452 1245/453 1247/454 1249/455 1251/456 1253/457 1255/4
 var ZONE = { name:'EDITING', speed:160, length:15000, wire:0x00ff88, fog:0x040b14 };
 // world-scale factor: original tubeRadius was 35, ours is 46.
 var K = 46/35;
+// ═══════════════════════════════════════════════════════════════════
+// FEEL — every value that governs how the controls FEEL, in one place
+// so the live TUNE panel can drive them. Steering, camera, throttle and
+// speed all read FEEL.* every frame, so a slider lands mid-run with no
+// restart. The numbers below ARE the BUILD 013 values; FEEL_DEFAULTS
+// keeps a frozen copy so RESET always gets back here.
 // hyper pulled from the ported 2750 — at 17x base it was a blind gamble.
 // ~1.8x boost with the fuel tank makes it a spendable burst instead.
-var BOOST_ABS = 550*K, HYPER_ABS = 1000*K;
+// ═══════════════════════════════════════════════════════════════════
+var FEEL = {
+  // steering
+  turnMax:4.6, turnEase:22, turnCurve:1.6, dead:0.14,
+  rollAmt:0.6, rollEase:9, magnetReach:26, magnetPull:5,
+  // speed / throttle
+  thrEase:9, thrZero:0.18, thrFull:0.50, thrHyper:0.30,
+  boostSpd:550, hyperSpd:1000,
+  // camera
+  camEase:14, camBack:30, camBackSpd:0.011, camIn:11,
+  lookAhead:130, camRoll:0.22, fovBase:75, fovHyper:120, fovEase:5
+};
+var FEEL_DEFAULTS = JSON.parse(JSON.stringify(FEEL));
 
 // ── ported: SPAWN_TUNING S1L1 … S1L4 ──────────────────────────────
 // getLevelScaledZone(): speed x 1.10^(lvl-1), length x 1.15^(lvl-1),
@@ -11278,8 +11355,9 @@ function resetRun(){
 // ═══════════════════════════════════════════════════════════════════
 var isTouching=false, turnRate=0, turnTarget=0, throttle=0;
 // tightened for feel: smaller deadzone, hotter max rate, flatter curve
-// so the mid-range answers immediately instead of winding up
-var DEAD=0.14, TURN_MAX=4.6, TURN_CURVE=1.6;
+// so the mid-range answers immediately instead of winding up.
+// Those three now live in FEEL (dead / turnMax / turnCurve) so the TUNE
+// panel can move them live — do not re-declare them here.
 var keys={};
 var isTouch=('ontouchstart' in window)||navigator.maxTouchPoints>0;
 if(isTouch) document.body.classList.add('touch');
@@ -11289,16 +11367,17 @@ function $id(i){ return document.getElementById(i); }
 function updateZones(x,y){
   var W=window.innerWidth, H=window.innerHeight;
   var xn=(x/W-0.5)*2;
-  if(Math.abs(xn)<DEAD) turnTarget=0;
+  if(Math.abs(xn)<FEEL.dead) turnTarget=0;
   else {
-    var outer=(Math.abs(xn)-DEAD)/(1-DEAD);
-    turnTarget=-(xn<0?-1:1)*Math.pow(outer,TURN_CURVE)*TURN_MAX;
+    var outer=(Math.abs(xn)-FEEL.dead)/(1-FEEL.dead);
+    turnTarget=-(xn<0?-1:1)*Math.pow(outer,FEEL.turnCurve)*FEEL.turnMax;
   }
   // tightened ramp: full throttle by mid-screen, hyper is the top half
   var yn=1.0-(y/H);
-  if(yn<=0.18) throttle=0;
-  else if(yn<=0.50) throttle=(yn-0.18)/0.32;
-  else throttle=1.0+0.5*Math.min(1,(yn-0.50)/0.30);
+  var zt=FEEL.thrZero, ft=Math.max(zt+0.02,FEEL.thrFull);
+  if(yn<=zt) throttle=0;
+  else if(yn<=ft) throttle=(yn-zt)/(ft-zt);
+  else throttle=1.0+0.5*Math.min(1,(yn-ft)/Math.max(0.02,FEEL.thrHyper));
   if(fingerEl){ fingerEl.style.left=x+'px'; fingerEl.style.top=y+'px'; }
 }
 function inputStart(x,y){
@@ -11317,7 +11396,7 @@ function inputEnd(){
 var fireTouches={};
 function isUiTouch(t){
   var el=document.elementFromPoint(t.clientX,t.clientY);
-  return !!(el && el.closest && el.closest('button'));
+  return !!(el && el.closest && el.closest('button,#tune,#tune-open'));
 }
 window.addEventListener('touchstart',function(e){
   if(G.mode!=='play') return;
@@ -11352,6 +11431,7 @@ window.addEventListener('touchcancel',touchDone);
 var mouseDown=false;
 window.addEventListener('mousedown',function(e){
   if(e.target.tagName==='BUTTON') return;
+  if(e.target.closest && e.target.closest('#tune,#tune-open')) return;
   mouseDown=true; inputStart(e.clientX,e.clientY);
 });
 window.addEventListener('mousemove',function(e){ if(mouseDown) inputMove(e.clientX,e.clientY); });
@@ -11380,7 +11460,7 @@ function readKeys(dt){
   var hyper=keys.ShiftLeft||keys.ShiftRight;
   if(kx||up||dn){
     isTouching=true;
-    turnTarget=-kx*TURN_MAX;
+    turnTarget=-kx*FEEL.turnMax;
     if(up) throttle=Math.min(hyper?1.5:1.0, throttle+dt*2.2);
     else if(dn) throttle=Math.max(0,throttle-dt*3.2);
     else if(!isTouch) throttle=Math.max(0,throttle-dt*1.4);
@@ -11515,7 +11595,7 @@ function damage(){
     return;
   }
   var dmg=Math.min(20,15);
-  if(S.activeShip!=='blockwing') dmg*=(1-SHIELDS[S.shield].red);
+  if(S.activeShip!=='blockwing') dmg*=(1-SHIELDS[effShield(S.activeShip,S.shield)].red);
   dmg*=shipMeta().dmgMult;
   G.hp-=dmg;
   G.inv=0.85; G.shake=Math.min(1.2,G.shake+0.7);
@@ -11535,6 +11615,8 @@ function comboWin(){ return Math.max(1.6,3.2-Math.min(G.combo,8)*0.2); }
 function collect(it){
   it.taken=true;
   if(it.type==='ring'){
+    // combo now runs to x8 for score; the ring bank still earns the
+    // ported cap of 4 so the economy doesn't inflate.
     // combo now runs to x8 for score; the ring bank still earns the
     // ported cap of 4 so the economy doesn't inflate.
     G.combo++; G.comboT=comboWin(); G.ringsGot++;
@@ -11678,7 +11760,7 @@ function updateStreaks(dt){
 }
 function hideStreaks(){ if(streaks) streaks.forEach(function(s){ s.mesh.visible=false; }); }
 
-var BASE_FOV=75, HYPER_FOV=120;
+// FOV lives in FEEL now (fovBase / fovHyper / fovEase) — TUNE drives it.
 var COMBO_WINDOW=3.0;   // ported
 
 function update(dt){
@@ -11687,7 +11769,7 @@ function update(dt){
 
   // ── steering: eased toward the target rate so it stops twitching ─
   if(!isTouching) turnTarget=0;
-  turnRate += (turnTarget-turnRate)*Math.min(1,dt*22);   // near-direct, no wind-up
+  turnRate += (turnTarget-turnRate)*Math.min(1,dt*FEEL.turnEase);   // near-direct, no wind-up
   if(Math.abs(turnRate)<0.015) turnRate=0;
   G.shipAngle += turnRate*dt;
 
@@ -11698,12 +11780,12 @@ function update(dt){
     if(mit.d>G.dist+220) break;
     if(mit.taken || mit.type!=='ring' || mit.d<G.dist+15) continue;
     var mda=angWrap(mit.a-G.shipAngle);
-    if(Math.abs(mda)*WALL_R<26) G.shipAngle+=mda*Math.min(1,dt*5);
+    if(Math.abs(mda)*WALL_R<FEEL.magnetReach) G.shipAngle+=mda*Math.min(1,dt*FEEL.magnetPull);
     break;
   }
 
   // ── throttle → speed (ported curve: base → boost → hyper) ──────
-  G.throttleSmooth += (throttle-G.throttleSmooth)*Math.min(1,dt*9);
+  G.throttleSmooth += (throttle-G.throttleSmooth)*Math.min(1,dt*FEEL.thrEase);
   G.hyperFrac = Math.max(0,Math.min(1,(G.throttleSmooth-1.0)/0.5));
   // hyper drinks from the thrust tank — rings refill it. Dry tank
   // clamps you back to boost; a sliver regrows off-throttle.
@@ -11716,7 +11798,7 @@ function update(dt){
   if(G.throttleSmooth>0.85) G.shake=Math.max(G.shake,0.07+0.20*G.hyperFrac);
   var prog=G.dist/TRACK_LEN;
   var base=ZONE.speed*K*speedFactor()*(0.90+prog*0.30);
-  var boostSpd=BOOST_ABS*speedFactor(), hyperSpd=HYPER_ABS*speedFactor();
+  var boostSpd=FEEL.boostSpd*K*speedFactor(), hyperSpd=FEEL.hyperSpd*K*speedFactor();
   G.speed = (G.throttleSmooth<=1.0)
     ? base + (boostSpd-base)*G.throttleSmooth
     : boostSpd + (hyperSpd-boostSpd)*G.hyperFrac;
@@ -11774,7 +11856,7 @@ function update(dt){
   _look.copy(_v).addScaledVector(fr0.t,-60);   // +Z aft, so the nose leads
   shipRoot.lookAt(_look);
 
-  G.roll += ((turnRate/TURN_MAX)*0.6 - G.roll)*Math.min(1,dt*9);
+  G.roll += ((turnRate/FEEL.turnMax)*FEEL.rollAmt - G.roll)*Math.min(1,dt*FEEL.rollEase);
   G.pitchLag += ((-G.throttleSmooth*0.10) - G.pitchLag)*Math.min(1,dt*5);
   shipGroup.rotation.z=G.roll;
   shipGroup.rotation.x=G.pitchLag;
@@ -11783,26 +11865,26 @@ function update(dt){
   shipGroup.visible = G.inv>0 ? (Math.floor(G.time*22)%2===0) : true;
 
   // ── camera: chase cam rolled to the wall ───────────────────────
-  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*14);
+  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*FEEL.camEase);
   // speed reads through shake/streaks/sound now, not camera pull —
   // the ship stays close instead of zooming away at hyper
-  var back=30+G.speed*0.011;
+  var back=FEEL.camBack+G.speed*FEEL.camBackSpd;
   frameAt(distToU(Math.max(0,G.dist-back)),frC);
   radialAt(frC,G.camAngle,_radC);
-  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-11);
+  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-FEEL.camIn);
   if(G.shake>0){
     _v2.x+=(Math.random()-0.5)*G.shake*7;
     _v2.y+=(Math.random()-0.5)*G.shake*7;
   }
   camera.position.copy(_v2);
   camera.up.copy(_radC).multiplyScalar(-1);
-  frameAt(distToU(G.dist+130),frP);
+  frameAt(distToU(G.dist+FEEL.lookAhead),frP);
   radialAt(frP,G.camAngle,_radP);
   _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
   camera.lookAt(_look);
-  camera.rotation.z += G.roll*0.22;
-  var wantFov=BASE_FOV+(HYPER_FOV-BASE_FOV)*G.hyperFrac;
-  G.fov += (wantFov-G.fov)*Math.min(1,dt*5);
+  camera.rotation.z += G.roll*FEEL.camRoll;
+  var wantFov=FEEL.fovBase+(FEEL.fovHyper-FEEL.fovBase)*G.hyperFrac;
+  G.fov += (wantFov-G.fov)*Math.min(1,dt*FEEL.fovEase);
   camera.fov=G.fov; camera.updateProjectionMatrix();
 
   // ── props: activate the window ahead, run collisions ───────────
@@ -12642,6 +12724,145 @@ window.addEventListener('orientationchange',function(){ setTimeout(resize,220); 
   window.addEventListener(ev,function once(){ audioInit(); if(AC&&AC.state==='suspended') AC.resume();
     window.removeEventListener(ev,once); });
 });
+
+// ═══════════════════════════════════════════════════════════════════
+// TUNE — live control-feel panel
+// Every slider writes straight into FEEL, which the steering, camera,
+// throttle and speed code re-reads every frame, so a change lands
+// mid-run with no restart. Labels are plain English on purpose.
+// Toggle: ` (backtick) or the TUNE pill in the bottom-left corner.
+// ═══════════════════════════════════════════════════════════════════
+var TUNE_SPEC=[
+  ['STEERING',[
+    ['turnMax',    'How hard it can turn',              1,   10,   0.1],
+    ['turnEase',   'How instantly it answers you',      3,   40,   0.5],
+    ['turnCurve',  'Gentleness near the centre',        1,   3,    0.05],
+    ['dead',       'Dead zone in the middle',           0,   0.4,  0.01],
+    ['rollAmt',    'How far the ship banks over',       0,   1.5,  0.05],
+    ['rollEase',   'How fast the ship banks',           2,   25,   0.5],
+    ['magnetReach','Ring magnet reach',                 0,   60,   1],
+    ['magnetPull', 'Ring magnet strength',              0,   12,   0.25]
+  ]],
+  ['SPEED',[
+    ['thrEase',    'How fast speed answers',            2,   25,   0.5],
+    ['thrZero',    'Finger height: engines idle',       0,   0.4,  0.01],
+    ['thrFull',    'Finger height: full power',         0.2, 0.9,  0.01],
+    ['thrHyper',   'Height of the hyper band',          0.05,0.5,  0.01],
+    ['boostSpd',   'Top speed at full power',           200, 1200, 10],
+    ['hyperSpd',   'Top speed in hyper',                400, 2200, 10]
+  ]],
+  ['CAMERA',[
+    ['camEase',    'How fast the camera follows',       2,   30,   0.5],
+    ['camBack',    'How far behind the ship it sits',   5,   90,   1],
+    ['camBackSpd', 'Extra distance as you speed up',    0,   0.05, 0.001],
+    ['camIn',      'How far off the wall it floats',    2,   30,   0.5],
+    ['lookAhead',  'How far up the tunnel it looks',    20,  400,  5],
+    ['camRoll',    'Camera tilt in the turns',          0,   0.8,  0.02],
+    ['fovBase',    'Normal view width',                 50,  110,  1],
+    ['fovHyper',   'Hyper view width',                  60,  160,  1],
+    ['fovEase',    'How fast the view widens',          1,   15,   0.5]
+  ]]
+];
+var TUNE_KEY='tunnelRacer_feel', TUNE_SLOT='tunnelRacer_feel_';
+
+function tuneNum(v){ return Math.round(v*1000)/1000; }
+function feelApply(o){
+  if(!o) return;
+  Object.keys(FEEL).forEach(function(k){
+    if(typeof o[k]==='number' && isFinite(o[k])) FEEL[k]=o[k];
+  });
+}
+function tuneRead(s){ try{ return JSON.parse(localStorage.getItem(s)||'null'); }catch(e){ return null; } }
+function tuneWrite(s,o){ try{ localStorage.setItem(s,JSON.stringify(o)); }catch(e){} }
+
+// the on-screen finger guide has to agree with the numbers, or the
+// bands lie about where throttle actually starts
+function guideSync(){
+  var g=$('guide'); if(!g) return;
+  var edge=((1-FEEL.dead)/2*100).toFixed(1)+'%';
+  var d=g.querySelector('.dead'); if(d){ d.style.left=edge; d.style.right=edge; }
+  var z=FEEL.thrZero*100, f=Math.max(FEEL.thrZero+0.02,FEEL.thrFull)*100;
+  var t=g.querySelector('.thr'); if(t){ t.style.bottom=z+'%'; t.style.height=(f-z)+'%'; }
+  var h=g.querySelector('.hyp'); if(h) h.style.height=(100-f)+'%';
+  var t2=g.querySelector('.t2'); if(t2) t2.style.bottom=(z+1)+'%';
+}
+function tuneSync(){
+  TUNE_SPEC.forEach(function(grp){ grp[1].forEach(function(r){
+    var el=$('ts-'+r[0]), lb=$('tv-'+r[0]);
+    if(el) el.value=FEEL[r[0]];
+    if(lb) lb.textContent=tuneNum(FEEL[r[0]]);
+  }); });
+  guideSync();
+}
+function tuneText(){
+  var out=[];
+  TUNE_SPEC.forEach(function(grp){
+    out.push('  // '+grp[0].toLowerCase());
+    out.push('  '+grp[1].map(function(r){ return r[0]+':'+tuneNum(FEEL[r[0]]); }).join(', ')+',');
+  });
+  return 'var FEEL = {\n'+out.join('\n').replace(/,$/,'')+'\n};';
+}
+function tuneToggle(want){
+  var p=$('tune'); if(!p) return;
+  var on=(want===undefined) ? !p.classList.contains('on') : !!want;
+  p.classList.toggle('on',on);
+  $('tune-open').style.display = on ? 'none' : 'block';
+  if(on) tuneSync();
+}
+(function tuneInit(){
+  var body=$('tune-body'); if(!body) return;
+  feelApply(tuneRead(TUNE_KEY));
+  var html='';
+  TUNE_SPEC.forEach(function(grp){
+    html+='<h4>'+grp[0]+'</h4>';
+    grp[1].forEach(function(r){
+      html+='<div class="tune-row"><label><span>'+r[1]+'</span><b id="tv-'+r[0]+'"></b></label>'+
+            '<input type="range" id="ts-'+r[0]+'" min="'+r[2]+'" max="'+r[3]+'" step="'+r[4]+'"></div>';
+    });
+  });
+  body.innerHTML=html;
+  TUNE_SPEC.forEach(function(grp){ grp[1].forEach(function(r){
+    var k=r[0], el=$('ts-'+k);
+    el.addEventListener('input',function(){
+      var v=parseFloat(el.value);
+      if(isFinite(v)) FEEL[k]=v;
+      $('tv-'+k).textContent=tuneNum(FEEL[k]);
+      guideSync(); tuneWrite(TUNE_KEY,FEEL);
+    });
+  }); });
+  tuneSync();
+
+  $('tune-close').addEventListener('click',function(){ tuneToggle(false); });
+  $('tune-open').addEventListener('click',function(){ tuneToggle(true); });
+  $('tune-reset').addEventListener('click',function(){
+    feelApply(FEEL_DEFAULTS); tuneSync(); tuneWrite(TUNE_KEY,FEEL);
+  });
+  $('tune-copy').addEventListener('click',function(){
+    var ta=$('tune-out'), btn=this;
+    ta.style.display='block'; ta.value=tuneText();
+    ta.focus(); ta.select();
+    var done=function(){ btn.textContent='COPIED'; setTimeout(function(){ btn.textContent='COPY VALUES'; },1600); };
+    if(navigator.clipboard && navigator.clipboard.writeText)
+      navigator.clipboard.writeText(ta.value).then(done,function(){ try{ document.execCommand('copy'); done(); }catch(e){} });
+    else { try{ document.execCommand('copy'); done(); }catch(e){} }
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.tune-save'),function(b){
+    b.addEventListener('click',function(){
+      tuneWrite(TUNE_SLOT+b.dataset.slot,FEEL);
+      b.textContent='saved'; setTimeout(function(){ b.textContent='save'; },1200);
+    });
+  });
+  Array.prototype.forEach.call(document.querySelectorAll('.tune-load'),function(b){
+    b.addEventListener('click',function(){
+      var o=tuneRead(TUNE_SLOT+b.dataset.slot);
+      if(!o){ b.textContent='EMPTY'; setTimeout(function(){ b.textContent='LOAD '+b.dataset.slot; },1200); return; }
+      feelApply(o); tuneSync(); tuneWrite(TUNE_KEY,FEEL);
+    });
+  });
+  window.addEventListener('keydown',function(e){
+    if(e.code==='Backquote'){ e.preventDefault(); tuneToggle(); }
+  });
+})();
 
 boot();
 })();
