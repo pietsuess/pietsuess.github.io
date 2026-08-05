@@ -153,7 +153,9 @@ body.playing #touch{display:block}
 #guide .t1{left:50%;transform:translateX(-50%);top:4%}
 #guide .t2{left:50%;transform:translateX(-50%);bottom:19%}
 /* opening cinematic — nothing but the shaft and the ship */
-body.cine-on #touch,body.cine-on #hud{display:none}
+body.cine-on #touch,body.cine-on #hud,body.cine-on #thrust-wrapper,
+body.cine-on #hull-wrapper,body.cine-on #srclock,body.cine-on #mission,
+body.cine-on #combo,body.cine-on #pops{display:none}
 #cine-skip{position:fixed;right:16px;bottom:16px;z-index:620;padding:8px 14px;
   font-family:inherit;font-size:8px;letter-spacing:3px;color:#8fa3b8;background:transparent;
   border:1px solid #46586c;cursor:pointer;-webkit-tap-highlight-color:transparent}
@@ -496,7 +498,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 009</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 010</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -10069,7 +10071,7 @@ function engineSet(v,boost){
   engOsc.forEach(function(e){
     e.o.frequency.setTargetAtTime(e.base*(0.72+v*0.75+(boost?0.34:0)), AC.currentTime, 0.09); });
 }
-function windSet(v){ if(windGain) windGain.gain.setTargetAtTime(Math.min(0.6,v), AC.currentTime, 0.15); }
+function windSet(v){ if(windGain) windGain.gain.setTargetAtTime(Math.min(0.26,v), AC.currentTime, 0.15); }
 
 // ── cinematic score: A minor, the ported TunnelRunner progression ──
 var cineBus=null;
@@ -12357,7 +12359,7 @@ var CINE_CAPS=[[0.5,'SECTOR ONE'],[4.0,'THE SHAFT IS OPEN']];
 
 function runCine(){
   CINE.active=true; CINE.t=0; CINE.dist=300; CINE.ang=0; CINE.spd=40;
-  CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1; CINE.sfx=0;
+  CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1; CINE.sfx=0; CINE.ph=-1;
   G.mode='cine';
   document.body.classList.add('cine-on');
   show(null);
@@ -12378,6 +12380,7 @@ function cineTitleCard(){
   var sk=$('cine-skip'); if(sk&&sk.parentNode) sk.parentNode.removeChild(sk);
   var cap=$('cine-cap'); if(cap){ cap.classList.remove('on'); cap.textContent=''; }
   shipGroup.visible=false;
+  engineOff(); hideStreaks();   // the ship is gone — so is its noise
   var tc=$('titlecard');
   tc.classList.add('on');
   var go=function(e){ e.preventDefault(); endCine(); };
@@ -12461,11 +12464,10 @@ function tickCine(dt){
   shipGroup.visible = T<9.0;
   burn(shipGroup,thr,hyp,T);
 
-  // ── camera: chase → broadside → frozen → run on alone ────────────
-  // 0-3.6 chase · 3.6-5.2 swing out · 5.2-7.6 broadside · 7.6-8.7
-  // frozen on the departing ship · 8.7-9.7 forward again
-  var mix = T<3.6 ? 0 : (T<5.2 ? (T-3.6)/1.6 : 1);
-  mix = mix<=0?0:(mix>=1?1:(mix<0.5?2*mix*mix:1-Math.pow(-2*mix+2,2)/2));
+  // ── camera: straight cuts, no swinging moves between setups ──────
+  // 0-3.6 chase · CUT · 3.6-7.6 broadside · 7.6-8.7 locked off on the
+  // departing ship · CUT · 8.7-9.35 running on alone
+  var mix = T<3.6 ? 0 : 1;
 
   CINE.camA += angWrap(CINE.ang-CINE.camA)*Math.min(1,dt*7);
   frameAt(distToU(Math.max(0,CINE.dist-(30+CINE.spd*0.011))),frC);
@@ -12479,9 +12481,8 @@ function tickCine(dt){
     // broadside: ahead of the ship and across the shaft, looking back at it
     frameAt(distToU(CINE.dist+80),frP);
     radialAt(frP,CINE.ang+2.4,_radP);
-    _cv.copy(frP.p).addScaledVector(_radP,WALL_R*0.52);
-    _ct.copy(shipRoot.position);
-    _v2.lerp(_cv,mix); _look.lerp(_ct,mix);
+    _v2.copy(frP.p).addScaledVector(_radP,WALL_R*0.52);
+    _look.copy(shipRoot.position);
   }
   if(T>=7.6 && T<8.7){
     if(!CINE.frozen) CINE.frozen=_v2.clone();
@@ -12498,12 +12499,15 @@ function tickCine(dt){
   camera.position.copy(_v2);
   camera.up.copy(_radC).multiplyScalar(-1);
   camera.lookAt(_look);
-  var wantFov = T<3.6 ? 82+18*hyp : (T<7.6 ? 58 : 96);
-  camera.fov += (wantFov-camera.fov)*Math.min(1,dt*3.2);
+  // FOV cuts with the camera instead of sliding across the edit
+  var ph = T<3.6?0:(T<7.6?1:(T<8.7?2:3));
+  var wantFov = ph===0 ? 82+18*hyp : (ph===1 ? 58 : (ph===2 ? 62 : 96));
+  if(ph!==CINE.ph){ CINE.ph=ph; camera.fov=wantFov; }
+  else camera.fov += (wantFov-camera.fov)*Math.min(1,dt*3.2);
   camera.updateProjectionMatrix();
 
   engineSet(Math.min(1,thr/1.5),hyp>0.05);
-  windSet(0.25+hyp*0.5);
+  windSet(0.10+hyp*0.16);
   updateStreaks(dt);
   Object.keys(pools).forEach(function(k){ pools[k].forEach(function(m){ m.visible=false; }); });
 
