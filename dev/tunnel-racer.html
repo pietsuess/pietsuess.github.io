@@ -498,7 +498,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 010</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 011</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -10035,7 +10035,12 @@ var S = { ringBank:0, best:0, bestTime:0, cleared:false, runs:0,
 }catch(e){} })();
 function persist(){ try{ localStorage.setItem(SAVE_KEY, JSON.stringify(S)); }catch(e){} }
 function shipMeta(){ return SHIP_BY_ID[S.activeShip]||SHIP_BY_ID.deltawing; }
-function totalKg(){ return shipMeta().hullKg+WEAPONS[S.weapon].kg+SHIELDS[S.shield].kg+DRIVES[S.drive].kg; }
+// BlockWing has no shield mount at all — it tanks on hull armour. Carrying
+// a shield on it used to cost mass and plate geometry for zero absorption,
+// so the tier is forced to NONE everywhere the loadout is read.
+function effShield(shipId,idx){ return shipId==='blockwing' ? 0 : idx; }
+function totalKg(){ return shipMeta().hullKg+WEAPONS[S.weapon].kg
+  +SHIELDS[effShield(S.activeShip,S.shield)].kg+DRIVES[S.drive].kg; }
 // ported: ship speedMult x drive multiplier x (hull / loaded mass)
 function speedFactor(){ var m=shipMeta();
   return m.speedMult * DRIVES[S.drive].mult * (m.hullKg/totalKg()); }
@@ -10754,7 +10759,8 @@ function buildStructure(){
     worldGroup().add(grp);
     // ported gate rule: a LEFT pylon wants you a quarter-turn counter-clockwise
     // of it, a RIGHT pylon a quarter-turn clockwise. +400 right side, -200 wrong.
-    pylonList.push({ d:d2, a:a, left:isLeft, anchor:a+(isLeft?Math.PI/2:-Math.PI/2), done:false, hitOnce:false });
+    pylonList.push({ d:d2, a:a, left:isLeft, anchor:a+(isLeft?Math.PI/2:-Math.PI/2),
+                     done:false, hitOnce:false, grp:grp });
   }
   });
 
@@ -10871,7 +10877,9 @@ function partClass(key){
 function applyLoadout(sg,ld){
   var P=sg&&sg.userData&&sg.userData.parts;
   if(!P) return;
-  var sh=ld?ld.shield:S.shield, dr=ld?ld.drive:S.drive, wp=ld?ld.weapon:S.weapon;
+  var shipId=(ld&&ld.ship)||S.activeShip;
+  var sh=effShield(shipId, ld?ld.shield:S.shield),
+      dr=ld?ld.drive:S.drive, wp=ld?ld.weapon:S.weapon;
   for(var i=0;i<P.length;i++){
     var p=P[i];
     if(p.cls==='armour')      p.mesh.visible=(p.tier===sh);
@@ -10905,17 +10913,23 @@ var PART_MAT={
 var SHIP_SKIN={
   deltawing:  { obj:'deltawing-obj',   tint:0xd044bb, ambient:0x6a3f5e, light:0xffd6f0,
                 trim:0xff69b4, glow:0xff69b4, y:-1.02, z0:3.5,  scale:1.15 },
-  stealthwing:{ obj:'stealthwing-obj', tint:0x2a1252, ambient:0x4e3f86, light:0xd8c4ff,
+  // StealthWing was near-black against a near-black shaft — the hull read as
+  // a hole in the turntable. Lifted the tint and ambient so it has a body.
+  stealthwing:{ obj:'stealthwing-obj', tint:0x7a52c8, ambient:0x6a5aa8, light:0xe8dcff,
                 trim:0x9a7bff, glow:0xb98cff, y:-1.20, z0:3.75, scale:1.05 },
+  // BlockWing's hull is far bigger than the DeltaWing frame the shared
+  // loadout library was modelled on, so its library parts get sized up
+  // and pushed out to sit on the hull instead of inside it.
   blockwing:  { obj:'blockwing-obj',   tint:0x9aa6bb, ambient:0x4a5468, light:0xe6f0ff,
-                trim:0xffb000, glow:0xffc25a, y:-1.15, z0:3.35, scale:1.25 }
+                trim:0xffb000, glow:0xffc25a, y:-1.15, z0:3.35, scale:1.25,
+                partScale:1.42, partY:0.30, partZ:-0.35 }
 };
 function buildShip(id){
   var SK=SHIP_SKIN[id]||SHIP_SKIN.deltawing;
   var g=new THREE.Group();
   // hull first, then fill every drive / plate / gun tier the hull's own
   // export is missing from the shared loadout library.
-  var GEO={}, own=shipGeo(SK.obj), lib=shipGeo('parts-obj');
+  var GEO={}, own=shipGeo(SK.obj), lib=shipGeo('parts-obj'), fromLib={};
   Object.keys(own).forEach(function(k){ GEO[k]=own[k]; });
   var have={};
   Object.keys(own).forEach(function(k){ var pc=partClass(k); if(pc.tier>=0) have[pc.cls+pc.tier]=1; });
@@ -10924,7 +10938,7 @@ function buildShip(id){
     if(pc.tier<0) return;
     if(pc.cls!=='drive'&&pc.cls!=='armour'&&pc.cls!=='cannon') return;
     if(have[pc.cls+pc.tier]||GEO[k]) return;
-    GEO[k]=lib[k];
+    GEO[k]=lib[k]; fromLib[k]=1;
   });
 
   var skin =ps1Mat(TEX.delta,{tint:SK.tint,ambient:SK.ambient,light:SK.light,fogNear:900,fogFar:3400,twoSide:true,side:THREE.DoubleSide});
@@ -10963,6 +10977,10 @@ function buildShip(id){
     else if(pc.cls==='drive'||pc.cls==='armour'||pc.cls==='cannon') m=tierMat(pc.cls,pc.tier);
     else m=skin;
     var mesh=new THREE.Mesh(GEO[k],m);
+    if(fromLib[k]&&SK.partScale){
+      mesh.scale.setScalar(SK.partScale);
+      mesh.position.y=SK.partY||0; mesh.position.z=SK.partZ||0;
+    }
     body.add(mesh);
     if(pc.cls==='armour'||pc.cls==='drive'||pc.cls==='cannon'){
       mesh.visible=false;
@@ -12007,7 +12025,8 @@ function pvGet(){
            drive: PV.drive==null ?S.drive :PV.drive };
 }
 function pvReset(){ PV.ship=null; PV.weapon=null; PV.shield=null; PV.drive=null; PV.slot=null; PV.idx=null; }
-function pvKg(p){ return SHIP_BY_ID[p.ship].hullKg+WEAPONS[p.weapon].kg+SHIELDS[p.shield].kg+DRIVES[p.drive].kg; }
+function pvKg(p){ return SHIP_BY_ID[p.ship].hullKg+WEAPONS[p.weapon].kg
+  +SHIELDS[effShield(p.ship,p.shield)].kg+DRIVES[p.drive].kg; }
 function pvSpeed(p){ var m=SHIP_BY_ID[p.ship]; return m.speedMult*DRIVES[p.drive].mult*(m.hullKg/pvKg(p)); }
 
 function armHero(){
@@ -12144,10 +12163,11 @@ function renderArmoury(){
   var ch=$('arm-shields'); ch.innerHTML='';
   var noShield=(p.ship==='blockwing');
   SHIELDS.forEach(function(h,i){
+    // BlockWing cannot mount one, so the rows are inert rather than a trap
     ch.appendChild(optRow(h.name, noShield?'N/A \u2014 BLOCKWING USES HULL ARMOUR':h.desc,
-      h.kg+' KG'+(h.red?'  \u00B7  ABSORBS '+Math.round(h.red*100)+'%':''),
-      h.price, !!S.ownedShields[i], S.shield===i, p.shield===i,
-      function(){ preview('shield',i); }));
+      noShield?'NO SHIELD MOUNT':(h.kg+' KG'+(h.red?'  \u00B7  ABSORBS '+Math.round(h.red*100)+'%':'')),
+      h.price, !!S.ownedShields[i], !noShield&&S.shield===i, !noShield&&p.shield===i,
+      noShield?function(){ blip(140,0.16,'square',0.18); }:function(){ preview('shield',i); }));
   });
   renderAction();
 }
@@ -12355,15 +12375,23 @@ function attract(dt){
 // ═══════════════════════════════════════════════════════════════════
 var CINE={active:false,t:0,dist:0,ang:0,spd:0,camA:0,lead:0,frozen:null};
 var _cv=new THREE.Vector3(), _ct=new THREE.Vector3();
-var CINE_CAPS=[[0.5,'SECTOR ONE'],[4.0,'THE SHAFT IS OPEN']];
+var CINE_CAPS=[[0.5,'SECTOR ONE'],[4.9,'THE SHAFT IS OPEN']];
 
 function runCine(){
   CINE.active=true; CINE.t=0; CINE.dist=300; CINE.ang=0; CINE.spd=40;
   CINE.camA=0; CINE.lead=0; CINE.frozen=null; CINE.cap=-1; CINE.sfx=0; CINE.ph=-1;
+  CINE.headD=0; CINE.aim=null;
   G.mode='cine';
   document.body.classList.add('cine-on');
   show(null);
-  ensureShip(); shipGroup.visible=true;
+  // the opening is always the hero ship, never whatever is equipped:
+  // DeltaWing, warp drive, lasers. Saved and restored on the way out.
+  CINE.saved={ship:S.activeShip,drive:S.drive,weapon:S.weapon,shield:S.shield};
+  S.activeShip='deltawing'; S.drive=4; S.weapon=3; S.shield=0;
+  shipShellId=null; ensureShip();
+  applyLoadout(shipGroup,{ship:'deltawing',drive:4,weapon:3,shield:0});
+  shipGroup.visible=true;
+  pylonList.forEach(function(p){ if(p.grp) p.grp.visible=false; });
   cineMusicStart();
   noiseBurst(0.9,220,0.5);        // the launch
   var sk=document.createElement('button');
@@ -12397,6 +12425,14 @@ function endCine(){
   var sk=$('cine-skip'); if(sk&&sk.parentNode) sk.parentNode.removeChild(sk);
   var cap=$('cine-cap'); if(cap){ cap.classList.remove('on'); cap.textContent=''; }
   cineMusicStop(); engineOff(); hideStreaks();
+  // put the player's own loadout back and bring the pylons in from the cold
+  if(CINE.saved){
+    S.activeShip=CINE.saved.ship; S.drive=CINE.saved.drive;
+    S.weapon=CINE.saved.weapon;   S.shield=CINE.saved.shield;
+    CINE.saved=null;
+    shipShellId=null; ensureShip(); applyLoadout(shipGroup);
+  }
+  pylonList.forEach(function(p){ if(p.grp) p.grp.visible=true; });
   G.time=0; G.dist=0; G.speed=0; G.shipAngle=0; G.camAngle=0; G.throttleSmooth=0;
   shipGroup.rotation.set(0,0,0); shipGroup.visible=true;
   camera.fov=74; camera.updateProjectionMatrix();
@@ -12435,8 +12471,9 @@ function tickCine(dt){
   var T=(CINE.t+=dt);
   cineCap(T);
   // beat-locked one-shots
-  if(CINE.sfx<1 && T>=3.6){ CINE.sfx=1; noiseBurst(0.5,900,0.32); SFX.gate(); }
-  if(CINE.sfx<2 && T>=7.6){ CINE.sfx=2; noiseBurst(0.7,520,0.42); SFX.boost(); }
+  if(CINE.sfx<1 && T>=2.6){ CINE.sfx=1; SFX.gate(); }
+  if(CINE.sfx<2 && T>=4.35){ CINE.sfx=2; noiseBurst(0.55,780,0.40); }   // the pass
+  if(CINE.sfx<3 && T>=7.0){ CINE.sfx=3; noiseBurst(0.7,520,0.42); SFX.boost(); }
 
   // ── speed: a hard launch that settles into a scream ──────────────
   var tgt = T<2.2 ? 40+(1000-40)*(T/2.2) : 1000;
@@ -12448,9 +12485,9 @@ function tickCine(dt){
   G.dist=CINE.dist; G.speed=CINE.spd; G.throttleSmooth=thr; G.hyperFrac=hyp;
 
   // ── ship: rides the wall, drifting slowly around it ──────────────
-  if(T<7.6) CINE.ang += (0.22+Math.sin(T*0.7)*0.14)*dt;
+  if(T<7.0) CINE.ang += (0.22+Math.sin(T*0.7)*0.14)*dt;
   else      CINE.ang += 2.6*dt;            // the peel-away roll
-  if(T>=7.6) CINE.lead += 620*dt;          // and it pulls away hard
+  if(T>=7.0) CINE.lead += 620*dt;          // and it pulls away hard
 
   frameAt(distToU(CINE.dist+CINE.lead),fr0);
   radialAt(fr0,CINE.ang,_rad);
@@ -12459,51 +12496,75 @@ function tickCine(dt){
   shipRoot.up.copy(_rad).multiplyScalar(-1);
   _look.copy(_v).addScaledVector(fr0.t,-60);
   shipRoot.lookAt(_look);
-  shipGroup.rotation.z = T<7.6 ? Math.sin(T*0.7)*0.35 : Math.min(1.0,(T-7.6)*1.8);
+  shipGroup.rotation.z = T<7.0 ? Math.sin(T*0.7)*0.35 : Math.min(1.0,(T-7.0)*1.8);
   shipGroup.position.y = Math.sin(T*3.1)*0.16;
-  shipGroup.visible = T<9.0;
+  shipGroup.visible = T<8.4;
   burn(shipGroup,thr,hyp,T);
 
-  // ── camera: straight cuts, no swinging moves between setups ──────
-  // 0-3.6 chase · CUT · 3.6-7.6 broadside · 7.6-8.7 locked off on the
-  // departing ship · CUT · 8.7-9.35 running on alone
-  var mix = T<3.6 ? 0 : 1;
+  // ── camera: five hard cuts, no moves across an edit ──────────────
+  //  A 0-2.6   low chase, wide, right on its tail
+  //  B 2.6-4.9 HEAD ON — locked off ahead, the ship charges the lens
+  //            and whips past
+  //  C 4.9-7.0 hero broadside, long lens, ship across the frame
+  //  D 7.0-8.4 low three-quarter, locked off, as it rolls away
+  //  E 8.4-9.35 the shaft alone, wide, running on
+  var ph = T<2.6?0:(T<4.9?1:(T<7.0?2:(T<8.4?3:4)));
+  var fresh = (ph!==CINE.ph);
+  if(fresh){ CINE.ph=ph; CINE.frozen=null; CINE.aim=null; }
 
   CINE.camA += angWrap(CINE.ang-CINE.camA)*Math.min(1,dt*7);
-  frameAt(distToU(Math.max(0,CINE.dist-(30+CINE.spd*0.011))),frC);
-  radialAt(frC,CINE.camA,_radC);
-  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-11);
-  frameAt(distToU(CINE.dist+130),frP);
-  radialAt(frP,CINE.camA,_radP);
-  _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
 
-  if(mix>0){
-    // broadside: ahead of the ship and across the shaft, looking back at it
-    frameAt(distToU(CINE.dist+80),frP);
-    radialAt(frP,CINE.ang+2.4,_radP);
-    _v2.copy(frP.p).addScaledVector(_radP,WALL_R*0.52);
+  if(ph===0){
+    // tucked in behind and below, close enough that the plume fills frame
+    frameAt(distToU(Math.max(0,CINE.dist-(22+CINE.spd*0.008))),frC);
+    radialAt(frC,CINE.camA-0.16,_radC);
+    _v2.copy(frC.p).addScaledVector(_radC,WALL_R-7);
+    frameAt(distToU(CINE.dist+150),frP);
+    radialAt(frP,CINE.camA,_radP);
+    _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
+  } else if(ph===1){
+    // a fixed point far down the shaft: the ship closes on it, fills the
+    // lens and blows past. Aim freezes just before the pass so the camera
+    // never spins around to chase it.
+    if(!CINE.frozen){
+      CINE.headD=CINE.dist+2050;
+      frameAt(distToU(CINE.headD),frC);
+      radialAt(frC,CINE.ang+0.85,_radC);
+      CINE.frozen=frC.p.clone().addScaledVector(_radC,WALL_R*0.40);
+    }
+    _v2.copy(CINE.frozen);
+    if(!CINE.aim && CINE.headD-CINE.dist>140) _look.copy(shipRoot.position);
+    else { if(!CINE.aim) CINE.aim=shipRoot.position.clone(); _look.copy(CINE.aim); }
+  } else if(ph===2){
+    // hero profile: across the shaft, level, ship raking through frame
+    frameAt(distToU(CINE.dist+55),frP);
+    radialAt(frP,CINE.ang+2.55,_radP);
+    _v2.copy(frP.p).addScaledVector(_radP,WALL_R*0.30);
     _look.copy(shipRoot.position);
-  }
-  if(T>=7.6 && T<8.7){
-    if(!CINE.frozen) CINE.frozen=_v2.clone();
+  } else if(ph===3){
+    // locked off low and wide as it rolls out
+    if(!CINE.frozen){
+      frameAt(distToU(CINE.dist+30),frC);
+      radialAt(frC,CINE.ang-1.85,_radC);
+      CINE.frozen=frC.p.clone().addScaledVector(_radC,WALL_R*0.72);
+    }
     _v2.copy(CINE.frozen); _look.copy(shipRoot.position);
-  }
-  if(T>=8.7){
-    CINE.frozen=null;
+  } else {
+    // dead centre of the shaft, running on alone
     frameAt(distToU(CINE.dist+40),frC);
     radialAt(frC,CINE.camA,_radC);
-    _v2.copy(frC.p).addScaledVector(_radC,WALL_R*0.35);
-    frameAt(distToU(CINE.dist+400),frP);
+    _v2.copy(frC.p).addScaledVector(_radC,WALL_R*0.18);
+    frameAt(distToU(CINE.dist+500),frP);
     _look.copy(frP.p);
   }
+
   camera.position.copy(_v2);
   camera.up.copy(_radC).multiplyScalar(-1);
   camera.lookAt(_look);
-  // FOV cuts with the camera instead of sliding across the edit
-  var ph = T<3.6?0:(T<7.6?1:(T<8.7?2:3));
-  var wantFov = ph===0 ? 82+18*hyp : (ph===1 ? 58 : (ph===2 ? 62 : 96));
-  if(ph!==CINE.ph){ CINE.ph=ph; camera.fov=wantFov; }
-  else camera.fov += (wantFov-camera.fov)*Math.min(1,dt*3.2);
+  // long lens on the beauty shots, wide on the speed shots
+  var wantFov = ph===0 ? 88+16*hyp : (ph===1 ? 52 : (ph===2 ? 44 : (ph===3 ? 60 : 104)));
+  if(fresh) camera.fov=wantFov;
+  else camera.fov += (wantFov-camera.fov)*Math.min(1,dt*2.2);
   camera.updateProjectionMatrix();
 
   engineSet(Math.min(1,thr/1.5),hyp>0.05);
