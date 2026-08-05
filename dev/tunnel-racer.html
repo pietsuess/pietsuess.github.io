@@ -535,7 +535,7 @@ body.needs-rotate #rotate{display:flex}
 <!-- ── TUNE — live control-feel panel, sliders built in JS ───────── -->
 <div id="tune-open">TUNE</div>
 <div id="tune">
-  <div id="tune-head"><span>CONTROL FEEL — LIVE</span><span id="tune-close">CLOSE</span></div>
+  <div id="tune-head"><span>CONTROL FEEL — RUN HELD</span><span id="tune-close">CLOSE &amp; FLY</span></div>
   <div id="tune-body"></div>
   <div id="tune-foot">
     <div>
@@ -557,7 +557,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 014</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 015</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -9886,6 +9886,8 @@ var FEEL = {
   lookAhead:130, camRoll:0.22, fovBase:75, fovHyper:120, fovEase:5
 };
 var FEEL_DEFAULTS = JSON.parse(JSON.stringify(FEEL));
+// true while the TUNE panel is open — holds the run where it stands
+var TUNE_HOLD = false;
 
 // ── ported: SPAWN_TUNING S1L1 … S1L4 ──────────────────────────────
 // getLevelScaledZone(): speed x 1.10^(lvl-1), length x 1.15^(lvl-1),
@@ -11763,6 +11765,33 @@ function hideStreaks(){ if(streaks) streaks.forEach(function(s){ s.mesh.visible=
 // FOV lives in FEEL now (fovBase / fovHyper / fovEase) — TUNE drives it.
 var COMBO_WINDOW=3.0;   // ported
 
+// Chase cam, pulled out of update() so the TUNE panel can keep solving
+// the camera while the run is frozen — otherwise every camera slider
+// would look dead until you closed the panel and flew again.
+function camFrame(dt){
+  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*FEEL.camEase);
+  // speed reads through shake/streaks/sound now, not camera pull —
+  // the ship stays close instead of zooming away at hyper
+  var back=FEEL.camBack+G.speed*FEEL.camBackSpd;
+  frameAt(distToU(Math.max(0,G.dist-back)),frC);
+  radialAt(frC,G.camAngle,_radC);
+  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-FEEL.camIn);
+  if(G.shake>0){
+    _v2.x+=(Math.random()-0.5)*G.shake*7;
+    _v2.y+=(Math.random()-0.5)*G.shake*7;
+  }
+  camera.position.copy(_v2);
+  camera.up.copy(_radC).multiplyScalar(-1);
+  frameAt(distToU(G.dist+FEEL.lookAhead),frP);
+  radialAt(frP,G.camAngle,_radP);
+  _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
+  camera.lookAt(_look);
+  camera.rotation.z += G.roll*FEEL.camRoll;
+  var wantFov=FEEL.fovBase+(FEEL.fovHyper-FEEL.fovBase)*G.hyperFrac;
+  G.fov += (wantFov-G.fov)*Math.min(1,dt*FEEL.fovEase);
+  camera.fov=G.fov; camera.updateProjectionMatrix();
+}
+
 function update(dt){
   G.time+=dt;
   readKeys(dt);
@@ -11865,27 +11894,7 @@ function update(dt){
   shipGroup.visible = G.inv>0 ? (Math.floor(G.time*22)%2===0) : true;
 
   // ── camera: chase cam rolled to the wall ───────────────────────
-  G.camAngle += angWrap(G.shipAngle-G.camAngle)*Math.min(1,dt*FEEL.camEase);
-  // speed reads through shake/streaks/sound now, not camera pull —
-  // the ship stays close instead of zooming away at hyper
-  var back=FEEL.camBack+G.speed*FEEL.camBackSpd;
-  frameAt(distToU(Math.max(0,G.dist-back)),frC);
-  radialAt(frC,G.camAngle,_radC);
-  _v2.copy(frC.p).addScaledVector(_radC,WALL_R-FEEL.camIn);
-  if(G.shake>0){
-    _v2.x+=(Math.random()-0.5)*G.shake*7;
-    _v2.y+=(Math.random()-0.5)*G.shake*7;
-  }
-  camera.position.copy(_v2);
-  camera.up.copy(_radC).multiplyScalar(-1);
-  frameAt(distToU(G.dist+FEEL.lookAhead),frP);
-  radialAt(frP,G.camAngle,_radP);
-  _look.copy(frP.p).addScaledVector(_radP,WALL_R-5);
-  camera.lookAt(_look);
-  camera.rotation.z += G.roll*FEEL.camRoll;
-  var wantFov=FEEL.fovBase+(FEEL.fovHyper-FEEL.fovBase)*G.hyperFrac;
-  G.fov += (wantFov-G.fov)*Math.min(1,dt*FEEL.fovEase);
-  camera.fov=G.fov; camera.updateProjectionMatrix();
+  camFrame(dt);
 
   // ── props: activate the window ahead, run collisions ───────────
   var counts={ring:0,mine:0,block:0,shield:0,star:0,boost:0,content:0};
@@ -12706,7 +12715,11 @@ var last=performance.now(), acc=0;
 function loop(now){
   requestAnimationFrame(loop);
   var dt=Math.min(0.05,(now-last)/1000); last=now;
-  if(G.mode==='play') update(dt);
+  // TUNE holds the run: the ship stops dead so you can drag a slider
+  // without flying into a mine, but the camera keeps solving so the
+  // camera sliders still read live.
+  if(G.mode==='play' && TUNE_HOLD) camFrame(dt);
+  else if(G.mode==='play') update(dt);
   else if(G.mode==='cine') tickCine(dt);
   else if(G.mode==='cinecard') tickCineCard(dt);
   else if(G.mode==='menu'||G.mode==='howto') attract(dt);
@@ -12807,7 +12820,13 @@ function tuneToggle(want){
   var on=(want===undefined) ? !p.classList.contains('on') : !!want;
   p.classList.toggle('on',on);
   $('tune-open').style.display = on ? 'none' : 'block';
-  if(on) tuneSync();
+  TUNE_HOLD = on;
+  if(on){
+    tuneSync();
+    // drop the stick and shut the engine up, or it drones on a held ship
+    inputEnd(); mouseDown=false; window._steerId=null; turnRate=0;
+    if(typeof engineOff==='function' && typeof AC!=='undefined' && AC) engineOff();
+  }
 }
 (function tuneInit(){
   var body=$('tune-body'); if(!body) return;
