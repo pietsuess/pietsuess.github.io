@@ -498,7 +498,7 @@ body.needs-rotate #rotate{display:flex}
   <div class="sub">PIET SUESS PRESENTS</div>
   <h1 class="title">TUNNEL<br>RACER</h1>
   <!-- bump BUILD on every deploy -->
-  <div class="sub" id="title-build" style="opacity:.55">BUILD 012</div>
+  <div class="sub" id="title-build" style="opacity:.55">BUILD 013</div>
   <div class="sub hot">◈ SECTOR ONE ◈</div>
   <div class="rule"></div>
   <div class="sub" id="title-level">SECTOR 1 &nbsp;//&nbsp; EDITING</div>
@@ -10917,28 +10917,39 @@ var SHIP_SKIN={
   // a hole in the turntable. Lifted the tint and ambient so it has a body.
   stealthwing:{ obj:'stealthwing-obj', tint:0x7a52c8, ambient:0x6a5aa8, light:0xe8dcff,
                 trim:0x9a7bff, glow:0xb98cff, y:-1.20, z0:3.75, scale:1.05 },
-  // BlockWing's hull is far bigger than the DeltaWing frame the shared
-  // loadout library was modelled on, so its library parts get sized up
-  // and pushed out to sit on the hull instead of inside it.
   blockwing:  { obj:'blockwing-obj',   tint:0x9aa6bb, ambient:0x4a5468, light:0xe6f0ff,
-                trim:0xffb000, glow:0xffc25a, y:-1.15, z0:3.35, scale:1.25,
-                partScale:1.25 }
+                trim:0xffb000, glow:0xffc25a, y:-1.15, z0:3.35, scale:1.25 }
 };
 function buildShip(id){
   var SK=SHIP_SKIN[id]||SHIP_SKIN.deltawing;
   var g=new THREE.Group();
   // hull first, then fill every drive / plate / gun tier the hull's own
   // export is missing from the shared loadout library.
-  var GEO={}, own=shipGeo(SK.obj), lib=shipGeo('parts-obj'), fromLib={};
+  // Donor rules, ported verbatim from the original's _supplementFrom():
+  //   DeltaWing   — 'parts-obj' IS its own model, so it fills anything.
+  //   StealthWing — ships with drives and plates but no guns; guns come
+  //                 from the DeltaWing library.
+  //   BlockWing   — hull only. Drives come from STEALTHWING, because that
+  //                 is where they are modelled to seat; guns from the
+  //                 DeltaWing library; and NO armour plate at all, since
+  //                 BlockWing has no shield mechanic. Pulling its drives
+  //                 out of the DeltaWing library is what left them
+  //                 floating clear of the hull.
+  var GEO={}, own=shipGeo(SK.obj);
   Object.keys(own).forEach(function(k){ GEO[k]=own[k]; });
   var have={};
   Object.keys(own).forEach(function(k){ var pc=partClass(k); if(pc.tier>=0) have[pc.cls+pc.tier]=1; });
-  Object.keys(lib).forEach(function(k){
-    var pc=partClass(k);
-    if(pc.tier<0) return;
-    if(pc.cls!=='drive'&&pc.cls!=='armour'&&pc.cls!=='cannon') return;
-    if(have[pc.cls+pc.tier]||GEO[k]) return;
-    GEO[k]=lib[k]; fromLib[k]=1;
+  var donors = (id==='blockwing')
+    ? [{obj:'stealthwing-obj',cls:{drive:1}},{obj:'parts-obj',cls:{cannon:1}}]
+    : [{obj:'parts-obj',cls:{drive:1,armour:1,cannon:1}}];
+  donors.forEach(function(D){
+    var src=shipGeo(D.obj);
+    Object.keys(src).forEach(function(k){
+      var pc=partClass(k);
+      if(pc.tier<0 || !D.cls[pc.cls]) return;
+      if(have[pc.cls+pc.tier]||GEO[k]) return;
+      GEO[k]=src[k]; have[pc.cls+pc.tier]=1;
+    });
   });
 
   var skin =ps1Mat(TEX.delta,{tint:SK.tint,ambient:SK.ambient,light:SK.light,fogNear:900,fogFar:3400,twoSide:true,side:THREE.DoubleSide});
@@ -10977,19 +10988,6 @@ function buildShip(id){
     else if(pc.cls==='drive'||pc.cls==='armour'||pc.cls==='cannon') m=tierMat(pc.cls,pc.tier);
     else m=skin;
     var mesh=new THREE.Mesh(GEO[k],m);
-    // Library parts are modelled on the DeltaWing frame. A bigger hull can
-    // scale them up, but it has to happen about the part's OWN centre —
-    // scaling about the shared model origin translates every part away from
-    // the hull by its distance from that origin, which is what detached them.
-    if(fromLib[k]&&SK.partScale){
-      var s=SK.partScale;
-      GEO[k].computeBoundingBox();
-      var bb=GEO[k].boundingBox;
-      mesh.scale.setScalar(s);
-      mesh.position.set((bb.min.x+bb.max.x)*0.5*(1-s),
-                        (bb.min.y+bb.max.y)*0.5*(1-s),
-                        (bb.min.z+bb.max.z)*0.5*(1-s));
-    }
     body.add(mesh);
     if(pc.cls==='armour'||pc.cls==='drive'||pc.cls==='cannon'){
       mesh.visible=false;
