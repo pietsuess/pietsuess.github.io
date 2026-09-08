@@ -16,20 +16,25 @@
 <feColorMatrix type='saturate' values='0'/></filter>\
 <rect width='240' height='240' filter='url(%23n)' opacity='.55'/></svg>");}
   .soft{box-shadow:inset 0 0 180px rgba(90,55,35,.28), inset 0 0 60px rgba(90,55,35,.14);}
-  #dial{position:fixed;left:20px;bottom:20px;z-index:3;display:flex;align-items:center;gap:14px;
+  .dial{position:fixed;left:20px;z-index:3;display:flex;align-items:center;gap:14px;
         font:800 13px/1 ui-monospace,Menlo,monospace;letter-spacing:.14em;text-transform:uppercase;
         color:#4A362B;background:#FCE4B4;padding:12px 16px;border:3px solid #4A362B;
         box-shadow:6px 6px 0 #B04A38;}
+  /* the label is sized off the longest word either row can show, so both
+     boxes come out identical */
+  .dial > span:first-child{display:inline-block;width:7ch;}
+  #dial{bottom:20px;}
+  #bgDial{bottom:73px;}
   /* sized off the longest reading it can ever show, so the box never moves */
-  #pitchVal{display:inline-block;width:4ch;text-align:left;font-variant-numeric:tabular-nums;
+  .dial .read{display:inline-block;width:4ch;text-align:left;font-variant-numeric:tabular-nums;
             background:#4A362B;color:#FCE4B4;padding:4px 6px;}
-  #dial input{-webkit-appearance:none;appearance:none;width:200px;height:18px;
+  .dial input{-webkit-appearance:none;appearance:none;width:200px;height:18px;
               background:#E4CC9C;border:3px solid #4A362B;margin:0;cursor:pointer;}
-  #dial input::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:30px;
+  .dial input::-webkit-slider-thumb{-webkit-appearance:none;width:18px;height:30px;
               background:#24849C;border:3px solid #4A362B;box-shadow:3px 3px 0 #B04A38;}
-  #dial input::-moz-range-thumb{width:18px;height:30px;border-radius:0;
+  .dial input::-moz-range-thumb{width:18px;height:30px;border-radius:0;
               background:#24849C;border:3px solid #4A362B;box-shadow:3px 3px 0 #B04A38;}
-  #dial input::-moz-range-track{background:#E4CC9C;height:12px;}
+  .dial input::-moz-range-track{background:#E4CC9C;height:12px;}
 
 
 </style>
@@ -39,7 +44,8 @@
 </head>
 <body>
 <div id="rail"></div>
-<div id="dial"><span>pitch</span><input id="pitch" type="range" min="2" max="24" step="0.5" value="5"><span id="pitchVal">05.0</span></div>
+<div id="bgDial" class="dial"><span>ground</span><input id="bg" type="range" min="0" max="360" step="1" value="26"><span id="bgVal" class="read">026</span></div>
+<div id="dial" class="dial"><span>pitch</span><input id="pitch" type="range" min="2" max="24" step="0.5" value="5"><span id="pitchVal" class="read">05.0</span></div>
 <div class="grain"></div>
 <div class="soft"></div>
 
@@ -769,6 +775,27 @@ function join (a, b) {
   );
 }
 
+/* ---- the ground dial: scrub along the card grounds, and the drift stops ---- */
+
+const bgDial = document.getElementById("bg");
+const bgReadout = document.getElementById("bgVal");
+let bgHeld = false;
+
+// the grounds' own saturation and lightness, so any hue still reads as paper
+const GROUND_HSL = (() => {
+  const h = { h: 0, s: 0, l: 0 };
+  let s = 0, l = 0;
+  for (const g of GROUNDS) { g.getHSL(h); s += h.s; l += h.l; }
+  return { s: s / GROUNDS.length, l: l / GROUNDS.length };
+})();
+
+bgDial.addEventListener("input", () => {
+  bgHeld = true;
+  const deg = Math.round(parseFloat(bgDial.value));
+  bgReadout.textContent = String(deg).padStart(3, "0");
+  scene.background.setHSL((deg % 360) / 360, GROUND_HSL.s, GROUND_HSL.l);
+});
+
 const clock = new THREE.Clock();
 
 function frame () {
@@ -776,10 +803,12 @@ function frame () {
   postUniforms.uTime.value = now;
 
   // the ground drifts from one card colour to the next
-  const g  = (now * 0.045) % GROUNDS.length;
-  const i0 = Math.floor(g);
-  const i1 = (i0 + 1) % GROUNDS.length;
-  scene.background.copy(GROUNDS[i0]).lerp(GROUNDS[i1], g - i0);
+  if (!bgHeld) {
+    const g  = (now * 0.045) % GROUNDS.length;
+    const i0 = Math.floor(g);
+    const i1 = (i0 + 1) % GROUNDS.length;
+    scene.background.copy(GROUNDS[i0]).lerp(GROUNDS[i1], g - i0);
+  }
   travel += (target - travel) * EASE;
 
   // the shapes recycle so the run never simply ends
