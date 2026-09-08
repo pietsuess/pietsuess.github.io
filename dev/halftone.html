@@ -489,7 +489,8 @@ for (let i = 0; i < COUNT; i++) {
   });
 }
 
-const RUN = ROWS * SPACING;   // the flight loops once it has passed every row
+const RUN  = ROWS * SPACING;   // the flight loops once it has passed every row
+const BACK = 600;              // how far past the lens a shape rides before it comes round again
 
 /* ---------------- the press: one screen over the whole frame ---------------- */
 
@@ -880,9 +881,14 @@ function lift (p, up) {
   }
 }
 
-const drop = () => {
-  // it never moved, so it was a press: hold that one up instead
-  if (armed) { showBig(armed.mesh); armed = null; }
+const drop = (e) => {
+  // it never moved, so it was a press: that one goes out into the world
+  if (armed) {
+    const it = armed.mesh.userData.item;
+    armed = null;
+    spawn(it.geo, it.ink, it.size,
+      new THREE.Vector3(0, 0, camera.position.z - PULL_Z), 0, it.prof, it.key);
+  }
   if (held) lift(held, false);
   if (held && target2) join(held, target2);
   if (target2) { target2.face.material.color.copy(target2.ink); target2 = null; }
@@ -1360,9 +1366,15 @@ function frame () {
     b.mesh.rotation.z = t * 0.7;
   }
 
-  // each piece steps aside and twists as the flight closes on it
+  // each piece steps aside and twists as the flight closes on it. the run
+  // repeats, so a shape that has gone by is put back at the far end and the
+  // flight never reaches an edge
+  const camZ = camera.position.z;
   for (const p of pieces) {
-    const dist  = p.baseZ - camera.position.z;              // negative once it is behind
+    const raw   = camZ - p.baseZ;
+    const ahead = (((raw + BACK) % RUN) + RUN) % RUN - BACK;
+    if (p !== held) p.group.position.z = camZ - ahead;
+    const dist  = -ahead;                                   // negative once it is behind
     const near  = 1.0 - Math.min(Math.abs(dist) / 1500, 1); // 0 far off, 1 right here
     const eased = near * near * (3 - 2*near);
     p.eased = eased;
