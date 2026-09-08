@@ -79,8 +79,10 @@
 <script type="module">
 import * as THREE from "three";
 
-const PER_PIXEL = 0.9;    // world units travelled per pixel scrolled
-const EASE      = 0.085;  // how softly the flight catches up to the scroll
+const DRIFT  = 80;      // world units a second the flight moves on its own
+const KICK   = 2.2;     // how much speed one pixel of scroll adds
+const SETTLE = 0.9;     // how quickly the speed falls back to the drift
+const TOP    = 2400;    // fastest it will go either way
 const PITCH_CSS = 5.0;    // halftone pitch, in css pixels, fixed to the screen
 
 const DPR = Math.min(devicePixelRatio, 2);
@@ -100,7 +102,7 @@ scene.background = new THREE.Color(GROUNDS[0]);
 const camera = new THREE.PerspectiveCamera(55, innerWidth/innerHeight, 1, 6000);
 camera.position.z = 200;
 
-// the shapes: the chevron from the still tile, plus plain geometry
+// the shapes: the eight lucky charms marshmallows
 const poly = (pts) => {
   const s = new THREE.Shape();
   pts.forEach(([x,y],i) => i ? s.lineTo(x,y) : s.moveTo(x,y));
@@ -131,8 +133,8 @@ const farPoly = (dx, dy, pts) => {
   return far;
 };
 
-// three lobes and a flared trunk, walked round once as a single outline
-const CLUB = (() => {
+// the clover: three lobes and a stem, walked round once as a single outline
+const CLOVER = (() => {
   const lobes = [[0, 0.20], [-0.1732, -0.10], [0.1732, -0.10]];
   const stem  = [[-0.05,-0.02],[0.05,-0.02],[0.17,-0.50],[-0.17,-0.50]];
   const pts = [];
@@ -157,95 +159,274 @@ const HEART = (() => {
   return pts;
 })();
 
-const SHAPES = [
-  poly([[0,.14],[.34,0],[.78,.44],[.34,.92],[0,.78],[.40,.44]]      // chevron
-        .map(([x,y]) => [x-0.39, 0.46-y])),
-  new THREE.CircleGeometry(0.5, 56),
-  poly([[-0.5,-0.42],[0.5,-0.42],[0,0.5]]),                          // triangle
-  poly([[0,0.55],[0.46,0],[0,-0.55],[-0.46,0]]),                     // diamond
-  new THREE.RingGeometry(0.31, 0.5, 56),
-  poly([[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]]),               // square
-  poly(CLUB),
-  poly(HEART),
-];
-
-/* ---- what a join makes. the child is the two parents' outlines averaged
-   ray by ray, so a given pair always gives the same shape and the shape
-   always reads as those two fused. the six bases make 21 of them ---- */
-
-const RAYS = 128;
-
-const ring56 = Array.from({ length: 56 }, (_, k) => {
-  const a = k / 56 * 6.283185;
-  return [0.5 * Math.cos(a), 0.5 * Math.sin(a)];
-});
-
-// the same six outlines the geometry above is cut from, all sitting on centre
-const OUTLINES = [
-  [[0,.14],[.34,0],[.78,.44],[.34,.92],[0,.78],[.40,.44]].map(([x,y]) => [x-0.39, 0.46-y]),
-  ring56,
-  [[-0.5,-0.42],[0.5,-0.42],[0,0.5]].map(([x,y]) => [x, y + 0.113]),
-  [[0,0.55],[0.46,0],[0,-0.55],[-0.46,0]],
-  ring56,
-  [[-0.5,-0.5],[0.5,-0.5],[0.5,0.5],[-0.5,0.5]],
-  CLUB,
-  HEART,
-];
-const HOLES = [0, 0, 0, 0, 0.62, 0, 0, 0];   // only the ring is cut through
-
-// how far the outline sits from the middle along one ray. the nearest hit
-// wins, so a notch stays a notch
-function reach (poly, ang) {
-  const dx = Math.cos(ang), dy = Math.sin(ang);
-  let best = Infinity;
-  for (let k = 0; k < poly.length; k++) {
-    const [x1, y1] = poly[k], [x2, y2] = poly[(k + 1) % poly.length];
-    const ex = x2 - x1, ey = y2 - y1;
-    const den = ex * dy - ey * dx;
-    if (Math.abs(den) < 1e-9) continue;
-    const t = (ex * y1 - ey * x1) / den;
-    const u = (dx * y1 - dy * x1) / den;
-    if (t > 0 && u >= 0 && u <= 1 && t < best) best = t;
+// the star, five points
+const STAR5 = (() => {
+  const pts = [];
+  for (let k = 0; k < 10; k++) {
+    const a = Math.PI/2 + k * Math.PI/5;
+    const r = k % 2 ? 0.21 : 0.5;
+    pts.push([r * Math.cos(a), r * Math.sin(a)]);
   }
-  return best === Infinity ? 0.5 : best;
+  return pts;
+})();
+
+// the horseshoe: a band round the top with the legs hanging past the horizontal.
+const HS_N = 40, HS_DROP = 0.12;
+const hsArc = (r, from, to) => {
+  const pts = [];
+  for (let k = 0; k <= HS_N; k++) {
+    const a = from + (to - from) * k / HS_N;
+    pts.push([r * Math.cos(a), r * Math.sin(a) - HS_DROP]);
+  }
+  return pts;
+};
+const HS_A0 = -30 * Math.PI / 180, HS_A1 = 210 * Math.PI / 180;
+const HORSESHOE = hsArc(0.50, HS_A0, HS_A1).concat(hsArc(0.28, HS_A1, HS_A0));
+
+// the rainbow: the same band, wider and flat along the bottom
+const RB_N = 40, RB_DROP = 0.22;
+const rbArc = (r, from, to) => {
+  const pts = [];
+  for (let k = 0; k <= RB_N; k++) {
+    const a = from + (to - from) * k / RB_N;
+    pts.push([r * Math.cos(a), r * Math.sin(a) - RB_DROP]);
+  }
+  return pts;
+};
+const RAINBOW = rbArc(0.50, Math.PI, 0).concat(rbArc(0.22, 0, Math.PI));
+
+// the moon: a circle with a second circle bitten out of it, shifted so the
+// middle of the outline sits in the meat and not in the bite
+const MOON = (() => {
+  const R0 = 0.5, cx = 0.30, R1 = 0.46, N = 48, off = 0.23;
+  const a = (cx*cx - R1*R1 + R0*R0) / (2*cx);
+  const h = Math.sqrt(Math.max(R0*R0 - a*a, 0));
+  const tu = Math.atan2(h, a);
+  const fu = Math.atan2(h, a - cx), fd = Math.atan2(-h, a - cx);
+  const pts = [];
+  for (let k = 0; k <= N; k++) {
+    const t = tu + (2*Math.PI - 2*tu) * k / N;
+    pts.push([R0*Math.cos(t) + off, R0*Math.sin(t)]);
+  }
+  for (let k = 1; k < N; k++) {
+    const f = fd + ((fu - 2*Math.PI) - fd) * k / N;
+    pts.push([cx + R1*Math.cos(f) + off, R1*Math.sin(f)]);
+  }
+  return pts;
+})();
+
+// the balloon: a round body with a knot under it, the two walked round as one
+const BALLOON = (() => {
+  const cy = 0.10, R = 0.40;
+  const knot = [[-0.09,-0.20],[0.09,-0.20],[0.13,-0.50],[-0.13,-0.50]];
+  const pts = [];
+  for (let k = 0; k < 96; k++) {
+    const a = k / 96 * 6.283185, dx = Math.cos(a), dy = Math.sin(a);
+    let r = farPoly(dx, dy, knot);
+    r = Math.max(r, farCircle(dx, dy, 0, cy, R));
+    pts.push([r * dx, r * dy]);
+  }
+  return pts;
+})();
+
+const SHAPES = [
+  poly(HEART),
+  poly(STAR5),
+  poly(HORSESHOE),
+  poly(CLOVER),
+  poly(MOON),
+  poly(RAINBOW),
+  poly(BALLOON),
+  poly([[0,0.55],[0.46,0],[0,-0.55],[-0.46,0]]),                     // diamond
+];
+
+/* ---- what a join makes. every shape is measured into a field, the two
+   fields are averaged, and the line where the average crosses zero is cut as
+   the child. a hole stays a hole, an opening stays an opening, and two of the
+   same shape hand back that shape. eight bases make 36 of them ---- */
+
+const FN   = 128;                 // cells across the field
+const FLO  = -0.68, FHI = 0.68;
+const FSTP = (FHI - FLO) / (FN - 1);
+const fAt  = (i) => FLO + i * FSTP;
+
+// the eight outlines the geometry above is cut from, all sitting on centre
+const OUTLINES = [
+  HEART,
+  STAR5,
+  HORSESHOE,
+  CLOVER,
+  MOON,
+  RAINBOW,
+  BALLOON,
+  [[0,0.55],[0.46,0],[0,-0.55],[-0.46,0]],
+];
+
+// how far inside or outside the outline every cell of the grid sits.
+// negative in the ink, positive on the paper, the distance either way
+function fieldOf (poly) {
+  const f = new Float32Array(FN * FN);
+  const n = poly.length;
+  for (let j = 0; j < FN; j++) {
+    const py = fAt(j);
+    for (let i = 0; i < FN; i++) {
+      const px = fAt(i);
+      let best = Infinity, inside = false;
+      for (let k = 0; k < n; k++) {
+        const [x1, y1] = poly[k], [x2, y2] = poly[(k + 1) % n];
+        const ex = x2 - x1, ey = y2 - y1;
+        const len = ex*ex + ey*ey;
+        let t = len > 1e-12 ? ((px - x1)*ex + (py - y1)*ey) / len : 0;
+        t = t < 0 ? 0 : t > 1 ? 1 : t;
+        const dx = px - (x1 + ex*t), dy = py - (y1 + ey*t);
+        const d = dx*dx + dy*dy;
+        if (d < best) best = d;
+        if ((y1 > py) !== (y2 > py) && px < x1 + (py - y1) / (y2 - y1) * ex) inside = !inside;
+      }
+      f[j*FN + i] = (inside ? -1 : 1) * Math.sqrt(best);
+    }
+  }
+  return f;
 }
 
-function profileOf (i) {
-  const r = [];
-  for (let k = 0; k < RAYS; k++) r.push(reach(OUTLINES[i], k / RAYS * 6.283185));
-  return { r, inner: HOLES[i] };
-}
-const PROFILES = OUTLINES.map((_, i) => profileOf(i));
+const PROFILES = OUTLINES.map(fieldOf);
 
+// the real average of two shapes, cell by cell
 function blend (a, b) {
-  const r = [];
-  for (let k = 0; k < RAYS; k++) r.push((a.r[k] + b.r[k]) * 0.5);
-  return { r, inner: (a.inner + b.inner) * 0.5 };
+  const f = new Float32Array(FN * FN);
+  for (let k = 0; k < f.length; k++) f[k] = (a[k] + b[k]) * 0.5;
+  return f;
 }
+
+// two shapes that came out the same are the same, whatever pair made them,
+// so a shape is named by its own field and not by its parents
+function fieldKey (f) {
+  let h = 2166136261;
+  for (let k = 0; k < f.length; k += 3) {
+    h ^= Math.round(f[k] * 200) + 4096;
+    h = Math.imul(h, 16777619);
+  }
+  return (h >>> 0).toString(36);
+}
+
+// two fields this close read as the same shape. the nearest two of the 36
+// recipes sit 0.021 apart, so nothing real is swallowed
+const SAME = 0.016;
+
+function alike (a, b) {
+  let d = 0;
+  for (let k = 0; k < a.length; k++) d += Math.abs(a[k] - b[k]);
+  return d / a.length < SAME;
+}
+
+// the zero line, walked cell by cell and stitched back into closed loops
+function contour (f) {
+  const segs = [];
+  const cut = (xa, ya, va, xb, yb, vb) => {
+    const t = va / (va - vb);
+    return [xa + (xb - xa)*t, ya + (yb - ya)*t];
+  };
+  for (let j = 0; j < FN - 1; j++) {
+    for (let i = 0; i < FN - 1; i++) {
+      const v0 = f[j*FN + i],         v1 = f[j*FN + i + 1],
+            v2 = f[(j+1)*FN + i + 1], v3 = f[(j+1)*FN + i];
+      let c = 0;
+      if (v0 < 0) c |= 1;
+      if (v1 < 0) c |= 2;
+      if (v2 < 0) c |= 4;
+      if (v3 < 0) c |= 8;
+      if (c === 0 || c === 15) continue;
+      const x0 = fAt(i), x1 = fAt(i + 1), y0 = fAt(j), y1 = fAt(j + 1);
+      const B = () => cut(x0, y0, v0, x1, y0, v1);
+      const R = () => cut(x1, y0, v1, x1, y1, v2);
+      const T = () => cut(x1, y1, v2, x0, y1, v3);
+      const L = () => cut(x0, y1, v3, x0, y0, v0);
+      switch (c) {
+        case 1:  case 14: segs.push([L(), B()]); break;
+        case 2:  case 13: segs.push([B(), R()]); break;
+        case 3:  case 12: segs.push([L(), R()]); break;
+        case 4:  case 11: segs.push([R(), T()]); break;
+        case 6:  case  9: segs.push([B(), T()]); break;
+        case 7:  case  8: segs.push([T(), L()]); break;
+        case 5:  segs.push([L(), T()]); segs.push([B(), R()]); break;
+        case 10: segs.push([L(), B()]); segs.push([T(), R()]); break;
+      }
+    }
+  }
+  // every end meets one other end, so follow the chain round
+  const key  = (p) => Math.round(p[0] / FSTP * 64) + "," + Math.round(p[1] / FSTP * 64);
+  const ends = new Map();
+  segs.forEach((sg, i) => {
+    for (const p of sg) {
+      const k = key(p);
+      if (!ends.has(k)) ends.set(k, []);
+      ends.get(k).push(i);
+    }
+  });
+  const used  = new Array(segs.length).fill(false);
+  const loops = [];
+  for (let i = 0; i < segs.length; i++) {
+    if (used[i]) continue;
+    used[i] = true;
+    const pts = [segs[i][0], segs[i][1]];
+    for (;;) {
+      const tail = pts[pts.length - 1], here = ends.get(key(tail));
+      let nxt = -1;
+      if (here) for (const sg of here) if (!used[sg]) { nxt = sg; break; }
+      if (nxt < 0) break;
+      used[nxt] = true;
+      const [p, q] = segs[nxt];
+      pts.push(key(p) === key(tail) ? q : p);
+    }
+    if (pts.length > 8) loops.push(pts);
+  }
+  return loops;
+}
+
+const areaOf = (pts) => {
+  let a = 0;
+  for (let k = 0, m = pts.length - 1; k < pts.length; m = k++)
+    a += pts[m][0]*pts[k][1] - pts[k][0]*pts[m][1];
+  return Math.abs(a) * 0.5;
+};
+
+const inLoop = (pts, x, y) => {
+  let inside = false;
+  for (let k = 0, m = pts.length - 1; k < pts.length; m = k++) {
+    const [x1, y1] = pts[k], [x2, y2] = pts[m];
+    if ((y1 > y) !== (y2 > y) && x < x1 + (y - y1) / (y2 - y1) * (x2 - x1)) inside = !inside;
+  }
+  return inside;
+};
 
 // a pair only ever cuts its shape once
 const MADE = new Map();
 
 function childGeo (key, prof) {
   if (MADE.has(key)) return MADE.get(key);
-  const at = (k, s) => [prof.r[k] * s * Math.cos(k / RAYS * 6.283185),
-                        prof.r[k] * s * Math.sin(k / RAYS * 6.283185)];
-  const sh = new THREE.Shape();
-  for (let k = 0; k < RAYS; k++) {
-    const [x, y] = at(k, 1);
-    k ? sh.lineTo(x, y) : sh.moveTo(x, y);
-  }
-  sh.closePath();
-  if (prof.inner > 0.05) {
-    const h = new THREE.Path();
-    for (let k = RAYS - 1; k >= 0; k--) {
-      const [x, y] = at(k, prof.inner);
-      k === RAYS - 1 ? h.moveTo(x, y) : h.lineTo(x, y);
+  // biggest first, so a loop knows every loop it might be sitting inside
+  const loops = contour(prof).sort((p, q) => areaOf(q) - areaOf(p));
+  const shapes = [], held = [];
+  for (const pts of loops) {
+    let depth = 0, host = null;
+    for (const h of held) if (inLoop(h.pts, pts[0][0], pts[0][1])) { depth++; host = h; }
+    const trace = (path) => {
+      pts.forEach(([x, y], k) => k ? path.lineTo(x, y) : path.moveTo(x, y));
+      path.closePath();
+    };
+    if (depth % 2 === 0) {                    // ink
+      const sh = new THREE.Shape();
+      trace(sh);
+      shapes.push(sh);
+      held.push({ pts, shape: sh });
+    } else {                                  // paper, cut out of its host
+      const p = new THREE.Path();
+      trace(p);
+      if (host && host.shape) host.shape.holes.push(p);
+      held.push({ pts, shape: null });
     }
-    h.closePath();
-    sh.holes.push(h);
   }
-  const geo = new THREE.ShapeGeometry(sh);
+  const geo = shapes.length ? new THREE.ShapeGeometry(shapes) : new THREE.BufferGeometry();
   MADE.set(key, geo);
   return geo;
 }
@@ -304,7 +485,7 @@ for (let i = 0; i < COUNT; i++) {
     spin:  (Math.random()-0.5) * 2.4,                                   // how hard it twists
     phase: Math.random() * 6.283,
     prof:  PROFILES[row % SHAPES.length],
-    key:   String(row % SHAPES.length),
+    key:   fieldKey(PROFILES[row % SHAPES.length]),
   });
 }
 
@@ -529,9 +710,7 @@ post.add(new THREE.Mesh(
 
 const ID_BG = new THREE.Color(0, 0, 0);   // no shape prints pure black in the id pass
 
-let target = 0, travel = 0;
-
-function maxScroll () { return document.body.scrollHeight - innerHeight; }
+let travel = 0, speed = DRIFT, last = 0;
 
 function resize () {
   const w = innerWidth, h = innerHeight;
@@ -550,11 +729,14 @@ function resize () {
 addEventListener("resize", resize);
 resize();
 
-addEventListener("scroll", () => {
-  target = scrollY * PER_PIXEL;
+// the scroll does not carry the flight any more, it pushes it. down speeds it
+// up, up slows it and can send it back the way it came
+addEventListener("wheel", (e) => {
+  e.preventDefault();
+  speed = Math.max(-TOP, Math.min(TOP, speed + e.deltaY * KICK));
   panel.visible = false;     // moving again takes the window away
   big.visible = false;
-}, { passive:true });
+}, { passive:false });
 
 const dial = document.getElementById("pitch");
 const dialVal = document.getElementById("pitchVal");
@@ -1063,6 +1245,8 @@ function freshInk () {
 }
 
 function shelve (geo, fill, size, prof, key) {
+  // a shape the shelf already holds does not go up twice
+  if (shelved.some(x => x.userData.item.key === key || alike(x.userData.item.prof, prof))) return;
   const m = new THREE.Mesh(
     geo,
     new THREE.MeshBasicMaterial({ color: fill.clone(), side: THREE.DoubleSide })
@@ -1105,8 +1289,8 @@ function join (a, b) {
   retire(a);
   retire(b);
 
-  const key  = [a.key, b.key].sort().join("+");
   const prof = blend(a.prof, b.prof);
+  const key  = fieldKey(prof);
   const made = childGeo(key, prof);
   const ink  = freshInk();
   spawn(made, ink, size, mid, (Math.random() - 0.5) * 0.9, prof, key);
@@ -1147,10 +1331,13 @@ function frame () {
     const i1 = (i0 + 1) % GROUNDS.length;
     scene.background.copy(GROUNDS[i0]).lerp(GROUNDS[i1], g - i0);
   }
-  travel += (target - travel) * EASE;
+  const dt = Math.min(now - last, 0.1);
+  last = now;
+  speed += (DRIFT - speed) * Math.min(dt * SETTLE, 1);
+  travel += speed * dt;
 
-  // the shapes recycle so the run never simply ends
-  camera.position.z = 200 - (travel % RUN);
+  // the shapes recycle so the run never simply ends, either way round
+  camera.position.z = 200 - (((travel % RUN) + RUN) % RUN);
 
   // the shape being dragged over blinks
   if (target2) {
