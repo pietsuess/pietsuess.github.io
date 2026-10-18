@@ -14,30 +14,37 @@
   --warm:#f5f0eb;--accent:#2d4a3e;--text:#3a3a4a;--text-light:#6b6b7b;
 }
 html,body{margin:0;height:100%}
-body{font-family:'Inter',sans-serif;background:var(--warm);-webkit-font-smoothing:antialiased}
+body{font-family:'Inter',sans-serif;background:var(--warm);-webkit-font-smoothing:antialiased;display:flex;flex-direction:column}
 
-.bar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;justify-content:flex-end;gap:1rem;padding:0 5vw;background:var(--ink);z-index:10}
+.bar{flex:0 0 auto;display:flex;flex-wrap:wrap;align-items:center;justify-content:flex-end;gap:0.6rem;padding:0.9rem 5vw;background:var(--ink);z-index:10}
 
-/* from listing .cta-btn */
-.cta-btn{display:inline-block;padding:1rem 2.5rem;background:var(--gold);color:var(--ink);font-family:inherit;font-weight:600;font-size:0.95rem;letter-spacing:1px;text-transform:uppercase;border:none;border-radius:4px;cursor:pointer;transition:all 0.3s}
+/* from listing .cta-btn, side padding trimmed so five buttons fit */
+.cta-btn{display:inline-flex;align-items:center;justify-content:center;height:2.9rem;padding:0 1.5rem;background:var(--gold);color:var(--ink);font-family:inherit;font-weight:600;font-size:0.95rem;letter-spacing:1px;text-transform:uppercase;border:none;border-radius:4px;cursor:pointer;transition:all 0.3s}
 .cta-btn:hover{background:var(--gold-light);transform:translateY(-2px);box-shadow:0 8px 24px rgba(201,169,110,0.3)}
+.cta-btn.zoom{width:2.9rem;padding:0;font-size:1.2rem;letter-spacing:0}
+.cta-btn.flash{background:#fff}
 
 /* PDF.js needs an absolutely positioned scroll box */
-#viewerContainer{position:absolute;top:72px;left:0;right:0;bottom:0;overflow:auto}
+.stage{flex:1 1 auto;position:relative}
+#viewerContainer{position:absolute;inset:0;overflow:auto}
 </style>
 </head>
 <body>
 
 <div class="bar">
+  <button type="button" class="cta-btn zoom" id="zoomOut" aria-label="Zoom out">&minus;</button>
+  <button type="button" class="cta-btn zoom" id="zoomIn" aria-label="Zoom in">+</button>
+  <button type="button" class="cta-btn" id="copyLink">Copy link</button>
   <button type="button" class="cta-btn" id="download">Download</button>
   <button type="button" class="cta-btn" id="print">Print</button>
 </div>
 
-<div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div>
+<div class="stage"><div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div></div>
 
 <script type="module">
 // The official BC RTB-1 PDF, shown with its own fill-in boxes (PDF.js).
 // Everything typed stays in the browser; Download / Print hand back the filled PDF.
+// Copy link puts the filled boxes into the link after #f= (never sent to the server).
 const LIB = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299';
 
 const pdfjsLib = await import(LIB + '/build/pdf.min.mjs');
@@ -57,12 +64,61 @@ const viewer = new PDFViewer({
 });
 linkService.setViewer(viewer);
 
-eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-width'; });
-window.addEventListener('resize', () => { viewer.currentScaleValue = 'page-width'; });
+// Fit the page width, but never bigger than actual printed size (scale 1)
+let userZoomed = false;
+function fit() {
+  viewer.currentScaleValue = 'page-width';
+  if (viewer.currentScale > 1) viewer.currentScale = 1;
+}
+eventBus.on('pagesinit', fit);
+window.addEventListener('resize', () => { if (!userZoomed) fit(); });
+document.getElementById('zoomOut').addEventListener('click', () => { userZoomed = true; viewer.decreaseScale(); });
+document.getElementById('zoomIn').addEventListener('click', () => { userZoomed = true; viewer.increaseScale(); });
+
+function toB64(str) {
+  let bin = '';
+  new TextEncoder().encode(str).forEach(b => { bin += String.fromCharCode(b); });
+  return btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+}
+function fromB64(s) {
+  const b64 = s.replace(/-/g, '+').replace(/_/g, '/');
+  const bin = atob(b64 + '==='.slice((b64.length + 3) % 4));
+  return new TextDecoder().decode(Uint8Array.from(bin, c => c.charCodeAt(0)));
+}
 
 const pdf = await pdfjsLib.getDocument({ url: 'artist-studio/rtb1.pdf' }).promise;
+
+// Boxes filled in the link go back in before the pages draw
+const carried = location.hash.match(/^#f=(.+)$/);
+if (carried) {
+  try {
+    const saved = JSON.parse(fromB64(carried[1]));
+    for (const [id, val] of Object.entries(saved)) pdf.annotationStorage.setValue(id, val);
+  } catch (err) { /* broken link: open blank */ }
+}
+
 viewer.setDocument(pdf);
 linkService.setDocument(pdf, null);
+
+const fieldIds = Object.values((await pdf.getFieldObjects()) || {}).flat().map(f => f.id).filter(Boolean);
+
+document.getElementById('copyLink').addEventListener('click', async (e) => {
+  const btn = e.currentTarget;
+  const filled = {};
+  for (const id of fieldIds) {
+    const v = pdf.annotationStorage.getRawValue(id);
+    if (v !== undefined) filled[id] = v;
+  }
+  const url = location.origin + location.pathname + '#f=' + toB64(JSON.stringify(filled));
+  try {
+    await navigator.clipboard.writeText(url);
+  } catch (err) {
+    window.prompt('', url);
+    return;
+  }
+  btn.classList.add('flash');
+  setTimeout(() => btn.classList.remove('flash'), 600);
+});
 
 async function filledUrl() {
   const bytes = await pdf.saveDocument();
