@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Residential Tenancy Agreement</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299/web/pdf_viewer.css">
+<style>
+:root{
+  --ink:#1a1a2e;--cream:#faf8f5;--gold:#c9a96e;--gold-light:#e8d5b0;
+  --warm:#f5f0eb;--accent:#2d4a3e;--text:#3a3a4a;--text-light:#6b6b7b;
+}
+html,body{margin:0;height:100%}
+body{font-family:'Inter',sans-serif;background:var(--warm);-webkit-font-smoothing:antialiased}
+
+.bar{position:fixed;top:0;left:0;right:0;height:72px;display:flex;align-items:center;justify-content:flex-end;gap:1rem;padding:0 5vw;background:var(--ink);z-index:10}
+
+/* from listing .cta-btn */
+.cta-btn{display:inline-block;padding:1rem 2.5rem;background:var(--gold);color:var(--ink);font-family:inherit;font-weight:600;font-size:0.95rem;letter-spacing:1px;text-transform:uppercase;border:none;border-radius:4px;cursor:pointer;transition:all 0.3s}
+.cta-btn:hover{background:var(--gold-light);transform:translateY(-2px);box-shadow:0 8px 24px rgba(201,169,110,0.3)}
+
+/* PDF.js needs an absolutely positioned scroll box */
+#viewerContainer{position:absolute;top:72px;left:0;right:0;bottom:0;overflow:auto}
+</style>
+</head>
+<body>
+
+<div class="bar">
+  <button type="button" class="cta-btn" id="download">Download</button>
+  <button type="button" class="cta-btn" id="print">Print</button>
+</div>
+
+<div id="viewerContainer"><div id="viewer" class="pdfViewer"></div></div>
+
+<script type="module">
+// The official BC RTB-1 PDF, shown with its own fill-in boxes (PDF.js).
+// Everything typed stays in the browser; Download / Print hand back the filled PDF.
+const LIB = 'https://cdn.jsdelivr.net/npm/pdfjs-dist@6.4.299';
+
+const pdfjsLib = await import(LIB + '/build/pdf.min.mjs');
+globalThis.pdfjsLib = globalThis.pdfjsLib || pdfjsLib;
+pdfjsLib.GlobalWorkerOptions.workerSrc = LIB + '/build/pdf.worker.min.mjs';
+const { EventBus, PDFLinkService, PDFViewer } = await import(LIB + '/web/pdf_viewer.mjs');
+
+const container = document.getElementById('viewerContainer');
+const eventBus = new EventBus();
+const linkService = new PDFLinkService({ eventBus });
+const viewer = new PDFViewer({
+  container,
+  eventBus,
+  linkService,
+  annotationMode: pdfjsLib.AnnotationMode.ENABLE_FORMS,
+  imageResourcesPath: LIB + '/web/images/'
+});
+linkService.setViewer(viewer);
+
+eventBus.on('pagesinit', () => { viewer.currentScaleValue = 'page-width'; });
+window.addEventListener('resize', () => { viewer.currentScaleValue = 'page-width'; });
+
+const pdf = await pdfjsLib.getDocument({ url: 'artist-studio/rtb1.pdf' }).promise;
+viewer.setDocument(pdf);
+linkService.setDocument(pdf, null);
+
+async function filledUrl() {
+  const bytes = await pdf.saveDocument();
+  return URL.createObjectURL(new Blob([bytes], { type: 'application/pdf' }));
+}
+
+document.getElementById('download').addEventListener('click', async () => {
+  const a = document.createElement('a');
+  a.href = await filledUrl();
+  a.download = 'Residential Tenancy Agreement.pdf';
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+});
+
+// Open the window first, while the click still counts, so it isn't blocked
+document.getElementById('print').addEventListener('click', async () => {
+  const w = window.open('', '_blank');
+  const url = await filledUrl();
+  if (w) w.location.href = url;
+  else window.location.href = url;
+});
+</script>
+</body>
+</html>
